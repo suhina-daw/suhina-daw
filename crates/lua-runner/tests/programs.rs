@@ -80,6 +80,13 @@ impl Fixture {
         Self::build(id, script, &["APC*"], &["APC in", "Other in"], &["APC out", "Other out"])
     }
 
+    /// A fixture whose program claims the stand-in's `APC*` ports, with none of them
+    /// present yet: the device arrives later, as a controller plugged in after Suhina
+    /// started.
+    fn claiming_awaiting(id: &str, script: &str) -> Self {
+        Self::build(id, script, &["APC*"], &[], &[])
+    }
+
     fn build(id: &str, script: &str, patterns: &[&str], inputs: &[&str], outputs: &[&str]) -> Self {
         let root = std::env::temp_dir().join(format!(
             "suhina-programs-{}-{}",
@@ -205,6 +212,57 @@ fn a_program_starts_runs_and_stops() {
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
     // The store says running, too.
+    let listed = fixture.projects.execute("extensions.list", &json!({})).expect("listed");
+    let entry = find(&listed, &fixture.id).expect("listed");
+    assert_eq!(entry["state"], "running", "{entry}");
+}
+
+/// A program whose device is connected when Suhina starts runs on its own: the store's port
+/// scan starts the installed, validated extension whose manifest's patterns match a port
+/// present now (docs/spec/extensions.md › Running one). Nobody called `extensions.restart`.
+#[test]
+fn a_program_runs_when_its_device_is_connected_at_launch() {
+    let mut fixture = Fixture::claiming("autopad", SCRIPT_ECHO);
+    // The first look scans, starts the program on the match, and opens its claimed ports in
+    // the same look.
+    fixture.projects.poll_plugins();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    let listed = fixture.projects.execute("extensions.list", &json!({})).expect("listed");
+    let entry = find(&listed, &fixture.id).expect("listed");
+    assert_eq!(entry["state"], "running", "{entry}");
+    assert!(fixture.midi.raw_open("APC in"), "the claimed port opened for the program");
+    assert!(!fixture.midi.live_open("APC in"), "a claimed port does not feed the armed tracks");
+}
+
+/// A program whose device arrives later starts then: the scan that found the first port
+/// matching the manifest's patterns started it, the way a controller plugged in after
+/// Suhina started works without a restart by hand. No device named, no program.
+#[test]
+fn a_program_starts_when_its_device_is_plugged_in_later() {
+    let mut fixture = Fixture::claiming_awaiting("latepad", SCRIPT_ECHO);
+    fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
+    let listed = fixture.projects.execute("extensions.list", &json!({})).expect("listed");
+    let entry = find(&listed, &fixture.id).expect("listed");
+    assert_eq!(entry["state"], "available", "{entry}");
+    // The device is plugged in: the same name the manifest claims.
+    fixture.midi.inputs.lock().unwrap().push(("APC in".into(), "APC in#1".into()));
+    fixture.midi.outputs.lock().unwrap().push(("APC out".into(), "APC out#1".into()));
+    fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    assert!(fixture.midi.raw_open("APC in"), "the claimed port opened for the program");
+}
+
+/// The device leaves, the program keeps running: its ports fall back to their profiles and
+/// the scan does not stop what runs — `extensions.remove` is the way a program stops.
+#[test]
+fn a_program_whose_device_leaves_keeps_running() {
+    let mut fixture = Fixture::claiming("keeps", SCRIPT_ECHO);
+    fixture.projects.poll_plugins();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    assert!(fixture.midi.raw_open("APC in"));
+    fixture.midi.inputs.lock().unwrap().retain(|(p, _)| p != "APC in");
+    fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
+    assert!(fixture.midi.was_closed("APC in"), "the port closed with the device");
     let listed = fixture.projects.execute("extensions.list", &json!({})).expect("listed");
     let entry = find(&listed, &fixture.id).expect("listed");
     assert_eq!(entry["state"], "running", "{entry}");
@@ -411,12 +469,16 @@ fn a_restarted_program_hears_its_ports_again() {
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
     fixture.projects.poll_plugins();
-    assert_eq!(fixture.midi.raw_opens("APC in"), 1);
+    // The count the restart is judged by is the one now: the store may have started the
+    // program itself when the fixture made the device present, and the start by hand then
+    // replaced it.
+    let opens_at_start = fixture.midi.raw_opens("APC in");
+    assert!(opens_at_start >= 1, "{opens_at_start} opens");
     fixture.projects.execute("extensions.restart", &json!({ "id": fixture.id })).expect("restarted");
     fixture.expect(|e| *e == programs::Event::Running, "running again");
     fixture.projects.poll_plugins();
     // The port was opened again for the new process: one close, one new open.
-    assert_eq!(fixture.midi.raw_opens("APC in"), 2);
+    assert_eq!(fixture.midi.raw_opens("APC in"), opens_at_start + 1);
     assert!(fixture.midi.was_closed("APC in"));
     fixture.midi.play("APC in", 7, &[0xB0, 7, 1]);
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
@@ -668,7 +730,11 @@ fn a_returned_port_is_reopened_fresh() {
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
     fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
-    assert_eq!(fixture.midi.raw_opens("APC in"), 1);
+    // The store may have started the program itself when the fixture made the device
+    // present, and the start by hand then replaced it — the count the replug is judged by
+    // is the one now.
+    let opens_at_start = fixture.midi.raw_opens("APC in");
+    assert!(opens_at_start >= 1, "{opens_at_start} opens");
     // The device vanishes: the port leaves the system's list.
     fixture.midi.inputs.lock().unwrap().retain(|(p, _)| p != "APC in");
     fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
@@ -676,7 +742,7 @@ fn a_returned_port_is_reopened_fresh() {
     // The device comes back: the same name re-enumerates.
     fixture.midi.inputs.lock().unwrap().push(("APC in".into(), "APC in#2".into()));
     fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
-    assert_eq!(fixture.midi.raw_opens("APC in"), 2, "reopened fresh");
+    assert_eq!(fixture.midi.raw_opens("APC in"), opens_at_start + 1, "reopened fresh");
     // And it still plays into the program.
     fixture.midi.play("APC in", 1, &[0x90, 60, 100]);
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
@@ -695,11 +761,15 @@ fn a_port_that_re_enumerates_under_the_scan_is_reopened_fresh() {
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
     fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
-    assert_eq!(fixture.midi.raw_opens("APC in"), 1);
+    // The count the blink is judged by is the one now: the store may have started the
+    // program itself when the fixture made the device present, and the start by hand then
+    // replaced it.
+    let opens_at_start = fixture.midi.raw_opens("APC in");
+    assert!(opens_at_start >= 1, "{opens_at_start} opens");
     // The blink: the same name, the system's id for it renewed.
     *fixture.midi.inputs.lock().unwrap() = vec![("APC in".into(), "APC in#9".into())];
     fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
-    assert_eq!(fixture.midi.raw_opens("APC in"), 2, "reopened without the name ever leaving");
+    assert_eq!(fixture.midi.raw_opens("APC in"), opens_at_start + 1, "reopened without the name ever leaving");
     // And the fresh connection plays into the program, whose ports were told again.
     fixture.midi.play("APC in", 1, &[0x90, 60, 100]);
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));

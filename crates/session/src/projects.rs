@@ -283,9 +283,7 @@ impl Projects {
     /// hear about: ports that could not be opened.
     pub fn set_midi_system(&mut self, system: std::sync::Arc<dyn crate::MidiSystem>) -> Vec<String> {
         self.devices.midi.system = Some(system);
-        let epoch = self.extensions.claims_epoch;
-        let claims = self.extensions.claims();
-        self.devices.midi.sync(&claims, epoch)
+        self.look_at_ports()
     }
 
     /// The MIDI input ports turned off, by name (the window keeps them in its settings).
@@ -296,9 +294,7 @@ impl Projects {
     /// Turns the ports `off` names off and every other one on, opening and closing them.
     pub fn set_midi_inputs_off(&mut self, off: impl IntoIterator<Item = String>) -> Vec<String> {
         self.devices.midi.off = off.into_iter().collect();
-        let epoch = self.extensions.claims_epoch;
-        let claims = self.extensions.claims();
-        self.devices.midi.sync(&claims, epoch)
+        self.look_at_ports()
     }
 
     /// Where the open MIDI ports send what they play: the active project's engine.
@@ -318,11 +314,24 @@ impl Projects {
 
     /// Looks at the MIDI ports again — the rescan the `midi.*` commands and the frame call —
     /// with the running programs' claims: claimed ports open raw for their programs, their
-    /// output ports open for their send-backs.
+    /// output ports open for their send-backs. The scan also starts the surface programs
+    /// whose device is here ([`Extensions::start_for_ports`]), so a controller's script runs
+    /// when the device for it is connected, and its ports open in the same look.
     pub(crate) fn midi_sync(&mut self) -> Vec<String> {
+        self.look_at_ports()
+    }
+
+    /// One look at the ports: the scan, the surface programs started on what it found, and
+    /// the claims — a program started now has its ports opened in the same look.
+    fn look_at_ports(&mut self) -> Vec<String> {
+        let Ok(scanned) = self.devices.midi.scan() else { return Vec::new() };
+        let name = |(name, _): &(String, String)| name.clone();
+        let input_names: Vec<String> = scanned.inputs.iter().map(name).collect();
+        let output_names: Vec<String> = scanned.outputs.iter().map(name).collect();
+        self.extensions.start_for_ports(&input_names, &output_names);
         let epoch = self.extensions.claims_epoch;
         let claims = self.extensions.claims();
-        self.devices.midi.sync(&claims, epoch)
+        self.devices.midi.sync(&claims, epoch, scanned)
     }
 
     /// The running programs' business, where the frame drains: the states the supervisors
@@ -446,9 +455,7 @@ impl Projects {
             && (self.devices.midi.synced_epoch != self.extensions.claims_epoch
                 || self.devices.midi.checked.is_none_or(|t| t.elapsed() >= crate::midi::MIDI_RESCAN))
         {
-            let epoch = self.extensions.claims_epoch;
-            let claims = self.extensions.claims();
-            return self.devices.midi.sync(&claims, epoch);
+            return self.look_at_ports();
         }
         Vec::new()
     }

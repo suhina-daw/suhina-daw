@@ -189,26 +189,46 @@ pub(crate) const MIDI_RESCAN: std::time::Duration = std::time::Duration::from_se
 /// How often, when the ports could not be listed at all.
 const MIDI_RESCAN_FAILED: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// The system's ports for one look, as the scan took them: the input ports there are now,
+/// with the system's id for each, then the output ports the same way. The names are what a
+/// program's manifest patterns are matched against, and what the store starts a program on.
+pub(crate) struct Scanned {
+    pub(crate) inputs: Vec<(String, String)>,
+    pub(crate) outputs: Vec<(String, String)>,
+}
+
 impl MidiInputs {
-    /// Opens the ports that are on and not open yet, and closes the ones turned off or gone;
-    /// opens the ports each running program claims raw, and its output ports, and tells each
-    /// program its ports when they change. A port a program claims does not feed the armed
-    /// tracks while it runs. Returns what the user should hear about: a port that could not be
-    /// opened, once.
-    pub(crate) fn sync(&mut self, claims: &[Claim], epoch: u64) -> Vec<String> {
+    /// The system's ports for this look: the input ports there are now, with the system's id
+    /// for each, then the output ports the same way. `Err` is why the ports could not be
+    /// listed, said once — a system without MIDI (no sequencer) is asked again far less
+    /// often.
+    pub(crate) fn scan(&mut self) -> Result<Scanned, Vec<String>> {
         self.checked = Some(std::time::Instant::now());
-        self.synced_epoch = epoch;
-        let Some(system) = self.system.clone() else { return Vec::new() };
+        let Some(system) = self.system.clone() else {
+            return Ok(Scanned { inputs: Vec::new(), outputs: Vec::new() });
+        };
         let ports = match system.ports() {
             Ok(ports) => ports,
             Err(e) => {
-                // A system without MIDI (no sequencer) is asked again far less often.
                 let later = std::time::Instant::now().checked_add(MIDI_RESCAN_FAILED.saturating_sub(MIDI_RESCAN));
                 self.checked = later.or(self.checked);
-                return self.fail("", e);
+                return Err(self.fail("", e));
             }
         };
         let outputs = system.outputs().unwrap_or_default();
+        Ok(Scanned { inputs: ports, outputs })
+    }
+
+    /// Opens the ports that are on and not open yet, and closes the ones turned off or gone;
+    /// opens the ports each running program claims raw, and its output ports, and tells each
+    /// program its ports when they change. A port a program claims does not feed the armed
+    /// tracks while it runs. `scanned` is what [`Self::scan`] took this look: the names the
+    /// claims were matched against and the programs started on. Returns what the user should
+    /// hear about: a port that could not be opened, once.
+    pub(crate) fn sync(&mut self, claims: &[Claim], epoch: u64, scanned: Scanned) -> Vec<String> {
+        self.synced_epoch = epoch;
+        let Some(system) = self.system.clone() else { return Vec::new() };
+        let Scanned { inputs: ports, outputs } = scanned;
         // A port that vanished and came back between looks re-enumerated: its old connection
         // died with the device, so every entry it held is dropped here and reopened fresh
         // below — the claim by token would otherwise keep a connection to nothing. A port that

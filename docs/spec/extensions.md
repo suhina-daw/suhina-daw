@@ -119,6 +119,15 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
   are the runner process's, and the script's ports fall back to their profiles while that process
   is down. The messages the runner and Suhina say, and the Lua environment and API the runner
   gives a script, are in [surface programs](surface-programs.md).
+- **A surface program runs when its device is there.** The store's port scan that matches a
+  running program's ports also starts a surface program that is installed, validated and not
+  running, the moment the system has a port its manifest's `ports` patterns match — at launch
+  with the controller already connected, and later when it is plugged in. What the user
+  installed runs for the device it names, without a restart by hand; the program keeps running
+  when the device leaves (its ports fall back), and `extensions.remove` is the way a program
+  stops for good. (Not built yet: an `extensions.stop` for switching a controller's script off
+  without forgetting it.) A start that fails is said once on the extension and not retried by
+  the scan until something about it changes.
 - Suhina does the parts it owns: decoding the audio, the resampling and the DSP chain around the
   model, placing the result in the project, and the undo step. The extension does the part Suhina may
   not ship.

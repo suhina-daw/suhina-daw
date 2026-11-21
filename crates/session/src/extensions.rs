@@ -336,6 +336,9 @@ pub struct Extensions {
     pub(crate) claims_epoch: u64,
     /// The live subscriptions of the running programs, re-read each look.
     subs: Vec<Sub>,
+    /// The extensions a scan's auto-start failed for, so the scan does not try the same
+    /// start every two seconds; cleared when the store re-reads.
+    auto_blocked: std::collections::BTreeSet<String>,
 }
 
 /// A live subscription: the program that made it, its token, the reading command and its
@@ -368,6 +371,7 @@ impl Extensions {
             known: Vec::new(),
             claims_epoch: 1,
             subs: Vec::new(),
+            auto_blocked: std::collections::BTreeSet::new(),
         };
         extensions.reload();
         extensions
@@ -401,6 +405,7 @@ impl Extensions {
     /// programs running keep running — their handles re-attach to the re-read entries by id,
     /// and a program whose extension is gone from the store stops when its handle is dropped.
     pub fn reload(&mut self) {
+        self.auto_blocked.clear();
         let mut running: Vec<(String, bool, programs::Handle)> = self
             .known
             .iter_mut()
@@ -660,6 +665,69 @@ impl Extensions {
         self.known.iter_mut().find(|e| e.id == id).and_then(|e| e.program.as_mut())
     }
 
+    /// Starts the surface programs whose device is here: an installed, validated extension
+    /// that is not running starts when the scan found a port its manifest's `ports` patterns
+    /// match — at launch with the controller already connected, and later when it is plugged
+    /// in (docs/spec/extensions.md › Running one). A crashed or stopped-at-its-boundary
+    /// program is not the scan's to start again: the supervisor restarts the first within
+    /// its window, and `extensions.restart` answers the second. The ids started, so the
+    /// caller knows the claims moved; a start that fails is said once on the extension and
+    /// not retried by the scan until the store re-reads.
+    pub(crate) fn start_for_ports(&mut self, inputs: &[String], outputs: &[String]) -> Vec<String> {
+        // The candidates first: starting a program moves `self`, so the match runs on what
+        // the store holds now, and each start is applied by id after.
+        let candidates: Vec<(String, String, String, String, Vec<String>)> = self
+            .known
+            .iter()
+            .filter(|extension| {
+                extension.state == State::Available
+                    && extension.manifest.is_some()
+                    && !self.auto_blocked.contains(&extension.id)
+            })
+            .filter_map(|extension| {
+                let manifest = extension.manifest.as_ref()?;
+                let patterns = manifest.ports.as_ref()?;
+                let runner = manifest.runner.as_ref()?;
+                let script = manifest.script()?.to_string();
+                Some((
+                    extension.id.clone(),
+                    extension.folder.display().to_string(),
+                    runner.clone(),
+                    script,
+                    patterns.clone(),
+                ))
+            })
+            .collect();
+        let mut started = Vec::new();
+        for (id, folder, runner, script, patterns) in candidates {
+            let answers = |name: &String| patterns.iter().any(|pat| port_matches(pat, name));
+            if !inputs.iter().any(answers) && !outputs.iter().any(answers) {
+                continue;
+            }
+            let folder = PathBuf::from(&folder);
+            match programs::start(&id, &runner, &folder, &script) {
+                Ok(handle) => {
+                    if let Some(known) = self.known.iter_mut().find(|known| known.id == id) {
+                        known.program = Some(handle);
+                        known.state = State::Running;
+                        known.last_error = None;
+                    }
+                    started.push(id);
+                }
+                Err(reason) => {
+                    if let Some(known) = self.known.iter_mut().find(|known| known.id == id) {
+                        known.last_error = Some(reason.to_string());
+                    }
+                    self.auto_blocked.insert(id);
+                }
+            }
+        }
+        if !started.is_empty() {
+            self.claims_epoch += 1;
+        }
+        started
+    }
+
     /// What each running program claims, for the MIDI router: the extension's id, its
     /// manifest's port name patterns, and the handle to deliver to. A program whose script
     /// stopped at its boundary holds no ports (they fall back) until `extensions.restart`.
@@ -677,8 +745,9 @@ impl Extensions {
             .collect()
     }
 
-    /// The one program running, for the tests: this slice's store starts none by itself, so
-    /// the tests start exactly one.
+    /// The one program running, for the tests: the store starts programs itself when a
+    /// device for one is present, so a test that wants a specific one started still starts
+    /// it by hand.
     pub fn programs(&self) -> Option<&programs::Handle> {
         self.known.iter().find_map(|e| e.program.as_ref())
     }
