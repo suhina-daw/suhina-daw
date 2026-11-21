@@ -240,6 +240,7 @@ mod tests {
             attack: Vec::new(),
             sustain: None,
             stereo: None,
+            tail: None,
         }
     }
 

@@ -22,6 +22,7 @@ fn recording(attack: Vec<f32>) -> ModelRecording {
         attack,
         sustain: None,
         stereo: None,
+        tail: None,
     }
 }
 

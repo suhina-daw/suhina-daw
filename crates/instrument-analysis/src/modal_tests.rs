@@ -468,3 +468,33 @@ fn a_fast_first_stage_inside_the_first_envelope_window_is_kept() {
     let plain = report.recording_modes.iter().find(|m| (m.frequency_hz - 220.0).abs() < 1.0).unwrap();
     assert_eq!(plain.fast_share, 0.0, "a single decay gets no fast part: {plain:?}");
 }
+
+/// What the modes miss after the attack becomes the tail: a struck note over decaying noise
+/// keeps a tail whose bands fall with the noise's T60; a clean strike keeps none (version 4).
+#[test]
+fn decaying_noise_the_modes_miss_becomes_the_tail() {
+    let rate = 22050;
+    let truth = [(220.0, 3.0, 0.5), (660.0, 2.0, 0.2)];
+    let clean = struck(rate, 3.0, &truth);
+    let mut seed = 0x1234_5678_u32;
+    let noisy: Vec<f32> = clean
+        .iter()
+        .enumerate()
+        .map(|(n, x)| {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let white = f64::from(seed >> 8) / 8_388_608.0 - 1.0;
+            let t = n as f64 / f64::from(rate);
+            x + (0.02 * white * (-1000.0_f64.ln() * t / 1.0).exp()) as f32
+        })
+        .collect();
+    let report = fit(&noisy, rate, 1, 0..noisy.len(), 57, |_, _| true).unwrap();
+    let tail = report.recording.unwrap().tail.expect("a tail");
+    let kept: Vec<f32> = tail.decay.iter().copied().filter(|d| *d > 0.0).collect();
+    assert!(kept.len() >= 5, "{tail:?}");
+    for decay in &kept {
+        assert!((decay - 1.0).abs() < 0.35, "{tail:?}");
+    }
+    assert_eq!(tail.level, tail.other, "a mono recording's channels are the same");
+    let report = fit(&clean, rate, 1, 0..clean.len(), 57, |_, _| true).unwrap();
+    assert!(report.recording.unwrap().tail.is_none());
+}

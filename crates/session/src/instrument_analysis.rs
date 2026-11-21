@@ -550,6 +550,8 @@ fn view_json(view: &AnalysisView) -> Value {
                 "tremoloDepth":h.tremolo_depth,"driftCents":h.drift_cents,"releaseSeconds":h.release_seconds,
                 "bodyFixed":h.body_fixed,"noiseBands":h.noise.iter().filter(|v| **v > 0.0).count(),
                 "risingModes":h.rise.iter().filter(|v| **v > 0.0).count()}))})),
+        // A chord split into one recording per note (instrument-modal-fitting.md).
+        "notes":r.notes.iter().map(|n| json!({"key":n.key,"modeCount":n.modes.len(),"level":n.level})).collect::<Vec<_>>(),
         "recordingModes":r.recording_modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
             "fastDecaySeconds":m.fast_decay_seconds,"fastShare":m.fast_share,"beatHz":m.beat_hz,"beatShare":m.beat_share,
             "phase":m.phase,"sustained":m.sustained,"loose":m.loose})).collect::<Vec<_>>(),
@@ -615,6 +617,9 @@ pub(crate) fn accept(session: &mut Session, params: &Value) -> Result<Value, Com
 
 pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     if matching_job(session, params)?.kind == AnalysisKind::Folder {
+        if Args::new(params).opt_bool("notes")?.unwrap_or(false) {
+            return Err("notes is for a chord's fit, not a folder's".into());
+        }
         return adopt_folder(session, params, false);
     }
     let job = matching_job(session, params)?;
@@ -622,6 +627,11 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
         return Err("only a completed, current modal fit can be accepted".into());
     }
     let report = job.modal.as_ref().ok_or("the sample did not yield a decaying modal profile")?;
+    let notes = Args::new(params).opt_bool("notes")?.unwrap_or(false);
+    if notes && report.notes.len() < 2 {
+        return Err("this fit found no chord to split into notes".into());
+    }
+    let chord = notes.then(|| report.notes.clone());
     let recording = report.recording.clone();
     let profile = report.profile.ok_or("the sample did not yield a decaying modal profile")?;
     let channel = device_channel(session, params)?;
@@ -629,8 +639,17 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
     let device = suhina_model::device_at_mut(&mut channel.devices, &path).ok_or("the instrument is missing")?;
     // A fitted recording becomes a one-member revision-4 set; a fit that could not form one
     // (its level out of bounds) is still adopted as its revision-2 profile.
-    let (state, overridden, result) = match recording {
-        Some(recording) => {
+    let (state, overridden, result) = match (chord, recording) {
+        // A chord's notes: one recording per key, as a new set.
+        (Some(notes), _) => {
+            let keys: Vec<u8> = notes.iter().map(|n| n.key).collect();
+            let set = ModelSet::new(notes).map_err(|error| error.to_string())?;
+            let bytes = set.encode();
+            let overridden = crate::instrument_profile::apply_model_set(device, &bytes, true)?;
+            let result = json!({"accepted":true,"recordings":keys.len(),"notes":keys,"revision":MODEL_REVISION,"source":"modal"});
+            (bytes, overridden, result)
+        }
+        (None, Some(recording)) => {
             let attack = recording.attack.len() as f64 / f64::from(recording.attack_rate.max(1));
             let modes = recording.modes.len();
             let set = ModelSet::new(vec![recording]).map_err(|error| error.to_string())?;
@@ -639,7 +658,7 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
             let result = json!({"accepted":true,"modeCount":modes,"recordings":1,"attackSeconds":attack,"revision":MODEL_REVISION,"source":"modal"});
             (bytes, overridden, result)
         }
-        None => {
+        (None, None) => {
             let overridden = crate::instrument_profile::apply_profile(
                 device,
                 &profile,

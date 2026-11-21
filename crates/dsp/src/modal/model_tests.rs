@@ -25,6 +25,7 @@ fn recording(key: u8, velocity: f32, ratio_two: f64, decay: f64) -> ModelRecordi
         attack: (0..2205).map(|i| (i as f32 * 0.01).sin() * 0.1).collect(),
         sustain: None,
         stereo: None,
+        tail: None,
     }
 }
 
@@ -207,6 +208,7 @@ fn controls_transform_fused_modes_and_the_sine_budget_holds() {
         attack: vec![],
         sustain: None,
         stereo: None,
+        tail: None,
     }])
     .unwrap();
     let mut voice = Voice::default();
@@ -271,6 +273,7 @@ fn a_recordings_decay_law_shortens_higher_notes() {
         attack: vec![],
         sustain: None,
         stereo: None,
+        tail: None,
     }])
     .unwrap();
     let mut voice = Voice::default();
@@ -430,6 +433,7 @@ fn a_held_recordings_formant_stays_in_hz_when_the_key_moves() {
             attack: vec![],
             sustain: None,
             stereo: None,
+            tail: None,
         };
         if body_fixed > 0.0 {
             r.sustain = Some(crate::modal::sustain::Sustain { body_fixed, ..Default::default() });
@@ -514,4 +518,58 @@ fn stereo_parts_use_schema_four_and_place_each_sine() {
     }
     set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
     assert_eq!((voice.reference, voice.other[0]), (0, [1.0, 0.0]), "a mono anchor plays in both channels");
+}
+
+/// Velocity counts from the nearest recorded velocity: recordings that share one are told apart
+/// by key alone, so a recorded key plays its own recording at any velocity.
+#[test]
+fn recordings_sharing_a_velocity_are_told_apart_by_key_alone() {
+    let set = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), recording(60, 0.8, 2.05, 1.0)]).unwrap();
+    let (mut at_recorded, mut harder) = (Voice::default(), Voice::default());
+    set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut at_recorded);
+    set.voice(48, 1.0, &Controls::NEUTRAL, 48000.0, &mut harder);
+    assert_eq!(at_recorded.count, harder.count);
+    for (a, b) in at_recorded.modes[..at_recorded.count].iter().zip(&harder.modes[..harder.count]) {
+        assert_eq!(a.frequency_hz, b.frequency_hz);
+        assert_eq!(a.amplitude, b.amplitude);
+    }
+    assert_eq!(at_recorded.level, harder.level);
+}
+
+/// A tail makes schema 5 (with the schema-3 and schema-4 flags, here all zero), round-trips, is
+/// bounded, and a played note carries its anchor's tail with the decay law to its key.
+#[test]
+fn tails_use_schema_five_and_reach_the_played_note() {
+    let plain = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), recording(72, 0.8, 2.01, 1.0)]).unwrap();
+    let plain_bytes = plain.encode();
+    let mut tail = crate::modal::tail::Tail::NONE;
+    tail.level[5] = 0.01;
+    tail.other[5] = 0.02;
+    tail.decay[5] = 1.5;
+    let mut tailed = recording(72, 0.8, 2.01, 1.0);
+    tailed.tail = Some(tail);
+    let set = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), tailed]).unwrap();
+    let bytes = set.encode();
+    assert_eq!(&bytes[8..10], &super::MODEL_SCHEMA_TAIL.to_le_bytes());
+    // Held flags, stereo flags, tail flags and one tail of 33 f32.
+    assert_eq!(bytes.len(), plain_bytes.len() + 8 + 8 + 8 + 4 * 33);
+    assert_eq!(ModelSet::decode(&bytes).unwrap(), set);
+    let flag = plain_bytes.len() + 16;
+    for (offset, value) in [(flag, 2), (flag + 1, 1)] {
+        let mut bad = bytes.clone();
+        bad[offset] = value;
+        assert!(ModelSet::decode(&bad).is_err(), "byte {offset} = {value}");
+    }
+    let mut wild = recording(60, 0.8, 2.0, 1.0);
+    wild.tail = Some(crate::modal::tail::Tail { decay: [0.01; 11], ..tail });
+    assert!(wild.validate().is_err());
+    let mut empty = recording(60, 0.8, 2.0, 1.0);
+    empty.tail = Some(crate::modal::tail::Tail::NONE);
+    assert!(ModelSet::new(vec![empty]).unwrap().recordings()[0].tail.is_none());
+    let mut voice = Voice::default();
+    set.voice(72, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    assert_eq!(voice.tail, tail);
+    assert!((voice.tail_decay_scale - 1.0).abs() < 1e-12);
+    set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
+    assert!(voice.tail.is_empty(), "the anchor at 48 has no tail");
 }

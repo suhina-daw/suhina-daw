@@ -9,6 +9,7 @@ use super::Mode;
 use super::sustain::{
     ENVELOPE_POINTS, Held, MAX_CORRECTION_DB, NOISE_BANDS, SUSTAIN_FIELDS, Sustain, envelope, envelope_at,
 };
+use super::tail::{TAIL_FIELDS, Tail};
 use std::f64::consts::PI;
 
 pub const MODEL_SCHEMA_VERSION: u16 = 2;
@@ -16,6 +17,8 @@ pub const MODEL_SCHEMA_VERSION: u16 = 2;
 pub const MODEL_SCHEMA_HELD: u16 = 3;
 /// Schema of a set whose recordings carry stereo parts: schema 3 plus a second trailer.
 pub const MODEL_SCHEMA_STEREO: u16 = 4;
+/// Schema of a set whose recordings carry noise tails: schema 4 plus a third trailer.
+pub const MODEL_SCHEMA_TAIL: u16 = 5;
 /// Largest other-channel gain of a mode.
 pub const MAX_OTHER_GAIN: f32 = 8.0;
 pub const MODEL_REVISION: u16 = 4;
@@ -84,6 +87,8 @@ pub struct ModelRecording {
     pub sustain: Option<Sustain>,
     /// The other channel of a stereo recording; none for a mono one.
     pub stereo: Option<Stereo>,
+    /// The decaying band noise of what the modes miss after the attack; none without one.
+    pub tail: Option<Tail>,
 }
 
 /// How a stereo recording's other channel relates to the channel its modes were fitted on.
@@ -212,6 +217,9 @@ impl ModelRecording {
                 );
             }
         }
+        if let Some(tail) = &self.tail {
+            tail.validate().map_err(ModelError)?;
+        }
         Ok(())
     }
 }
@@ -271,6 +279,12 @@ pub struct Voice {
     /// sines and the attack play in (0 left, 1 right).
     pub other: [[f32; 2]; MAX_VOICE_SINES],
     pub reference: u8,
+    /// The anchor's tail and what its T60s are multiplied by (the decay law to this key and
+    /// Decay).
+    pub tail: Tail,
+    pub tail_decay_scale: f64,
+    /// Whether the tail's channels are independent noise (the anchor is a stereo recording).
+    pub tail_stereo: bool,
 }
 
 impl Default for Voice {
@@ -285,6 +299,9 @@ impl Default for Voice {
             held: Held::NONE,
             other: [[1.0, 0.0]; MAX_VOICE_SINES],
             reference: 0,
+            tail: Tail::NONE,
+            tail_decay_scale: 1.0,
+            tail_stereo: false,
         }
     }
 }
@@ -312,9 +329,12 @@ impl ModelSet {
             return Err(ModelError("a model set needs 1..32 recordings"));
         }
         for recording in &mut recordings {
-            // A layer of zeros is no layer, so the encoding stays canonical.
+            // A layer or tail of zeros is none, so the encoding stays canonical.
             if recording.sustain.is_some_and(|s| s.is_empty()) {
                 recording.sustain = None;
+            }
+            if recording.tail.is_some_and(|t| t.is_empty()) {
+                recording.tail = None;
             }
             recording.validate()?;
         }
@@ -365,7 +385,7 @@ impl ModelSet {
     pub fn recording_count(bytes: &[u8]) -> Option<usize> {
         let header = bytes.get(..16)?;
         (header.get(..8) == Some(MODEL_MAGIC.as_slice())
-            && [MODEL_SCHEMA_VERSION, MODEL_SCHEMA_HELD, MODEL_SCHEMA_STEREO]
+            && [MODEL_SCHEMA_VERSION, MODEL_SCHEMA_HELD, MODEL_SCHEMA_STEREO, MODEL_SCHEMA_TAIL]
                 .iter()
                 .any(|schema| header.get(8..10) == Some(schema.to_le_bytes().as_slice()))
             && header.get(10..12) == Some(MODEL_REVISION.to_le_bytes().as_slice()))
@@ -387,9 +407,12 @@ impl ModelSet {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(16 + self.recordings.len() * (RECORDING_HEADER + 2048));
-        let stereo = self.recordings.iter().any(|r| r.stereo.is_some());
+        let tailed = self.recordings.iter().any(|r| r.tail.is_some());
+        let stereo = tailed || self.recordings.iter().any(|r| r.stereo.is_some());
         let held = stereo || self.recordings.iter().any(|r| r.sustain.is_some());
-        let schema = if stereo {
+        let schema = if tailed {
+            MODEL_SCHEMA_TAIL
+        } else if stereo {
             MODEL_SCHEMA_STEREO
         } else if held {
             MODEL_SCHEMA_HELD
@@ -457,6 +480,20 @@ impl ModelSet {
                 }
             }
         }
+        // Schema 5: every recording's tail, flagged, after the stereo parts.
+        if tailed {
+            for recording in &self.recordings {
+                match &recording.tail {
+                    Some(tail) => {
+                        bytes.extend_from_slice(&[1, 0, 0, 0]);
+                        for value in tail.fields() {
+                            bytes.extend_from_slice(&value.to_le_bytes());
+                        }
+                    }
+                    None => bytes.extend_from_slice(&[0, 0, 0, 0]),
+                }
+            }
+        }
         bytes
     }
 
@@ -467,7 +504,7 @@ impl ModelSet {
             return Err(header);
         }
         let schema = reader.u16()?;
-        if !matches!(schema, MODEL_SCHEMA_VERSION | MODEL_SCHEMA_HELD | MODEL_SCHEMA_STEREO)
+        if !matches!(schema, MODEL_SCHEMA_VERSION | MODEL_SCHEMA_HELD | MODEL_SCHEMA_STEREO | MODEL_SCHEMA_TAIL)
             || reader.u16()? != MODEL_REVISION
         {
             return Err(header);
@@ -521,6 +558,7 @@ impl ModelSet {
                 attack,
                 sustain: None,
                 stereo: None,
+                tail: None,
             });
         }
         if schema >= MODEL_SCHEMA_HELD {
@@ -537,7 +575,7 @@ impl ModelSet {
                 }
             }
         }
-        if schema == MODEL_SCHEMA_STEREO {
+        if schema >= MODEL_SCHEMA_STEREO {
             for recording in &mut recordings {
                 let flag = reader.take(4)?;
                 if flag == [0, 0, 0, 0] {
@@ -564,6 +602,20 @@ impl ModelSet {
                 recording.stereo = Some(Stereo { reference, gains: values, offsets, attack });
             }
         }
+        if schema == MODEL_SCHEMA_TAIL {
+            for recording in &mut recordings {
+                let flag = reader.take(4)?;
+                if flag == [1, 0, 0, 0] {
+                    let mut fields = [0.0_f32; TAIL_FIELDS];
+                    for field in &mut fields {
+                        *field = f32::from_le_bytes(reader.array()?);
+                    }
+                    recording.tail = Some(Tail::from_fields(&fields));
+                } else if flag != [0, 0, 0, 0] {
+                    return Err(header);
+                }
+            }
+        }
         if reader.at != bytes.len() {
             return Err(header);
         }
@@ -580,9 +632,16 @@ impl ModelSet {
         *out = Voice::default();
         let morph = if controls.morph.is_finite() { controls.morph.clamp(0.0, 1.0) } else { 0.5 };
         let mut chosen = [(usize::MAX, 0.0_f64); MAX_RECORDINGS];
+        // Velocity counts from the nearest velocity recorded: recordings that share one (a
+        // chord's notes, single strikes of several keys) are told apart by key alone.
+        let nearest_velocity = self
+            .recordings
+            .iter()
+            .map(|r| (f64::from(velocity) - f64::from(r.velocity)).abs())
+            .fold(f64::INFINITY, f64::min);
         for (index, recording) in self.recordings.iter().enumerate() {
             let distance = (f64::from(key) - f64::from(recording.key)).abs() / 12.0
-                + 2.0 * (f64::from(velocity) - f64::from(recording.velocity)).abs();
+                + 2.0 * ((f64::from(velocity) - f64::from(recording.velocity)).abs() - nearest_velocity).max(0.0);
             // Source morph tilts the weights across the sources present, in source order.
             let factor = match self.source_ranks.get(usize::from(recording.source)).copied().flatten() {
                 Some(rank) if self.sources >= 2 => {
@@ -726,6 +785,13 @@ impl ModelSet {
             }
         }
         out.reference = anchor_recording.stereo.as_ref().map_or(0, |s| s.reference);
+        if let Some(tail) = &anchor_recording.tail {
+            out.tail = *tail;
+            out.tail_stereo = anchor_recording.stereo.is_some();
+            let law = self.decay_laws.get(anchor).copied().unwrap_or(0.0);
+            out.tail_decay_scale =
+                2.0_f64.powf((f64::from(key) - f64::from(anchor_recording.key)) / 12.0 * law) * controls.decay / 2.0;
+        }
         self.fuse_held(participants, total, anchor_recording, &mut out.held);
         if !anchor_recording.attack.is_empty() && sample_rate > 0.0 {
             let transpose = 2.0_f64.powf((f64::from(key) - f64::from(anchor_recording.key)) / 12.0);

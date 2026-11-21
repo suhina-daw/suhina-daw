@@ -43,7 +43,16 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "instrument.acceptFit",
         label: "Adopt the current modal fit as a fitted model (its modes, attack and level), reset model controls and enable all fitted modes in one undo step",
-        params: &[DEVICE_TRACK, DEVICE, JOB],
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            JOB,
+            optional(
+                "notes",
+                ParamType::Bool,
+                "a chord's fit: adopt its notes, one recording per key, instead of the whole chord as one recording",
+            ),
+        ],
         kind: CommandKind::EDIT,
         run: instrument_analysis::accept_fit,
         policy: Policy::DEFAULT,

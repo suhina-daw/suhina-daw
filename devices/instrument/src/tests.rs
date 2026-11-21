@@ -23,9 +23,9 @@ fn revision_one_matches_the_independent_analytical_reference_render() {
         assert_eq!(buffer[frame * 2], buffer[frame * 2 + 1]);
     }
     // A revision-4 voice: 128 fitted resonators with their stereo weights beside the 16 of
-    // revisions 1 and 2, and its held layer (per-sine levels, ramps and couplings, eleven noise
-    // filters).
-    assert!(std::mem::size_of::<Voice>() <= 14 * 1024);
+    // revisions 1 and 2, its held layer (per-sine levels, ramps and couplings, eleven noise
+    // filters) and its tail (eleven bands of three sections in two channels).
+    assert!(std::mem::size_of::<Voice>() <= 15 * 1024);
     assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
 }
 
@@ -752,7 +752,7 @@ fn hostile_bar_settings_and_events_stay_finite() {
     let mut block = [0.0; 4096];
     instrument.process(&ProcessContext::default(), &mut block);
     assert!(block.iter().all(|x| x.is_finite() && x.abs() < 16.0));
-    assert!(std::mem::size_of::<Voice>() <= 12 * 1024, "{}", std::mem::size_of::<Voice>());
+    assert!(std::mem::size_of::<Voice>() <= 15 * 1024, "{}", std::mem::size_of::<Voice>());
     assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
 }
 

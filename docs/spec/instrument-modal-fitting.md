@@ -189,6 +189,28 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   is the attack. It is kept only when its energy is at least 0.1 % (-30 dB) of the signal's in
   that window, so a purely modal sound carries none. The attack holds what the modes miss, so the
   body response is not applied twice.
+- **Tail (algorithm version 4).** What the modes miss does not end with the attack: a
+  piano's hammer and soundboard noise, partials too weak or too crowded to fit, a chord's
+  sympathetic strings. Measured on a recorded piano chord, the 1..2 kHz octaves fell 5..7 dB
+  between 0.15 s and 0.3 s as the attack faded, and stayed that much below the recording as
+  the notes rang on, so a note sounded rich for its first tenth of a second and then thin. So
+  the fit also renders the modes (with their stereo placements) over the whole interval and
+  measures, in Hann frames of 2048 samples every 1024, how much power the recording has beyond
+  them in each of the eleven 2/3-octave noise bands of the held layer
+  ([held tones](instrument-sustained-models.md)): `max(0, recording - modes)` per bin, summed
+  over the band's bins further than two bins (the Hann main lobe) from every part of every mode and scaled to the
+  band's whole width (a band with fewer than two such bins in a frame counts nothing there), so
+  a mode's small level error is not taken for noise; for the fitted channel and the other one. From the first frame centred after
+  0.1 s, while a band's summed missing power stays within 50 dB of its largest and 10 dB above
+  the band's floor (the median of its last eight frames: the recording's own noise, into which
+  a decay must not be fitted, or the fitted chord's 4..8 kHz tail rang 10 dB too long), a least-squares
+  line through its logarithm gives the band's level at the strike and its decay; a band is kept
+  when it has at least four frames, decays (its T60 within 0.05..60 s) and falls at least 6 dB
+  across them, so a recording's steady hiss is not taken for a tail, and when it holds at least
+  -30 dB of what the modes play in the band over those frames (below that it is the modes' own
+  small error, and inaudible beside them). Each channel's level is
+  stored as an amplitude density in the recording's normalized units per square-root hertz, as
+  the held layer's noise is; the decay is one per band for both channels.
 
 The report lists per mode the fast part, the beat and the phase, and the attack's duration.
 Acceptance and addition to a set are described with the revision-4 commands.
@@ -201,6 +223,52 @@ optimum is claimed. Initial phases and the attack are measured from the one reco
 reconstructed as excitation or contact physics; room response, nonlinear dynamics and coupled
 modes are not separated, and the attack and modes may carry the room. Fitted resonances must
 not be presented as a uniquely recovered physical body.
+
+## Splitting a chord into notes
+
+A recorded chord fits as one recording whose modes are every string's partials: it plays the
+whole chord on each key, and its four or five notes share the 64 modes, so the upper partials
+run out first and the chord thins out as it rings. When the modes hold two or more notes, the
+fit (algorithm version 4) also splits them into one recording per note, from all its accepted
+modes (before the 64-mode limit), so each note keeps up to 64 modes of its own:
+
+1. **Notes.** Every accepted mode from 27.5 Hz to 4.2 kHz is a candidate fundamental `f0`. A
+   candidate's partial `k` (1..32) lies at `k * f0 * sqrt((1 + B k^2) / (1 + B))`, with the
+   inharmonicity `B` from 0, 1e-4, 3e-4 and 1e-3 that scores best; a mode within 1 % of one is
+   that partial (the nearest when two are). A candidate needs its fundamental and at least three
+   partials among the modes. Its score is the sum over its partials of `min(left, cap) / k`,
+   where `left` is what the notes found so far left of that mode's magnitude and `cap` is twice
+   the candidate's own fundamental: a weak note an octave or two below cannot claim the chord's
+   strong partials, and the `1 / k` weight favours the note whose fundamental a partial is. The
+   best candidate becomes a note and takes `min(left, cap)` from each of its partials, leaving
+   the rest for a note that shares them (an octave above, say); this repeats while the best
+   score is at least a tenth of the first note's, up to eight notes, skipping a candidate whose
+   nearest key is already a note's.
+   Once the notes are known, each adds its own string series as candidates, like the reference
+   note's (**Partials along the string**: its inharmonicity fitted to the candidates, partials
+   2..128 below the analysis ceiling), except that a predicted partial takes the local peak
+   nearest it within 1 % that is not within the candidate separation of a candidate, since
+   partials of different notes lie close together; candidates stop at 384 in all. These are
+   measured and fitted like any candidate, and the notes are found again from all the modes. On
+   a recorded piano chord this gave its C3 51 modes where it had 14.
+2. **Modes.** A mode one note predicts (within 1 %) goes to that note. A mode several notes
+   predict, as an octave's partials coincide, is shared out among them equally, each part with
+   the mode's decays and phase, so the notes played together give it back whole and a note
+   played alone keeps its share. A mode no note predicts (a soundboard or body resonance, or an
+   upper partial stretched beyond the tolerance) goes to the note whose partial series lies
+   nearest it: the relative distance to that note's nearest partial (1..32) plus 0.0002 per
+   partial number. A mode below every note's fundamental goes to the lowest note.
+
+3. **Recordings.** A note's recording has the key nearest its fundamental, ratios against that
+   key's frequency, its modes with their decays, fast parts, beats, phases and stereo placements
+   (at most the 64 with most energy), and a level and attack normalized like any recording. Its
+   attack is the residual against all the notes' kept modes divided by the note count: the notes'
+   attacks are the same waveform, so played together they add up to the recorded attack. A note has
+   no held layer.
+
+With fewer than two notes nothing is split. **Accept as notes** (`instrument.acceptFit` with
+`notes`) adopts the notes as a new set, one recording per key: playing a note of the chord plays
+that string's partials alone, and keys between the notes interpolate as in any set.
 
 ## Fitting a folder
 

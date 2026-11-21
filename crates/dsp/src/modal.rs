@@ -9,6 +9,7 @@ use std::f64::consts::TAU;
 pub mod model;
 pub mod profile;
 pub mod sustain;
+pub mod tail;
 
 /// One exponentially decaying mode, expressed in physical units.
 #[derive(Debug, Clone, Copy)]

@@ -12,7 +12,8 @@ use suhina_dsp::{
     modal::{
         model::{MAX_MODEL_MODES, MAX_OTHER_GAIN, ModelMode, ModelRecording, Stereo},
         profile::{MAX_PROFILE_MODES, ModalProfile, ProfileMode},
-        sustain::Sustain,
+        sustain::{NOISE_BANDS, Sustain, noise_center_hz},
+        tail::{MAX_TAIL_DECAY, MIN_TAIL_DECAY, Tail},
     },
 };
 
@@ -29,7 +30,42 @@ const SHORT_FRAMES: usize = 48;
 /// A fast first stage: how far above the slow decay a short window must stand, and in how many.
 const EARLY_EXCESS_DB: f64 = 1.0;
 const EARLY_MIN_WINDOWS: usize = 3;
+/// Splitting a chord: candidate fundamentals, partials per note, how near a partial lies, the
+/// inharmonicities tried, partials a note needs, how many notes and how weak the last may be
+/// against the first.
+/// The tail: Hann frames and their hop, at most this many, measured from this time, while
+/// within this power range of a band's largest, from at least this many frames falling at least
+/// this many decibels.
+const TAIL_FRAME: usize = 2048;
+const TAIL_HOP: usize = 1024;
+const TAIL_MAX_FRAMES: usize = 192;
+const TAIL_START: f64 = 0.1;
+const TAIL_RANGE: f64 = 1e-5;
+const TAIL_MIN_FRAMES: usize = 4;
+const TAIL_MIN_DROP_DB: f64 = 6.0;
+/// A band's tail must hold at least this share of the power the modes play in it.
+const TAIL_MIN_SHARE: f64 = 1e-3;
+/// How many bins around a mode the tail leaves out, and how many open bins a band needs.
+const TAIL_MASK_BINS: f64 = 2.0;
+const TAIL_MIN_OPEN_BINS: usize = 2;
+/// The frames a band's floor is the median of, and how far above it a frame must stand.
+const TAIL_FLOOR_FRAMES: usize = 8;
+const TAIL_ABOVE_FLOOR: f64 = 10.0;
+const NOTE_LOW_HZ: f64 = 27.5;
+const NOTE_HIGH_HZ: f64 = 4200.0;
+const NOTE_PARTIALS: usize = 32;
+const NOTE_TOLERANCE: f64 = 0.01;
+const NOTE_INHARMONICITY: [f64; 4] = [0.0, 1e-4, 3e-4, 1e-3];
+const NOTE_MIN_PARTIALS: usize = 3;
+const MAX_NOTES: usize = 8;
+const NOTE_MIN_SHARE: f64 = 0.1;
+/// A partial counts at most this many times its note's fundamental; each partial number adds
+/// this much relative distance when modes are shared out.
+const NOTE_SMOOTHNESS: f64 = 2.0;
+const NOTE_ORDER_COST: f64 = 2e-4;
 const MAX_CANDIDATES: usize = 192;
+/// Candidates in all once a chord's notes add their own partials.
+const MAX_CHORD_CANDIDATES: usize = 384;
 /// Partials along the string (instrument-modal-fitting.md): the fundamental's distance from the
 /// reference key, the inharmonicity bound, the search width and the weakest partial kept.
 const FUNDAMENTAL_RATIO: f64 = 1.041_299; // 70 cents
@@ -130,6 +166,8 @@ pub struct Report {
     /// set. `modes` lists the profile's evidence; `recording_modes` this recording's.
     pub recording: Option<ModelRecording>,
     pub recording_modes: Vec<ModeEvidence>,
+    /// A chord split into one recording per note (version 4); empty for fewer than two notes.
+    pub notes: Vec<ModelRecording>,
 }
 
 struct Work<F> {
@@ -179,7 +217,7 @@ pub fn fit(
     let last = range.end.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let input = samples.get(first..last).ok_or(Error::InvalidRange)?;
     let total = 2 * length.div_ceil(CHUNK)
-        + MAX_CANDIDATES * (REFINEMENTS + MAX_FRAMES + SHORT_FRAMES + 4)
+        + MAX_CHORD_CANDIDATES * (REFINEMENTS + MAX_FRAMES + 2 * SHORT_FRAMES + 4)
         + MAX_MODEL_MODES
         + 8;
     let mut work = Work { done: 0, total, progress };
@@ -194,6 +232,7 @@ pub fn fit(
         modes: Vec::new(),
         recording: None,
         recording_modes: Vec::new(),
+        notes: Vec::new(),
     };
     let mut sums = [0.0_f64; 2];
     let mut squares = [0.0_f64; 2];
@@ -366,51 +405,37 @@ pub fn fit(
         short_windows.push(hann(size));
         size *= 2;
     }
+    let fitter = Fitter { mono: &mono, window: &window, frames, short_windows: &short_windows };
     let mut accepted: Vec<Fitted> = Vec::with_capacity(MAX_CANDIDATES);
     for (position, &hz) in frequencies.iter().enumerate() {
-        // The short window's main lobe (two bins each side) stays clear of the nearest other
-        // candidate.
-        let gap = frequencies
-            .iter()
-            .enumerate()
-            .filter(|(other, _)| *other != position)
-            .map(|(_, other)| (other - hz).abs())
-            .fold(f64::INFINITY, f64::min);
-        let needed = 4.0 * f64::from(RATE) / gap;
-        let short = short_windows.iter().find(|w| w.len() as f64 >= needed);
-        let (measurements, thetas) = measure(&mono, &window, frames, hz, &mut work)?;
-        let mut found = estimate(hz, &measurements).map(|e| (e, thetas, window.as_slice()));
-        if found.is_none()
-            && let Some(short) = short
-        {
-            let count = (mono.len() / short.len()).min(SHORT_FRAMES);
-            let (measurements, thetas) = measure(&mono, short, count, hz, &mut work)?;
-            found = estimate(hz, &measurements).map(|e| (e, thetas, short.as_slice()));
+        if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position), &mut work)? {
+            accepted.push(fitted);
         }
-        let Some((estimate, thetas, used)) = found else { continue };
-        let slow = estimate.intercept.exp() / window_bias(used, estimate.slope);
-        let mut fast_part = estimate.fast.map(|(intercept, slope)| (intercept.exp() / window_bias(used, slope), slope));
-        // A fast first stage inside the first envelope windows, seen by the short windows.
-        if fast_part.is_none()
-            && used.len() == frame_size
-            && let Some(short) = short
-        {
-            let count = (mono.len() / short.len()).min(SHORT_FRAMES);
-            let (early, _) = measure(&mono, short, count, hz, &mut work)?;
-            fast_part = early_stage(&early, slow, estimate.slope, short);
-        }
-        let fast = fast_part.map_or(0.0, |(amplitude, _)| amplitude);
-        // Phase at the strike, from the first window of the mode's span.
-        let theta = thetas.get(estimate.first_window).copied().unwrap_or(0.0);
-        let phase = wrap(theta - TAU * hz * (estimate.first_window * used.len()) as f64 / f64::from(RATE));
-        if slow.is_finite() && slow > 0.0 && fast.is_finite() {
-            let mut evidence = estimate.evidence;
-            evidence.phase = phase;
-            if let Some((_, fast_slope)) = fast_part {
-                evidence.fast_decay_seconds = -1000.0_f64.ln() / fast_slope;
-                evidence.fast_share = fast / (slow + fast);
+    }
+    // A chord: each note's own string series, as for the reference note above. Partials of
+    // different notes lie close together, so these take the free peak nearest each prediction.
+    let first_notes = chord_notes(&accepted);
+    if first_notes.len() >= 2 {
+        let start = frequencies.len();
+        for note in &first_notes {
+            for bin in note_partials(&frequencies, note.f0, high_hz, &string, MAX_CHORD_CANDIDATES) {
+                let hz = refine(
+                    detection,
+                    &detection_window,
+                    (bin as f64 - 0.75) * bin_hz,
+                    (bin as f64 + 0.75) * bin_hz,
+                    &mut work,
+                )?;
+                if (low_hz..=high_hz).contains(&hz) {
+                    frequencies.push(hz);
+                }
             }
-            accepted.push(Fitted { hz, slow, fast, evidence });
+        }
+        for position in start..frequencies.len() {
+            let Some(&hz) = frequencies.get(position) else { continue };
+            if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position), &mut work)? {
+                accepted.push(fitted);
+            }
         }
     }
     // Schema-1 profile: the 16 largest slow magnitudes of validated modes, as before.
@@ -432,9 +457,8 @@ pub fn fit(
             Some(ModalProfile::new(reference_key, reference_hz, &modes).map_err(|_| Error::InvalidSettings)?);
         report.modes = largest.iter().map(|f| f.evidence).collect();
         report.outcome = Outcome::Fitted;
-        // Revision-4 recording: the 32 most energetic modes with beats and the attack.
-        accepted.sort_by(|a, b| b.energy().total_cmp(&a.energy()).then_with(|| a.hz.total_cmp(&b.hz)));
-        accepted.truncate(MAX_MODEL_MODES);
+        // Beats and stereo placements for every accepted mode: a chord's notes draw on all of
+        // them, the recording on the 64 most energetic.
         accepted.sort_by(|a, b| a.hz.total_cmp(&b.hz));
         let beat_window = hann(BEAT_FRAME);
         for fitted in &mut accepted {
@@ -444,6 +468,30 @@ pub fn fit(
                 fitted.evidence.beat_share = share;
             }
         }
+        // Each mode on both channels through the detection window: the other channel's gain and
+        // phase offset against the chosen one.
+        let other_detection = other.as_ref().and_then(|other| other.get(..detection_size));
+        if let Some(other_detection) = other_detection {
+            let measured: Vec<_> = accepted
+                .iter()
+                .map(|f| {
+                    (
+                        projection_complex(detection, &detection_window, f.hz),
+                        projection_complex(other_detection, &detection_window, f.hz),
+                    )
+                })
+                .collect();
+            let largest = measured.iter().map(|((a, _), _)| *a).fold(0.0_f64, f64::max);
+            for (fitted, &((a, phase_a), (b, phase_b))) in accepted.iter_mut().zip(&measured) {
+                if a > largest * 1e-9 && a > 0.0 {
+                    fitted.other = ((b / a).clamp(0.0, f64::from(MAX_OTHER_GAIN)), wrap(phase_b - phase_a));
+                }
+            }
+        }
+        let stereo = other_detection.and(other.as_deref()).map(|other| (other, channel as u8));
+        let notes = chord_notes(&accepted);
+        let every_mode = accepted;
+        let accepted = most_energetic(&every_mode);
         work.step()?;
         let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
         let held_sum: f64 = accepted.iter().filter(|f| f.evidence.sustained).map(Fitted::magnitude).sum();
@@ -463,34 +511,39 @@ pub fn fit(
             None
         };
         work.step()?;
-        // Each chosen mode on both channels through the detection window: the other channel's
-        // gain and phase offset against the chosen one.
-        let stereo = other.as_ref().and_then(|other| {
-            let other_detection = other.get(..detection_size)?;
-            let measured: Vec<_> = accepted
+        let whole = Residual { against: &accepted, share: 1.0, layer };
+        work.step()?;
+        let missing = tail(&accepted, &mono, stereo.map(|(other, _)| other));
+        let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
+        let own_tail = missing.as_ref().and_then(|m| m.tail(sum, 1.0));
+        report.recording = recording(&accepted, &whole, &mono, reference_key, reference_hz, scale, stereo, own_tail);
+        report.recording_modes = accepted.iter().map(|f| f.evidence).collect();
+        // A chord: one recording per note, its attack the residual against every note's modes.
+        if notes.len() >= 2 {
+            let parts: Vec<Vec<Fitted>> = split_modes(&every_mode, &notes);
+            let kept: Vec<Vec<Fitted>> = parts.iter().map(|modes| most_energetic(modes)).collect();
+            let every: Vec<Fitted> = kept.iter().flatten().cloned().collect();
+            let shared = Residual { against: &every, share: 1.0 / notes.len() as f64, layer: None };
+            // What all the notes together miss; each note's independent noise takes an equal
+            // share of its power.
+            work.step()?;
+            let missing = tail(&every, &mono, stereo.map(|(other, _)| other));
+            let power_share = 1.0 / (notes.len() as f64).sqrt();
+            report.notes = kept
                 .iter()
-                .map(|f| {
-                    (
-                        projection_complex(detection, &detection_window, f.hz),
-                        projection_complex(other_detection, &detection_window, f.hz),
-                    )
+                .zip(&notes)
+                .filter_map(|(modes, note)| {
+                    let key = note.key;
+                    let hz = 440.0 * 2.0_f64.powf((f64::from(key) - 69.0) / 12.0);
+                    let sum: f64 = modes.iter().map(Fitted::magnitude).sum();
+                    let note_tail = missing.as_ref().and_then(|m| m.tail(sum, power_share));
+                    recording(modes, &shared, &mono, key, hz, scale, stereo, note_tail)
                 })
                 .collect();
-            let largest = measured.iter().map(|((a, _), _)| *a).fold(0.0_f64, f64::max);
-            let placements = measured
-                .iter()
-                .map(|&((a, phase_a), (b, phase_b))| {
-                    if a > largest * 1e-9 && a > 0.0 {
-                        ((b / a).clamp(0.0, f64::from(MAX_OTHER_GAIN)), wrap(phase_b - phase_a))
-                    } else {
-                        (1.0, 0.0)
-                    }
-                })
-                .collect::<Vec<_>>();
-            Some((other.as_slice(), placements, channel as u8))
-        });
-        report.recording = recording(&accepted, &mono, reference_key, reference_hz, scale, layer, stereo);
-        report.recording_modes = accepted.iter().map(|f| f.evidence).collect();
+            if report.notes.len() < 2 {
+                report.notes.clear();
+            }
+        }
     }
     work.finish()?;
     Ok(report)
@@ -525,19 +578,7 @@ fn string_partials(
     };
     // The measured first partial is itself stretched, f1 = f0 sqrt(1 + B), so against it
     // (r/k)^2 - 1 = B (k^2 - (r/k)^2) with r = f_k / f1: least squares through the origin.
-    let (mut sum_xy, mut sum_xx, mut points) = (0.0, 0.0, 0);
-    for f in found {
-        let ratio = f / f0;
-        let k = ratio.round();
-        if (2.0..=32.0).contains(&k) && (ratio / k - 1.0).abs() < 0.05 {
-            let stretch = (ratio / k).powi(2);
-            let x = k * k - stretch;
-            sum_xy += (stretch - 1.0) * x;
-            sum_xx += x * x;
-            points += 1;
-        }
-    }
-    let b = if points >= 3 && sum_xx > 0.0 { (sum_xy / sum_xx).clamp(0.0, MAX_INHARMONICITY) } else { 0.0 };
+    let b = string_inharmonicity(found, f0);
     let values = spectrum.values;
     let mut taken: Vec<f64> = found.to_vec();
     let mut bins = Vec::new();
@@ -580,12 +621,15 @@ fn string_partials(
     bins
 }
 
-/// One accepted mode: frequency, slow and fast magnitudes at the strike (prepared units).
+/// One accepted mode: frequency, slow and fast magnitudes at the strike (prepared units), and
+/// its other-channel gain and phase offset in a stereo recording.
+#[derive(Clone)]
 struct Fitted {
     hz: f64,
     slow: f64,
     fast: f64,
     evidence: ModeEvidence,
+    other: (f64, f64),
 }
 
 impl Fitted {
@@ -693,19 +737,28 @@ fn beat(mono: &[f64], window: &[f64], fitted: &Fitted) -> Option<(f64, f64)> {
 }
 
 /// The revision-4 recording: normalized modes, level in source units and the attack residual.
-/// A stereo recording's other channel, each mode's (gain, phase offset) on it and the reference
-/// channel.
-type StereoInput<'a> = (&'a [f64], Vec<(f64, f64)>, u8);
+/// What a recording's attack is the residual against: the modes subtracted from the source, the
+/// share of the residual it keeps, and the held layer whose onsets the modes swell in by (only
+/// when the modes are the recording's own).
+struct Residual<'a> {
+    against: &'a [Fitted],
+    share: f64,
+    layer: Option<Sustain>,
+}
 
+/// The recording of `accepted` at `key`, its attack the residual against `residual.against`, and
+/// with a stereo recording's other channel and reference channel its stereo part.
 fn recording(
     accepted: &[Fitted],
+    residual: &Residual<'_>,
     mono: &[f64],
     key: u8,
     reference_hz: f64,
     scale: f64,
-    layer: Option<Sustain>,
-    stereo: Option<StereoInput<'_>>,
+    stereo: Option<(&[f64], u8)>,
+    tail: Option<Tail>,
 ) -> Option<ModelRecording> {
+    let layer = residual.layer;
     let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
     if !(sum.is_finite() && sum > 0.0) {
         return None;
@@ -733,10 +786,9 @@ fn recording(
     for (n, x) in mono.iter().take(length).enumerate() {
         let t = n as f64 / f64::from(RATE);
         let (mut model, mut model_other) = (0.0, 0.0);
-        for (index, fitted) in accepted.iter().enumerate() {
+        for (index, fitted) in residual.against.iter().enumerate() {
             let envelope = onset(index, t);
-            let (gain, offset) =
-                stereo.as_ref().and_then(|(_, placements, _)| placements.get(index).copied()).unwrap_or((1.0, 0.0));
+            let (gain, offset) = fitted.other;
             for (hz, t60, amplitude) in fitted.parts() {
                 if amplitude > 0.0 && t60 > 0.0 {
                     let level = envelope * amplitude * (-ln1000 * t / t60).exp();
@@ -751,15 +803,15 @@ fn recording(
         } else {
             0.5 * (1.0 + (std::f64::consts::PI * (n - half) as f64 / (length - half).max(1) as f64).cos())
         };
-        let residual = (x - model) * fade;
-        residual_energy += residual * residual;
+        let left = (x - model) * fade;
+        residual_energy += left * left;
         signal_energy += x * x;
-        attack.push((residual / sum) as f32);
-        if let Some(y) = stereo.as_ref().and_then(|(other, _, _)| other.get(n)) {
-            let residual = (y - model_other) * fade;
-            residual_energy += residual * residual;
+        attack.push((left * residual.share / sum) as f32);
+        if let Some(y) = stereo.as_ref().and_then(|(other, _)| other.get(n)) {
+            let right = (y - model_other) * fade;
+            residual_energy += right * right;
             signal_energy += y * y;
-            attack_other.push((residual / sum) as f32);
+            attack_other.push((right * residual.share / sum) as f32);
         }
     }
     // Both attack channels are kept or dropped together.
@@ -799,14 +851,543 @@ fn recording(
         attack_rate: if attack.is_empty() { 0 } else { RATE },
         attack,
         sustain: sustain.filter(|s| !s.is_empty() && s.validate(accepted.len()).is_ok()),
-        stereo: stereo.map(|(_, placements, reference)| Stereo {
+        stereo: stereo.map(|(_, reference)| Stereo {
             reference,
-            gains: placements.iter().map(|(gain, _)| *gain as f32).collect(),
-            offsets: placements.iter().map(|(_, offset)| *offset as f32).collect(),
+            gains: accepted.iter().map(|f| f.other.0 as f32).collect(),
+            offsets: accepted.iter().map(|f| f.other.1 as f32).collect(),
             attack: attack_other,
         }),
+        tail: tail.filter(|t| !t.is_empty() && t.validate().is_ok()),
     };
     recording.validate().ok().map(|()| recording)
+}
+
+/// What the modes miss after the attack, per noise band and channel: each band's summed
+/// missing power at the strike (fitted channel, other channel) and its T60.
+struct Missing {
+    power: [(f64, f64); NOISE_BANDS],
+    decay: [f64; NOISE_BANDS],
+    /// What turns a band's summed frame power into an amplitude density per bin.
+    density: [f64; NOISE_BANDS],
+}
+
+impl Missing {
+    /// The tail of a recording whose magnitudes sum to `sum`, its amplitudes times `share`.
+    fn tail(&self, sum: f64, share: f64) -> Option<Tail> {
+        if !(sum.is_finite() && sum > 0.0) {
+            return None;
+        }
+        let mut tail = Tail::NONE;
+        for band in 0..NOISE_BANDS {
+            let (Some(&(own, other)), Some(&decay), Some(&density)) =
+                (self.power.get(band), self.decay.get(band), self.density.get(band))
+            else {
+                continue;
+            };
+            if decay <= 0.0 {
+                continue;
+            }
+            let level = |power: f64| ((power * density).sqrt() * share / sum).min(1.0) as f32;
+            if let (Some(a), Some(b), Some(d)) =
+                (tail.level.get_mut(band), tail.other.get_mut(band), tail.decay.get_mut(band))
+            {
+                *a = level(own);
+                *b = level(other);
+                *d = decay as f32;
+            }
+        }
+        (!tail.is_empty()).then_some(tail)
+    }
+}
+
+/// The modes rendered over the whole interval (fitted channel, and with `other` the other channel
+/// by their stereo placements), against the recording in Hann frames: per noise band, the power
+/// the recording has beyond them, its level at the strike and its decay (`Tail` in the spec).
+fn tail(modes: &[Fitted], mono: &[f64], other: Option<&[f64]>) -> Option<Missing> {
+    let length = mono.len();
+    let frames = if length >= TAIL_FRAME { ((length - TAIL_FRAME) / TAIL_HOP + 1).min(TAIL_MAX_FRAMES) } else { 0 };
+    if frames < 4 {
+        return None;
+    }
+    let span = (frames - 1) * TAIL_HOP + TAIL_FRAME;
+    // The modes by recursion: each part a rotating, decaying phasor.
+    let (mut model, mut model_other) = (vec![0.0; span], vec![0.0; if other.is_some() { span } else { 0 }]);
+    let ln1000 = 1000.0_f64.ln();
+    for fitted in modes {
+        let (gain, offset) = fitted.other;
+        for (hz, t60, amplitude) in fitted.parts() {
+            if !(amplitude > 0.0 && t60 > 0.0 && hz < f64::from(RATE) * 0.5) {
+                continue;
+            }
+            let radius = (-ln1000 / (t60 * f64::from(RATE))).exp();
+            let (step_sin, step_cos) = (TAU * hz / f64::from(RATE)).sin_cos();
+            let (rotate_re, rotate_im) = (radius * step_cos, radius * step_sin);
+            let phase = fitted.evidence.phase;
+            let (mut re, mut im) = (amplitude * phase.cos(), amplitude * phase.sin());
+            let (offset_sin, offset_cos) = offset.sin_cos();
+            for (n, slot) in model.iter_mut().enumerate() {
+                *slot += im;
+                if let Some(o) = model_other.get_mut(n) {
+                    *o += gain * (im * offset_cos + re * offset_sin);
+                }
+                (re, im) = (re * rotate_re - im * rotate_im, re * rotate_im + im * rotate_re);
+                if re.abs() + im.abs() < 1e-12 {
+                    break;
+                }
+            }
+        }
+    }
+    let window = hann(TAIL_FRAME);
+    let fft = FftPlanner::<f64>::new().plan_fft_forward(TAIL_FRAME);
+    let mut scratch = vec![Complex64::default(); fft.get_inplace_scratch_len()];
+    let spectrum = |signal: &[f64], start: usize, scratch: &mut Vec<Complex64>| -> Vec<f64> {
+        let mut bins: Vec<Complex64> = (0..TAIL_FRAME)
+            .map(|i| {
+                Complex64::new(
+                    signal.get(start + i).copied().unwrap_or(0.0) * window.get(i).copied().unwrap_or(0.0),
+                    0.0,
+                )
+            })
+            .collect();
+        fft.process_with_scratch(&mut bins, scratch);
+        bins.iter().take(TAIL_FRAME / 2).map(|b| b.norm_sqr()).collect()
+    };
+    let bin_hz = f64::from(RATE) / TAIL_FRAME as f64;
+    let edge = 2.0_f64.powf(1.0 / 3.0);
+    let ranges: Vec<(usize, usize)> = (0..NOISE_BANDS)
+        .map(|band| {
+            let center = noise_center_hz(band);
+            (
+                (center / edge / bin_hz).ceil() as usize,
+                ((center * edge / bin_hz).floor() as usize).min(TAIL_FRAME / 2 - 1),
+            )
+        })
+        .collect();
+    // Bins near a mode or its partner are left out: a mode's small level error is not noise.
+    let mut masked = vec![false; TAIL_FRAME / 2];
+    for fitted in modes {
+        for (hz, _, amplitude) in fitted.parts() {
+            if amplitude <= 0.0 {
+                continue;
+            }
+            let center = hz / bin_hz;
+            let low = (center - TAIL_MASK_BINS).ceil().max(0.0) as usize;
+            let high = ((center + TAIL_MASK_BINS).floor().max(0.0) as usize).min(masked.len().saturating_sub(1));
+            for flag in masked.iter_mut().take(high + 1).skip(low) {
+                *flag = true;
+            }
+        }
+    }
+    // Per frame and band: the missing power of each channel, over the band's open bins scaled to
+    // all its bins.
+    let mut missing = vec![[(0.0_f64, 0.0_f64); NOISE_BANDS]; frames];
+    // What the modes play in each band of the fitted channel, every bin.
+    let mut played_power = vec![[0.0_f64; NOISE_BANDS]; frames];
+    let channels: [(&[f64], &[f64]); 2] = [(mono, &model), (other.unwrap_or(&[]), &model_other)];
+    for (frame, (row, played_row)) in missing.iter_mut().zip(played_power.iter_mut()).enumerate() {
+        let start = frame * TAIL_HOP;
+        for (channel, (signal, rendered)) in channels.iter().enumerate() {
+            if signal.is_empty() {
+                continue;
+            }
+            let (heard, played) = (spectrum(signal, start, &mut scratch), spectrum(rendered, start, &mut scratch));
+            if channel == 0 {
+                for (cell, &(low, high)) in played_row.iter_mut().zip(&ranges) {
+                    *cell = (low..=high).filter_map(|k| played.get(k)).sum();
+                }
+            }
+            for (cell, &(low, high)) in row.iter_mut().zip(&ranges) {
+                let open: Vec<usize> = (low..=high).filter(|k| !masked.get(*k).copied().unwrap_or(true)).collect();
+                if open.len() < TAIL_MIN_OPEN_BINS {
+                    continue;
+                }
+                let sum: f64 = open
+                    .iter()
+                    .map(|&k| (heard.get(k).copied().unwrap_or(0.0) - played.get(k).copied().unwrap_or(0.0)).max(0.0))
+                    .sum();
+                let power = sum * (high + 1).saturating_sub(low) as f64 / open.len() as f64;
+                if channel == 0 { cell.0 = power } else { cell.1 = power }
+            }
+        }
+    }
+    if other.is_none() {
+        for row in &mut missing {
+            for cell in row.iter_mut() {
+                cell.1 = cell.0;
+            }
+        }
+    }
+    let window_power = window.iter().map(|w| w * w).sum::<f64>();
+    let mut out = Missing { power: [(0.0, 0.0); NOISE_BANDS], decay: [0.0; NOISE_BANDS], density: [0.0; NOISE_BANDS] };
+    let first =
+        (0..frames).find(|f| (f * TAIL_HOP + TAIL_FRAME / 2) as f64 / f64::from(RATE) >= TAIL_START).unwrap_or(frames);
+    for band in 0..NOISE_BANDS {
+        let series: Vec<(f64, f64, f64)> = missing
+            .iter()
+            .enumerate()
+            .skip(first)
+            .filter_map(|(f, row)| {
+                row.get(band).map(|c| ((f * TAIL_HOP + TAIL_FRAME / 2) as f64 / f64::from(RATE), c.0, c.1))
+            })
+            .collect();
+        let largest = series.iter().map(|(_, a, b)| a + b).fold(0.0_f64, f64::max);
+        if largest <= 0.0 {
+            continue;
+        }
+        // The recording's own floor in this band (its last frames), which a decay must not be
+        // fitted into: frames count while they stand 10 dB above it.
+        let mut last: Vec<f64> = series.iter().rev().take(TAIL_FLOOR_FRAMES).map(|(_, a, b)| a + b).collect();
+        let floor = median(&mut last);
+        let points: Vec<(f64, f64)> = series
+            .iter()
+            .take_while(|(_, a, b)| a + b >= largest * TAIL_RANGE && a + b >= floor * TAIL_ABOVE_FLOOR)
+            .filter(|(_, a, b)| a + b > 0.0)
+            .map(|(t, a, b)| (*t, (a + b).ln()))
+            .collect();
+        if points.len() < TAIL_MIN_FRAMES {
+            continue;
+        }
+        // Far under what the modes play in the band, it is their own small error, not a tail.
+        let fitted_frames = first..first + points.len();
+        let heard: f64 = series.iter().take(points.len()).map(|(_, a, _)| a).sum();
+        let modal: f64 =
+            played_power.get(fitted_frames).map_or(0.0, |rows| rows.iter().filter_map(|r| r.get(band)).sum());
+        if heard < TAIL_MIN_SHARE * modal {
+            continue;
+        }
+        let Some((_, slope)) = line(&points) else { continue };
+        // Power falls twice as fast as amplitude.
+        let decay = -2.0 * 1000.0_f64.ln() / slope;
+        let span_seconds = points.last().map_or(0.0, |p| p.0) - points.first().map_or(0.0, |p| p.0);
+        let drop_db = -slope * span_seconds * 10.0 / std::f64::consts::LN_10;
+        if !(slope < 0.0
+            && (f64::from(MIN_TAIL_DECAY)..=f64::from(MAX_TAIL_DECAY)).contains(&decay)
+            && drop_db >= TAIL_MIN_DROP_DB)
+        {
+            continue;
+        }
+        // Each channel's level at the strike along the common slope.
+        let at_strike = |pick: fn(&(f64, f64, f64)) -> f64| {
+            let logs: Vec<f64> = series
+                .iter()
+                .take(points.len())
+                .filter(|s| pick(s) > 0.0)
+                .map(|s| pick(s).ln() - slope * s.0)
+                .collect();
+            if logs.is_empty() { 0.0 } else { (logs.iter().sum::<f64>() / logs.len() as f64).exp() }
+        };
+        let own = at_strike(|s| s.1);
+        let other_power = at_strike(|s| s.2);
+        let bins = ranges.get(band).map_or(1, |(low, high)| high.saturating_sub(*low) + 1) as f64;
+        if let (Some(p), Some(d), Some(n)) =
+            (out.power.get_mut(band), out.decay.get_mut(band), out.density.get_mut(band))
+        {
+            *p = (own, other_power);
+            *d = decay;
+            // Mean power per bin, as a one-sided density, as the held layer measures its noise.
+            *n = 2.0 / (bins * f64::from(RATE) * window_power);
+        }
+    }
+    out.decay.iter().any(|d| *d > 0.0).then_some(out)
+}
+
+/// The middle value (the mean of the two middle ones for an even count); 0 when empty.
+fn median(values: &mut [f64]) -> f64 {
+    values.sort_by(f64::total_cmp);
+    let n = values.len();
+    match n {
+        0 => 0.0,
+        _ if n % 2 == 1 => values.get(n / 2).copied().unwrap_or(0.0),
+        _ => (values.get(n / 2 - 1).copied().unwrap_or(0.0) + values.get(n / 2).copied().unwrap_or(0.0)) / 2.0,
+    }
+}
+
+/// The 64 modes with most energy (`magnitude^2 * T60`), in frequency order.
+fn most_energetic(modes: &[Fitted]) -> Vec<Fitted> {
+    let mut chosen = modes.to_vec();
+    chosen.sort_by(|a, b| b.energy().total_cmp(&a.energy()).then_with(|| a.hz.total_cmp(&b.hz)));
+    chosen.truncate(MAX_MODEL_MODES);
+    chosen.sort_by(|a, b| a.hz.total_cmp(&b.hz));
+    chosen
+}
+
+/// One note of a chord: its fundamental, the inharmonicity its partials follow and its key.
+struct Note {
+    f0: f64,
+    inharmonicity: f64,
+    key: u8,
+}
+
+/// The key nearest `hz`.
+fn nearest_key(hz: f64) -> u8 {
+    (69.0 + 12.0 * (hz / 440.0).log2()).round().clamp(0.0, 127.0) as u8
+}
+
+/// Which partial of a note at `f0` with inharmonicity `b` lies within 1 % of `hz`, if any (the
+/// nearest of the two around it).
+fn partial_number(f0: f64, b: f64, hz: f64) -> Option<usize> {
+    partial_match(f0, b, hz).map(|(k, _)| k)
+}
+
+/// [`partial_number`] with the relative distance to that partial.
+fn partial_match(f0: f64, b: f64, hz: f64) -> Option<(usize, f64)> {
+    if !(f0 > 0.0 && hz > 0.0) {
+        return None;
+    }
+    let guess = (hz / f0).round().max(1.0) as usize;
+    (guess.saturating_sub(1).max(1)..=guess + 1)
+        .filter(|k| *k <= NOTE_PARTIALS)
+        .map(|k| {
+            let kf = k as f64;
+            (k, (hz / (kf * f0 * ((1.0 + b * kf * kf) / (1.0 + b)).sqrt()) - 1.0).abs())
+        })
+        .filter(|(_, error)| *error <= NOTE_TOLERANCE)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+}
+
+/// The notes of a chord among the accepted modes (`Splitting a chord into notes` in the spec);
+/// fewer than two when it is one note.
+fn chord_notes(modes: &[Fitted]) -> Vec<Note> {
+    // What each mode has left once the notes found so far took their share.
+    let mut remaining: Vec<f64> = modes.iter().map(Fitted::magnitude).collect();
+    let mut notes: Vec<Note> = Vec::new();
+    let mut first_score = None;
+    while notes.len() < MAX_NOTES {
+        let mut best: Option<(f64, f64, f64, f64)> = None;
+        for f0 in modes.iter().map(|m| m.hz).filter(|hz| (NOTE_LOW_HZ..=NOTE_HIGH_HZ).contains(hz)) {
+            if notes.iter().any(|note| note.key == nearest_key(f0)) {
+                continue;
+            }
+            // A partial counts at most twice the candidate's own fundamental: a weak note an
+            // octave or two below cannot claim the chord's strong partials as its own.
+            let root = modes.iter().filter(|m| (m.hz / f0 - 1.0).abs() <= NOTE_TOLERANCE).map(Fitted::magnitude);
+            let cap = NOTE_SMOOTHNESS * root.fold(0.0_f64, f64::max);
+            for b in NOTE_INHARMONICITY {
+                let (mut score, mut partials, mut fundamental) = (0.0, 0, false);
+                for (mode, left) in modes.iter().zip(&remaining) {
+                    if let Some(k) = partial_number(f0, b, mode.hz) {
+                        partials += 1;
+                        fundamental |= k == 1;
+                        score += left.min(cap) / k as f64;
+                    }
+                }
+                if fundamental && partials >= NOTE_MIN_PARTIALS && best.is_none_or(|(s, ..)| score > s) {
+                    best = Some((score, f0, b, cap));
+                }
+            }
+        }
+        let Some((score, f0, inharmonicity, cap)) = best else { break };
+        let first = *first_score.get_or_insert(score);
+        if !(score > 0.0 && score >= NOTE_MIN_SHARE * first) {
+            break;
+        }
+        // The note takes what it can explain of each partial, at most its cap; the rest stays
+        // for a note that shares the partial (an octave above, say).
+        for (mode, left) in modes.iter().zip(remaining.iter_mut()) {
+            if partial_number(f0, inharmonicity, mode.hz).is_some() {
+                *left -= left.min(cap);
+            }
+        }
+        notes.push(Note { f0, inharmonicity, key: nearest_key(f0) });
+    }
+    notes.sort_by(|a, b| a.f0.total_cmp(&b.f0));
+    notes
+}
+
+/// Each mode to the notes that predict it within the tolerance, shared equally when there are
+/// several; a mode none predicts to the note whose partial series lies nearest it (the relative
+/// distance to its nearest partial plus a small amount per partial number).
+fn split_modes(modes: &[Fitted], notes: &[Note]) -> Vec<Vec<Fitted>> {
+    let mut parts = vec![Vec::new(); notes.len()];
+    for mode in modes {
+        // A partial several notes predict (an octave's) is shared out equally with its phase:
+        // played together they give it back whole.
+        let sharing: Vec<usize> = notes
+            .iter()
+            .enumerate()
+            .filter(|(_, note)| partial_number(note.f0, note.inharmonicity, mode.hz).is_some())
+            .map(|(index, _)| index)
+            .collect();
+        if sharing.len() >= 2 {
+            let share = 1.0 / sharing.len() as f64;
+            for index in sharing {
+                if let Some(part) = parts.get_mut(index) {
+                    part.push(Fitted { slow: mode.slow * share, fast: mode.fast * share, ..mode.clone() });
+                }
+            }
+            continue;
+        }
+        let index = notes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, note)| series_distance(note, mode.hz).map(|d| (index, d)))
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map_or(0, |(index, _)| index);
+        if let Some(part) = parts.get_mut(index) {
+            part.push(mode.clone());
+        }
+    }
+    parts
+}
+
+/// How far `hz` lies from `note`'s partial series: the relative distance to its nearest partial
+/// below the 33rd, plus `NOTE_ORDER_COST` per partial number; none above it.
+fn series_distance(note: &Note, hz: f64) -> Option<f64> {
+    let (f0, b) = (note.f0, note.inharmonicity);
+    (1..=NOTE_PARTIALS)
+        .map(|k| {
+            let kf = k as f64;
+            (hz / (kf * f0 * ((1.0 + b * kf * kf) / (1.0 + b)).sqrt()) - 1.0).abs() + NOTE_ORDER_COST * kf
+        })
+        .min_by(f64::total_cmp)
+        .filter(|_| hz >= f0 * (1.0 - NOTE_TOLERANCE))
+        .or_else(|| (hz < f0).then_some((f0 / hz - 1.0) + 1.0))
+}
+
+/// How far the candidate at `position` lies from its nearest other candidate, in Hz.
+fn gap(frequencies: &[f64], position: usize) -> f64 {
+    let hz = frequencies.get(position).copied().unwrap_or(0.0);
+    frequencies
+        .iter()
+        .enumerate()
+        .filter(|(other, _)| *other != position)
+        .map(|(_, other)| (other - hz).abs())
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// What fitting one candidate needs: the prepared channel, the envelope window and how many
+/// of them, and the short windows smallest first.
+struct Fitter<'a> {
+    mono: &'a [f64],
+    window: &'a [f64],
+    frames: usize,
+    short_windows: &'a [Vec<f64>],
+}
+
+impl Fitter<'_> {
+    /// The mode at `hz`, its nearest other candidate `gap` Hz away: envelope windows first, short
+    /// windows when they cannot follow it, and a fast first stage the short windows show.
+    fn fit<F: FnMut(usize, usize) -> bool>(
+        &self,
+        hz: f64,
+        gap: f64,
+        work: &mut Work<F>,
+    ) -> Result<Option<Fitted>, Error> {
+        let mono = self.mono;
+        // The short window's main lobe (two bins each side) stays clear of the nearest other
+        // candidate.
+        let needed = 4.0 * f64::from(RATE) / gap;
+        let short = self.short_windows.iter().find(|w| w.len() as f64 >= needed);
+        let (measurements, thetas) = measure(mono, self.window, self.frames, hz, work)?;
+        let mut found = estimate(hz, &measurements).map(|e| (e, thetas, self.window));
+        if found.is_none()
+            && let Some(short) = short
+        {
+            let count = (mono.len() / short.len()).min(SHORT_FRAMES);
+            let (measurements, thetas) = measure(mono, short, count, hz, work)?;
+            found = estimate(hz, &measurements).map(|e| (e, thetas, short.as_slice()));
+        }
+        let Some((estimate, thetas, used)) = found else { return Ok(None) };
+        let slow = estimate.intercept.exp() / window_bias(used, estimate.slope);
+        let mut fast_part = estimate.fast.map(|(intercept, slope)| (intercept.exp() / window_bias(used, slope), slope));
+        // A fast first stage inside the first envelope windows, seen by the short windows.
+        if fast_part.is_none()
+            && used.len() == self.window.len()
+            && let Some(short) = short
+        {
+            let count = (mono.len() / short.len()).min(SHORT_FRAMES);
+            let (early, _) = measure(mono, short, count, hz, work)?;
+            fast_part = early_stage(&early, slow, estimate.slope, short);
+        }
+        let fast = fast_part.map_or(0.0, |(amplitude, _)| amplitude);
+        // Phase at the strike, from the first window of the mode's span.
+        let theta = thetas.get(estimate.first_window).copied().unwrap_or(0.0);
+        let phase = wrap(theta - TAU * hz * (estimate.first_window * used.len()) as f64 / f64::from(RATE));
+        if !(slow.is_finite() && slow > 0.0 && fast.is_finite()) {
+            return Ok(None);
+        }
+        let mut evidence = estimate.evidence;
+        evidence.phase = phase;
+        if let Some((_, fast_slope)) = fast_part {
+            evidence.fast_decay_seconds = -1000.0_f64.ln() / fast_slope;
+            evidence.fast_share = fast / (slow + fast);
+        }
+        Ok(Some(Fitted { hz, slow, fast, evidence, other: (1.0, 0.0) }))
+    }
+}
+
+/// Detection bins of a chord note's partials that are not candidates yet: its series as in
+/// [`string_partials`], but each partial takes the local peak nearest its prediction (within
+/// 1 %) that is not within the candidate separation of a candidate, so a partial lying close to
+/// another note's is found too; until `total` candidates.
+fn note_partials(found: &[f64], f0_hz: f64, high_hz: f64, spectrum: &Spectrum<'_>, total: usize) -> Vec<usize> {
+    let Some(f0) = found.iter().copied().min_by(|a, b| (a / f0_hz).ln().abs().total_cmp(&(b / f0_hz).ln().abs()))
+    else {
+        return Vec::new();
+    };
+    let b = string_inharmonicity(found, f0);
+    let values = spectrum.values;
+    let mut taken: Vec<f64> = found.to_vec();
+    let mut bins = Vec::new();
+    for k in 2..=MAX_PARTIALS {
+        if taken.len() >= total {
+            break;
+        }
+        let k = k as f64;
+        let hz = k * f0 * ((1.0 + b * k * k) / (1.0 + b)).sqrt();
+        if !hz.is_finite() || hz > high_hz {
+            break;
+        }
+        let low = (hz * (1.0 - PARTIAL_SEARCH) / spectrum.bin_hz).floor().max(10.0) as usize;
+        let high =
+            ((hz * (1.0 + PARTIAL_SEARCH) / spectrum.bin_hz).ceil() as usize).min(values.len().saturating_sub(10));
+        let free =
+            |bin: usize| taken.iter().all(|f| (f - bin as f64 * spectrum.bin_hz).abs() >= spectrum.separation_hz);
+        let peak = (low..=high)
+            .filter(|&bin| {
+                let (Some(&value), Some(&before), Some(&after)) =
+                    (values.get(bin), values.get(bin - 1), values.get(bin + 1))
+                else {
+                    return false;
+                };
+                value > before && value >= after && value >= spectrum.highest * PARTIAL_FLOOR && free(bin)
+            })
+            .min_by(|a, b| {
+                (*a as f64 * spectrum.bin_hz - hz).abs().total_cmp(&(*b as f64 * spectrum.bin_hz - hz).abs())
+            });
+        let Some(bin) = peak else { continue };
+        let value = values.get(bin).copied().unwrap_or(0.0);
+        let mut nearby = [0.0_f64; 12];
+        for (slot, delta) in nearby.iter_mut().zip([-8_isize, -7, -6, -5, -4, -3, 3, 4, 5, 6, 7, 8]) {
+            *slot = bin.checked_add_signed(delta).and_then(|b| values.get(b)).copied().unwrap_or(value);
+        }
+        nearby.sort_by(f64::total_cmp);
+        if value < nearby[6] * PARTIAL_PROMINENCE {
+            continue;
+        }
+        taken.push(bin as f64 * spectrum.bin_hz);
+        bins.push(bin);
+    }
+    bins
+}
+
+/// The stiff-string inharmonicity `B` of the partials of `f1` among `found`: least squares
+/// through the origin of `(r/k)^2 - 1 = B (k^2 - (r/k)^2)` over the frequencies within 5 % of a
+/// whole multiple 2..32, from at least three, limited to 0..0.01; otherwise 0.
+fn string_inharmonicity(found: &[f64], f1: f64) -> f64 {
+    let (mut sum_xy, mut sum_xx, mut points) = (0.0, 0.0, 0);
+    for f in found {
+        let ratio = f / f1;
+        let k = ratio.round();
+        if (2.0..=32.0).contains(&k) && (ratio / k - 1.0).abs() < 0.05 {
+            let stretch = (ratio / k).powi(2);
+            let x = k * k - stretch;
+            sum_xy += (stretch - 1.0) * x;
+            sum_xx += x * x;
+            points += 1;
+        }
+    }
+    if points >= 3 && sum_xx > 0.0 { (sum_xy / sum_xx).clamp(0.0, MAX_INHARMONICITY) } else { 0.0 }
 }
 
 /// What preparing one channel of the analyzed input needs.

@@ -169,6 +169,15 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                             if accept.clicked() {
                                 actions.push(Action::new("instrument.acceptFit",json!({"track":track_value,"device":device_value,"job":view.job})));
                             }
+                            // A chord: each note becomes its own recording on its own key.
+                            if report.notes.len() >= 2 {
+                                let names: Vec<String> = report.notes.iter().map(|n| key_name(n.key)).collect();
+                                let notes = flow_button(ui, &format!("Accept as notes ({})", names.join(" ")), true);
+                                remember_keyboard_owner(&notes);
+                                if notes.clicked() {
+                                    actions.push(Action::new("instrument.acceptFit",json!({"track":track_value,"device":device_value,"job":view.job,"notes":true})));
+                                }
+                            }
                             // A recording joins the model already accepted on this Instrument.
                             if let Some(count) = view.model_recordings.filter(|n| *n < MAX_RECORDINGS && report.recording.is_some()) {
                                 let add = flow_button(ui, &format!("Add to model ({count})"), true);
