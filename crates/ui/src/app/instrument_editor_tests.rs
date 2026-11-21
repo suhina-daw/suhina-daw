@@ -157,6 +157,30 @@ fn the_expanded_panel_is_a_window_that_its_top_row_moves() {
     assert!(h.query_by_label("Close expanded panel").is_some(), "moving it does not close it");
 }
 
+/// The window's bottom right corner resizes it, and the canvas scales as a whole with it,
+/// keeping its shape.
+#[test]
+fn the_expanded_panels_corner_resizes_it_and_the_canvas_scales_with_it() {
+    let mut h = editor();
+    h.get_by_label("Open editor").click();
+    h.run_steps(4);
+    let before = h.get_by_label("Output gain").rect();
+    let corner = h.get_by_label("Resize expanded panel").rect().center();
+    h.hover_at(corner);
+    h.step();
+    h.drag_at(corner);
+    h.step();
+    for i in 1..=8 {
+        h.hover_at(corner - Vec2::splat(i as f32 * 20.0));
+        h.step();
+    }
+    h.drop_at(corner - Vec2::splat(160.0));
+    h.run_steps(4);
+    let smaller = h.get_by_label("Output gain").rect();
+    assert!(smaller.width() < before.width() * 0.95, "the canvas shrank with the window: {before:?} to {smaller:?}");
+    assert!((smaller.width() / smaller.height() - before.width() / before.height()).abs() < 0.05, "it keeps its shape");
+}
+
 #[test]
 fn instrument_editor_pages_do_not_leak_to_another_project_and_narrow_windows_scroll() {
     let mut h = editor();

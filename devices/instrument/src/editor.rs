@@ -15,7 +15,7 @@ const PROFILE_OR_FITTED: &[u16] = &[2, 4];
 /// Fainter espresso text.
 const MUTED: [u8; 4] = super::MUTED;
 /// The editor's last page: 0 Play, 1 Model, 2 Sample, 3 Advanced, 4 Analysis.
-pub(super) const LAST_PAGE: u16 = 4;
+pub(super) const LAST_PAGE: u16 = 3;
 
 pub(super) fn canvas() -> DeviceUi {
     let mut ui = Canvas::new([880.0, 560.0]);
@@ -144,7 +144,7 @@ pub(super) fn canvas() -> DeviceUi {
     // Struck and the bar and tine bodies (revision 3, and 1 read as 3), and their Advanced page.
     super::editor_bodies::body_page(&mut ui);
 
-    // The waveform, its region and loop, one row of dials, Playback, and the Analysis page.
+    // The waveform, its region and loop, the sample analysis, one row of dials and Playback.
     super::editor_pages::sample_page(&mut ui);
     ui.finish()
 }

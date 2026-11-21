@@ -136,7 +136,7 @@ fn the_open_editor_button_keeps_the_page_the_editor_showed_last() {
     use suhina_device_sdk::ui::{PAGE_ID, UiGesture};
     let layout = panel::layout();
     let compact = layout.ui.as_ref().unwrap();
-    for page in 0..=4_u16 {
+    for page in 0..=3_u16 {
         let open: Vec<_> = compact
             .controls
             .iter()
@@ -152,7 +152,7 @@ fn the_open_editor_button_keeps_the_page_the_editor_showed_last() {
         if let UiGesture::Set(page) = control.gesture
             && control.x.as_ref().is_some_and(|b| b.parameter == PAGE_ID)
         {
-            assert!(page <= 4, "{} opens page {page}, which the compact panel cannot reopen", control.name);
+            assert!(page <= 3, "{} opens page {page}, which the compact panel cannot reopen", control.name);
         }
     }
 }
@@ -162,7 +162,7 @@ fn the_open_editor_button_keeps_the_page_the_editor_showed_last() {
 /// loop, Playback and envelope, and the way to the sample analysis.
 #[test]
 fn every_parameter_is_reachable_and_play_and_sample_carry_theirs() {
-    use suhina_device_sdk::ui::{PAGE_ID, UiGesture, Widget};
+    use suhina_device_sdk::ui::{UiGesture, Widget};
     let layout = panel::layout();
     let editor = layout.expanded.as_ref().unwrap();
     for info in PARAMS.iter().filter(|p| p.id != "model_revision") {
@@ -199,16 +199,15 @@ fn every_parameter_is_reachable_and_play_and_sample_carry_theirs() {
     }
     let playback: Vec<_> = editor.controls.iter().filter(|c| bound(c, "playback")).map(|c| c.gesture).collect();
     assert_eq!(playback, [UiGesture::Set(0), UiGesture::Set(1), UiGesture::Set(2)], "Gate, One shot, Loop");
-    // ANALYSIS › on the Sample page opens the Analysis page, and it goes back.
-    let analysis = editor.controls.iter().find(|c| c.name == "Analysis page").unwrap();
-    assert!(shown(analysis, &[("#page", 2.0)]) && !shown(analysis, &[("#page", 0.0)]));
-    assert_eq!(analysis.gesture, UiGesture::Set(4));
-    assert_eq!(analysis.x.as_ref().map(|b| b.parameter.as_str()), Some(PAGE_ID));
+    // The sample analysis is on the Sample page itself, under the waveform, with any Source.
     let widget = editor.controls.iter().find(|c| matches!(c.widget, Some(Widget::SampleAnalysis))).unwrap();
-    assert!(shown(widget, &[("#page", 4.0)]) && !shown(widget, &[("#page", 2.0)]));
-    let back = editor.controls.iter().find(|c| c.name == "Sample page back").unwrap();
-    assert!(shown(back, &[("#page", 4.0)]));
-    assert_eq!(back.gesture, UiGesture::Set(2));
+    for source in [0.0, 1.0, 2.0] {
+        assert!(shown(widget, &[("#page", 2.0), ("source", source)]), "source {source}");
+    }
+    assert!(!shown(widget, &[("#page", 0.0)]) && !shown(widget, &[("#page", 3.0)]));
+    let wave = editor.controls.iter().find(|c| matches!(c.widget, Some(Widget::SampleWaveform))).unwrap();
+    assert!(wave.bounds[1] + wave.bounds[3] <= widget.bounds[1], "the analysis is under the waveform");
+    assert!(editor.controls.iter().all(|c| c.name != "Analysis page"), "no page of its own");
     // The waveform and its drop target belong to the Sample page alone in the editor.
     let waves: Vec<_> = editor.controls.iter().filter(|c| matches!(c.widget, Some(Widget::SampleWaveform))).collect();
     assert_eq!(waves.len(), 1);

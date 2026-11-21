@@ -1,5 +1,5 @@
 ---
-description: Instrument's compact stock panel and expanded Play, Model, Sample and Analysis editor, sharing native controls, UI-only page navigation and dimming of controls the Source leaves without effect
+description: Instrument's compact stock panel and expanded Play, Model, Sample and Advanced editor, sharing native controls, UI-only page navigation and dimming of controls the Source leaves without effect
 read_when: changing the Instrument panel, expanded instrument editor, or local SDK page navigation
 type: spec
 status: current
@@ -108,19 +108,16 @@ identifies Instrument and its experimental model, with Source always available. 
     markers are dragged on it: the source's Start and End, or the loop's with Loop playback.
     With no sample it invites a drop. Above it Start and End, under it Loop start and Loop end,
     as values that are dragged too, so all four stay reachable with any Playback.
-  - The name line, **Sample**, and a line on dropping a file with the sample's root as a note
-    name (60 is C3), and **Analysis ›** at the right, which opens the Analysis page; then a
-    hairline.
+  - Under it the host's local sample analysis (`SampleAnalysis`), on the page itself: the root
+    it proposes, with its correction and explicit acceptance as one undoable change, and fitting
+    a model from the sample. Nothing changes until a proposal is accepted. Its text takes the
+    page's espresso ink, so it reads on the ivory as the page's own text does. Then a hairline.
   - One even row of dials: Root (as a note name), Attack, Decay, Sustain and Release.
   - At the bottom right, Playback as three choices, Gate, One shot and Loop, the chosen one
     underlined in brass, as the mallet model sits on the Model page.
 
   A source imported here uses `device.loadSample`, including the same Source automation
   override and one-step undo as the compact panel.
-- **Analysis** (page 4, from **Analysis ›**): the host's local sample analysis
-  (`SampleAnalysis`): the root it proposes, with its correction and explicit acceptance as one
-  undoable change, and fitting a model from the sample. **‹ Sample** goes back. Nothing changes
-  until a proposal is accepted.
 
 ## Dimmed controls
 
@@ -142,7 +139,7 @@ same project values rather than keeping local copies of sound controls.
 ## Navigation and host contract
 
 The built-in SDK reserves `#page` as a bounded UI-only selector, initially zero and at most
-15; the editor uses 0 Play, 1 Model, 2 Sample, 3 Advanced and 4 Analysis. A native built-in canvas may bind a button's `Set` or `Expand` gesture to it and read it
+15; the editor uses 0 Play, 1 Model, 2 Sample and 3 Advanced. A native built-in canvas may bind a button's `Set` or `Expand` gesture to it and read it
 in expressions such as `visible_when`. Other gestures/bindings are rejected. It is not a
 DeviceInfo parameter, is never sent to the engine, is never automated, and does not create
 an undo entry or dirty the project. The host keeps it in temporary view memory keyed by

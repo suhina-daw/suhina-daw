@@ -52,10 +52,14 @@ A device may also have an expanded panel: one larger fixed-size canvas (`device.
 `.sd` file, `expanded` in a built-in's layout), with the same fields and limits as the compact one.
 A device with one has a button beside the X in its header, labelled **Expand** *name* (and
 **Close** *name*'s **expanded panel** while it is open). The panel opens as a window over the
-main area, the size of its canvas with the device's name and a close button (**Close expanded
-panel**) along its top, so the views around it stay in use. It starts centered; dragging its top
-row moves it within the main area (kept per device while the app runs) and a double click there
-centers it again. Its canvas scrolls when the main area is smaller than the window. An expanded canvas with `"strip": true` opens
+workspace (the browser, the views and the detail area), its canvas with the device's name and a
+close button (**Close expanded panel**) along its top, so everything around it stays in use. It
+starts centered on the main area at the canvas's own size, or as large as fits when the
+workspace is smaller. Dragging its top row moves it anywhere in the workspace, and a double click
+there centers it again. Dragging its bottom right corner resizes it: the canvas scales as a
+whole with the window, keeping its shape (drawings, controls, text and pointer input alike),
+from 0.4 to 3 times its size, and a double click on the corner gives it its own size again. Its
+place and size are kept per device while the app runs. An expanded canvas with `"strip": true` opens
 instead as a strip at the bottom of the main area, over the device row, its canvas scaled to the
 strip on each axis, up or down, as a strip has no scroll bar (drawings, controls and pointer input alike; text and line widths by the smaller
 axis). The strip starts as tall as the canvas at the strip's width; dragging its header up or down
@@ -64,8 +68,8 @@ double click on the header fits it again. A canvas with `"accent_on": true` fill
 button that is on with the theme's accent rather than the control's active colour. The close button, Escape or a second click on
 the header button closes it, and it closes by itself when its device is no longer shown (another
 track selected, the device removed). Its controls send the same `device.setParam` as the compact
-panel's, so undo, automation and presets do not depend on which is open. No zoom: canvases
-scroll and never scale.
+panel's, so undo, automation and presets do not depend on which is open. A compact panel's
+canvas scrolls and never scales; an expanded one scales only with its window or strip.
 
 ## Layouts for built-in devices
 

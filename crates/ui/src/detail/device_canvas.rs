@@ -2387,6 +2387,24 @@ pub(crate) fn show(
     at: &crate::detail::detail_view::DeviceAt,
     actions: &mut Vec<Action>,
 ) {
+    show_scaled(ui, rect, canvas, state, parameters, track, at, actions, canvas.strip);
+}
+
+/// [`show`], with the canvas scaled to `rect` on each axis, smaller too, when `scales` (a strip,
+/// or an expanded panel's window scaled as a whole with the window's size); otherwise only shown
+/// larger is stretched.
+#[allow(clippy::too_many_arguments)] // the canvas, its draw state and what dispatches for it
+pub(crate) fn show_scaled(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    canvas: &Arc<DeviceUi>,
+    state: &crate::detail::device_widgets::PanelState<'_>,
+    parameters: &[GraphParameter],
+    track: TrackId,
+    at: &crate::detail::detail_view::DeviceAt,
+    actions: &mut Vec<Action>,
+    scales: bool,
+) {
     let address = at.0.iter().map(usize::to_string).collect::<Vec<_>>().join("-");
     let panel_id = format!("track-{}-device-{address}", track.0);
     // The panel's own sheet applies inside this scope only, over the application theme.
@@ -2415,7 +2433,7 @@ pub(crate) fn show(
     // bar. Any other canvas shown larger is stretched the same way; one shown shorter is fitted by
     // its controls (`fitted_size`), not squeezed.
     let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0));
-    let stretch = if canvas.strip { stretch } else { stretch.max(Vec2::splat(1.0)) };
+    let stretch = if scales { stretch } else { stretch.max(Vec2::splat(1.0)) };
     let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
     // Shared by a device's compact and expanded canvases, but never part of its sound state.
     let page_id = crate::detail::detail_view::list_fold_id(ui, track, at).with("device-local-page");
@@ -2479,7 +2497,13 @@ pub(crate) fn show(
             continue;
         }
         if matches!(control.widget, Some(Widget::SampleAnalysis)) {
-            super::instrument_analysis::show(ui, bounds, track, at, actions);
+            // Its text in the panel sheet's ink (`device-control { color }`), so it reads over a
+            // canvas's own artwork as the canvas's other text does, not in the theme's.
+            let ink = control_scope.color();
+            ui.scope(|ui| {
+                ui.visuals_mut().override_text_color = Some(ink);
+                super::instrument_analysis::show(ui, bounds, track, at, actions);
+            });
             continue;
         }
         if matches!(control.widget, Some(Widget::DeviceSwitch)) {

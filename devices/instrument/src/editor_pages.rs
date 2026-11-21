@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The editor's Play and Sample pages, and the Analysis page the Sample page opens
+//! The editor's Play and Sample pages
 //! (docs/spec/instrument-editor.md): the amplitude envelope with its points, the playable keys and
 //! velocities and one row of dials; the sample's waveform with its region and loop, its name line,
 //! one row of dials and Playback. Controls with no effect in the current Source are dimmed.
@@ -10,7 +10,7 @@ use super::{
     BRASS, Canvas, HAIRLINE, INK, MUTED, add, blend_silent, envelope_silent, line, sample_silent, spaced, text, times,
     value_text,
 };
-use suhina_device_sdk::ui::{Draw, PAGE_ID, TextAlign, TextFormat, UiExpression, UiGesture, UiValue, Widget};
+use suhina_device_sdk::ui::{Draw, TextAlign, TextFormat, UiExpression, UiGesture, UiValue, Widget};
 
 /// A faint line, the envelope's fill, its glow and its line.
 const FAINT: [u8; 4] = [52, 38, 29, 36];
@@ -345,47 +345,40 @@ pub(super) fn play_page(ui: &mut Canvas) {
     ui.dim("Blend dimmed", &[dial_at(1, 6)], &blend_silent());
 }
 
-/// The Sample page (page 2) and the Analysis page it opens (page 4).
+/// The Sample page (page 2): the waveform, the sample analysis under it, one row of dials and
+/// Playback.
 pub(super) fn sample_page(ui: &mut Canvas) {
     ui.page(2);
     // The waveform as the page's picture: Start and End, or the loop with Loop, are dragged on it.
-    let wave = [56.0, 98.0, 768.0, 166.0];
+    let wave = [56.0, 98.0, 768.0, 112.0];
     ui.waveform(wave);
     ui.graphic(
         "Sample captions",
         vec![
             caption([56.0, 80.0], "Start"),
             caption([730.0, 80.0], "End"),
-            caption([56.0, 276.0], "Loop start"),
-            caption([690.0, 276.0], "Loop end"),
-            text([56.0, 330.0], &spaced("Sample"), 18.0, TextAlign::Left, INK),
-            value_text(
-                [56.0.into(), 358.0.into()],
-                "Drop an audio file on the waveform to load or replace it  ·  root ",
-                "root",
-                TextFormat::Key,
-                11.0,
-                TextAlign::Left,
-                MUTED,
-            ),
+            caption([56.0, 222.0], "Loop start"),
+            caption([690.0, 222.0], "Loop end"),
             line([56.0, 386.5], [824.0, 386.5], HAIRLINE, 1.0),
         ],
     );
     for (id, name, bounds) in [
         ("start", "Source start", [104.0, 76.0, 56.0, 16.0]),
         ("end", "Source end", [768.0, 76.0, 56.0, 16.0]),
-        ("loop_start", "Loop start", [150.0, 272.0, 56.0, 16.0]),
-        ("loop_end", "Loop end", [768.0, 272.0, 56.0, 16.0]),
+        ("loop_start", "Loop start", [150.0, 218.0, 56.0, 16.0]),
+        ("loop_end", "Loop end", [768.0, 218.0, 56.0, 16.0]),
     ] {
         ui.readout(id, name, bounds, TextFormat::Percent, 1);
     }
-    ui.choice_labelled(
-        PAGE_ID,
-        4,
-        "Analysis page",
-        "ANALYSIS ›",
-        [704.0, 336.0, 120.0, 22.0],
-        "Analyze the loaded sample on this computer: check the root it proposes, or fit a model from it",
+    // The sample analysis on the page itself, under the waveform: it reads the same file, and
+    // its proposals change the controls on this page.
+    ui.add(
+        "Sample analysis",
+        Widget::SampleAnalysis,
+        [56.0, 244.0, 768.0, 136.0],
+        None,
+        UiGesture::Drag,
+        "Analyze the loaded sample on this computer: check the root it proposes, or fit a model from it; nothing changes until you accept",
     );
     for (n, (id, name, label, tooltip)) in [
         ("root", "Root key", "Root", "The key that plays the file at its own pitch"),
@@ -412,39 +405,8 @@ pub(super) fn sample_page(ui: &mut Canvas) {
     // Faded with Modal: the sample's own controls; the envelope's, but for fitted models.
     ui.dim(
         "Sample dimmed",
-        &[[56.0, 72.0, 768.0, 222.0], dial_at(0, 5), [584.0, 518.0, 240.0, 22.0]],
+        &[[56.0, 72.0, 768.0, 166.0], dial_at(0, 5), [584.0, 518.0, 240.0, 22.0]],
         &sample_silent(),
     );
     ui.dim("Envelope dimmed", &[dials_from(1, 3, 5)], &envelope_silent());
-
-    ui.page(4);
-    ui.graphic(
-        "Analysis title",
-        vec![
-            text([440.0, 92.0], &spaced("Analysis"), 24.0, TextAlign::Center, INK),
-            text(
-                [440.0, 128.0],
-                "Listens to the loaded file on this computer: proposes its root key, or fits a model from it. Nothing changes until you accept.",
-                11.0,
-                TextAlign::Center,
-                MUTED,
-            ),
-        ],
-    );
-    ui.add(
-        "Sample analysis",
-        Widget::SampleAnalysis,
-        [56.0, 156.0, 768.0, 304.0],
-        None,
-        UiGesture::Drag,
-        "Analyze the loaded sample locally, check its root proposal, then accept one undoable change",
-    );
-    ui.choice_labelled(
-        PAGE_ID,
-        2,
-        "Sample page back",
-        "‹  SAMPLE",
-        [56.0, 470.0, 120.0, 22.0],
-        "Back to the Sample page",
-    );
 }

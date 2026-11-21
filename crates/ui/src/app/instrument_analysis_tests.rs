@@ -49,8 +49,6 @@ fn instrument_analysis_controls_require_explicit_acceptance_and_reject_stale_pro
     h.run_steps(4);
     h.get_by_label("Sample page").click();
     h.run_steps(4);
-    h.get_by_label("Analysis page").click();
-    h.run_steps(4);
     h.get_by_label("Analyze sample").focus();
     h.step();
     h.key_press(egui::Key::Enter);
@@ -74,7 +72,7 @@ fn instrument_analysis_controls_require_explicit_acceptance_and_reject_stale_pro
     h.run_steps(4);
     // Undo takes the root back and leaves the page the panel shows.
     let undone = h.state().session().unwrap().project().clone();
-    assert_eq!(undone.panel_page(undone.channels[0].devices[0].id), 4, "the Analysis page stays");
+    assert_eq!(undone.panel_page(undone.channels[0].devices[0].id), 2, "the Sample page stays");
     assert_eq!(suhina_engine::model::Project { panel_pages: before.panel_pages.clone(), ..undone }, before);
     h.get_by_label("Analyze sample").click();
     h.run_steps(2);

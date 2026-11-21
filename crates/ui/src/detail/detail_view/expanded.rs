@@ -89,13 +89,28 @@ pub fn give_host_values(
     live
 }
 
-/// Draws `device`'s expanded panel over `area` (the main area), on top of the views: a window of
-/// the canvas's size with a title row (its name and a close button) that moves it, then its
-/// canvas, scrolled when the area is smaller than the window. The views around it stay in use. A canvas marked `strip` opens instead as a strip at the bottom of `area`, over the
-/// device row, scaled to the strip's width and as tall as that makes it.
+/// The smallest and largest a floating expanded panel's canvas is scaled to with its window.
+const MIN_SCALE: f32 = 0.4;
+const MAX_SCALE: f32 = 3.0;
+/// The side of the corner a floating window is resized by.
+const GRIP: f32 = 14.0;
+
+/// Draws `device`'s expanded panel on top of the views: a window over `room` (the workspace, the
+/// browser and the detail area included), first centered on `area` (the main area), with a title
+/// row (its name and a close button) that moves it and a corner at its bottom right that resizes
+/// it, its canvas scaled as a whole to the window. The views around it stay in use. A canvas
+/// marked `strip` opens instead as a strip at the bottom of `area`, over the device row, scaled
+/// to the strip's width and as tall as that makes it.
 /// Its controls change the same parameters as the compact panel, through `device.setParam`.
 /// The close button and Escape close it.
-pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox, actions: &mut Vec<Action>) {
+pub fn show_expanded(
+    ui: &mut Ui,
+    area: Rect,
+    room: Rect,
+    track: TrackId,
+    device: &DeviceBox,
+    actions: &mut Vec<Action>,
+) {
     let Some((graph, canvas)) = device.graph.as_ref().and_then(|g| Some((g, g.expanded.as_ref()?))) else {
         return;
     };
@@ -115,18 +130,25 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     let height_id = Id::unique(("device-expanded-height", track.0, &device.at));
     let fitted = ROW + PAD + size.y * ((area.width() - PAD * 2.0) / size.x).clamp(0.5, 2.5) + PAD * 2.0;
     let wanted = ui.ctx().data(|d| d.get_temp::<f32>(height_id)).unwrap_or(fitted);
-    // Any other canvas floats over the views as a window of its own size (the header and the
-    // padding around the canvas), smaller where the main area is, so the views around it stay in
-    // use. It starts centered and stays where its header is dragged to, kept per device while the
-    // app runs, always inside the main area.
+    // Any other canvas floats over the workspace as a window: the canvas at a scale (its own size
+    // unless the workspace is smaller, then as large as fits; its corner sets another) with the
+    // title row and padding around it. It starts centered on the main area and stays where its
+    // title row is dragged to, its place and scale kept per device while the app runs, always
+    // inside the workspace.
     let place_id = Id::unique(("device-expanded-place", track.0, &device.at));
+    let scale_id = Id::unique(("device-expanded-scale", track.0, &device.at));
+    let chrome = Vec2::new(PAD * 2.0, ROW + PAD * 3.0);
+    let fits = ((room.size() - chrome) / size.max(Vec2::splat(1.0))).min_elem().max(MIN_SCALE);
+    let largest = fits.min(MAX_SCALE);
+    let scale = ui.ctx().data(|d| d.get_temp::<f32>(scale_id)).unwrap_or(1.0).clamp(MIN_SCALE, largest);
     let slice = if canvas.strip {
         let height = wanted.clamp(80.0_f32.min(area.height()), area.height().max(1.0));
         Rect::from_min_max(Pos2::new(area.left(), area.bottom() - height), area.max)
     } else {
-        let window = (size + Vec2::new(PAD * 2.0, ROW + PAD * 3.0)).min(area.size());
-        let offset = ui.ctx().data(|d| d.get_temp::<Vec2>(place_id)).unwrap_or((area.size() - window) / 2.0);
-        floating_window(area, window, offset)
+        let window = size * scale + chrome;
+        let centered = area.center() - window / 2.0 - room.min;
+        let offset = ui.ctx().data(|d| d.get_temp::<Vec2>(place_id)).unwrap_or(centered);
+        floating_window(room, window, offset)
     };
     crate::kit::floating::area(ui.ctx(), Id::unique("device-expanded-area"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
@@ -162,8 +184,28 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 if drag.double_clicked() {
                     ui.ctx().data_mut(|d| d.remove::<Vec2>(place_id));
                 } else if drag.dragged() {
-                    let moved = floating_window(area, slice.size(), slice.min - area.min + drag.drag_delta());
-                    ui.ctx().data_mut(|d| d.insert_temp(place_id, moved.min - area.min));
+                    let moved = floating_window(room, slice.size(), slice.min - room.min + drag.drag_delta());
+                    ui.ctx().data_mut(|d| d.insert_temp(place_id, moved.min - room.min));
+                }
+                // The corner at the bottom right resizes it: the canvas scales as a whole with it,
+                // keeping its shape; a double click gives it its own size again.
+                let corner = Rect::from_min_size(rect.max - Vec2::splat(GRIP), Vec2::splat(GRIP));
+                let resize = ui
+                    .interact(corner, Id::unique("device-expanded-size"), Sense::click_and_drag())
+                    .on_hover_cursor(egui::CursorIcon::ResizeNwSe)
+                    .on_hover_text("Drag to resize the panel; double click gives it its own size");
+                resize.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Resize expanded panel"));
+                if resize.double_clicked() {
+                    ui.ctx().data_mut(|d| d.remove::<f32>(scale_id));
+                } else if resize.dragged() {
+                    let wanted = slice.size() + resize.drag_delta() - chrome;
+                    let scaled = (wanted / size.max(Vec2::splat(1.0))).min_elem();
+                    let scaled = if scaled.is_finite() { scaled.clamp(MIN_SCALE, largest) } else { scale };
+                    ui.ctx().data_mut(|d| d.insert_temp(scale_id, scaled));
+                }
+                let stroke = egui::Stroke::new(1.0, ink.gamma_multiply(0.7));
+                for step in [4.0, 8.0, 12.0] {
+                    painter.line_segment([rect.max - Vec2::new(step, 2.0), rect.max - Vec2::new(2.0, step)], stroke);
                 }
             }
             if canvas.strip {
@@ -219,29 +261,19 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 Rect::from_min_max(Pos2::new(rect.left() + PAD, header.bottom() + PAD), rect.max - Vec2::splat(PAD));
             crate::detail::device_canvas::collect_editor_keyboard(ui.ctx(), true);
             if !canvas.strip {
-                ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
-                    egui::ScrollArea::both().auto_shrink([false, false]).id_salt("device-expanded-scroll").show(
-                        ui,
-                        |ui| {
-                            // Centered while it fits, from the top left when it scrolls.
-                            let room = ui.available_size();
-                            let offset =
-                                Vec2::new(((room.x - size.x) / 2.0).max(0.0), ((room.y - size.y) / 2.0).max(0.0));
-                            let (space, _) = ui.allocate_exact_size(size + offset, Sense::hover());
-                            let canvas_rect = Rect::from_min_size(space.min + offset, size);
-                            crate::detail::device_canvas::show(
-                                ui,
-                                canvas_rect,
-                                canvas,
-                                &state,
-                                &graph.parameters,
-                                track,
-                                &device.at,
-                                actions,
-                            );
-                        },
-                    );
-                });
+                // The canvas at the window's scale, centered in it, smaller or larger alike.
+                let canvas_rect = Rect::from_center_size(body.center(), size * scale);
+                crate::detail::device_canvas::show_scaled(
+                    ui,
+                    canvas_rect,
+                    canvas,
+                    &state,
+                    &graph.parameters,
+                    track,
+                    &device.at,
+                    actions,
+                    true,
+                );
                 crate::detail::device_canvas::collect_editor_keyboard(ui.ctx(), false);
                 return;
             }
