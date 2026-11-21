@@ -55,6 +55,8 @@ fn admission_and_late_completion_have_no_timing_dependency() {
         key: None,
         active_windows: 0,
         voiced_windows: 0,
+        notes: Vec::new(),
+        glide: None,
     })))
     .unwrap();
     job.receive(true);

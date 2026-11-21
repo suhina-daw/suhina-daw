@@ -525,6 +525,9 @@ fn view_json(view: &AnalysisView) -> Value {
         "sourceAssumption":if r.key.is_some() { "tonalMaterial" } else { "singleIsolatedPitchedNote" }, "polyphonyAssessed":false,
         "outcome":match r.outcome { Outcome::Stable=>"stable", Outcome::Silent=>"silent", Outcome::TooShort=>"tooShort", Outcome::NoStablePitch=>"noStablePitch", Outcome::TonalCenter=>"tonalCenter" },
         "activeWindows":r.active_windows,"voicedWindows":r.voiced_windows,
+        "notes":r.notes.iter().map(|n| json!({"startSeconds":n.start_seconds,"endSeconds":n.end_seconds,"midi":n.midi,"root":n.root,
+            "periodicity":n.periodicity,"spreadCents":n.spread_cents,"share":n.share})).collect::<Vec<_>>(),
+        "glide":r.glide.map(|g| json!({"fromMidi":g.from_midi,"seconds":g.seconds})),
         "proposal":r.proposal.map(|p| json!({"root":p.root,"midi":p.midi,"hz":p.hz,"cents":p.cents,"periodicity":p.periodicity,"spreadCents":p.spread_cents})),
         "key":r.key.map(|k| {
             let mut key = key_candidate_json(&k.key);
