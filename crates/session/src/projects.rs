@@ -350,18 +350,26 @@ impl Projects {
         let mut kept: Vec<(String, programs::Event)> = Vec::new();
         for (program, event) in drained {
             match &event {
-                programs::Event::Command { token: _, id, gesture, .. } => {
+                programs::Event::Command { token: _, id, params, gesture } => {
                     let same_stream = |(kept_program, kept_event): &(String, programs::Event)| match kept_event {
-                        // Only a gestured stream coalesces: a fader's drag arrives faster
-                        // than the looks and only its newest value matters. A gesture-less
-                        // command (a controller's toggle press) is a standalone event - every
-                        // one matters, and dropping the middle ones made a second solo press
+                        // Only a stream that can stand for itself coalesces: a command whose
+                        // calls replace each other — one that takes the `gesture` parameter
+                        // (a value set: the newest value is the truth) — on the same target,
+                        // the parameters but the gesture. An adjust adds to the step, so its
+                        // calls are each their own, whatever the protocol named; a drag on
+                        // another track is another target; and a gesture-less command (a
+                        // controller's toggle press) is a standalone event — every one
+                        // matters, and dropping the middle ones made a second solo press
                         // vanish from the session.
-                        programs::Event::Command { id: kept_id, gesture: kept_gesture, .. } => {
+                        programs::Event::Command {
+                            id: kept_id, params: kept_params, gesture: kept_gesture, ..
+                        } => {
                             kept_program == &program
                                 && kept_id == id
                                 && gesture.is_some()
                                 && kept_gesture.as_deref() == gesture.as_deref()
+                                && takes_gesture(id)
+                                && same_target(id, kept_params, params)
                         }
                         _ => false,
                     };
@@ -1474,10 +1482,7 @@ pub fn let_go(session: Session) -> Option<std::thread::JoinHandle<()>> {
 /// any caller's. A command without the parameter runs without it.
 fn with_gesture(id: &str, mut params: Value, gesture: Option<&str>) -> Value {
     let Some(gesture) = gesture else { return params };
-    let takes = |params: &[crate::commands::Param]| params.iter().any(|p| p.name == "gesture");
-    let takes_it = crate::commands::commands().iter().any(|c| c.id == id && takes(c.params))
-        || projects_commands().any(|c| c.id == id && takes(c.params));
-    if !takes_it {
+    if !takes_gesture(id) {
         return params;
     }
     if params.is_null() {
@@ -1485,4 +1490,56 @@ fn with_gesture(id: &str, mut params: Value, gesture: Option<&str>) -> Value {
     }
     params["gesture"] = json!(gesture);
     params
+}
+
+/// Whether the command takes the `gesture` parameter: the calls of one drag that replace each
+/// other, by the command's own design — the ones whose stream may coalesce, and whose
+/// `with_gesture` merge means anything.
+fn takes_gesture(id: &str) -> bool {
+    let takes = |params: &[crate::commands::Param]| params.iter().any(|p| p.name == "gesture");
+    crate::commands::commands().iter().any(|c| c.id == id && takes(c.params))
+        || projects_commands().any(|c| c.id == id && takes(c.params))
+}
+
+/// Whether a parameter carries a value the stream's calls set — a level, a pan, a shape's
+/// depth, what a drag moves — as against the references that name what the calls act on. The
+/// stream's key is what a call acts on; what it sets is the newest value's say.
+fn is_value(ty: &crate::commands::ParamType) -> bool {
+    use crate::commands::ParamType;
+    matches!(
+        ty,
+        ParamType::Number | ParamType::Integer | ParamType::Bool | ParamType::Decibels | ParamType::AutomationValue
+    )
+}
+
+/// A stream's key: the parameters but the gesture and the values the calls set — what the
+/// calls act on. Two calls of one gesture on the same target stand for each other; a drag on
+/// another track, another clip, is another stream.
+fn stream_target(id: &str, params: &Value) -> Value {
+    let mut copy = params.clone();
+    let value_names: Vec<&str> = {
+        let spec = crate::commands::commands()
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.params)
+            .or_else(|| projects_commands().find(|c| c.id == id).map(|c| c.params));
+        match spec {
+            Some(spec) => spec.iter().filter(|p| is_value(&p.ty)).map(|p| p.name).collect(),
+            None => Vec::new(),
+        }
+    };
+    if let Some(object) = copy.as_object_mut() {
+        object.remove("gesture");
+        for name in value_names {
+            object.remove(name);
+        }
+    }
+    copy
+}
+
+/// Whether two calls act on the same target: the parameters but the gesture and the values
+/// the calls set, so one drag's values stand for each other and a drag on another track does
+/// not.
+fn same_target(id: &str, a: &Value, b: &Value) -> bool {
+    stream_target(id, a) == stream_target(id, b)
 }

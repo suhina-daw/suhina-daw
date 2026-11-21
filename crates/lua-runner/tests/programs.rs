@@ -757,6 +757,49 @@ fn a_fader_storm_lands_at_its_last_value() {
     assert_eq!(tracks[0]["volume_db"], json!(2.5), "{tracks}");
 }
 
+/// One gesture on two tracks is two streams: both commands dispatch, so both tracks land at
+/// the value — the first is not swallowed by the second's answer.
+#[test]
+fn one_gesture_on_two_tracks_sets_both() {
+    let mut fixture = Fixture::claiming("twotargets", SCRIPT_ECHO);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    for (token, track) in [(1, 1), (2, 2)] {
+        fixture.projects.test_extensions_program().expect("running").test_command(
+            token,
+            "track.setVolume",
+            &json!({ "tracks": [track], "db": -10.0 }),
+            Some("one drag"),
+        );
+    }
+    fixture.projects.poll_plugins();
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
+    assert_eq!(tracks[0]["volume_db"], json!(-10.0), "{tracks}");
+    assert_eq!(tracks[1]["volume_db"], json!(-10.0), "{tracks}");
+}
+
+/// An adjust adds: its calls run each their own, whatever gesture the protocol named — the
+/// command takes no `gesture` parameter, so two +1 dB moves are +2 dB, not one.
+#[test]
+fn an_adjusts_calls_run_each_their_own() {
+    let mut fixture = Fixture::claiming("adds", SCRIPT_ECHO);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    for token in 1..=2 {
+        fixture.projects.test_extensions_program().expect("running").test_command(
+            token,
+            "track.adjustVolume",
+            &json!({ "tracks": [1], "db": 1.0 }),
+            Some("one drag"),
+        );
+    }
+    fixture.projects.poll_plugins();
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
+    assert_eq!(tracks[0]["volume_db"], json!(2.0), "{tracks}");
+}
+
 /// The storm through the real pipeline: the CCs arrive through the supervisor, the commands
 /// queue, and the session coalesces each look. The volume lands at the last value's dB and the
 /// program stays alive. The test pumps the frame while the pipeline catches up — each pump
