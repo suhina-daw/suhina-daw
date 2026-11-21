@@ -71,7 +71,7 @@ fn the_dots_draw_into_the_widgets_own_texture_and_sound_adds_to_them() {
     let gpu = wait(egui_wgpu::RenderState::create(&Default::default(), &instance, None, Default::default())).unwrap();
     let strands = Strands::new(gpu);
     let ctx = egui::Context::default();
-    let id = egui::Id::new("strands test");
+    let id = egui::Id::unique("strands test");
     let colors = [[1.0, 0.98, 0.93, 1.0], [0.87, 0.74, 0.53, 1.0], [0.5, 0.34, 0.21, 1.0], [0.78, 0.5, 0.2, 1.0]];
     let rest = Frame { colors, ..Frame::default() };
     let image = strands.draw(&ctx, id, [880, 236], &rest).unwrap();
