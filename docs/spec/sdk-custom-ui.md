@@ -13,6 +13,10 @@ covers:
   - crates/device-sdk/src/ui/widgets.rs
   - crates/device-sdk/src/ui.rs
   - crates/ui/src/detail/device_canvas.rs
+  - crates/ui/src/detail/strands.rs
+  - crates/ui/src/kit/strands.rs
+  - crates/ui-gpu/src/strands.rs
+  - crates/ui-gpu/src/strands.wgsl
   - crates/ui/src/detail/device_widgets.rs
   - crates/ui/src/detail/detail_view.rs
   - crates/device-sdk/examples/custom_panel.rs
@@ -37,16 +41,25 @@ and no canvas keeps one column that follows that width and scrolls.
 A built-in layout may use `#page` for host-local navigation (0..15, initially zero). Only a
 button with a linear X binding and a `Set` or `Expand` gesture may write it; drawing and
 visibility expressions may read it. The compact and expanded canvases share the selection for
-their project, track and complete device address. It is temporary view state: no DSP parameter,
-automation, project edit or undo entry. `.sd` version 6 does not accept this writable host binding.
+their project, track and complete device address. It is view state: no DSP parameter,
+automation or undo entry. A page button also runs `device.showPage`, which keeps the page with the
+project (its `panel_pages`, [project file](suhina-format.md)) outside the undo history, so the
+panel opens on that page again, after the project is reopened too; undo and redo leave it as it
+is. `.sd` version 6 does not accept this writable host binding.
 The [Instrument editor](instrument-editor.md) uses it for Play, Model and Sample.
 
 A device may also have an expanded panel: one larger fixed-size canvas (`device.expanded` in a
 `.sd` file, `expanded` in a built-in's layout), with the same fields and limits as the compact one.
 A device with one has a button beside the X in its header, labelled **Expand** *name* (and
-**Close** *name*'s **expanded panel** while it is open). The panel opens over the main area with
-the device's name and a close button (**Close expanded panel**) along its top; its canvas is
-centred, and scrolls when the main area is smaller. An expanded canvas with `"strip": true` opens
+**Close** *name*'s **expanded panel** while it is open). The panel opens as a window over the
+workspace (the browser, the views and the detail area), its canvas with the device's name and a
+close button (**Close expanded panel**) along its top, so everything around it stays in use. It
+starts centered on the main area at the canvas's own size, or as large as fits when the
+workspace is smaller. Dragging its top row moves it anywhere in the workspace, and a double click
+there centers it again. Dragging its bottom right corner resizes it: the canvas scales as a
+whole with the window, keeping its shape (drawings, controls, text and pointer input alike),
+from 0.4 to 3 times its size, and a double click on the corner gives it its own size again. Its
+place and size are kept per device while the app runs. An expanded canvas with `"strip": true` opens
 instead as a strip at the bottom of the main area, over the device row, its canvas scaled to the
 strip on each axis, up or down, as a strip has no scroll bar (drawings, controls and pointer input alike; text and line widths by the smaller
 axis). The strip starts as tall as the canvas at the strip's width; dragging its header up or down
@@ -55,8 +68,8 @@ double click on the header fits it again. A canvas with `"accent_on": true` fill
 button that is on with the theme's accent rather than the control's active colour. The close button, Escape or a second click on
 the header button closes it, and it closes by itself when its device is no longer shown (another
 track selected, the device removed). Its controls send the same `device.setParam` as the compact
-panel's, so undo, automation and presets do not depend on which is open. No zoom: canvases
-scroll and never scale.
+panel's, so undo, automation and presets do not depend on which is open. A compact panel's
+canvas scrolls and never scales; an expanded one scales only with its window or strip.
 
 ## Layouts for built-in devices
 
@@ -405,8 +418,17 @@ the saved parameter units.
 
 `SampleAnalysis` places host-owned local sample analysis and explicit root-proposal adoption.
 It has no parameter bindings: the stock host dispatches the `instrument.*` preparation commands
-and presents the session job's progress, result, correction and acceptance controls. Exported
-hosts must implement their own preparation integration before exposing equivalent controls.
+and presents the session job's progress, result, correction and acceptance controls. Over a
+canvas's own artwork it takes the canvas's ink and accent (`device-control { color;
+accent-color }`) and scales with the canvas: the suggestion and its actions stand at the right of
+its bounds, as text buttons in spaced capitals, and a result that waits for acceptance covers
+the whole bounds and takes the pointer, drawn on the canvas's background artwork (its first
+control, when that is one image over the whole canvas) or else on a plain card. Exported hosts must implement their own
+preparation integration before exposing equivalent controls.
+
+`SampleFile` shows the loaded sample's file name in spaced capitals and its facts under it
+(sample rate, mono or stereo, length), or "No sample", from the source the host decoded for the
+device's waveform. It has no bindings and takes no input.
 
 `SampleWaveform` is a host-backed source view for the native sampler. It has no
 parameter axis bindings. The host supplies decoded audio; start/end and loop
@@ -432,6 +454,32 @@ the device's file does not run: the fault the load gave, or that the file moved;
 nothing while the file runs, and nothing with no file — the rows' empty texts say
 that. The labels derive from the device's shown name ("Amp Modeler: pack"),
 as the compact panels' tests find them.
+
+`Strands` is a host-drawn picture of sound as light: ribbons of very fine dots flowing across the
+control, fullest around its center and thinning to a hair towards its edges, each fibre on a path of its own so
+fibres part and cross like loose silk threads, drawn back to front with the near dots larger and
+stronger and the far ones smaller and softer. It has no binding and takes no input. Its fields
+are value expressions the host reads every frame:
+
+- `modes` (1 to 6 of them), each mode's energy, 0 to 1. The first carries three ribbons that
+  always flow and swell with it; each further mode raises a ribbon of its own while it sounds.
+- `since`, seconds since the last strike, and `velocity`, its strength: a strike throws a shell
+  of sparks out of the center that spreads and fades over about two seconds; between strikes a
+  tenth of the dots rest as a loose halo around the center.
+- `height`, `thickness` and `speed` (0 to 1): how far the ribbons spread, how wide they are and
+  how fast they flow.
+- `presence` (0 to 1): how strongly they show.
+- `light`, `mid`, `shadow` and `thread` (RGBA colors): a dot is `light` where its ribbon faces
+  the light, `mid` in between and `shadow` where it turns away; one fibre in seven is a `thread`.
+
+The flow advances with the host's clock at a rate that grows with the first mode's energy and
+`speed`, and never jumps when a value changes. A host with a GPU draws about 400,000 dots; one
+without draws a lighter version of the same picture, a few thousand dots on the same paths, so a
+test or an offscreen render sees what the window shows; the lighter version works its picture out
+with arithmetic and its own sine, cosine and exponential only, so it is the same to the last bit on
+every platform. While any mode's energy is above zero or
+`since` is under five seconds, the host keeps drawing it, about 30 frames a second, as
+`animate_when` does; at rest it draws once.
 
 A control may specify a typed `widget` instead of a custom `drawing`. Widgets are
 independent UI nodes; interactive nodes bind to a declared parameter (or two parameters

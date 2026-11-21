@@ -369,6 +369,22 @@ pub(crate) fn move_device(session: &mut Session, params: &Value) -> Result<Value
     })
 }
 
+/// `device.showPage {track, device, page}`: the page the device's panel shows, kept with the
+/// project outside the undo history (view state, `docs/spec/sdk-custom-ui.md` › Compact and
+/// expanded panels). Whether it changed.
+pub(crate) fn show_page(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let devices = &crate::commands::device_channel_read(session, params)?.devices;
+    let path = device_path(devices, params, "device")?;
+    let id = device_at(devices, &path).ok_or("the device is missing")?.id;
+    let page = params.get("page").and_then(Value::as_u64).ok_or("page must be a whole number from 0 to 15")?;
+    let page = u16::try_from(page)
+        .ok()
+        .filter(|page| *page <= suhina_model::MAX_PANEL_PAGE)
+        .ok_or("page must be a whole number from 0 to 15")?;
+    let changed = session.project.set_panel_page(id, page);
+    Ok(json!({ "page": page, "changed": changed }))
+}
+
 /// `device.duplicate {track, device}`: a copy of a device (a group with everything in it) next
 /// to it. A plug-in's copy starts with the state its project device has.
 pub(crate) fn duplicate(session: &mut Session, params: &Value) -> Result<Value, CommandError> {

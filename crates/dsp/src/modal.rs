@@ -140,6 +140,12 @@ impl<const N: usize> ModalBank<N> {
         output as f32
     }
 
+    /// Mode `n`'s amplitude: the size of its rotating state, which falls as it decays and does
+    /// not move with its phase. Zero past the bank's modes.
+    pub fn level(&self, n: usize) -> f64 {
+        self.modes.get(n).map_or(0.0, |mode| mode.real.hypot(mode.imaginary))
+    }
+
     /// Like [`next_sample`](Self::next_sample), with mode `i` weighted by `gains[i]`, which then
     /// moves by `steps[i]`: per-mode levels ramped by the caller without touching phase or decay.
     /// All gains 1 and steps 0 give exactly `next_sample`.

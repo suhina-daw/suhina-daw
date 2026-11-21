@@ -303,6 +303,26 @@ fn clock(seconds: f64) -> String {
     if fraction == 0 { format!("{minutes}:{rest:02}") } else { format!("{minutes}:{rest:02}.{fraction:03}") }
 }
 
+/// The share of a canvas's background artwork under `bounds` (canvas units): its texture and the
+/// texture coordinates there, for a host widget that covers what is under it with the canvas's own
+/// surface. The background is the canvas's first control when that is one image over the whole
+/// canvas; `None` without one.
+fn canvas_ground(canvas: &DeviceUi, loaded: &Loaded, [x, y, w, h]: [f32; 4]) -> Option<(egui::TextureId, Rect)> {
+    let Some(Widget::Graphic { drawing }) = &canvas.controls.first()?.widget else { return None };
+    let [Draw::Image { asset, rect, uv, .. }] = drawing.as_slice() else { return None };
+    let [rx, ry, rw, rh] = rect.clone().map(|v| v.evaluate(&|_, _, _| 0.0));
+    let [width, height] = canvas.size;
+    if rx.abs() > 0.5 || ry.abs() > 0.5 || (rw - width).abs() > 0.5 || (rh - height).abs() > 0.5 {
+        return None;
+    }
+    let index = loaded.source.assets.iter().position(|a| a.id == *asset)?;
+    let texture = loaded.images.get(index)?.as_ref().ok()?;
+    let [u0, v0, u1, v1] = *uv;
+    let u = |at: f32| u0 + (u1 - u0) * at / width.max(1.0);
+    let v = |at: f32| v0 + (v1 - v0) * at / height.max(1.0);
+    Some((texture.id(), Rect::from_min_max(Pos2::new(u(x), v(y)), Pos2::new(u(x + w), v(y + h)))))
+}
+
 /// Plays a slice's note for a moment, as a click on the slice does.
 fn audition(ui: &egui::Ui, actions: &mut Vec<Action>, track: TrackId, key: u8) {
     let id = egui::Id::unique("sample-audition");
@@ -2387,6 +2407,24 @@ pub(crate) fn show(
     at: &crate::detail::detail_view::DeviceAt,
     actions: &mut Vec<Action>,
 ) {
+    show_scaled(ui, rect, canvas, state, parameters, track, at, actions, canvas.strip);
+}
+
+/// [`show`], with the canvas scaled to `rect` on each axis, smaller too, when `scales` (a strip,
+/// or an expanded panel's window scaled as a whole with the window's size); otherwise only shown
+/// larger is stretched.
+#[allow(clippy::too_many_arguments)] // the canvas, its draw state and what dispatches for it
+pub(crate) fn show_scaled(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    canvas: &Arc<DeviceUi>,
+    state: &crate::detail::device_widgets::PanelState<'_>,
+    parameters: &[GraphParameter],
+    track: TrackId,
+    at: &crate::detail::detail_view::DeviceAt,
+    actions: &mut Vec<Action>,
+    scales: bool,
+) {
     let address = at.0.iter().map(usize::to_string).collect::<Vec<_>>().join("-");
     let panel_id = format!("track-{}-device-{address}", track.0);
     // The panel's own sheet applies inside this scope only, over the application theme.
@@ -2415,11 +2453,17 @@ pub(crate) fn show(
     // bar. Any other canvas shown larger is stretched the same way; one shown shorter is fitted by
     // its controls (`fitted_size`), not squeezed.
     let stretch = Vec2::new(rect.width() / canvas.size[0].max(1.0), rect.height() / canvas.size[1].max(1.0));
-    let stretch = if canvas.strip { stretch } else { stretch.max(Vec2::splat(1.0)) };
+    let stretch = if scales { stretch } else { stretch.max(Vec2::splat(1.0)) };
     let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
     // Shared by a device's compact and expanded canvases, but never part of its sound state.
     let page_id = crate::detail::detail_view::list_fold_id(ui, track, at).with("device-local-page");
-    let page = ui.ctx().data(|data| data.get_temp::<u16>(page_id)).unwrap_or(0).min(suhina_device_sdk::ui::MAX_PAGE);
+    // The page picked this run, or else the one the project keeps for the device.
+    let saved = parameters
+        .iter()
+        .rfind(|p| p.id == crate::detail::detail_view::SAVED_PAGE_ID)
+        .map_or(0, |p| p.value.clamp(0.0, f64::from(suhina_device_sdk::ui::MAX_PAGE)) as u16);
+    let page =
+        ui.ctx().data(|data| data.get_temp::<u16>(page_id)).unwrap_or(saved).min(suhina_device_sdk::ui::MAX_PAGE);
     let page_value = GraphParameter::host_value(suhina_device_sdk::ui::PAGE_ID, f32::from(page));
     let mut values = Values { time: ui.input(|i| i.time), ..Values::new(parameters) };
     values.by_id.insert(suhina_device_sdk::ui::PAGE_ID, &page_value);
@@ -2473,7 +2517,25 @@ pub(crate) fn show(
             continue;
         }
         if matches!(control.widget, Some(Widget::SampleAnalysis)) {
-            super::instrument_analysis::show(ui, bounds, track, at, actions);
+            // Its text in the panel sheet's ink (`device-control { color }`), so it reads over a
+            // canvas's own artwork as the canvas's other text does, not in the theme's.
+            let look = super::instrument_analysis::Look {
+                ink: control_scope.color(),
+                accent: control_scope.accent(),
+                scale: stretch.min_elem(),
+                ground: canvas_ground(canvas, &loaded, control.bounds),
+            };
+            super::instrument_analysis::show(ui, bounds, look, (track, device), at, actions);
+            continue;
+        }
+        if matches!(control.widget, Some(Widget::SampleFile)) {
+            let look = super::instrument_analysis::Look {
+                ink: control_scope.color(),
+                accent: control_scope.accent(),
+                scale: stretch.min_elem(),
+                ground: None,
+            };
+            super::instrument_analysis::sample_file(ui, bounds, look, sample_source_id(track, device));
             continue;
         }
         if matches!(control.widget, Some(Widget::DeviceSwitch)) {
@@ -2507,6 +2569,41 @@ pub(crate) fn show(
                 !canvas.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleRecording))),
                 style.as_ref(),
             );
+            continue;
+        }
+        // Strands is host-drawn from its expressions: the modes' energies and the strike are
+        // usually the device's live values (`#r0` …), the rest its parameters.
+        if let Some(Widget::Strands {
+            modes,
+            since,
+            velocity,
+            height,
+            thickness,
+            speed,
+            presence,
+            light,
+            mid,
+            shadow,
+            thread,
+        }) = &control.widget
+        {
+            let read = |v: &suhina_device_sdk::ui::UiValue| v.evaluate(&|id, norm, log| values.read(id, norm, log));
+            let mut energies = [0.0; 6];
+            for (energy, mode) in energies.iter_mut().zip(modes) {
+                *energy = read(mode);
+            }
+            let inputs = super::strands::Inputs {
+                modes: energies,
+                since: read(since),
+                velocity: read(velocity),
+                height: read(height),
+                thickness: read(thickness),
+                speed: read(speed),
+                presence: read(presence),
+                colors: [*light, *mid, *shadow, *thread],
+            };
+            let id = ui.scope_id().with(("strands", track.0, device, &control.id));
+            super::strands::show(ui, &painter, bounds, id, &inputs);
             continue;
         }
         // The EqCurve is host-drawn: the SDK's validator only lets the built-in EQ's own
@@ -2662,7 +2759,13 @@ pub(crate) fn show(
                 response.scroll_to_me(None);
             }
             if response.clicked() || keyboard {
-                ui.ctx().data_mut(|data| data.insert_temp(page_id, page.min(suhina_device_sdk::ui::MAX_PAGE)));
+                let page = page.min(suhina_device_sdk::ui::MAX_PAGE);
+                ui.ctx().data_mut(|data| data.insert_temp(page_id, page));
+                // Kept with the project, outside the undo history, so the panel opens here again.
+                actions.push(Action::new(
+                    "device.showPage",
+                    json!({ "track": track.0, "device": at.value(), "page": page }),
+                ));
                 if matches!(control.gesture, UiGesture::Expand(_)) {
                     crate::detail::detail_view::open_expanded(ui.ctx(), track, at.clone());
                 }
@@ -2904,6 +3007,16 @@ pub(crate) fn show(
                 // The menu sits a little clear of its control: glued to its bottom edge it
                 // reads as clipping into it (the EQ's Mode, seen in use).
                 let mut popup = egui::Popup::menu(&response).gap(2.0);
+                // A canvas whose sheet gives its menus a ground of their own (`popup {
+                // background-color }`) keeps its look in them: its rows' ink on its own surface,
+                // not on the theme's (a dark theme's frame under an ivory canvas's dark ink). Read
+                // only while the menu shows or opens, so a closed menu costs no element.
+                if popup.is_open() || response.clicked() || key_open {
+                    let ground = crate::kit::element::POPUP.enter().background_or(Color32::TRANSPARENT);
+                    if ground.a() > 0 {
+                        popup = popup.frame(egui::Frame::popup(ui.style()).fill(ground));
+                    }
+                }
                 if response.double_clicked() {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Bool(false)));
                     control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":at.value(),"param":p.id,"value":p.default,"gesture":control.id})));

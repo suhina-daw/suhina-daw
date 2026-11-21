@@ -1413,13 +1413,13 @@ fn host_values_reach_devices_inside_groups_with_or_without_live_values() {
     };
 
     // No player: the panel still knows it is open, and nothing is live.
-    assert!(!give_host_values(&mut chain.devices, Some(&inner), &mut |_| None));
+    assert!(!give_host_values(&mut chain.devices, Some(&inner), &|_| 0, &mut |_| None));
     assert_eq!(value(&chain.devices, &inner, suhina_device_sdk::ui::EXPANDED_ID), Some(1.0));
     assert_eq!(value(&chain.devices, &top, suhina_device_sdk::ui::EXPANDED_ID), Some(0.0));
     assert_eq!(value(&chain.devices, &inner, "#r0"), None);
 
     // A player whose monitor holds the device inside the group's values.
-    let live = give_host_values(&mut chain.devices, None, &mut |at| {
+    let live = give_host_values(&mut chain.devices, None, &|_| 0, &mut |at| {
         (*at == inner).then_some([-3.0; suhina_device_api::MAX_READOUTS])
     });
     assert!(live);

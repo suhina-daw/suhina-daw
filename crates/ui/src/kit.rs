@@ -28,6 +28,7 @@ pub mod scroll;
 pub mod selection;
 pub mod session_geometry;
 pub mod skin;
+pub mod strands;
 pub mod style_class;
 pub mod surface;
 pub mod table;

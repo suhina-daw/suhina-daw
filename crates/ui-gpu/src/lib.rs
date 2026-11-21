@@ -8,6 +8,8 @@
 //! - [`surface`]: `kit::surface`'s clears, drawn unblended so the pixels under a backdrop are
 //!   cleared before it is drawn.
 //! - [`liquid`]: `kit::liquid`'s backdrops, captured and blurred in renderers of their own.
+//! - [`strands`]: `kit::strands`' dots, hundreds of thousands of them, for `Widget::Strands`.
 
 pub mod liquid;
+pub mod strands;
 pub mod surface;

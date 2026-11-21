@@ -109,6 +109,7 @@ fn alone(project: &Project, track: TrackId) -> Project {
         default_scale: None,
         controller_mappings: Vec::new(),
         lane_layouts: Vec::new(),
+        panel_pages: Vec::new(),
     }
 }
 

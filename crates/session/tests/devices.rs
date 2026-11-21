@@ -66,6 +66,29 @@ fn devices_are_added_set_switched_and_removed_with_undo() {
     assert_eq!(session.project(), &Project { next_id: session.project().next_id, ..project() });
 }
 
+/// The page a device's panel shows is kept with the project and is no undo step: undo and redo
+/// step past it, leaving it as it is, and a page out of range is refused.
+#[test]
+fn a_panels_page_is_kept_with_the_project_outside_the_undo_history() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "instrument" })).unwrap();
+    let device = session.project().channels[0].devices[0].id;
+    let shown = run(&mut session, "device.showPage", json!({ "track": "Keys", "device": 0, "page": 2 })).unwrap();
+    assert_eq!(shown["changed"], true);
+    assert_eq!(session.project().panel_page(device), 2);
+    // No undo step: the next undo takes the device away, not the page.
+    run(&mut session, "device.setParam", json!({ "track": 1, "device": 0, "param": "gain", "value": -3.0 })).unwrap();
+    run(&mut session, "device.showPage", json!({ "track": "Keys", "device": 0, "page": 3 })).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(session.project().panel_page(device), 3, "undoing the gain keeps the page");
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!(session.project().panel_page(device), 3, "so does redoing it");
+    run(&mut session, "device.showPage", json!({ "track": "Keys", "device": 0, "page": 0 })).unwrap();
+    assert!(session.project().panel_pages.is_empty(), "the first page is kept by keeping nothing");
+    assert!(run(&mut session, "device.showPage", json!({ "track": "Keys", "device": 0, "page": 16 })).is_err());
+    assert!(run(&mut session, "device.showPage", json!({ "track": "Keys", "device": 4, "page": 1 })).is_err());
+}
+
 /// A duplicate parameter id in a project file: the panel shows the last value, the same one the
 /// engine runs and the preset saves (the last wins).
 #[test]

@@ -241,8 +241,9 @@ pub fn rendered(app: App, subject: &Subject, width: f32, scale: f32, gpu: &Gpu) 
     suhina_ui::kit::surface::install(&ctx, suhina_ui_gpu::surface::provider(&state));
     // As the app: liquid needs encoded and linear views of its captures.
     if state.adapter.get_downlevel_capabilities().flags.contains(egui_wgpu::wgpu::DownlevelFlags::VIEW_FORMATS) {
-        suhina_ui::kit::liquid::install(&ctx, Arc::new(suhina_ui_gpu::liquid::Liquid::new(state)));
+        suhina_ui::kit::liquid::install(&ctx, Arc::new(suhina_ui_gpu::liquid::Liquid::new(state.clone())));
     }
+    suhina_ui::kit::strands::install(&ctx, Arc::new(suhina_ui_gpu::strands::Strands::new(state)));
     harness.run_steps(2);
     harness
 }
