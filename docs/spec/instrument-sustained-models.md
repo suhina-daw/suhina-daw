@@ -23,8 +23,7 @@ instrument.
 
 This document adds a **held layer** to a fitted recording. It is measured from the same one
 recording, stored beside the recording's modes in a revision-4 set, and played by the
-Instrument while the key is held. A struck recording gets none of the held tone's parts, but
-every recording may carry **liveliness** (below), which the same layer plays.
+Instrument while the key is held. A struck recording gets none and plays exactly as before.
 Nothing here is a physical bowing or breath model: it reproduces measured statistics of one
 performance.
 
@@ -95,7 +94,7 @@ After the modes are fitted, a recording is **held** when its sustained modes (th
 fitting marks sustained) hold at least half of its total magnitude, or when modal fitting found
 it a held note (its whole level holds after the attack, a release may follow:
 [held partials at an uneven level](instrument-modal-fitting.md)). Only a held recording, or
-one with vibrato, gets a held layer; a struck recording gets none (only its liveliness, below).
+one with vibrato, gets a held layer; a struck recording gets none.
 
 For a held recording the fine envelope of every mode is measured on the flattened signal with
 1024-sample Hann windows every 256 samples. The **held level** of a mode is the median of its
@@ -148,7 +147,7 @@ envelope from 0.3 s to the release start (or the end).
 The attack residual of a held recording is computed against the modes with their onsets, so it
 holds what the modes miss, not the opposite of their swell.
 
-### 3. Liveliness (every recording)
+### 3. Liveliness (held recordings)
 
 A model of steady sines sounds static, frozen, however close its spectrum: in a recording every
 partial's level moves a little all the time, and a bowed, blown or whistled one much more. On
@@ -156,7 +155,7 @@ partial's level moves a little all the time, and a bowed, blown or whistled one 
 partials (their level in dB minus its moving average over 0.3 s) was about 0.3 dB on a piano's
 main partials, 0.7..4 dB on a cello, 2.3 dB on a whistle, 4..6 dB on a flute and about 4 dB on a
 trombone, at 3..5 Hz, higher partials more. So modal fitting (algorithm version 4) measures, for
-every recording, each kept mode's **shimmer**: from 0.15 s while within 40 dB of the mode's
+a held recording, each kept mode's **shimmer**: from 0.15 s while within 40 dB of the mode's
 loudest window, the RMS of its level in dB minus its moving average over 27 windows (0.3 s, which
 keeps its decay and a beat slower than about 3 Hz out), from 0.2 dB (below, none) to 9 dB, from at
 least 20 such windows; a mode with a beating partner gets none, its beat being its fluctuation.
@@ -165,8 +164,9 @@ autocorrelation falls to half, `ln 2 / (2 pi lag)`), 0.5..20 Hz. Without a measu
 held layer's **drift** comes from the note track (the root analysis's YIN frames, every 512
 samples, octave errors folded): over the frames within half a semitone of the note, the standard
 deviation of their cents, from 3 cents (a piano's track jitters about a cent; below, none) to 20,
-with the bandwidth where its autocorrelation falls to half, 0.5..10 Hz. A recording with
-liveliness but no held tone gets a layer of only these; one with neither has none.
+with the bandwidth where its autocorrelation falls to half, 0.5..10 Hz. A decaying (struck or
+plucked) recording gets no liveliness: what its windows show is its beats, a bend and its
+effects, and played back on a guitar's notes they wobbled and roughened the sound.
 
 ## How it is stored
 

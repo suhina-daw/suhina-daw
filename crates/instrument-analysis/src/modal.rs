@@ -690,9 +690,10 @@ fn fit_range(
         } else {
             None
         };
-        // Liveliness: every recording's partials fluctuate a little (a bowed or blown one much
-        // more), and a held tone's pitch wanders; measured here, played by the held layer.
-        let (shimmer, shimmer_hz) = liveliness(&mono, &accepted, &mut work)?;
+        // Liveliness: a held tone's partials fluctuate (a bowed or blown one by several dB) and
+        // its pitch wanders; measured here, played by the held layer. A decaying note gets none:
+        // what its windows show is its beats, a bend and effects, which played as a wobble.
+        let (shimmer, shimmer_hz) = if held { liveliness(&mono, &accepted, &mut work)? } else { (Vec::new(), 0.0) };
         let layer = {
             let mut layer = layer.unwrap_or(Sustain::NONE);
             if shimmer_hz > 0.0 {
@@ -701,7 +702,8 @@ fn fit_range(
                 }
                 layer.shimmer_hz = shimmer_hz;
             }
-            if layer.drift_cents == 0.0
+            if held
+                && layer.drift_cents == 0.0
                 && vibrato.is_none()
                 && let Some((cents, hz)) = wander
             {
