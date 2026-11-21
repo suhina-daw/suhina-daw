@@ -123,6 +123,18 @@ const ANTI_EARLY: f64 = 3.0;
 const ANTI_LATE_DB: f64 = 20.0;
 /// Work steps of the null search with the shortest window (6 s of 512-sample windows).
 const ANTI_WORK: usize = (ANTI_SECONDS * RATE as f64) as usize / SHORT_FRAME;
+/// A held partial at an uneven level: windows it needs, how far below the span's median a window
+/// counts as a dip and the largest share of dips (see instrument-modal-fitting.md › Held
+/// partials at an uneven level).
+const HELD_MIN_WINDOWS: usize = 5;
+const HELD_DIP_DB: f64 = 20.0;
+const HELD_MAX_DIPS: f64 = 0.25;
+/// A held part ends at the last window within this much of its opening level: the release.
+const HELD_RELEASE_DB: f64 = 6.0;
+/// The held part starts after the attack, as the held layer's measurements do.
+const HELD_FROM_SECONDS: f64 = 0.15;
+/// Window of the whole level a held note is told by (46 ms).
+const HELD_LEVEL_FRAME: usize = 1024;
 /// The last resort: windows it needs and how far its first third must stand above its last.
 const FALLBACK_MIN_WINDOWS: usize = 4;
 const FALLBACK_DROP_DB: f64 = 3.0;
@@ -432,7 +444,11 @@ pub fn fit(
         short_windows.push(hann(size));
         size *= 2;
     }
-    let fitter = Fitter { mono: &mono, window: &window, frames, short_windows: &short_windows };
+    // A held note (its whole level holds after the attack, a release may follow): every
+    // partial is first tried as held, so a bowed note's partials are not split between held and
+    // decaying by their own unevenness.
+    let held_note = held_level(&mono, frame_size, frames);
+    let fitter = Fitter { mono: &mono, window: &window, frames, short_windows: &short_windows, held_note };
     let mut accepted: Vec<Fitted> = Vec::with_capacity(MAX_CANDIDATES);
     for (position, &hz) in frequencies.iter().enumerate() {
         if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position, &string), &mut work)? {
@@ -566,7 +582,7 @@ pub fn fit(
         work.step()?;
         let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
         let held_sum: f64 = accepted.iter().filter(|f| f.evidence.sustained).map(Fitted::magnitude).sum();
-        let held = sum > 0.0 && held_sum >= 0.5 * sum;
+        let held = held_note || (sum > 0.0 && held_sum >= 0.5 * sum);
         let layer = if held || vibrato.is_some() {
             let inputs: Vec<sustain::ModeInput> = accepted
                 .iter()
@@ -1427,6 +1443,8 @@ struct Fitter<'a> {
     window: &'a [f64],
     frames: usize,
     short_windows: &'a [Vec<f64>],
+    /// The recording's whole level holds: partials are tried as held first.
+    held_note: bool,
 }
 
 impl Fitter<'_> {
@@ -1445,7 +1463,7 @@ impl Fitter<'_> {
         let short = self.short_windows.iter().find(|w| w.len() as f64 >= needed);
         // A null the long envelope windows would smooth over: the short windows look first.
         let mut found = None;
-        if let Some(short) = short {
+        if let Some(short) = short.filter(|_| !self.held_note) {
             // Far enough for a null seconds in: up to 6 s.
             let reach = (ANTI_SECONDS * f64::from(RATE)) as usize / short.len();
             let count = (mono.len() / short.len()).min(reach);
@@ -1454,14 +1472,14 @@ impl Fitter<'_> {
         }
         let (measurements, thetas) = measure(mono, self.window, self.frames, hz, work)?;
         if found.is_none() {
-            found = estimate(hz, &measurements).map(|e| (e, thetas, self.window));
+            found = estimate(hz, &measurements, self.held_note).map(|e| (e, thetas, self.window));
         }
         if found.is_none()
             && let Some(short) = short
         {
             let count = (mono.len() / short.len()).min(SHORT_FRAMES);
             let (measurements, thetas) = measure(mono, short, count, hz, work)?;
-            found = estimate(hz, &measurements).map(|e| (e, thetas, short.as_slice()));
+            found = estimate(hz, &measurements, self.held_note).map(|e| (e, thetas, short.as_slice()));
         }
         let Some((estimate, thetas, used)) = found else { return Ok(None) };
         let slow = estimate.intercept.exp() / window_bias(used, estimate.slope);
@@ -1713,13 +1731,18 @@ struct Estimate {
 /// Decay of one mode from its (window, time, log amplitude) measurements: fitted on its own
 /// span, once more on the span's last two thirds when a long span fails, and with a faster
 /// first part when that describes the span clearly better.
-fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
-    // A null the partial comes back from: prompt sound and aftersound in opposite phase.
-    if let Some(anti) = anti_phase(hz, values) {
-        return Some(anti);
-    }
+fn estimate(hz: f64, values: &[(usize, f64, f64)], held_note: bool) -> Option<Estimate> {
     let span = envelope_span(values);
     let first_window = span.first()?.0;
+    // In a held note, a partial that holds is held, however uneven.
+    if held_note && let Some((intercept, slope, evidence)) = held_span(hz, values) {
+        let first_window = values.iter().find(|v| v.1 >= HELD_FROM_SECONDS)?.0;
+        return Some(Estimate { intercept, slope, evidence, fast: None, first_window, anti: false });
+    }
+    // A null the partial comes back from: prompt sound and aftersound in opposite phase.
+    if !held_note && let Some(anti) = anti_phase(hz, values) {
+        return Some(anti);
+    }
     let single = fit_span(hz, span);
     // The late retry describes what rings on after a fast early decay; it never makes a mode
     // sustained (beating can flatten a decaying partial's late windows).
@@ -1826,6 +1849,85 @@ fn loose_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEv
             beat_share: 0.0,
             phase: 0.0,
             loose: true,
+        },
+    ))
+}
+
+/// Whether a recording's whole level holds after its attack (a release may follow), by the
+/// rule of [`held_span`] on the RMS level of `HELD_LEVEL_FRAME`-sample windows over the analyzed
+/// span (finer than the envelope windows, so a short held note still has enough of them).
+fn held_level(mono: &[f64], frame_size: usize, frames: usize) -> bool {
+    let length = (frame_size * frames).min(mono.len());
+    let frame_size = HELD_LEVEL_FRAME;
+    let levels: Vec<(usize, f64, f64)> = mono
+        .get(..length)
+        .unwrap_or_default()
+        .chunks_exact(frame_size)
+        .enumerate()
+        .map(|(index, frame)| {
+            let power = frame.iter().map(|x| x * x).sum::<f64>() / frame_size as f64;
+            let t = (index as f64 + 0.5) * frame_size as f64 / f64::from(RATE);
+            (index, t, 0.5 * power.max(1e-300).ln())
+        })
+        .collect();
+    held_span(0.0, &levels).is_some()
+}
+
+/// A partial held at an uneven level (a bowed, blown or sung partial moving with the bow, the
+/// breath or a beat, more than a decay's error limits allow) that never clearly falls while the
+/// note is held: kept sustained at its mean amplitude over the held part. From the first window
+/// centered at least `HELD_FROM_SECONDS` in (after the attack), the held part runs to the last window at most `HELD_RELEASE_DB`
+/// below the median of the span's first half (what follows is the note's release, which the
+/// held layer measures); in it, at most a quarter of the windows lie `HELD_DIP_DB` below their
+/// median (a bow change or a beat's null), and the median level of its last third stands at most
+/// `SUSTAIN_DB` below its first third's (a swell is allowed: the held layer gives the mode its
+/// rise). Medians, since a few dips pull a mean down as a decay would.
+fn held_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEvidence)> {
+    // After the attack: a bow's or a breath's accent is not the held level.
+    let start = values.iter().position(|v| v.1 >= HELD_FROM_SECONDS)?;
+    let whole = values.get(start..)?;
+    let level_median = |part: &[(usize, f64, f64)]| {
+        let mut levels: Vec<f64> = part.iter().map(|p| p.2).collect();
+        median(&mut levels)
+    };
+    let opening = level_median(whole.get(..whole.len().div_ceil(2))?);
+    let end = whole.iter().rposition(|v| (opening - v.2) * DB <= HELD_RELEASE_DB)?;
+    let span = whole.get(..=end)?;
+    if span.len() < HELD_MIN_WINDOWS {
+        return None;
+    }
+    let middle = level_median(span);
+    let dips = span.iter().filter(|v| (middle - v.2) * DB > HELD_DIP_DB).count();
+    if dips as f64 > HELD_MAX_DIPS * span.len() as f64 {
+        return None;
+    }
+    let third = span.len() / 3;
+    let fall_db = (level_median(span.get(..third)?) - level_median(span.get(span.len() - third..)?)) * DB;
+    if fall_db > SUSTAIN_DB {
+        return None;
+    }
+    let count = span.len() as f64;
+    let level = (span.iter().map(|v| v.2.exp()).sum::<f64>() / count).ln();
+    let mean_t = span.iter().map(|v| v.1).sum::<f64>() / count;
+    let slope = -1000.0_f64.ln() / SUSTAINED_SECONDS;
+    let rms_db = (span.iter().map(|v| ((v.2 - level) * DB).powi(2)).sum::<f64>() / count).sqrt();
+    Some((
+        level - slope * mean_t,
+        slope,
+        ModeEvidence {
+            frequency_hz: hz,
+            decay_seconds: SUSTAINED_SECONDS,
+            estimation_rms_db: rms_db,
+            validation_rms_db: rms_db,
+            estimation_windows: span.len(),
+            validation_windows: 0,
+            sustained: true,
+            fast_decay_seconds: 0.0,
+            fast_share: 0.0,
+            beat_hz: 0.0,
+            beat_share: 0.0,
+            phase: 0.0,
+            loose: false,
         },
     ))
 }

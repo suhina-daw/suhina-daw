@@ -136,7 +136,7 @@ fn held_out_temporal_errors_are_not_used_to_fit_the_decay() {
     let hz = 440.0;
     let slope = -3.0;
     let data: Vec<_> = (0..12).map(|i| (i, i as f64 * 0.1, -0.3 + slope * i as f64 * 0.1)).collect();
-    let fitted = estimate(hz, &data).unwrap();
+    let fitted = estimate(hz, &data, false).unwrap();
     assert!((fitted.slope - slope).abs() < 1e-12);
     assert!(fitted.evidence.validation_rms_db < 1e-12);
     assert!(fitted.fast.is_none(), "one exponential needs no fast part");
@@ -149,8 +149,44 @@ fn held_out_temporal_errors_are_not_used_to_fit_the_decay() {
     // Held-out windows reject the validated fit; the clearly falling partial is kept only loose,
     // outside the profile and its reported errors.
     assert!(fit_span(hz, envelope_span(&disturbed)).is_none(), "held-out envelope mismatch must reject this mode");
-    let loose = estimate(hz, &disturbed).unwrap();
+    let loose = estimate(hz, &disturbed, false).unwrap();
     assert!(loose.evidence.loose && loose.evidence.validation_windows == 0, "{:?}", loose.evidence);
+}
+
+/// A held partial is told from a decaying one by medians after the attack, whatever its dips,
+/// accent and release; outside a held note it is never tried.
+#[test]
+fn a_held_partial_at_an_uneven_level_is_held_and_a_decay_is_not() {
+    let db = |v: f64| v / DB;
+    // Windows of 0.1 s: an accent, a held level wobbling +-4 dB with one 25 dB dip, a release.
+    let wobble = [0.0, 3.0, -4.0, 2.0, -3.0, 4.0, -2.0, -25.0, -4.0, 2.0, -1.0, 3.0];
+    let mut held: Vec<(usize, f64, f64)> =
+        wobble.iter().enumerate().map(|(i, w)| (i, 0.05 + i as f64 * 0.1, db(-20.0 + w))).collect();
+    held.get_mut(0).unwrap().2 = db(-12.0);
+    for (i, value) in [-30.0, -40.0, -50.0].iter().enumerate() {
+        held.push((12 + i, 1.25 + i as f64 * 0.1, db(*value)));
+    }
+    let (intercept, slope, evidence) = held_span(300.0, &held).unwrap();
+    assert!(evidence.sustained && !evidence.loose && evidence.decay_seconds == SUSTAINED_SECONDS);
+    // Its level is the mean amplitude of the held part, a little under -20 dB with the dip.
+    let level = (intercept + slope * 0.6) * DB;
+    assert!((-22.0..-19.0).contains(&level), "{level}");
+    assert!(estimate(300.0, &held, true).unwrap().evidence.sustained);
+    assert!(fit_span(300.0, envelope_span(&held)).is_none(), "the decay fits reject it");
+    // The same wobble on a 12 dB fall over the held part is a decay.
+    let falling: Vec<_> = held.iter().map(|&(i, t, y)| (i, t, y - db(12.0 * t))).collect();
+    assert!(held_span(300.0, &falling).is_none());
+    // A whole level that falls steadily is no held note; one that holds and releases is.
+    let mut decaying = vec![0.0; 22050 * 2];
+    let mut sustained = vec![0.0; 22050 * 2];
+    for (n, (d, h)) in decaying.iter_mut().zip(sustained.iter_mut()).enumerate() {
+        let t = n as f64 / f64::from(RATE);
+        let tone = (TAU * 220.0 * t).sin();
+        *d = tone * (-1000.0_f64.ln() * t / 3.0).exp();
+        *h = tone * if t < 1.5 { 1.0 } else { (-1000.0_f64.ln() * (t - 1.5) / 0.2).exp() };
+    }
+    assert!(!held_level(&decaying, 2048, 21));
+    assert!(held_level(&sustained, 2048, 21));
 }
 
 struct Lcg(u32);

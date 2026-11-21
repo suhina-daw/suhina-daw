@@ -191,6 +191,35 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   loose mode joins the fitted recording with that
   T60 (and may get a beating partner below), but never the schema-1 profile or its reported
   validation errors, and a sound with loose modes only has no model.
+- **Held partials at an uneven level (algorithm version 4).** A bowed, blown or sung note
+  holds its partials, but not at one level: the bow's pressure and speed, a bow change, the
+  breath and beating between a partial and its neighbours move each partial by several decibels
+  from one envelope window to the next, each partial its own way. Measured on a cello E4 without
+  a detectable vibrato, its three strongest partials (325, 651 and 977 Hz, about -14 dB) moved
+  by +-4 dB: the decay fits rejected them for their error, the loose rules for not falling, and
+  the model kept the partials above 1 kHz only; after the attack the 250 and 500 Hz octaves were
+  40 dB low and the note sounded plucked. A note also has an accent at its start and often a
+  release at its end, which made a held note's partials look like decays (a cello C3 whose
+  release starts at 0.65 s was fitted as decaying, partly held). So first the recording is told
+  to be a **held note**: its RMS level over 1024-sample windows of the analyzed interval obeys
+  the rule below. In a held note every candidate is first tried as held, before the null
+  search and the decay fits, which it skips when it holds; outside a held note the rule is never
+  tried, so a struck note's partials are fitted exactly as before. The rule, on a partial's
+  envelope windows: the **held part** starts at the first window centered at least 0.15 s in
+  (after the accent) and runs to the last window at most 6 dB below the median of the first
+  half of the windows from there (what follows is the release, which the held layer measures);
+  it needs at least five windows, at most a quarter of them more than 20 dB below the held
+  part's median (a bow change's or a beat's null), and the median level of its last third at most
+  3 dB below its first third's (a swell is allowed: the held layer gives the mode its rise).
+  Medians, since a few dips pull a mean down as a decay would. A held partial is sustained (the
+  profile's longest T60, 60 s) at its mean amplitude over the held part, its phase from the
+  held part's first window; its reported estimation and validation errors are the RMS of its
+  levels around that mean. A held note always gets a held layer
+  ([held tones](instrument-sustained-models.md)), whatever share its sustained modes hold. On
+  the cello E4 the 500 Hz..2 kHz octaves then stayed within 6 dB of the recording through the
+  note (the 250 Hz octave dipped 12 dB at 0.3 s, where a beat was fitted on the uneven
+  fundamental), and on a cello C3 the held part stayed within 2 dB of most octaves, with a
+  measured 2.9 s release.
 - **Prompt sound and aftersound (algorithm version 4).** A piano note's two or three strings,
   tuned a little apart and coupled through the bridge, give a partial a fast "prompt sound" and
   a slow "aftersound" that can start in opposite phase (Weinreich 1977): the partial falls fast,
