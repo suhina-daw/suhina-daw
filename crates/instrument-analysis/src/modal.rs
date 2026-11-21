@@ -120,6 +120,8 @@ const MIN_BEAT_CORRELATION: f64 = 0.5;
 const MIN_BEAT_RIPPLE_DB: f64 = 1.0;
 /// Attack: the first 0.25 s, kept when it holds at least 0.1 % of the signal's energy there.
 const ATTACK_SECONDS: f64 = 0.25;
+/// The highest source rate an attack keeps (a model set's attacks are at most 48 kHz).
+const MAX_ATTACK_RATE: u32 = 48_000;
 const MIN_ATTACK_ENERGY: f64 = 1e-3;
 /// Velocity a fitted recording stands for until the person says otherwise.
 pub const DEFAULT_VELOCITY: f32 = 0.8;
@@ -565,7 +567,30 @@ pub fn fit(
         let missing = tail(&accepted, &mono, stereo.map(|(other, _)| other));
         let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
         let own_tail = missing.as_ref().and_then(|m| m.tail(sum, 1.0));
-        let source = Source { mono: &mono, scale, stereo };
+        // The attack at the source's own rate when it is at most 48 kHz and the recording was
+        // not resampled flat for a vibrato: the knock keeps its top octave and its edge.
+        let attack_frames = ((ATTACK_SECONDS * f64::from(sample_rate)) as usize).min(length);
+        let full_rate = sample_rate <= MAX_ATTACK_RATE && vibrato.is_none();
+        let cut_channel = |index: usize| -> Vec<f64> {
+            let mean = sums.get(index).copied().unwrap_or(0.0) / length as f64;
+            input
+                .chunks_exact(channels)
+                .take(attack_frames)
+                .map(|frame| (f64::from(frame.get(index).copied().unwrap_or(0.0)) - mean) / scale)
+                .collect()
+        };
+        let full_reference = if full_rate { cut_channel(channel) } else { Vec::new() };
+        let full_other = if full_rate && stereo.is_some() { cut_channel(1 - channel) } else { Vec::new() };
+        let attack_source = if full_rate {
+            AttackSource {
+                rate: sample_rate,
+                reference: &full_reference,
+                other: stereo.is_some().then_some(full_other.as_slice()),
+            }
+        } else {
+            AttackSource { rate: RATE, reference: &mono, other: stereo.map(|(other, _)| other) }
+        };
+        let source = Source { scale, stereo, attack: attack_source };
         report.recording = recording(&accepted, &whole, &source, reference_key, reference_hz, own_tail);
         report.recording_modes = accepted.iter().map(|f| f.evidence).collect();
         // A chord: one recording per note, its attack the residual against every note's modes.
@@ -796,12 +821,22 @@ struct Residual<'a> {
     layer: Option<Sustain>,
 }
 
-/// The prepared source a recording is cut from: the fitted channel, its scale against the
-/// source's full scale, and a stereo recording's other channel with the fitted channel's index.
+/// The prepared source a recording is cut from: its scale against the source's full scale, a
+/// stereo recording's other channel with the fitted channel's index, and the attack's signals.
 struct Source<'a> {
-    mono: &'a [f64],
     scale: f64,
     stereo: Option<(&'a [f64], u8)>,
+    /// What the attack is cut from: the fitted channel (and the other one) at `rate`, the
+    /// source's own rate when it allows, else the prepared 22050 Hz channels.
+    attack: AttackSource<'a>,
+}
+
+/// The signals an attack is the residual of, at their rate, from the strike.
+#[derive(Clone, Copy)]
+struct AttackSource<'a> {
+    rate: u32,
+    reference: &'a [f64],
+    other: Option<&'a [f64]>,
 }
 
 /// The recording of `accepted` at `key` (`reference_hz` its frequency), its attack the residual
@@ -814,13 +849,14 @@ fn recording(
     reference_hz: f64,
     tail: Option<Tail>,
 ) -> Option<ModelRecording> {
-    let (mono, scale, stereo) = (source.mono, source.scale, source.stereo);
+    let (scale, stereo) = (source.scale, source.stereo);
     let layer = residual.layer;
     let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
     if !(sum.is_finite() && sum > 0.0) {
         return None;
     }
-    let length = ((ATTACK_SECONDS * f64::from(RATE)) as usize).min(mono.len());
+    let cut = source.attack;
+    let length = ((ATTACK_SECONDS * f64::from(cut.rate)) as usize).min(cut.reference.len());
     let ln1000 = 1000.0_f64.ln();
     let mut attack = Vec::with_capacity(length);
     let mut attack_other = Vec::with_capacity(if stereo.is_some() { length } else { 0 });
@@ -840,8 +876,8 @@ fn recording(
             1.0
         }
     };
-    for (n, x) in mono.iter().take(length).enumerate() {
-        let t = n as f64 / f64::from(RATE);
+    for (n, x) in cut.reference.iter().take(length).enumerate() {
+        let t = n as f64 / f64::from(cut.rate);
         let (mut model, mut model_other) = (0.0, 0.0);
         for (index, fitted) in residual.against.iter().enumerate() {
             let envelope = onset(index, t);
@@ -864,7 +900,7 @@ fn recording(
         residual_energy += left * left;
         signal_energy += x * x;
         attack.push((left * residual.share / sum) as f32);
-        if let Some(y) = stereo.as_ref().and_then(|(other, _)| other.get(n)) {
+        if let Some(y) = cut.other.filter(|_| stereo.is_some()).and_then(|other| other.get(n)) {
             let right = (y - model_other) * fade;
             residual_energy += right * right;
             signal_energy += y * y;
@@ -896,7 +932,7 @@ fn recording(
         })
         .collect();
     let sustain = layer.map(|mut layer| {
-        layer.attack_seconds = (attack.len() as f64 / f64::from(RATE)).min(ATTACK_SECONDS) as f32;
+        layer.attack_seconds = (attack.len() as f64 / f64::from(cut.rate)).min(ATTACK_SECONDS) as f32;
         layer
     });
     let recording = ModelRecording {
@@ -905,7 +941,7 @@ fn recording(
         velocity: DEFAULT_VELOCITY,
         level: sum * scale,
         modes,
-        attack_rate: if attack.is_empty() { 0 } else { RATE },
+        attack_rate: if attack.is_empty() { 0 } else { cut.rate },
         attack,
         sustain: sustain.filter(|s| !s.is_empty() && s.validate(accepted.len()).is_ok()),
         stereo: stereo.map(|(_, reference)| Stereo {

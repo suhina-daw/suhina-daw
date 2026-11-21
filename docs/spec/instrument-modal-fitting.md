@@ -205,10 +205,15 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   0.5. The sign of the detuning is not observable and is taken as positive.
 - **Level.** `level` is the sum of the modes' magnitudes in the source's own full-scale units,
   so the fitted model at the recording's key is as loud as its sample.
-- **Attack.** The fitted modes, with their phases, two-part decays and partners, are rendered at
-  22050 Hz over the first 0.25 s of the interval (or less, if shorter); the difference from the
-  prepared signal, faded out with a raised cosine over its second half and divided by `level`,
-  is the attack. It is kept only when its energy is at least 0.1 % (-30 dB) of the signal's in
+- **Attack.** The fitted modes, with their phases, two-part decays and partners, are rendered
+  over the first 0.25 s of the interval (or less, if shorter); the difference from the signal,
+  faded out with a raised cosine over its second half and divided by `level`, is the attack.
+  Version 4 renders and cuts it at the **source's own rate** when that is at most 48 kHz and the
+  recording was not resampled flat for a vibrato (the source channel without its mean, at the
+  fitted channel's scale), and at the prepared 22050 Hz otherwise. A 22050 Hz attack lost the
+  knock's top octave, and read up to 48 kHz by linear interpolation it mirrored its content
+  into 11..22 kHz: on a piano note the 14 kHz octave of the first 50 ms played 26 dB above the
+  recording's, and the strike lost its edge. It is kept only when its energy is at least 0.1 % (-30 dB) of the signal's in
   that window, so a purely modal sound carries none. The attack holds what the modes miss, so the
   body response is not applied twice.
 - **Tail (algorithm version 4).** What the modes miss does not end with the attack: a
