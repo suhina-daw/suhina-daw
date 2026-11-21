@@ -164,8 +164,11 @@ struct Hold {
     /// Grain length in output samples and samples until the next grain.
     length: usize,
     until_next: usize,
-    /// Per grain: read position (source frames) and age (output samples; off at `length`).
-    grains: [(f64, usize); 2],
+    /// Per grain: read position (source frames), age (output samples; off at `length`) and the
+    /// gain that brings its level to the hold's.
+    grains: [(f64, usize, f64); 2],
+    /// The level the hold keeps: the RMS where it took over.
+    level: f64,
 }
 
 /// Random points a new grain is chosen from, and a hold grain's shortest and longest length
@@ -173,6 +176,8 @@ struct Hold {
 const HOLD_CANDIDATES: usize = 4;
 const HOLD_SHORTEST: f64 = 0.2;
 const HOLD_LONGEST: f64 = 0.6;
+/// The gains that bring a grain to the hold's level: at most 12 dB either way.
+const HOLD_GAIN: (f64, f64) = (0.25, 4.0);
 /// The sound's period in source frames, for lining up a new grain with the one it follows.
 fn hold_period(source_rate: f64, root: f64) -> f64 {
     (source_rate / (440. * 2f64.powf((root - 69.) / 12.))).clamp(16., 2048.)
@@ -190,6 +195,13 @@ struct HoldSource<'a> {
 }
 
 impl HoldSource<'_> {
+    /// RMS of a grain `length` output samples long from `position` (every fourth sample).
+    fn level(&self, position: f64, length: usize) -> f64 {
+        let points = (length / 4).max(1);
+        let sum: f64 = (0..points).map(|n| self.mono(position + (4 * n) as f64 * self.step).powi(2)).sum();
+        (sum / points as f64).sqrt().max(1e-9)
+    }
+
     /// Mono level at `position`, for lining up grains.
     fn mono(&self, position: f64) -> f64 {
         let [left, right] = read(self.source, self.channels, position);
@@ -228,12 +240,15 @@ impl HoldSource<'_> {
 
 impl Hold {
     /// Takes over from direct playback at `position`: that grain at its peak, fading out, and a
-    /// new one fading in, in phase with it.
+    /// new one fading in, in phase with it, at the level where the hold took over.
     fn enter(&mut self, from: &HoldSource<'_>, position: f64, length: usize, seed: &mut u32) {
         let length = length.max(4);
         let half = length / 2;
+        let level = from.level(position, length);
         let start = from.start(position, seed);
-        *self = Self { active: true, length, until_next: half, grains: [(position, half), (start, 0)] };
+        let gain = (level / from.level(start, length)).clamp(HOLD_GAIN.0, HOLD_GAIN.1);
+        *self =
+            Self { active: true, length, until_next: half, grains: [(position, half, 1.), (start, 0, gain)], level };
     }
 
     /// The next output frame; every half grain a new grain starts in phase with the one at its
@@ -242,11 +257,11 @@ impl Hold {
         let mut out = [0.; 2];
         let length = self.length;
         let window_step = 2048. / (length.max(2) - 1) as f64;
-        for (position, age) in &mut self.grains {
+        for (position, age, level_gain) in &mut self.grains {
             if *age >= length {
                 continue;
             }
-            let gain = grain_window(window, *age as f64 * window_step);
+            let gain = grain_window(window, *age as f64 * window_step) * *level_gain;
             let data = read(from.source, from.channels, *position);
             out[0] += data[0] * gain;
             out[1] += data[1] * gain;
@@ -257,8 +272,9 @@ impl Hold {
         if self.until_next == 0 {
             let follow = self.grains.iter().filter(|g| g.1 < length).max_by_key(|g| g.1).map_or(from.low, |g| g.0);
             let start = from.start(follow, seed);
+            let gain = (self.level / from.level(start, length)).clamp(HOLD_GAIN.0, HOLD_GAIN.1);
             if let Some(slot) = self.grains.iter_mut().max_by_key(|g| g.1) {
-                *slot = (start, 0);
+                *slot = (start, 0, gain);
             }
             self.until_next = length / 2;
         }
@@ -1025,9 +1041,9 @@ impl Sampler {
                     / self.rate;
                 v.step += (target_step - v.step) / (p[29] * self.rate).max(1.);
                 let mut signal = [0.; 2];
-                // A hold grain: two fifths of the loop region, 0.2..0.6 s, at least 2.5 periods.
+                // A hold grain: almost half the loop region, 0.2..0.6 s, at least 2.5 periods.
                 let region = (hi - lo) / v.step.max(1e-6);
-                let length = (region / 2.5)
+                let length = (region / 2.2)
                     .clamp(HOLD_SHORTEST * self.rate, HOLD_LONGEST * self.rate)
                     .max(2.5 * period / v.step.max(1e-6)) as usize;
                 // The last start a grain may take and still end inside the loop region.

@@ -255,7 +255,7 @@ stereo and its own movement), which no model of sines gives back. In Sample mode
 forward, the note plays from Start like Gate until it reaches Loop start; from there it holds in
 **grains** of the loop region:
 
-- A grain is two fifths of the loop region long, 0.2..0.6 s (at least two and a half periods of
+- A grain is the loop region's length over 2.2, 0.2..0.6 s (at least two and a half periods of
   the root key's pitch), read at the note's step, under a Hann window. Grains of 120 ms changed
   17 times a second and fluttered like a fast LFO, each catching a cello's vibrato and bow at
   another phase. Grains overlap by half: each half grain a new one starts and
@@ -265,7 +265,10 @@ forward, the note plays from Start like Gate until it reaches Loop start; from t
   end), each moved by up to one period of the root key to where its waveform best continues the
   grain at its peak (the normalized correlation over 64 points every two steps of the mono sum),
   a new grain starts at the one scoring highest after a penalty for a level unlike the followed
-  grain's (a quarter of the absolute log of their energy ratio). The two grains then run in phase, so the hold has
+  grain's (a quarter of the absolute log of their energy ratio).
+- Each new grain is brought to the level where the hold took over (the RMS of a grain's length
+  from there, every fourth sample), by at most 12 dB either way: a cello's held part that swells
+  by 20 dB fluttered between grains of other levels. The two grains then run in phase, so the hold has
   neither the comb filtering nor the flutter of grains at random phases.
 - Note-off releases the envelope as for Gate; the grains go on through the release.
 - A loop region too short for a grain plays as Gate. Reverse turns Sustain off.
