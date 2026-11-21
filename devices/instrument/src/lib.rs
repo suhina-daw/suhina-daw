@@ -17,7 +17,7 @@ use suhina_dsp::{
     envelope::{LinearEnvelope, LinearEnvelopeSettings},
     modal::{
         ModalBank, Mode,
-        glide::Glide,
+        glide::{Glide, MAX_GLIDE_CENTS},
         model::{
             Controls, MAX_VOICE_SINES, MODEL_MAGIC, MODEL_REVISION as SET_MODEL_REVISION, ModelSet, Voice as SetVoice,
         },
@@ -170,6 +170,27 @@ impl Default for Voice {
             stolen_fade: Smoother::new(0.0, 1),
         }
     }
+}
+
+/// The glide of a note played legato `offset` semitones from the held note: the recorded glide's
+/// points, each scaled so the glide starts at `offset` (its cents over its start, clamped to
+/// 0..1, so an overshoot holds at the held note's pitch); a recorded glide that starts within a
+/// cent of its note glides linearly over its time. None without a recorded glide or an offset.
+fn legato_glide(recorded: &Glide, offset: Option<f64>) -> Glide {
+    let Some(offset) = offset.filter(|o| o.is_finite() && o.abs() >= 0.01) else { return Glide::NONE };
+    if recorded.is_empty() {
+        return Glide::NONE;
+    }
+    let target = (offset * 100.0).clamp(-f64::from(MAX_GLIDE_CENTS), f64::from(MAX_GLIDE_CENTS));
+    let start = recorded.cents_at(0.0);
+    if start.abs() < 1.0 {
+        return Glide::from_points(&[(0.0, target as f32), (recorded.end() as f32, 0.0)]);
+    }
+    let mut glide = *recorded;
+    for cents in glide.cents.iter_mut().take(usize::from(glide.count)) {
+        *cents = ((f64::from(*cents) / start).clamp(0.0, 1.0) * target) as f32;
+    }
+    glide
 }
 
 /// The noise of a damper landing: 40 ms of low-passed noise fading out.
@@ -457,6 +478,13 @@ impl Instrument {
             }
         }
         let shift = self.modal_shift();
+        // Legato: the newest key still held, a fitted note sounding, and where its pitch is now.
+        let legato_from = self
+            .voices
+            .iter()
+            .filter(|v| v.held && v.fitted_voice && v.fitted.is_active() && v.key != key)
+            .max_by_key(|v| v.serial)
+            .map(|v| f64::from(v.key) + v.glide_semitones);
         let slot =
             self.voices.iter().position(|voice| !voice.sounding()).or_else(|| {
                 self.voices.iter().enumerate().min_by_key(|(_, voice)| voice.serial).map(|(index, _)| index)
@@ -479,9 +507,10 @@ impl Instrument {
                 );
                 voice.fitted.set_other(self.set_voice.other.get(..count).unwrap_or(&[]));
                 voice.reference = self.set_voice.reference;
-                // The recorded glide into the note starts at its first offset.
+                // Played legato, the note glides from the held note's pitch with the shape of the
+                // recorded glide; otherwise it starts on its pitch.
                 voice.stop_glide();
-                voice.glide = self.set_voice.glide;
+                voice.glide = legato_glide(&self.set_voice.glide, legato_from.map(|from| from - f64::from(key)));
                 voice.glide_semitones = voice.glide.cents_at(0.0) / 100.0;
                 voice.glide_ratio = 2.0_f64.powf(voice.glide_semitones / 12.0);
                 voice.fitted.transpose(self.sample_rate, shift + voice.glide_semitones);

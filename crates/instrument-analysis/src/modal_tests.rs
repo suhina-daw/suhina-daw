@@ -290,6 +290,15 @@ fn a_glide_into_the_note_is_fitted_flat_and_kept() {
     // The fundamental is one mode at the note, as strong as a held partial.
     let fundamental = recording.modes.iter().find(|m| (m.ratio - 1.0).abs() < 0.01).expect("the fundamental");
     assert!(fundamental.magnitude > 0.1, "{:?}", recording.modes);
+    // F#4 for 0.3 s, then a step down to D#4: another note before it, so the note is fitted from
+    // its own start, with no glide.
+    let step = |t: f64| if t < 0.3 { 66.0 } else { 63.0 };
+    let pcm = voices(1.8, &[(&step, &|_| 1.0)]);
+    let report = fit(&pcm, RATE, 1, 0..pcm.len(), 63, |_, _| true).unwrap();
+    let start = report.range.start as f64 / f64::from(RATE);
+    assert!((0.2..0.4).contains(&start), "{:?}", report.range);
+    assert_eq!(report.range.end, pcm.len());
+    assert_eq!(report.recording.as_ref().and_then(|r| r.glide), None);
     // C2 held from the start with D4 over it for 0.3 s: the C2 sounds before, no glide.
     let pcm = voices(1.8, &[(&|_| 36.0, &|_| 1.0), (&|_| 62.0, &|t| if t < 0.3 { 2.0 } else { 0.0 })]);
     let report = fit(&pcm, RATE, 1, 0..pcm.len(), 36, |_, _| true).unwrap();

@@ -218,9 +218,10 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   (after the accent) and runs to the last window at most 6 dB below the median of the first
   half of the windows from there (what follows is the release, which the held layer measures);
   it needs at least five windows, at most a quarter of them more than 20 dB below the held
-  part's median (a bow change's or a beat's null), and the median level of its last third within
-  3 dB of its first third's (the held layer gives a mode its rise before 0.15 s; a level that
-  keeps rising is no held tone and no resonance).
+  part's median (a bow change's or a beat's null), the median level of its last third at most
+  3 dB below its first third's, and no rise all the way (each third's median at least 1 dB above
+  the one before and more than 3 dB in all: a level that keeps rising is no held tone and no
+  resonance, while a whistle that swells by 20 dB and then holds is).
   Medians, since a few dips pull a mean down as a decay would. A held partial is sustained (the
   profile's longest T60, 60 s) at its mean amplitude over the held part, its phase from the
   held part's first window; its reported estimation and validation errors are the RMS of its
@@ -259,12 +260,19 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   hold at most a tenth of the power they hold after the glide; otherwise another note sounded
   over the held one (a pedal steel's D4 over its C2) and there is no glide. The glide's sixteen
   points lie evenly from 0 s to its end, the smoothed pitch interpolated in cents from the note,
-  the last at 0. The signal (and the other channel) is then resampled flat along it, as for a
+  the last at 0. Only a continuous movement is a glide: a step of a semitone or more between
+  consecutive voiced frames, or a pause of more than 0.07 s between them, before the note
+  settles is another note (a whistle stepping from F# down to D#, a cello playing A# and then C
+  after a pause). Then the recording's timbre is the settled note's alone: the fit starts again
+  at the first voiced frame after the last such break (its frame's start), over the rest of the
+  interval, and the report names that range; that fit does not restart again. Fitted from the
+  start, the whistle's model sounded 53 cents sharp, a hump of its first note's partials, and the
+  cello played its A# bent into C. The signal (and the other channel) is then resampled flat along it, as for a
   vibrato, so each partial keeps the note's frequency; modes, attack and held layer are fitted
   on the flat signal, the attack at the prepared rate. The recording carries the glide
-  ([modal profiles](instrument-modal-profile.md) › Glide), which plays it back. On the cello
-  one-shot it held 207 cents below C3 for 1.2 s and rose into it by 1.58 s; a guitar bend rose
-  114 cents in 0.4 s; a pedal steel's D4 hammer-on above C2 was told from a glide.
+  ([modal profiles](instrument-modal-profile.md) › Glide), which plays it back when a note is
+  played legato. A guitar bend rose 114 cents in 0.4 s; a pedal steel's D4 hammer-on above C2
+  was told from a glide, and the cello and the whistle from a change of note.
 - **Prompt sound and aftersound (algorithm version 4).** A piano note's two or three strings,
   tuned a little apart and coupled through the bridge, give a partial a fast "prompt sound" and
   a slow "aftersound" that can start in opposite phase (Weinreich 1977): the partial falls fast,

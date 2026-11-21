@@ -130,6 +130,8 @@ const ANTI_WORK: usize = (ANTI_SECONDS * RATE as f64) as usize / SHORT_FRAME;
 const HELD_MIN_WINDOWS: usize = 5;
 const HELD_DIP_DB: f64 = 20.0;
 const HELD_MAX_DIPS: f64 = 0.25;
+/// A level rising by at least this much from each third to the next rises all the way.
+const HELD_RISE_STEP_DB: f64 = 1.0;
 /// A held part ends at the last window within this much of its opening level: the release.
 const HELD_RELEASE_DB: f64 = 6.0;
 /// The held part starts after the attack, as the held layer's measurements do.
@@ -151,6 +153,8 @@ const GLIDE_MIN_FRAMES: usize = 8;
 const GLIDE_SEMITONES: f64 = 1.0;
 const GLIDE_SETTLED_SEMITONES: f64 = 0.3;
 const GLIDE_MIN_SECONDS: f64 = 0.02;
+/// Voiced frames further apart than this (three hops) are a pause between notes.
+const GLIDE_PAUSE_SECONDS: f64 = 0.07;
 /// While a glide is still a semitone or more away, four of the note's partials hold at most a
 /// tenth (-10 dB) of the power they hold after it.
 const GLIDE_CHECK_PARTIALS: usize = 4;
@@ -259,7 +263,21 @@ pub fn fit(
     channels: u16,
     range: Range<usize>,
     reference_key: u8,
-    progress: impl FnMut(usize, usize) -> bool,
+    mut progress: impl FnMut(usize, usize) -> bool,
+) -> Result<Report, Error> {
+    fit_range(samples, sample_rate, channels, range, reference_key, &mut progress, true)
+}
+
+/// [`fit`] over `range`; with `restart`, a note reached by a change of note (not a glide) is
+/// fitted again from its start.
+fn fit_range(
+    samples: &[f32],
+    sample_rate: u32,
+    channels: u16,
+    range: Range<usize>,
+    reference_key: u8,
+    progress: &mut dyn FnMut(usize, usize) -> bool,
+    restart: bool,
 ) -> Result<Report, Error> {
     if reference_key > 127 {
         return Err(Error::InvalidSettings);
@@ -361,7 +379,29 @@ pub fn fit(
     // A glide into the note smears every partial it moves: measure it densely, resample the
     // recording flat along it and keep it for playback (version 4).
     work.step()?;
-    let glide = note_glide(&mono, sample_rate, &mut work)?;
+    let glide = match note_onset(&mono, sample_rate, &mut work)? {
+        Onset::Glide(glide) => Some(glide),
+        // Another note before this one (a step or a pause, not a glide): only this note's sound
+        // is its timbre, so it is fitted from its own start.
+        Onset::Start(seconds) if restart => {
+            let shift = (seconds * f64::from(sample_rate)) as usize;
+            let start = report.range.start.saturating_add(shift);
+            if shift > 0 && start < report.range.end {
+                let end = report.range.end;
+                return fit_range(
+                    samples,
+                    sample_rate,
+                    channels as u16,
+                    start..end,
+                    reference_key,
+                    &mut *work.progress,
+                    false,
+                );
+            }
+            None
+        }
+        Onset::Start(_) | Onset::None => None,
+    };
     if let Some(glide) = &glide {
         mono = sustain::flatten_by(&mono, |t| glide.cents_at(t));
         other = other.map(|other| sustain::flatten_by(&other, |t| glide.cents_at(t)));
@@ -1926,6 +1966,14 @@ fn loose_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEv
     ))
 }
 
+/// How a note begins: on its pitch, by a glide into it, or after another note (at `Start`
+/// seconds from the strike).
+enum Onset {
+    None,
+    Glide(Glide),
+    Start(f64),
+}
+
 /// The glide into the note, from a dense pitch track ([`notes::track`]) with its octave errors
 /// folded, and every frame moved by octaves to within half an octave of the pitch the note
 /// settles on (the median of the last half of its voiced frames): None when the first voiced
@@ -1935,11 +1983,11 @@ fn loose_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEv
 /// Its `GLIDE_POINTS` points are evenly spaced from the strike until the smoothed pitch (each
 /// frame the median of itself and its neighbours) last lies `GLIDE_SETTLED_SEMITONES` from the
 /// note, the last at 0 cents.
-fn note_glide<F: FnMut(usize, usize) -> bool>(
+fn note_onset<F: FnMut(usize, usize) -> bool>(
     mono: &[f64],
     sample_rate: u32,
     work: &mut Work<F>,
-) -> Result<Option<Glide>, Error> {
+) -> Result<Onset, Error> {
     let pcm: Vec<f32> = mono.iter().map(|x| *x as f32).collect();
     let mut frames = notes::track(&pcm, sample_rate, |advance| {
         if advance { work.step().is_ok() } else { (work.progress)(work.done, work.total) }
@@ -1951,7 +1999,7 @@ fn note_glide<F: FnMut(usize, usize) -> bool>(
         .filter_map(|f| f.midi.map(|m| ((f.start as f64 + half) / f64::from(RATE), f64::from(m))))
         .collect();
     if voiced.len() < GLIDE_MIN_FRAMES {
-        return Ok(None);
+        return Ok(Onset::None);
     }
     let pitch_median = |part: &[(f64, f64)]| {
         let mut values: Vec<f64> = part.iter().map(|p| p.1).collect();
@@ -1963,7 +2011,7 @@ fn note_glide<F: FnMut(usize, usize) -> bool>(
     let voiced: Vec<(f64, f64)> = voiced.iter().map(|&(t, m)| (t, m + 12.0 * ((settled - m) / 12.0).round())).collect();
     let first = pitch_median(voiced.get(..3).unwrap_or_default());
     if (first - settled).abs() < GLIDE_SEMITONES {
-        return Ok(None);
+        return Ok(Onset::None);
     }
     let smooth: Vec<(f64, f64)> = (0..voiced.len())
         .map(|i| {
@@ -1972,17 +2020,17 @@ fn note_glide<F: FnMut(usize, usize) -> bool>(
         })
         .collect();
     let Some(last_off) = smooth.iter().rposition(|p| (p.1 - settled).abs() > GLIDE_SETTLED_SEMITONES) else {
-        return Ok(None);
+        return Ok(Onset::None);
     };
     let end_index = last_off + 1;
     if end_index * 4 > smooth.len() * 3 {
-        return Ok(None);
+        return Ok(Onset::None);
     }
     let Some(&(end, _)) = smooth.get(end_index) else {
-        return Ok(None);
+        return Ok(Onset::None);
     };
     if !(GLIDE_MIN_SECONDS..=f64::from(MAX_GLIDE_SECONDS)).contains(&end) {
-        return Ok(None);
+        return Ok(Onset::None);
     }
     // A glide moves into its note: the note's own partials are quiet while the pitch is still
     // away from it. When they already sound (another note over the held one, a hammer-on above
@@ -2011,10 +2059,20 @@ fn note_glide<F: FnMut(usize, usize) -> bool>(
     let away = power(&mut voiced.iter().filter(|p| p.0 < end && (p.1 - settled).abs() >= GLIDE_SEMITONES).map(|p| p.0));
     let held = power(&mut voiced.iter().filter(|p| p.0 > end).map(|p| p.0));
     let (Some(away), Some(held)) = (away, held) else {
-        return Ok(None);
+        return Ok(Onset::None);
     };
     if away > held * GLIDE_QUIET {
-        return Ok(None);
+        return Ok(Onset::None);
+    }
+    // A step of a semitone or more between voiced frames, or a pause, before the note settles:
+    // another note before this one, which starts at the last such break.
+    let breaks = voiced.windows(2).enumerate().filter(|(index, pair)| {
+        let [(t0, m0), (t1, m1)] = pair else { return false };
+        *index < end_index && ((m1 - m0).abs() >= GLIDE_SEMITONES || t1 - t0 > GLIDE_PAUSE_SECONDS)
+    });
+    if let Some((index, _)) = breaks.last() {
+        let start = voiced.get(index + 1).map_or(0.0, |p| p.0) - half / f64::from(RATE);
+        return Ok(Onset::Start(start.max(0.0)));
     }
     let curve: Vec<(f64, f64)> =
         smooth.get(..=end_index).unwrap_or_default().iter().map(|&(t, m)| (t, (m - settled) * 100.0)).collect();
@@ -2027,7 +2085,7 @@ fn note_glide<F: FnMut(usize, usize) -> bool>(
         })
         .collect();
     let glide = Glide::from_points(&points);
-    Ok(glide.validate().is_ok().then_some(glide))
+    Ok(if glide.validate().is_ok() { Onset::Glide(glide) } else { Onset::None })
 }
 
 /// Whether a recording's whole level holds after its attack (a release may follow), by the
@@ -2079,9 +2137,10 @@ struct NoteLevel {
 /// centered at least `HELD_FROM_SECONDS` in (after the attack), the held part runs to the last window at most `HELD_RELEASE_DB`
 /// below the median of the span's first half (what follows is the note's release, which the
 /// held layer measures); in it, at most a quarter of the windows lie `HELD_DIP_DB` below their
-/// median (a bow change or a beat's null), and the median level of its last third stands within
-/// `SUSTAIN_DB` of its first third's (the held layer gives a mode its rise before that).
-/// Medians, since a few dips pull a mean down as a decay would.
+/// median (a bow change or a beat's null), the median level of its last third stands at most
+/// `SUSTAIN_DB` below its first third's, and the level does not rise all the way (each third's
+/// median `HELD_RISE_STEP_DB` above the one before, more than `SUSTAIN_DB` in all). Medians,
+/// since a few dips pull a mean down as a decay would.
 fn held_span(hz: f64, values: &[(usize, f64, f64)], trend: f64) -> Option<(f64, f64, ModeEvidence)> {
     // After the attack: a bow's or a breath's accent is not the held level. Levels are judged
     // against the note's own trend (none in a held note).
@@ -2106,10 +2165,18 @@ fn held_span(hz: f64, values: &[(usize, f64, f64)], trend: f64) -> Option<(f64, 
         return None;
     }
     let third = span.len() / 3;
-    let fall_db = (level_median(span.get(..third)?) - level_median(span.get(span.len() - third..)?)) * DB;
-    // Held: neither falling nor swelling by more than SUSTAIN_DB (a rising envelope is no held
-    // tone and no resonance).
-    if fall_db.abs() > SUSTAIN_DB {
+    let (first, middle, last) = (
+        level_median(span.get(..third)?),
+        level_median(span.get(third..span.len() - third)?),
+        level_median(span.get(span.len() - third..)?),
+    );
+    // Held: not falling by more than SUSTAIN_DB, and not rising all the way (each third at
+    // least HELD_RISE_STEP_DB above the one before, more than SUSTAIN_DB in all): a rising
+    // envelope is no held tone and no resonance, while a swell that then holds is.
+    let rising = (middle - first) * DB >= HELD_RISE_STEP_DB
+        && (last - middle) * DB >= HELD_RISE_STEP_DB
+        && (last - first) * DB > SUSTAIN_DB;
+    if (first - last) * DB > SUSTAIN_DB || rising {
         return None;
     }
     let count = span.len() as f64;

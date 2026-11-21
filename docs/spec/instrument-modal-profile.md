@@ -238,12 +238,20 @@ channel's, the eleven T60s), or `[0, 0, 0, 0]`; densities are 0..1 and T60s 0 (b
 **Glide.** A recording whose pitch moved into its note (a cello sliding up a tone, a guitar
 bend, a whistle scooping down) carries its glide: 2..16 points of (seconds from the strike,
 cents from the note), the first at 0 s, times increasing to at most 4 s, cents within two
-octaves, the last at 0 cents. A note takes its anchor's glide. From the note-on, every 32
-samples (counted from the note-on, so the result does not depend on the block size), the glide's
-offset at that time, interpolated linearly, is added to the bend and Model tune the fitted sines
-are tuned to (through the held layer when one plays, keeping phase); the attack is read faster
-or slower by the same ratio, which plays back the attack the fitter cut from the recording
+octaves, the last at 0 cents. The glide is a way of playing, not part of the sound: a note
+started on its own begins on its pitch. A note started **legato**, while another key of the
+Instrument is held with a fitted note sounding, glides from the newest such key's current pitch:
+its anchor's glide with every point scaled so it starts at the held key's offset (each point's
+cents over the glide's first, clamped to 0..1, times the offset, so a glide that overshoots holds
+at the held pitch); a recorded glide that starts within a cent of its note glides linearly over
+its time from the offset. Without a recorded glide a legato note starts on its pitch. From the
+note-on, every 32 samples (counted from the note-on, so the result does not depend on the block
+size), the glide's offset at that time, interpolated linearly, is added to the bend and Model
+tune the fitted sines are tuned to (through the held layer when one plays, keeping phase); the
+attack is read faster or slower by the same ratio, as the fitter cut it from the recording
 resampled flat along the glide. Once the glide's last time has passed the note holds its pitch.
+The person first heard every note of a guitar bend's model bend up into its pitch, which the
+recording's player meant for one note only.
 A sine the glide moves to 0.45 of the sample rate or above is silenced, as the pitch wheel
 silences it. **Schema 6** stores the glide after the schema-5 parts: per recording
 `[1, count, 0, 0]` and 32 f32 (sixteen times, then sixteen cents, unused points zero), or

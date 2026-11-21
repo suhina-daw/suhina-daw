@@ -129,7 +129,10 @@ envelope from 0.3 s to the release start (or the end).
 - **Noise.** From 0.25 s to the release start, 4096-sample four-term Blackman-Harris windows (its
   sidelobes are 92 dB down, so partial leakage does not read as noise), hop 2048, give the mean
   power per bin over `M` windows (at least one). Bins within 4.5 bins of a fitted mode or its
-  partner, and of any local maximum 12 dB above the median of its 32 neighbours, are masked. Each
+  partner, and of any local maximum 12 dB above the median of its 32 neighbours, are masked,
+  and so is each such partial's skirt beyond that, while the power keeps falling away from it
+  (version 4: a whistle's wandering pitch spread its partial over many bins, which read as noise
+  and played as a hiss). Each
   band is a 2/3-octave band centered at `80 * 2^(2b/3)` Hz for `b = 0..10` (80 Hz to 8.1 kHz). Its
   power is the median of its unmasked bins (at least three, else the band is silent), divided by
   `1 - 1 / (3M)` (the median of an M-window mean is that much below its mean). The one-sided

@@ -726,10 +726,19 @@ fn noise(mono: &[f64], modes: &[ModeInput], until: f64, sum: f64) -> [f32; NOISE
     }
     let bin_hz = rate / NOISE_FRAME as f64;
     let mut masked = vec![false; power.len()];
+    // A partial's skirt: at least MASK_BINS each side, and on while the power keeps falling away
+    // from it (a whistle's or a voice's wandering pitch spreads its partial over many bins, which
+    // read as noise and played as a hiss).
     let mut mask = |hz: f64| {
         let center = hz / bin_hz;
-        let low = (center - MASK_BINS).ceil().max(0.0) as usize;
-        let high = ((center + MASK_BINS).floor().max(0.0) as usize).min(masked.len().saturating_sub(1));
+        let mut low = (center - MASK_BINS).ceil().max(0.0) as usize;
+        let mut high = ((center + MASK_BINS).floor().max(0.0) as usize).min(masked.len().saturating_sub(1));
+        while low > 0 && power.get(low - 1).zip(power.get(low)).is_some_and(|(next, here)| next < here) {
+            low -= 1;
+        }
+        while power.get(high + 1).zip(power.get(high)).is_some_and(|(next, here)| next < here) {
+            high += 1;
+        }
         for flag in masked.iter_mut().take(high + 1).skip(low) {
             *flag = true;
         }
