@@ -106,14 +106,14 @@ The pages (`#page`) are:
   behind it.
 - **Sample layer** (page 1), from top to bottom:
   - At the left the loaded file's name in spaced capitals and its facts under it (sample rate,
-    mono or stereo, length), or "No sample" (`SampleFile`); at the right Playback as three
-    choices, Gate, One shot and Loop, each with a dot before it.
-  - The loop's ends above the waveform, in brass, as values that are dragged.
+    mono or stereo, length), or "No sample" (`SampleFile`); at the right Playback as four
+    choices, Gate, One shot, Loop and Sustain ([sampler.md](sampler.md) › Sustain playback),
+    each with a dot before it.
   - The local sample's waveform and drop target across the page, its times along its bottom. Its
     markers are dragged on it: the source's Start and End, or the loop's with Loop playback.
-    With no sample it invites a drop. Under it Start at the left and End at the right as values
-    that are dragged too, so the region and the loop stay reachable with any Playback. Then a
-    hairline.
+    With no sample it invites a drop. Under it Start at the left, the loop's two ends in brass
+    between, and End at the right, as values that are dragged too, so the region and the loop
+    stay reachable with any Playback. Then a hairline.
   - At the left **Envelope**: Attack, Decay and Sustain as small knobs with their name and value
     beside them, shared by the sample layer and fitted models.
   - Past a short upright hairline, **Root key** as a large note name that is dragged up and

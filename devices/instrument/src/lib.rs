@@ -111,7 +111,7 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("end", "Sample end", (0.0, 1.0), 1.0, Unit::Percent),
     control("loop_start", "Loop start", (0.0, 1.0), 0.0, Unit::Percent),
     control("loop_end", "Loop end", (0.0, 1.0), 1.0, Unit::Percent),
-    ParamInfo::choice("playback", "Sample playback", &["Gate", "One shot", "Loop"], 0),
+    ParamInfo::choice("playback", "Sample playback", &["Gate", "One shot", "Loop", "Sustain"], 0),
     control("attack", "Attack", (0.0, 10.0), 0.005, Unit::Seconds),
     control("sustain", "Sustain", (0.0, 1.0), 1.0, Unit::Percent),
     control("velocity_low", "Lowest velocity", (0.0, 1.0), 0.0, Unit::Percent),
@@ -950,6 +950,8 @@ impl Device for Instrument {
         if matches!(index, param::RELEASE | param::ROOT..=param::VELOCITY_HIGH | param::ENVELOPE_DECAY)
             && let Some(info) = PARAMS.get(index)
         {
+            // The Sample layer's Sustain is the sampler's fifth playback (after its Slices).
+            let value = if index == param::PLAYBACK && value == 3.0 { 4.0 } else { value };
             self.set_sample_parameter(&info.id, value);
         }
         if index == param::REVISION && !self.model_supported() {

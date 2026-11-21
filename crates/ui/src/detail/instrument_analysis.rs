@@ -8,8 +8,8 @@ use egui::{Align, Color32, FontId, Id, Layout, Pos2, Rect, RichText, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::TrackId;
 use suhina_session::{
-    AnalysisKind, AnalysisPhase, AnalysisView, FolderFileOutcome, ModalFitOutcome, ProjectId, SampleAnalysisOutcome,
-    Session,
+    AnalysisKind, AnalysisPhase, AnalysisView, FolderFileOutcome, ModalFitEngine, ModalFitOutcome, ProjectId,
+    SampleAnalysisOutcome, Session,
 };
 
 use super::device_canvas::remember_keyboard_owner;
@@ -611,6 +611,18 @@ fn fit_result(
         report.range.end,
         report.analyzed_seconds
     );
+    // What Accept will play: the recording itself for a held tone, the fitted resonances for a
+    // struck or plucked sound.
+    let engine = match report.engine {
+        ModalFitEngine::Recording => {
+            "A held tone: the body layer plays the sample itself, its held part sustained in grains; Source Modal plays the fitted resonances instead."
+        }
+        ModalFitEngine::Resonance => {
+            "A struck or plucked sound: the body layer plays the fitted resonances; Source Sample plays the recording instead."
+        }
+    };
+    let hover = format!("{engine}\n{hover}");
+    let replace_explain = format!("{replace_explain} {engine}");
     line_in(ui, look, summary_rect, &summary, 11.0, Some(&hover));
     row(ui, look, actions_rect, false, |ui| {
         if choice(ui, look, "Accept model", replace, true, &replace_explain, &mut hint) {

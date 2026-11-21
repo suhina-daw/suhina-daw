@@ -567,6 +567,8 @@ fn view_json(view: &AnalysisView) -> Value {
                 "risingModes":h.rise.iter().filter(|v| **v > 0.0).count()}))})),
         // A chord split into one recording per note (instrument-modal-fitting.md).
         "notes":r.notes.iter().map(|n| json!({"key":n.key,"modeCount":n.modes.len(),"level":n.level})).collect::<Vec<_>>(),
+        "engine":match r.engine { modal::Engine::Resonance=>"resonance", modal::Engine::Recording=>"recording" },
+        "hold":r.hold.as_ref().map(|h| json!([h.start, h.end])),
         "recordingModes":r.recording_modes.iter().map(|m| json!({"frequencyHz":m.frequency_hz,"decaySeconds":m.decay_seconds,
             "fastDecaySeconds":m.fast_decay_seconds,"fastShare":m.fast_share,"beatHz":m.beat_hz,"beatShare":m.beat_share,
             "phase":m.phase,"sustained":m.sustained,"loose":m.loose})).collect::<Vec<_>>(),
@@ -649,6 +651,15 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
     }
     let chord = notes.then(|| report.notes.clone());
     let recording = report.recording.clone();
+    // A held tone plays from the recording itself, held in grains over its held part.
+    let frames = job.source.pcm.frames().max(1) as f64;
+    let hold = (report.engine == modal::Engine::Recording && !notes)
+        .then(|| report.hold.clone())
+        .flatten()
+        .map(|hold| (hold.start as f64 / frames, hold.end as f64 / frames));
+    // The note's own start, when the fit started after another note: the recording plays from it.
+    let note_start = report.range.start as f64 / frames;
+    let trim_start = job.source.start;
     let profile = report.profile.ok_or("the sample did not yield a decaying modal profile")?;
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
@@ -670,8 +681,21 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
             let modes = recording.modes.len();
             let set = ModelSet::new(vec![recording]).map_err(|error| error.to_string())?;
             let bytes = set.encode();
-            let overridden = crate::instrument_profile::apply_model_set(device, &bytes, true)?;
-            let result = json!({"accepted":true,"modeCount":modes,"recordings":1,"attackSeconds":attack,"revision":MODEL_REVISION,"source":"modal"});
+            let mut overridden = crate::instrument_profile::apply_model_set(device, &bytes, true)?;
+            let mut result = json!({"accepted":true,"modeCount":modes,"recordings":1,"attackSeconds":attack,"revision":MODEL_REVISION,"source":"modal","engine":"resonance"});
+            if let Some((low, high)) = hold {
+                // The recording engine: the Sample source, Sustain playback, the loop region on
+                // the held part, from the note's own start. The fitted model stays for Source
+                // Modal.
+                let start = note_start.max(trim_start).min(low);
+                overridden |= crate::instrument_profile::set_values(
+                    device,
+                    &[("source", 1.0), ("playback", 3.0), ("start", start), ("loop_start", low), ("loop_end", high)],
+                );
+                result["engine"] = json!("recording");
+                result["hold"] = json!([low, high]);
+                result["start"] = json!(start);
+            }
             (bytes, overridden, result)
         }
         (None, None) => {
@@ -687,6 +711,10 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
     };
     if let Some(job) = &mut session.analysis.current {
         job.pending_state = Some(state);
+        // The accepted fit moved the trim's start to the note: still this fit's source.
+        if let Some(start) = result.get("start").and_then(Value::as_f64) {
+            job.source.start = start;
+        }
     }
     Ok(with_override(result, overridden))
 }

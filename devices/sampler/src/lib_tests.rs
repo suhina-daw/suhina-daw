@@ -856,3 +856,42 @@ fn fractional_ping_pong_never_reads_past_the_region_boundary() {
     note(&mut s, 60);
     assert!(render(&mut s, 1000, 17).iter().all(|v| *v == 1.));
 }
+
+/// Sustain playback holds a note past its source in grains from the loop region: the level and
+/// the pitch stay, the grains join without clicks, and a block split renders the same.
+#[test]
+fn sustain_holds_a_note_in_grains_from_the_loop_region() {
+    let make = || {
+        let mut sampler = loaded();
+        sampler.prepare(48000.).unwrap();
+        for (id, value) in [
+            ("playback", 4.),
+            ("loop_start", 0.3),
+            ("loop_end", 0.8),
+            ("root", 57.),
+            ("attack", 0.),
+            ("sustain", 1.),
+            ("release", 0.1),
+        ] {
+            set(&mut sampler, id, value);
+        }
+        note(&mut sampler, 57);
+        sampler
+    };
+    // Three seconds from a one-second source.
+    let out = render(&mut make(), 144_000, 64);
+    let left: Vec<f32> = out.chunks(2).map(|frame| frame[0]).collect();
+    let rms = |part: &[f32]| (part.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / part.len() as f64).sqrt();
+    let before = rms(&left[12_000..24_000]);
+    let held = rms(&left[96_000..144_000]);
+    assert!((20.0 * (held / before).log10()).abs() < 1.0, "{before} {held}");
+    // Still 220 Hz: crossings per second.
+    let part = &left[96_000..144_000];
+    let crossings = part.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count();
+    let hz = crossings as f64 * 48000.0 / (2.0 * (part.len() - 1) as f64);
+    assert!((hz - 220.0).abs() < 2.0, "{hz}");
+    // No click: no step much larger than a 220 Hz sine of this level makes.
+    let largest = left.windows(2).skip(240).map(|w| (w[1] - w[0]).abs()).fold(0.0_f32, f32::max);
+    assert!(largest < 0.2 * std::f32::consts::TAU * 220.0 / 48000.0 * 1.5, "{largest}");
+    assert_eq!(out, render(&mut make(), 144_000, 37));
+}

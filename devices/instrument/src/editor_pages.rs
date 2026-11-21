@@ -69,25 +69,26 @@ pub(super) fn sample_page(ui: &mut Canvas) {
     // The loaded file's name and its facts, or that none is loaded.
     ui.add("Sample file", Widget::SampleFile, [56.0, 106.0, 260.0, 40.0], None, UiGesture::Drag, "");
     // Playback, as dots before its three choices.
-    ui.graphic("Playback caption", vec![caption([471.0, 114.0], "Playback")]);
+    ui.graphic("Playback caption", vec![caption([382.0, 114.0], "Playback")]);
     for (value, name, label, x, w, tooltip) in [
-        (0_u16, "Gate", "GATE", 589.0, 40.0, "Plays while the key is held"),
-        (1, "One shot", "ONE SHOT", 667.0, 78.0, "Plays to the end once struck"),
-        (2, "Loop", "LOOP", 783.0, 41.0, "Repeats the loop while the key is held"),
+        (0_u16, "Gate", "GATE", 486.0, 40.0, "Plays while the key is held"),
+        (1, "One shot", "ONE SHOT", 554.0, 78.0, "Plays to the end once struck"),
+        (2, "Loop", "LOOP", 660.0, 41.0, "Repeats the loop while the key is held"),
+        (3, "Sustain", "SUSTAIN", 729.0, 64.0, "Holds the sound's held part in grains while the key is held"),
     ] {
         ui.choice_labelled("playback", value, name, label, [x, 108.0, w, 20.0], tooltip);
         radio_dot(ui, "playback", value, [x - 10.0, 117.0]);
     }
-    // The loop above the waveform: its two ends, dragged too.
+    // The loop's two ends between the region's, dragged too.
     ui.graphic(
         "Loop caption",
         vec![
-            text([306.0, 126.0], &spaced("Loop"), 9.0, TextAlign::Left, VALUE),
-            text([401.0, 126.0], "–", 10.5, TextAlign::Center, VALUE),
+            text([356.0, 296.0], &spaced("Loop"), 9.0, TextAlign::Left, VALUE),
+            text([451.0, 296.0], "–", 10.5, TextAlign::Center, VALUE),
         ],
     );
-    ui.readout("loop_start", "Loop start", [352.0, 122.0, 44.0, 16.0], TextFormat::Percent, 1);
-    ui.readout("loop_end", "Loop end", [406.0, 122.0, 44.0, 16.0], TextFormat::Percent, 1);
+    ui.readout("loop_start", "Loop start", [402.0, 292.0, 44.0, 16.0], TextFormat::Percent, 1);
+    ui.readout("loop_end", "Loop end", [456.0, 292.0, 44.0, 16.0], TextFormat::Percent, 1);
     // The waveform: Start and End, or the loop with Loop, are dragged on it.
     ui.waveform([56.0, 144.0, 768.0, 142.0]);
     ui.graphic("Region captions", vec![caption([56.0, 296.0], "Start"), caption([640.0, 296.0], "End")]);

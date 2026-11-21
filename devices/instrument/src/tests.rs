@@ -218,7 +218,11 @@ fn every_parameter_is_reachable_and_each_page_carries_its_own() {
         assert!(!on(BODY, source, "soft_pedal") && !on(SAMPLE, source, "key_low"));
     }
     let playback: Vec<_> = editor.controls.iter().filter(|c| bound(c, "playback")).map(|c| c.gesture).collect();
-    assert_eq!(playback, [UiGesture::Set(0), UiGesture::Set(1), UiGesture::Set(2)], "Gate, One shot, Loop");
+    assert_eq!(
+        playback,
+        [UiGesture::Set(0), UiGesture::Set(1), UiGesture::Set(2), UiGesture::Set(3)],
+        "Gate, One shot, Loop, Sustain"
+    );
     for widget in [Widget::SampleAnalysis, Widget::SampleFile] {
         let control = editor.controls.iter().find(|c| c.widget.as_ref() == Some(&widget)).unwrap();
         for source in [0.0, 1.0, 2.0] {

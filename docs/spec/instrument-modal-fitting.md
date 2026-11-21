@@ -269,10 +269,18 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   start, the whistle's model sounded 53 cents sharp, a hump of its first note's partials, and the
   cello played its A# bent into C. The signal (and the other channel) is then resampled flat along it, as for a
   vibrato, so each partial keeps the note's frequency; modes, attack and held layer are fitted
-  on the flat signal, the attack at the prepared rate. The recording carries the glide
+  on the flat signal, and the attack at the source's rate from the source channels resampled flat
+  along the glide (cut at the prepared rate, a guitar bend's pick lost its top octave). The recording carries the glide
   ([modal profiles](instrument-modal-profile.md) › Glide), which plays it back when a note is
   played legato. A guitar bend rose 114 cents in 0.4 s; a pedal steel's D4 hammer-on above C2
   was told from a glide, and the cello and the whistle from a change of note.
+- **Stray partials of one note (algorithm version 4).** When the fitted modes form one note
+  (the chord search finds a single note, with its fundamental and inharmonicity), a loose mode
+  that is not a partial of that note's series and is weaker than a tenth (-20 dB) of the
+  strongest mode is left out of the recording; its energy stays in the attack and the noise tail.
+  On an electric guitar's bend the lowered detection tiers and the residual search had kept two
+  dozen such modes (ratios 11.07, 12.72, 13.38, 16.79, 21.6 and more, 30..40 dB down, ringing for
+  2..6 s) whose inharmonic ringing sounded like a bell.
 - **Prompt sound and aftersound (algorithm version 4).** A piano note's two or three strings,
   tuned a little apart and coupled through the bridge, give a partial a fast "prompt sound" and
   a slow "aftersound" that can start in opposite phase (Weinreich 1977): the partial falls fast,
@@ -452,6 +460,28 @@ existing set (all or none: duplicates of a key, velocity and source already ther
 is stale once the device is removed or its fitted model changes; the device's own sample, trim
 and root do not concern it. The Sample page offers **Fit folder…**, which asks for the folder
 with the system's dialog.
+
+## Engine
+
+Sines resonating are what a struck or plucked sound is (a piano's, a guitar's, a bell's), and
+what a held tone is not: a cello, a trombone or a whistle modelled as sines sounded frozen,
+band-limited and in the end like a bell, whatever was added. So a fit names the **engine** that
+plays the sound best (algorithm version 4):
+
+- **Recording** for a held recording (a held note, or sustained modes holding half the
+  magnitude): the sample itself, its **held part** sustained in grains by the Sample layer's
+  Sustain playback ([sampler](sampler.md) › Sustain playback). The held part runs from the held
+  rule's first window (at least 0.25 s, after the attack) to its last (before the release), on the
+  whole prepared recording, at least 0.2 s long; the report gives it in source frames (`hold`).
+- **Resonance** otherwise: the fitted model.
+
+`instrument.acceptFit` adopts the fitted model as before and, for a Recording fit (not a chord's
+notes), also sets the Instrument's Source to Sample, its Sample playback to Sustain, Loop
+start and Loop end to the held part and Start to the note's own start (when the fit started
+after another note), all in the same undo step; the result names `engine`, `hold` and `start`.
+The fitted model stays: Source Modal plays it, so either engine can be heard on the same sample
+with one switch. The Sample page says which engine the fit chose. Measured: a cello's two notes,
+a whistle and a trombone chose Recording; pianos and guitars Resonance.
 
 ## Fitting a phrase
 

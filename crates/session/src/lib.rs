@@ -135,6 +135,7 @@ pub use relink::COLLECTED;
 pub use relink::{MAX_RELINK, search as find_candidates};
 pub use soundmap::{scope_files, sound_map_commands};
 pub use suhina_instrument_analysis::Outcome as SampleAnalysisOutcome;
+pub use suhina_instrument_analysis::modal::Engine as ModalFitEngine;
 pub use suhina_instrument_analysis::modal::Outcome as ModalFitOutcome;
 pub use suhina_instrument_analysis::{KeyCandidate as SampleKey, KeyMode as SampleKeyMode};
 pub use suhina_plugins::Placement;

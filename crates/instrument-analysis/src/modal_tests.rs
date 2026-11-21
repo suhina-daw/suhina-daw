@@ -342,6 +342,48 @@ fn a_slow_beat_decays_through_its_maxima() {
     assert_eq!(beat_corrected(&steady, fitted).1, fitted.1);
 }
 
+/// A single note's weak, uneven partial off its string's series (a distortion product, a noise
+/// peak) is left out; its harmonics stay.
+#[test]
+fn a_weak_stray_partial_of_one_note_is_left_out() {
+    let mut random = Lcg(29);
+    let steps: Vec<f64> = (0..60).map(|_| 16.0 * random.next() - 8.0).collect();
+    let f0 = 220.0;
+    let stray = 1234.5;
+    let pcm: Vec<f32> = (0..(2.5 * f64::from(RATE)) as usize)
+        .map(|n| {
+            let t = n as f64 / f64::from(RATE);
+            let decay = (-1000.0_f64.ln() * t / 3.0).exp();
+            let harmonics: f64 =
+                (1..=6).map(|k| 0.3 / k as f64 * (TAU * f0 * k as f64 * t + 0.3 * k as f64).sin()).sum();
+            let wobble = 10.0_f64.powf(steps.get((t / 0.05) as usize).copied().unwrap_or(0.0) / 20.0);
+            ((harmonics + 0.012 * wobble * (TAU * stray * t).sin()) * decay) as f32
+        })
+        .collect();
+    let report = fit(&pcm, RATE, 1, 0..pcm.len(), 57, |_, _| true).unwrap();
+    let recording = report.recording.as_ref().unwrap();
+    let hz = |m: &ModelMode| m.ratio * f0;
+    assert!(recording.modes.iter().all(|m| (hz(m) / stray - 1.0).abs() > 0.01), "{:?}", recording.modes);
+    for k in 1..=6 {
+        assert!(recording.modes.iter().any(|m| (m.ratio - k as f64).abs() < 0.01 * k as f64), "harmonic {k}");
+    }
+}
+
+/// A held tone chooses the recording engine, its held part after the attack; a decaying strike
+/// its resonances.
+#[test]
+fn a_held_tone_chooses_the_recording_engine() {
+    let pcm = voices(1.8, &[(&|_| 60.0, &|_| 1.0)]);
+    let report = fit(&pcm, RATE, 1, 0..pcm.len(), 60, |_, _| true).unwrap();
+    assert_eq!(report.engine, Engine::Recording, "{report:?}");
+    let hold = report.hold.clone().unwrap();
+    assert!(hold.start as f64 >= 0.25 * f64::from(RATE) - 1.0, "{hold:?}");
+    assert!((hold.end - hold.start) as f64 >= 0.2 * f64::from(RATE) && hold.end <= pcm.len(), "{hold:?}");
+    let strike = struck(RATE, 2.0, &[(440.0, 1.5, 0.5), (1320.0, 0.8, 0.2)]);
+    let report = fit(&strike, RATE, 1, 0..strike.len(), 69, |_, _| true).unwrap();
+    assert_eq!((report.engine, report.hold), (Engine::Resonance, None));
+}
+
 struct Lcg(u32);
 impl Lcg {
     fn next(&mut self) -> f64 {
