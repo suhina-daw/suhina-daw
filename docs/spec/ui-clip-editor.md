@@ -138,7 +138,11 @@ not from velocity or opacity. Muted, erased and out-of-window notes remain dimme
   header or a channel strip, a clip selected on that track stays
   selected and the switch goes to **Devices**, and a clip selected on another track is no longer
   selected; a click on a Launcher column's name clears the slot selection already, so there the
-  devices show on their own. A double-click on a
+  devices show on their own. A single plain click on an Arrangement header does the same with a
+  clip selected on another track (a clip on the clicked track stays selected), so an open detail
+  area moves to the clicked track at once, a group's included, whose double-click folds it
+  ([#1339](https://github.com/suhina-daw/suhina-daw/issues/1339)); a hidden area stays hidden
+  until the double-click. With Ctrl or Shift the click only changes the track selection. A double-click on a
   control in the header or the strip (a button, a fader, a knob, a value) is that control's own,
   as before.
 

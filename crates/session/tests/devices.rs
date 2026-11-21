@@ -553,6 +553,73 @@ fn a_plug_in_that_edits_clips_goes_first() {
     assert_eq!((tune["device"].clone(), tune["moved_first"].clone()), (json!(0), json!(false)));
 }
 
+/// A chain an earlier build left with two plain effects marked as clip hosts before the
+/// instrument (#1673): the next device edit takes the marks off in its own undo step, and the
+/// chain is then repaired a move at a time, while a move that makes it worse is still refused.
+#[test]
+fn a_false_clip_host_is_let_go_and_its_broken_chain_can_be_repaired() {
+    let mut project = project_built();
+    let verb = || {
+        let mut device = Device::new("Verb", DeviceKind::Vst3 { id: "ABCDEF0123456789ABCDEF0123456789".into() });
+        device.clip_host = true;
+        device
+    };
+    let channel = project.tracks[0].channel.unwrap();
+    let chain = &mut project.channels.iter_mut().find(|c| c.id == channel).unwrap().devices;
+    chain.extend([
+        verb(),
+        verb(),
+        Device::new("FM Synth", DeviceKind::Builtin("fm-synth".into())),
+        Device::new("Utility", DeviceKind::Builtin("utility".into())),
+        Device::new("Overdrive", DeviceKind::Builtin("overdrive".into())),
+    ]);
+    let mut session = Session::new(suhina_test_support::with_ids(project));
+    session.rack_mut().set_env(plugin_env());
+    let chain = |s: &Session| {
+        let devices = &s.project().channels.iter().find(|c| c.id == channel).unwrap().devices;
+        devices.iter().map(|d| (d.name.clone(), d.clip_host)).collect::<Vec<_>>()
+    };
+    let named = |list: &[(&str, bool)]| list.iter().map(|(n, h)| (n.to_string(), *h)).collect::<Vec<_>>();
+
+    // Any device edit lets go of the marks first, in its undo step.
+    run(&mut session, "device.setEnabled", json!({ "track": 1, "device": 3, "enabled": false })).unwrap();
+    assert_eq!(
+        chain(&session),
+        named(&[("Verb", false), ("Verb", false), ("FM Synth", false), ("Utility", false), ("Overdrive", false)])
+    );
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(chain(&session)[0].1 && chain(&session)[1].1, "one undo puts them back");
+
+    // A move that leaves the chain as broken as it was goes through (the trace's move of an
+    // effect after the instrument); the marks go with it.
+    run(&mut session, "device.move", json!({ "track": 1, "device": 4, "to": 3 })).unwrap();
+    assert_eq!(
+        chain(&session),
+        named(&[("Verb", false), ("Verb", false), ("FM Synth", false), ("Overdrive", false), ("Utility", false)])
+    );
+    // One that adds a fault (one effect more before the instrument) is refused.
+    let worse = run(&mut session, "device.move", json!({ "track": 1, "device": 4, "to": 0 })).unwrap_err();
+    assert!(worse.contains("goes first in the chain"), "{worse}");
+    // Moves that take the effects after the instrument repair it, one fault at a time.
+    run(&mut session, "device.move", json!({ "track": 1, "device": 0, "to": 5 })).unwrap();
+    run(&mut session, "device.move", json!({ "track": 1, "device": 0, "to": 5 })).unwrap();
+    let names: Vec<String> = chain(&session).into_iter().map(|(n, _)| n).collect();
+    assert_eq!(names, ["FM Synth", "Overdrive", "Utility", "Verb", "Verb"]);
+    // Repaired, the rules hold again: an effect before the instrument is refused.
+    assert!(run(&mut session, "device.move", json!({ "track": 1, "device": 3, "to": 0 })).is_err());
+}
+
+/// The clip host of an ARA plug-in keeps its mark through device edits.
+#[test]
+fn a_real_clip_host_keeps_its_mark() {
+    let mut session = Session::new(project());
+    session.rack_mut().set_env(plugin_env());
+    run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    let devices = &session.project().channels[0].devices;
+    assert!(devices[0].clip_host && devices[0].name == "Tune");
+}
+
 #[test]
 fn plug_in_commands_need_a_plug_in_and_a_playing_project() {
     let mut session = Session::new(project());

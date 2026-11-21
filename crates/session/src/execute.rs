@@ -168,6 +168,11 @@ impl Session {
     /// Runs an edit on the project, gives what it added an id and keeps the tracks' colours, and
     /// fails when what is left does not validate. The caller puts `before` back on an error.
     fn apply(&mut self, prepared: &Prepared, params: &Value, before: &Project) -> Result<Value, CommandError> {
+        // A plug-in an earlier build took for an ARA one is no longer its chain's clip host, in
+        // this edit's undo step, before the edit sees the chain (#1673).
+        if prepared.spec.id.starts_with("device.") {
+            crate::clip_ara::drop_false_hosts(self);
+        }
         let mut value = (prepared.spec.run)(self, params)?;
         if prepared.spec.id.starts_with("device.") {
             crate::devices::follow_instruments(self, before);

@@ -668,6 +668,43 @@ fn delete_after_a_header_click_removes_the_track_not_a_clip() {
     assert!(clips(&harness) < slots, "the track's clips went with it, no other clip did");
 }
 
+/// One click on an Arrangement header makes its track the one worked on: a clip selected on
+/// another track, which the detail area would go on showing, is let go of, as a double-click does;
+/// a clip on the clicked track stays selected (#1339).
+#[test]
+fn a_header_click_lets_go_of_a_clip_on_another_track() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let project = app.session().unwrap().project().clone();
+    let keys = project.tracks.iter().find(|t| t.name == "Keys").map(|t| t.id).expect("the demo has Keys");
+    let clip_on = |wanted: &dyn Fn(TrackId) -> bool| {
+        project.arrangement.lanes.iter().filter_map(|l| Some((l.track?, l.clips.first()?.id))).find(|(t, _)| wanted(*t))
+    };
+    let other = clip_on(&|t| t != keys).expect("a clip on another track");
+    app.shown = View::Arrangement;
+    app.arrangement.select_clip(other.0, other.1);
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    harness.get_by_label("Track Keys").click();
+    harness.run();
+    assert_eq!(harness.state().arrangement.selected_clip(), None, "the other track's clip is let go of");
+    assert_eq!(harness.state().arrangement.selected_tracks, vec![keys]);
+    assert_eq!(harness.state().paste_track(), Some(keys), "the clicked track is the one worked on");
+
+    // A clip on the clicked track stays selected.
+    if let Some(own) = clip_on(&|t| t == keys) {
+        harness.state_mut().arrangement.select_clip(own.0, own.1);
+        harness.run();
+        harness.get_by_label("Track Keys").click();
+        harness.run();
+        assert_eq!(harness.state().arrangement.selected_clip(), Some(own));
+    }
+}
+
 /// The ARA edits prompt and the missing files panel are drawn over the window: plug-in
 /// editors hide, and the keys that edit the project wait until they close.
 #[test]

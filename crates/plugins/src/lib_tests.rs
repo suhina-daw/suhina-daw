@@ -174,3 +174,33 @@ fn a_host_that_reports_memory_is_counted_and_one_that_died_is_not() {
     assert!(host_memory().is_empty(), "a dead host's report must not be counted");
     assert_eq!(lock(&group).ram, None, "the dead host's report is let go of");
 }
+
+/// A plug-in that applies a state a moment after it is given it answers the load, and reads for
+/// a while after, with the state it had: those reads do not replace the state given, so a backup
+/// or a restart in that moment keeps it; the first read of anything else is its state (#1674).
+#[test]
+fn a_state_applied_late_is_kept_until_the_plug_in_reports_something_else() {
+    let state = |bytes: &[u8]| SavedState { data: bytes.to_vec(), controller: Some(Vec::new()) };
+    let (initial, given, edited) = (state(b"initial"), state(b"given"), state(b"edited"));
+    let mut kept = KeptState::default();
+    kept.given(given.clone(), initial.clone());
+    assert_eq!(kept.get(), Some(&given));
+    assert_eq!(kept.read(initial.clone()), (given.clone(), false), "still its old state: the given one stands");
+    assert_eq!(kept.get(), Some(&given));
+    assert_eq!(kept.read(given.clone()), (given.clone(), true), "applied");
+    // Settled: what it reports now is its state, the old one too if its editor goes back to it.
+    assert_eq!(kept.read(edited.clone()), (edited.clone(), true));
+    assert_eq!(kept.read(initial.clone()), (initial.clone(), true));
+    assert_eq!(kept.get(), Some(&initial));
+
+    // A plug-in that takes the state at once: every read is its state.
+    let mut at_once = KeptState::default();
+    at_once.given(given.clone(), given.clone());
+    assert_eq!(at_once.read(initial.clone()), (initial, true));
+
+    // An edit made before the given state shows is taken at once.
+    let mut edited_early = KeptState::default();
+    edited_early.given(given.clone(), state(b"before"));
+    assert_eq!(edited_early.read(edited.clone()), (edited.clone(), true));
+    assert_eq!(edited_early.get(), Some(&edited));
+}

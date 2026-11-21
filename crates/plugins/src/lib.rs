@@ -395,6 +395,45 @@ pub struct SavedState {
     pub controller: Option<Vec<u8>>,
 }
 
+/// The state a plug-in is taken to be in, kept for a restart (#1674): what it last reported, or
+/// what it was last given. Some plug-ins apply a state a moment after they are given it, and
+/// answer the load, and the reads for a while after, with the state they had before (a shell
+/// module's plug-ins do, answering with their initial state). Such a read is not taken for the
+/// plug-in's state: the state given stands until the plug-in reports anything else, so a backup,
+/// a save or a restart in that moment keeps it.
+#[derive(Debug, Default, Clone)]
+struct KeptState {
+    state: Option<SavedState>,
+    /// What the plug-in answered right after being given `state`, when that was not `state`.
+    settling: Option<SavedState>,
+}
+
+impl KeptState {
+    /// `given` was handed to the plug-in, which answered with `reply`, its state read straight
+    /// after.
+    fn given(&mut self, given: SavedState, reply: SavedState) {
+        self.settling = (reply != given).then_some(reply);
+        self.state = Some(given);
+    }
+
+    /// The plug-in reported `read`: the state it is taken to be in, and whether that is `read`
+    /// itself (`false` while it still reports what it had before the state it was given).
+    fn read(&mut self, read: SavedState) -> (SavedState, bool) {
+        if let (Some(settling), Some(state)) = (&self.settling, &self.state)
+            && *settling == read
+        {
+            return (state.clone(), false);
+        }
+        self.settling = None;
+        self.state = Some(read.clone());
+        (read, true)
+    }
+
+    fn get(&self) -> Option<&SavedState> {
+        self.state.as_ref()
+    }
+}
+
 impl From<Vec<u8>> for SavedState {
     fn from(data: Vec<u8>) -> Self {
         Self { data, controller: None }
@@ -898,8 +937,9 @@ pub struct Plugin {
     latency: u32,
     /// The plug-in supports ARA, as the host found when it loaded it.
     edits_clips: bool,
-    /// The state last read from the plug-in; loaded again after a restart.
-    last_state: Option<SavedState>,
+    /// The state last read from or given to the plug-in ([`KeptState`]); loaded again after a
+    /// restart.
+    kept: KeptState,
     /// Parameters set since the state was last read or loaded, in order; set again after a
     /// restart, on top of that state.
     params_since: Arc<Mutex<Vec<(u32, f64)>>>,
@@ -937,7 +977,7 @@ impl Plugin {
             unanswered: unanswered.clone(),
             latency,
             edits_clips,
-            last_state: None,
+            kept: KeptState::default(),
             params_since: Arc::default(),
             edits,
             editor_open: false,
@@ -1099,10 +1139,12 @@ impl Plugin {
 
     /// The state last read from or given to the plug-in, without asking it.
     pub fn last_state(&self) -> Option<&SavedState> {
-        self.last_state.as_ref()
+        self.kept.get()
     }
 
-    /// Reads the plug-in's state and keeps it for a restart.
+    /// Reads the plug-in's state and keeps it for a restart. Right after it was given a state, a
+    /// plug-in that still reports the one it had before gives the state it was given
+    /// ([`KeptState`]).
     pub fn save_state(&mut self) -> Result<SavedState, PluginError> {
         let instance = self.instance;
         let reply = self.request(
@@ -1113,9 +1155,12 @@ impl Plugin {
         let Message::State { data, controller, .. } = reply else {
             return Err(PluginError::Protocol("expected state".into()));
         };
-        let state = SavedState { data, controller };
-        self.last_state = Some(state.clone());
-        lock(&self.params_since).clear();
+        let (state, taken) = self.kept.read(SavedState { data, controller });
+        // Parameters set since the state given are not in it: they stay to be set again after a
+        // restart until a read that holds them is taken.
+        if taken {
+            lock(&self.params_since).clear();
+        }
         Ok(state)
     }
 
@@ -1125,8 +1170,14 @@ impl Plugin {
         let state = state.into();
         let instance = self.instance;
         let message = Message::SetState { instance, data: state.data.clone(), controller: state.controller.clone() };
-        self.request(&message, "set_state", |m| matches!(m, Message::State { instance: i, .. } if *i == instance))?;
-        self.last_state = Some(state);
+        let reply =
+            self.request(&message, "set_state", |m| matches!(m, Message::State { instance: i, .. } if *i == instance))?;
+        // The host answers with the state read straight after setting it.
+        let reply = match reply {
+            Message::State { data, controller, .. } => SavedState { data, controller },
+            _ => state.clone(),
+        };
+        self.kept.given(state, reply);
         lock(&self.params_since).clear();
         Ok(())
     }
@@ -1485,7 +1536,7 @@ impl Plugin {
             sample_rate: Arc::clone(&self.sample_rate),
         };
         let params = std::mem::take(&mut *lock(&self.params_since));
-        if let Some(state) = self.last_state.clone() {
+        if let Some(state) = self.kept.get().cloned() {
             self.load_state(state)?;
         }
         for (id, value) in params {

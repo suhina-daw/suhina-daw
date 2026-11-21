@@ -759,6 +759,11 @@ impl Vst3Plugin {
         }
         .map(|(cid, info)| (*cid, info.name.clone()))
         .ok_or_else(|| format!("no audio plug-in in {spec:?}"))?;
+        // Whether the module's class list lets this class edit clips at all: a shell module whose
+        // components all answer `IPlugInEntryPoint` but that declares no ARA factory for them
+        // holds no ARA plug-in (#1673).
+        let audio_names: Vec<String> = classes.iter().map(|(_, info)| info.name.clone()).collect();
+        let may_edit_clips = suhina_plugins::scan::may_edit_clips(&name, &audio_names, &module.ara_classes());
 
         let component = module.create::<IComponent>(&cid).ok_or("could not make the plug-in's component")?;
         let host = ComWrapper::new(HostApplication);
@@ -832,7 +837,7 @@ impl Vst3Plugin {
         if let Some(document) = &ara {
             plugin.ara = Some(Box::new(crate::ara::Document::bind(&plugin.component, document)?));
         }
-        plugin.supports_ara = plugin.ara.is_some() || crate::ara::supported(&plugin.component);
+        plugin.supports_ara = plugin.ara.is_some() || (may_edit_clips && crate::ara::supported(&plugin.component));
 
         let processor = plugin.component.cast::<IAudioProcessor>().ok_or("the plug-in does not process audio")?;
         let max_frames = served.max_frames();
@@ -1195,7 +1200,8 @@ impl Vst3Plugin {
     }
 
     /// Whether it supports ARA: it is bound to a document, or its component answers
-    /// `IPlugInEntryPoint` (found when it loaded).
+    /// `IPlugInEntryPoint` and its module declares an ARA factory that can pair with it
+    /// ([`suhina_plugins::scan::may_edit_clips`]; found when it loaded).
     pub(crate) fn edits_clips(&self) -> bool {
         self.ara.is_some() || self.supports_ara
     }
