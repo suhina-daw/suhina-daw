@@ -22,9 +22,9 @@ devices nord@snow-storm 318c613b6d0d100d
 empty-space-menu nord@snow-storm bdb0f274837bc502
 expanded-delay nord@snow-storm 53676439729919a9
 expanded-fm-synth nord@snow-storm 88f8cb865224fa8c
-expanded-instrument nord@snow-storm 7466715afdb975cd
-expanded-instrument-model nord@snow-storm f4e38e7af6dfc31f
-expanded-instrument-sample nord@snow-storm 55a6b2f4836349be
+expanded-instrument nord@snow-storm fd6489c6d29a2be1
+expanded-instrument-model nord@snow-storm 70dcb94e6155aea5
+expanded-instrument-sample nord@snow-storm 44eecb3875930670
 expanded-multiband nord@snow-storm dda818a5ab2e6efa
 expanded-reverb nord@snow-storm e723c7a2f1418a66
 expanded-vinyl-distortion nord@snow-storm 3f6275e15d4149ea

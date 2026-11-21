@@ -22,9 +22,9 @@ devices suhina-studio@darker 6f9acff5c4f84095
 empty-space-menu suhina-studio@darker a7660f92bf731a6c
 expanded-delay suhina-studio@darker 60165bd4c25b20ab
 expanded-fm-synth suhina-studio@darker 6b89c7654d0801d5
-expanded-instrument suhina-studio@darker 3c1d007a338c145f
-expanded-instrument-model suhina-studio@darker 2f742a32cae158f7
-expanded-instrument-sample suhina-studio@darker d84bf5caddaf96ae
+expanded-instrument suhina-studio@darker aa520c54b3b2fd8f
+expanded-instrument-model suhina-studio@darker d0602bbe55c40db3
+expanded-instrument-sample suhina-studio@darker 91fbf5729917cfe2
 expanded-multiband suhina-studio@darker edf6deb9fce99386
 expanded-reverb suhina-studio@darker 5ef1021758440c95
 expanded-vinyl-distortion suhina-studio@darker 6cc2ee401914feb6

@@ -22,9 +22,9 @@ devices suhina-glass@frost 45e02dcb95ddeb2e
 empty-space-menu suhina-glass@frost 3b93731bc0843579
 expanded-delay suhina-glass@frost c733c43ebfe14b41
 expanded-fm-synth suhina-glass@frost 41d54c777304a895
-expanded-instrument suhina-glass@frost db151721b322a353
-expanded-instrument-model suhina-glass@frost 5961c35527b86917
-expanded-instrument-sample suhina-glass@frost 45a3c5b78ffc7cbb
+expanded-instrument suhina-glass@frost 7d5cb4d2345966cb
+expanded-instrument-model suhina-glass@frost 8c37e47dd913ddbf
+expanded-instrument-sample suhina-glass@frost 35096d7a75a35983
 expanded-multiband suhina-glass@frost 18b9a76ee1422b5f
 expanded-reverb suhina-glass@frost 66fee121f802eb18
 expanded-vinyl-distortion suhina-glass@frost 8651088a0c0e35d8

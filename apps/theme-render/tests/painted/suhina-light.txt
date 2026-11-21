@@ -22,9 +22,9 @@ devices suhina-light baa81c4a194e4773
 empty-space-menu suhina-light 0f8cf24d99f11f33
 expanded-delay suhina-light 0c278b108025efdb
 expanded-fm-synth suhina-light bf624aa577c6de75
-expanded-instrument suhina-light 726caebf967b339c
-expanded-instrument-model suhina-light 5dd5729c18ee0fe8
-expanded-instrument-sample suhina-light a8ad29de57c274ab
+expanded-instrument suhina-light b537d5c7154daab8
+expanded-instrument-model suhina-light 3f3fb6427461c6fa
+expanded-instrument-sample suhina-light ce4713b217da7add
 expanded-multiband suhina-light 013ba16f6e37e864
 expanded-reverb suhina-light 30ee600b2ec02df5
 expanded-vinyl-distortion suhina-light 4feb696e942665fa

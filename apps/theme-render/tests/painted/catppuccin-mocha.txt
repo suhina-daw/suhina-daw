@@ -22,9 +22,9 @@ devices catppuccin-mocha 1e9b59ad9c3caab4
 empty-space-menu catppuccin-mocha bfd25ca9b11f6891
 expanded-delay catppuccin-mocha e792fbea7ac32967
 expanded-fm-synth catppuccin-mocha 6de5b5b924888e95
-expanded-instrument catppuccin-mocha ebc610767c44997a
-expanded-instrument-model catppuccin-mocha 760acfb14b08ec9f
-expanded-instrument-sample catppuccin-mocha 070017b819ee05fa
+expanded-instrument catppuccin-mocha b89a267a47665ce6
+expanded-instrument-model catppuccin-mocha 6c15c5ccafc5a50b
+expanded-instrument-sample catppuccin-mocha 90e8b8d2e923bb0e
 expanded-multiband catppuccin-mocha ebc543e86668b4d2
 expanded-reverb catppuccin-mocha 8cb4273f2656d797
 expanded-vinyl-distortion catppuccin-mocha 295b0199e959a1fe
