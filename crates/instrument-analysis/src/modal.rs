@@ -124,6 +124,8 @@ const ANTI_EARLY: f64 = 3.0;
 const ANTI_LATE_DB: f64 = 20.0;
 /// Work steps of the null search with the shortest window (6 s of 512-sample windows).
 const ANTI_WORK: usize = (ANTI_SECONDS * RATE as f64) as usize / SHORT_FRAME;
+/// A dip at least this far below the quieter of the two maxima around it is a slow beat's null.
+const BEAT_DIP_DB: f64 = 3.0;
 /// A held partial at an uneven level: windows it needs, how far below the span's median a window
 /// counts as a dip and the largest share of dips (see instrument-modal-fitting.md › Held
 /// partials at an uneven level).
@@ -1848,7 +1850,9 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)], level: NoteLevel) -> Option<E
     // The late retry describes what rings on after a fast early decay; it never makes a mode
     // sustained (beating can flatten a decaying partial's late windows).
     let late = if span.len() >= LATE_RETRY_WINDOWS {
-        span.get(span.len() / 3..).and_then(|l| fit_span(hz, l)).filter(|(_, _, e)| !e.sustained)
+        span.get(span.len() / 3..)
+            .and_then(|l| fit_span(hz, l).map(|fitted| beat_corrected(l, fitted)))
+            .filter(|(_, _, e)| !e.sustained)
     } else {
         None
     };
@@ -1915,6 +1919,52 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)], level: NoteLevel) -> Option<E
                 held_span(hz, values, level.trend).filter(|_| !held_note && matters)
             })
             .map(plain),
+    }
+}
+
+/// A slowly beating partial's decay: when `span` dips between two of its local maxima (a window
+/// at least as loud as its neighbours; the first and last windows by their one neighbour) by at
+/// least `BEAT_DIP_DB` below the quieter of them, the line through those maxima, if it decays
+/// more slowly than the fitted line through every window (which a beat's null pulls down). A
+/// piano C5's fundamental held its aftersound for two seconds, dipped into a second null at
+/// 3.3 s and came back; the line through the null decayed 6 dB per second, and the note played
+/// 9..16 dB quiet after two seconds.
+fn beat_corrected(span: &[(usize, f64, f64)], fitted: (f64, f64, ModeEvidence)) -> (f64, f64, ModeEvidence) {
+    let value = |i: usize| span.get(i).map(|v| v.2);
+    let mut kept: Vec<(usize, f64, f64)> = Vec::new();
+    for (index, &(_, t, y)) in span.iter().enumerate() {
+        let before = index.checked_sub(1).and_then(value).is_none_or(|b| b <= y);
+        let after = value(index + 1).is_none_or(|a| a <= y);
+        if !(before && after) {
+            continue;
+        }
+        match kept.last().copied() {
+            None => kept.push((index, t, y)),
+            Some((last_index, _, last_y)) => {
+                let dip = span
+                    .get(last_index + 1..index)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|v| v.2)
+                    .fold(f64::INFINITY, f64::min);
+                if dip.is_finite() && (last_y.min(y) - dip) * DB >= BEAT_DIP_DB {
+                    kept.push((index, t, y));
+                } else if y > last_y
+                    && let Some(slot) = kept.last_mut()
+                {
+                    *slot = (index, t, y);
+                }
+            }
+        }
+    }
+    let points: Vec<(f64, f64)> = kept.iter().map(|&(_, t, y)| (t, y)).collect();
+    let (intercept, slope, mut evidence) = fitted;
+    match line(&points) {
+        Some((peak_intercept, peak_slope)) if points.len() >= 2 && peak_slope < 0.0 && peak_slope > slope => {
+            evidence.decay_seconds = -1000.0_f64.ln() / peak_slope;
+            (peak_intercept, peak_slope, evidence)
+        }
+        _ => (intercept, slope, evidence),
     }
 }
 

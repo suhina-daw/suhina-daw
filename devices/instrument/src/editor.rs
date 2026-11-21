@@ -80,6 +80,14 @@ pub(super) fn canvas() -> DeviceUi {
         "Keys: C3 = 60. Pitch wheel ±2 semitones. Sustain pedal holds keys; CC 67 is the soft pedal.",
         [24.0, 486.0, 640.0, 24.0],
     );
+    // Any fitted sound can glide: a note played while another key is held slides from its pitch.
+    ui.toggle(
+        "glide",
+        "Legato glide",
+        [680.0, 470.0, 176.0, 30.0],
+        "Fitted models: a note played while another key is held glides from that key's pitch, with the recording's own glide shape when it has one",
+    );
+    ui.number("glide_time", "Glide time", 680.0, 504.0, 176.0);
 
     ui.page(1);
     ui.group("STRUCK BODY", [24.0, 144.0, 832.0, 180.0]);

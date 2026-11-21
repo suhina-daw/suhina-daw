@@ -181,11 +181,18 @@ impl Canvas {
     pub(super) fn number(&mut self, id: &str, name: &str, x: f32, y: f32, w: f32) {
         self.label(name, [x, y, w, 18.0]);
         let integer = matches!(id, "root" | "key_low" | "key_high");
+        let format = if integer {
+            TextFormat::Key
+        } else if id == "glide_time" {
+            TextFormat::Seconds
+        } else {
+            TextFormat::Percent
+        };
         self.add(
             name,
             Widget::Number {
                 decimals: if integer { 0 } else { 2 },
-                format: if integer { TextFormat::Key } else { TextFormat::Percent },
+                format,
                 color: [3, 1, 5, 255],
                 center: false,
                 bordered: true,

@@ -239,12 +239,15 @@ channel's, the eleven T60s), or `[0, 0, 0, 0]`; densities are 0..1 and T60s 0 (b
 bend, a whistle scooping down) carries its glide: 2..16 points of (seconds from the strike,
 cents from the note), the first at 0 s, times increasing to at most 4 s, cents within two
 octaves, the last at 0 cents. The glide is a way of playing, not part of the sound: a note
-started on its own begins on its pitch. A note started **legato**, while another key of the
-Instrument is held with a fitted note sounding, glides from the newest such key's current pitch:
-its anchor's glide with every point scaled so it starts at the held key's offset (each point's
-cents over the glide's first, clamped to 0..1, times the offset, so a glide that overshoots holds
-at the held pitch); a recorded glide that starts within a cent of its note glides linearly over
-its time from the offset. Without a recorded glide a legato note starts on its pitch. From the
+started on its own begins on its pitch. With **Legato glide** on (`glide`, a switch, default
+off), a note started **legato**, while another key of the Instrument is held with a fitted note
+sounding, glides from the newest such key's current pitch over **Glide time** (`glide_time`,
+0.01..2 s, default 0.15 s): its anchor's glide, its times stretched to Glide time and every point
+scaled so it starts at the held key's offset (each point's cents over the glide's first, clamped
+to 0..1, times the offset, so a glide that overshoots holds at the held pitch); without a
+recorded glide, or one that starts within a cent of its note, a straight line from the offset.
+So any fitted sound can glide, a recorded one with its own shape. With the switch off, legato
+notes start on their pitch too. From the
 note-on, every 32 samples (counted from the note-on, so the result does not depend on the block
 size), the glide's offset at that time, interpolated linearly, is added to the bend and Model
 tune the fitted sines are tuned to (through the held layer when one plays, keeping phase); the

@@ -36,6 +36,9 @@ identifies Instrument and its experimental model, with Source always available. 
   Decay, Sustain) shared by the Sample layer and fitted models, key/velocity admission ranges,
   and a **Soft pedal** switch beside the page buttons, shown on every page as the Source menu
   is (una corda for fitted models, the same as controller 67 held down). Release is the damper for fitted models and the fade otherwise.
+  Below the ranges, **Legato glide** and **Glide time** (seconds): a fitted note played while
+  another key is held glides from that key's pitch ([modal profiles](instrument-modal-profile.md)
+  › Glide).
 - **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
   describe the actual struck-modal model, and apply to the next strike. Revision 2 labels the
   excitation control Strike color: a creative weighting of accepted modes, not a measured

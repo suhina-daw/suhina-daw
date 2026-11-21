@@ -305,6 +305,43 @@ fn a_glide_into_the_note_is_fitted_flat_and_kept() {
     assert_eq!(report.recording.as_ref().and_then(|r| r.glide), None);
 }
 
+/// A slow beat's null between two maxima makes the slow part the line through the maxima; a
+/// steady decay keeps its fitted line.
+#[test]
+fn a_slow_beat_decays_through_its_maxima() {
+    let db = |v: f64| v / DB;
+    let evidence = |decay: f64| ModeEvidence {
+        frequency_hz: 524.0,
+        decay_seconds: decay,
+        estimation_rms_db: 0.0,
+        validation_rms_db: 0.0,
+        estimation_windows: 8,
+        validation_windows: 0,
+        sustained: false,
+        fast_decay_seconds: 0.0,
+        fast_share: 0.0,
+        beat_hz: 0.0,
+        beat_share: 0.0,
+        phase: 0.0,
+        loose: false,
+    };
+    // A piano C5's fundamental after its fast part: a held aftersound, a null, a recovery.
+    let levels = [-31.0, -31.0, -33.0, -36.0, -40.0, -46.0, -44.0, -42.0];
+    let span: Vec<(usize, f64, f64)> =
+        levels.iter().enumerate().map(|(i, y)| (i, 1.5 + i as f64 * 0.37, db(*y))).collect();
+    let points: Vec<(f64, f64)> = span.iter().map(|v| (v.1, v.2)).collect();
+    let (intercept, slope) = line(&points).unwrap();
+    let (_, corrected, kept) = beat_corrected(&span, (intercept, slope, evidence(-1000.0_f64.ln() / slope)));
+    // Through -31 dB at the first window and -42 dB at the last.
+    let expected = db(-11.0) / (7.0 * 0.37);
+    assert!((corrected - expected).abs() < 1e-9 && corrected > slope, "{corrected} {slope}");
+    assert!((kept.decay_seconds + 1000.0_f64.ln() / expected).abs() < 1e-9);
+    // A steady decay has no null: unchanged.
+    let steady: Vec<(usize, f64, f64)> = (0..8).map(|i| (i, i as f64 * 0.37, db(-30.0 - 4.0 * i as f64))).collect();
+    let fitted = (db(-30.0), db(-4.0) / 0.37, evidence(1.0));
+    assert_eq!(beat_corrected(&steady, fitted).1, fitted.1);
+}
+
 struct Lcg(u32);
 impl Lcg {
     fn next(&mut self) -> f64 {
