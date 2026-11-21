@@ -85,6 +85,23 @@ suhina.on_state(function(token, value)
 end)
 for i = 1, 64 do suhina.subscribe("project.launcher") end
 "#;
+/// An edit asked through `suhina.read`: the pad's controller byte says the read was refused
+/// (1) or answered (0) — a read is a reading command, so this is 1.
+const SCRIPT_READ_EDIT: &str = r#"
+suhina.on_port_message(function(bytes, port)
+    if bytes == "\x90\x3c\x7f" then
+        local value, err = suhina.read("track.setVolume", { tracks = { 1 }, db = -3 })
+        suhina.send("APC out", suhina.midi.cc(1, err ~= nil and 1 or 0, 0))
+    end
+end)
+"#;
+/// A subscription to an edit: its reads are refused, so the state's handler never sends.
+const SCRIPT_SUBSCRIBE_EDIT: &str = r#"
+suhina.on_state(function(token, value)
+    suhina.send("APC out", suhina.midi.cc(1, 2, 0))
+end)
+suhina.subscribe("track.setVolume", { tracks = { 1 } })
+"#;
 
 impl Fixture {
     /// Makes `id` with `script` as its whole script, and a `Projects` whose extensions store
@@ -798,6 +815,37 @@ fn an_adjusts_calls_run_each_their_own() {
     fixture.projects.poll_plugins();
     let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
     assert_eq!(tracks[0]["volume_db"], json!(2.0), "{tracks}");
+}
+
+/// A read is a reading command: an edit asked through `suhina.read` is refused with its
+/// reason, and the volume it would have set is unchanged.
+#[test]
+fn a_read_of_an_edit_is_refused() {
+    let mut fixture = Fixture::claiming("readedit", SCRIPT_READ_EDIT);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    fixture.pump_until(|f| written_contains(f, [0xB1, 0x01, 0x00]), "the refusal's marker");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
+    assert_eq!(tracks[0]["volume_db"], json!(0.0), "{tracks}");
+}
+
+/// A subscription is a reading command too: one to an edit is registered but its reads are
+/// refused, so no state is pushed — the edit does not happen on every look.
+#[test]
+fn a_subscription_of_an_edit_pushes_nothing() {
+    let mut fixture = Fixture::claiming("subedit", SCRIPT_SUBSCRIBE_EDIT);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    // The looks the subscription's reads would have run on: no state is pushed.
+    for _ in 0..200 {
+        fixture.projects.poll_plugins();
+        if let Err(reason) = fixture.projects.test_extensions_breath() {
+            panic!("the program ended: {reason}");
+        }
+    }
+    assert!(fixture.midi.written_for("APC out").is_empty(), "{:?}", fixture.midi.written_for("APC out"));
 }
 
 /// The storm through the real pipeline: the CCs arrive through the supervisor, the commands

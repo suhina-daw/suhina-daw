@@ -408,7 +408,7 @@ impl Projects {
                     }
                 }
                 programs::Event::Read { token, id, params } => {
-                    let (ok, value, error) = match self.dispatch_for_program(&id, &params) {
+                    let (ok, value, error) = match self.read_for_program(&id, &params) {
                         Ok(value) => (true, Some(value), None),
                         Err(e) => (false, None, Some(String::from(e))),
                     };
@@ -432,7 +432,7 @@ impl Projects {
         }
         let mut results = Vec::new();
         for (program, token, id, params) in reads {
-            let result = self.dispatch_for_program(&id, &params);
+            let result = self.read_for_program(&id, &params);
             results.push((program, token, result.map_err(String::from)));
         }
         for (program, token, value) in self.extensions.apply_sub_results(results) {
@@ -445,11 +445,27 @@ impl Projects {
     /// Runs a program's command or read: the same command the window, CLI and MCP dispatch, on
     /// the active session. No poll bracket of its own — this dispatch already runs inside one.
     fn dispatch_for_program(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
-        if let Some(spec) = projects_commands().find(|c| c.id == id) {
-            crate::commands::check_params(id, spec.params, params)?;
-            return (spec.run)(self, params);
+        if let Some(result) = self.listed_or_projects_command(None, id, params) {
+            return result;
         }
-        self.session_mut(None)?.execute(id, params)
+        self.dispatch_command(None, id, params, policy(id))
+    }
+
+    /// A read the program asked for, or a subscription's re-read: only a reading command runs
+    /// — the protocol's reads and subscriptions read (docs/spec/surface-programs.md › The
+    /// session's commands), so a subscription to an edit cannot make the edit happen on every
+    /// look; the edits go through command messages. An id no command has is the dispatch's
+    /// own refusal.
+    fn read_for_program(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
+        let kind = projects_commands()
+            .find(|c| c.id == id)
+            .map(|c| c.kind)
+            .or_else(|| crate::commands::commands().iter().find(|c| c.id == id).map(|c| c.kind));
+        match kind {
+            Some(kind) if kind.effect == crate::commands::Effect::Read => self.dispatch_for_program(id, params),
+            Some(_) => Err(format!("{id:?} is not a read; a program's reads and subscriptions read").into()),
+            None => self.dispatch_for_program(id, params),
+        }
     }
     /// Sends the MIDI inputs' notes to the active project's engine when it is a new one, and
     /// looks at the ports again now and then, so a controller plugged in later is heard. The
@@ -1263,28 +1279,74 @@ impl Projects {
     /// Like [`Projects::execute`], but a project command runs on `project` instead of the active
     /// one. Transport commands only work on the active project, the one that plays.
     pub fn execute_in(&mut self, project: Option<ProjectId>, id: &str, params: &Value) -> Result<Value, CommandError> {
-        if id == "command.list" {
-            crate::commands::check_params(id, &[], params)?;
-            return Ok(all_commands());
-        }
-        if let Some(spec) = projects_commands().find(|c| c.id == id) {
-            if project.is_some() {
-                return Err(format!("{id} does not run on one project; it takes no target project").into());
-            }
-            crate::commands::check_params(id, spec.params, params)?;
-            return (spec.run)(self, params);
+        if let Some(result) = self.listed_or_projects_command(project, id, params) {
+            return result;
         }
         // With no project open, previews play in the previews' own session.
         let policy = policy(id);
-        if project.is_none() && self.tabs.active.is_none() && policy.is_some_and(|p| p.previews) {
-            // Nothing plays yet: stopping opens no output.
-            if id == "preview.stop" && self.preview.is_none() {
-                return Ok(json!({ "stopped": true }));
-            }
-            return self.preview_session_mut()?.execute(id, params);
+        if let Some(result) = self.preview_dispatch(project, id, params, policy) {
+            return result;
         }
         // A command may need a plug-in that has started meanwhile, or add one.
         self.poll_plugins();
+        let result = self.dispatch_command(project, id, params, policy);
+        self.poll_plugins();
+        result
+    }
+
+    /// `command.list`, and a `project.*`/`plugin.*` command on the open projects: the part of
+    /// [`Self::execute_in`] that is not one project's command, shared with the program
+    /// dispatch. `Some` when one of them took the call.
+    fn listed_or_projects_command(
+        &mut self,
+        project: Option<ProjectId>,
+        id: &str,
+        params: &Value,
+    ) -> Option<Result<Value, CommandError>> {
+        if id == "command.list" {
+            return Some(crate::commands::check_params(id, &[], params).map(|()| all_commands()));
+        }
+        let spec = projects_commands().find(|c| c.id == id)?;
+        if project.is_some() {
+            return Some(Err(format!("{id} does not run on one project; it takes no target project").into()));
+        }
+        let checked = crate::commands::check_params(id, spec.params, params);
+        Some(checked.and_then(|()| (spec.run)(self, params)))
+    }
+
+    /// With no project open, previews play in the previews' own session: the part of
+    /// [`Self::execute_in`] before a project's command. `Some` when a preview took the call.
+    fn preview_dispatch(
+        &mut self,
+        project: Option<ProjectId>,
+        id: &str,
+        params: &Value,
+        policy: Option<Policy>,
+    ) -> Option<Result<Value, CommandError>> {
+        if !(project.is_none() && self.tabs.active.is_none() && policy.is_some_and(|p| p.previews)) {
+            return None;
+        }
+        // Nothing plays yet: stopping opens no output.
+        if id == "preview.stop" && self.preview.is_none() {
+            return Some(Ok(json!({ "stopped": true })));
+        }
+        match self.preview_session_mut() {
+            Ok(preview) => Some(preview.execute(id, params)),
+            Err(e) => Some(Err(e)),
+        }
+    }
+
+    /// One project command run, with the command's policies — a critical one's backup before
+    /// it, and its `Policy.after` after (a copy's clipboards shared with the other tabs, a
+    /// save's bookkeeping). The core of [`Self::execute_in`], with no poll bracket of its own:
+    /// [`Self::execute_in`] brackets it, and the program dispatch already runs inside one.
+    fn dispatch_command(
+        &mut self,
+        project: Option<ProjectId>,
+        id: &str,
+        params: &Value,
+        policy: Option<Policy>,
+    ) -> Result<Value, CommandError> {
         let target = project.or(self.tabs.active);
         if let Some(target) = target
             && policy.is_some_and(|p| p.critical)
@@ -1292,7 +1354,6 @@ impl Projects {
             self.back_up_critical(target);
         }
         let result = self.session_mut(project)?.execute(id, params);
-        self.poll_plugins();
         let Ok(value) = &result else { return result };
         match policy.map_or(crate::After::Nothing, |p| p.after) {
             crate::After::Nothing => {}
