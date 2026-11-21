@@ -163,7 +163,7 @@ impl Manifest {
                 };
                 text(name, MAX_NAME).map_err(|e| format!("license: name: {e}"))?;
                 let path = relative(text_file).map_err(|e| format!("license: text_file: {e}"))?;
-                let file = folder.join(&path);
+                let file = contained(folder, &path).map_err(|e| format!("license: text_file: {e}"))?;
                 let bytes = capped(&file, MAX_LICENCE)
                     .map_err(|reason| format!("license: the text file {text_file} {reason}"))?;
                 if std::str::from_utf8(&bytes).is_err() {
@@ -191,7 +191,7 @@ impl Manifest {
         }
         for program in &self.programs {
             let path = relative(&program.path).map_err(|e| format!("programs: {e}"))?;
-            let file = folder.join(&path);
+            let file = contained(folder, &path).map_err(|e| format!("programs: {e}"))?;
             let digest =
                 file_digest(&file, MAX_SCRIPT).map_err(|reason| format!("programs: {}: {reason}", program.path))?;
             if digest != program.sha256.to_ascii_lowercase() {
@@ -951,8 +951,10 @@ fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
                 .and_then(|l| l.get("text_file"))
                 .and_then(Value::as_str);
             file.and_then(|file| {
-                capped(&extension.folder.join(relative(file).ok()?), MAX_LICENCE)
+                relative(file)
                     .ok()
+                    .and_then(|path| contained(&extension.folder, &path).ok())
+                    .and_then(|file| capped(&file, MAX_LICENCE).ok())
                     .and_then(|bytes| String::from_utf8(bytes).ok())
             })
         }
@@ -1147,6 +1149,20 @@ fn relative(path: &str) -> Result<PathBuf, String> {
         return Err("it is empty".into());
     }
     Ok(out)
+}
+
+/// The file a manifest's path names inside `folder`, resolved contained: what the path
+/// reaches must be within the folder, so a link inside it cannot carry a read or a launch
+/// outside (docs/spec/extensions.md › The manifest). The path back is the folder's own —
+/// the file is opened there, through no link but the folder's own.
+pub(crate) fn contained(folder: &Path, path: &Path) -> Result<PathBuf, String> {
+    let joined = folder.join(path);
+    let folder = std::fs::canonicalize(folder).map_err(|e| format!("the folder cannot be resolved: {e}"))?;
+    let resolved = std::fs::canonicalize(&joined).map_err(|e| format!("{} is missing: {e}", joined.display()))?;
+    if !resolved.starts_with(&folder) {
+        return Err(format!("{} leaves the extension's folder", path.display()));
+    }
+    Ok(joined)
 }
 
 /// A folder copied whole: files and folders, within a depth, nothing followed out of it.

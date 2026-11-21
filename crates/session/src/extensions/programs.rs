@@ -301,6 +301,10 @@ pub fn start(
     if !runner.exists() {
         return Err(format!("the shipped runner {} is not beside this program", runner.display()).into());
     }
+    // The script is launched contained: the path the manifest names reaches only what the
+    // folder holds, a link inside it not excepted.
+    super::contained(folder, Path::new(script))
+        .map_err(|reason| crate::CommandError::new(format!("the script {}: {reason}", script)))?;
     let script_path = folder.join(script);
     if !script_path.exists() {
         return Err(format!("the script {} is missing", script_path.display()).into());

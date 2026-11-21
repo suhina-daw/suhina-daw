@@ -168,6 +168,29 @@ fn every_refusal_names_its_reason() {
         m["programs"][0]["path"] = json!("/etc/passwd");
     });
     assert!(reason.contains("absolute"), "{reason}");
+    // A link in the folder that resolves outside it: the manifest names the link, and the
+    // file it reaches is not the folder's, so the read is refused either way.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let fixture = Fixture::new("linked", |id| manifest_for(id, SCRIPT));
+        let outside = std::env::temp_dir().join(format!("suhina-extensions-outside-{}.lua", std::process::id()));
+        std::fs::write(&outside, SCRIPT).expect("written");
+        std::fs::remove_file(fixture.folder().join("script.lua")).expect("removed");
+        symlink(&outside, fixture.folder().join("script.lua")).expect("linked");
+        let reason = extensions::Manifest::read(&fixture.folder()).expect_err("it is refused");
+        assert!(reason.contains("folder"), "{reason}");
+        // A link that stays within the folder is the folder's own content: it reads.
+        let second = Fixture::new("linked-in", |id| manifest_for(id, SCRIPT));
+        std::fs::remove_file(second.folder().join("script.lua")).expect("removed");
+        symlink(second.folder().join("LICENCE.txt"), second.folder().join("script.lua")).expect("linked");
+        // The digest is against the linked file's bytes: the manifest is sealed to the
+        // script, not the licence, so the read is refused by digest, not by containment —
+        // which is what proves the containment check let it through.
+        let reason = extensions::Manifest::read(&second.folder()).expect_err("it is refused");
+        assert!(reason.contains("changed"), "{reason}");
+        let _ = std::fs::remove_file(&outside);
+    }
     // A surface entry with a namespace, and a non-surface one without.
     let (_, reason) = refuses("surface-namespace", &|m| {
         m["provides"] = json!([{ "id": "surface", "label": "x", "namespace": "pad" }]);
