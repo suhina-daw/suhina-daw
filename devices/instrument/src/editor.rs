@@ -6,32 +6,14 @@
 use super::Canvas;
 use suhina_device_sdk::ui::{DeviceUi, Draw, TextAlign, UiGesture, Widget};
 
-/// The editor's look (docs/spec/instrument-editor.md › Appearance and validation). Over the light
-/// artwork: the logo in place of the title, no boxes (a section is a hairline over its heading),
-/// buttons as text with the chosen one underlined in brass, quiet drop-downs, and espresso ink
-/// with brass for the drawings' palette tokens and the dials' arcs. A dark theme hides the
-/// artwork and the logo, shows the title and keeps its own look.
-const EDITOR_STYLE: &str = "@media (prefers-color-scheme: dark) { #logo-light { display: none; } }
-@media (prefers-color-scheme: light) {
-  #title-dark { display: none; }
-  device-section { background-color: transparent; color: #6b5543; border-color: rgba(52, 38, 29, 0.22);
-    border-width: 1px 0 0 0; radius: 0; box-shadow: none; }
-  button { image: none; background-color: transparent; color: #6b5543; border-color: transparent;
-    border-width: 0 0 2px 0; radius: 0; box-shadow: none; accent-color: #b8742f; }
-  button:hover { color: #34261d; }
-  button[checked] { background-color: transparent; color: #34261d; border-color: #b8742f; }
-  dropdown { background-color: transparent; color: #34261d; border-color: rgba(52, 38, 29, 0.35);
-    border-width: 0 0 1px 0; radius: 0; }
-  knob { color: #34261d; accent-color: #b8742f; }
-  knob-ring { background-color: rgba(52, 38, 29, 0.14); }
-  knob-pointer { color: #2a1c13; }
-  label { color: #6b5543; }
-  device-control { color: #34261d; accent-color: #b8742f; }
-}";
+/// The editor's look on top of the shared sheet (docs/spec/instrument-editor.md › Appearance and
+/// validation), with every theme: buttons as text with only the chosen one underlined, in brass.
+const EDITOR_STYLE: &str = "button { border-color: transparent; border-width: 0 0 2px 0; }
+button[checked] { border-color: #b8742f; }";
 /// The revisions whose Model page shows #1599's struck-body group: a profile or a fitted set.
 const PROFILE_OR_FITTED: &[u16] = &[2, 4];
-/// The theme's fainter text, a palette token.
-const MUTED: [u8; 4] = [3, 1, 1, 170];
+/// Fainter espresso text.
+const MUTED: [u8; 4] = [107, 85, 67, 255];
 
 pub(super) fn canvas() -> DeviceUi {
     let mut ui = Canvas::new([880.0, 560.0]);
@@ -40,9 +22,7 @@ pub(super) fn canvas() -> DeviceUi {
     ui.asset("logo", super::LOGO);
     ui.asset("knob-large", super::KNOB_LARGE);
     ui.asset("knob-small", super::KNOB_SMALL);
-    // The title shows with a dark theme, the logo over the light artwork.
-    ui.title("Instrument", [24.0, 16.0, 400.0, 34.0], 28.0);
-    ui.set_id("title-dark");
+    // The logo in place of a title.
     ui.add(
         "Suhina",
         Widget::Graphic { drawing: vec![Draw::image("logo", [0.0, 0.0, 108.0, 30.0])] },
@@ -51,7 +31,6 @@ pub(super) fn canvas() -> DeviceUi {
         UiGesture::Drag,
         "",
     );
-    ui.set_id("logo-light");
     for (revision, name) in [
         (1, "Experimental struck modal · revision 1"),
         (2, "Experimental modal profile · revision 2"),
@@ -72,6 +51,14 @@ pub(super) fn canvas() -> DeviceUi {
     for (i, name) in ["Play", "Model", "Sample"].into_iter().enumerate() {
         ui.navigate(name, [56.0 + i as f32 * 84.0, 518.0, 76.0, 22.0], i as u16, false);
     }
+
+    // Beside the page buttons on every page, as the Source menu is.
+    ui.toggle(
+        "soft_pedal",
+        "Soft pedal",
+        [316.0, 518.0, 96.0, 22.0],
+        "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held down",
+    );
 
     ui.page(0);
     ui.group("PERFORMANCE", [24.0, 144.0, 832.0, 192.0]);
@@ -116,12 +103,6 @@ pub(super) fn canvas() -> DeviceUi {
     ui.label(
         "Keys: C3 = 60. Pitch wheel ±2 semitones. Sustain pedal holds keys; CC 67 is the soft pedal.",
         [24.0, 476.0, 640.0, 24.0],
-    );
-    ui.toggle(
-        "soft_pedal",
-        "Soft pedal",
-        [704.0, 92.0, 152.0, 32.0],
-        "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held down",
     );
 
     ui.page(1);
@@ -174,11 +155,16 @@ pub(super) fn canvas() -> DeviceUi {
         ),
         ("damper_noise", "Damper noise", "The short noise of a damper landing on note-off"),
         ("pedal_resonance", "Pedal resonance", "Undamped strings ringing along while the sustain pedal is down"),
+        (
+            "model_tune",
+            "Model tune",
+            "Moves the model's pitch in semitones, for a model fitted at the wrong root or a few cents off",
+        ),
     ]
     .into_iter()
     .enumerate()
     {
-        ui.dial(id, name, [54.0 + i as f32 * 196.0, 350.0, 110.0, 92.0], hint);
+        ui.dial(id, name, [54.0 + i as f32 * 160.0, 350.0, 110.0, 92.0], hint);
         ui.only_revision(4);
     }
     ui.label("Modes per voice", [40.0, 456.0, 196.0, 20.0]);

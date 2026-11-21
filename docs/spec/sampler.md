@@ -148,8 +148,12 @@ longer select an editor.
 Numeric values drag vertically, Shift gives precision, and double-click resets.
 All edits use the shared device parameter command, persistence and undo.
 
-Start/end and loop markers are fractions of the source. Empty or crossed ranges
-produce silence. Forward loops wrap at the boundary; ping-pong reflects the
+Start/end and loop markers are fractions of the source. Of a crossed pair the marker further
+right is always the end: Start past End plays from End to Start (and Loop start past Loop end
+loops between them), so dragging a marker over the other never silences the instrument. The
+waveform labels the left marker S and the right one E while it is dragged, and when the drag ends
+past the other marker the two values are swapped in the same undo step, so the fields read in
+order again. An empty range produces silence. Forward loops wrap at the boundary; ping-pong reflects the
 read head. Ping-pong remains readable in saved projects but has no panel control.
 Changing playback mode immediately silences existing voices; selecting the current
 mode leaves them playing. Gate releases on note-off; one-shot ignores note-off. Reset silences all
@@ -253,7 +257,8 @@ wave * depth to the base pan and clamps to -1..1. All destinations use the same
 per-sample phase in both Sample and Grain, with no allocation or locking.
 
 There are no separate arrow handles for loops. In Sample/Loop playback, S/E edit
-loop_start/loop_end; otherwise S/E edit start/end. Grain always uses source
+loop_start/loop_end; otherwise S/E edit start/end. A crossed pair is labelled by position (see
+the marker rule above). Grain always uses source
 boundaries, since its scan reads the source region rather than a sample loop. Hover text explains the current
 role. Source and loop ranges remain independently editable through numeric fields.
 All SDK drag-value controls traverse their full normalized range in 400 logical

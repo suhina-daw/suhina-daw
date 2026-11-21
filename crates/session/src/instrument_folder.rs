@@ -239,6 +239,7 @@ mod tests {
             attack_rate: 0,
             attack: Vec::new(),
             sustain: None,
+            stereo: None,
         }
     }
 

@@ -34,7 +34,8 @@ first, and its proposal can be corrected before acceptance.
 Algorithm version 2 admits mono/stereo PCM at 1000..384000 Hz and at most the first eight
 seconds of the selected trim. It checks finite input and chooses the channel with greatest AC
 energy; the chosen zero-based channel and inspected source-frame range are reported. Opposite
-stereo polarity therefore cannot cancel the source. Stereo radiation and width are not fitted.
+stereo polarity therefore cannot cancel the source. Version 4 keeps a stereo recording's width
+(see **Stereo** below); the modes are found and fitted on the chosen channel.
 A channel whose values do not vary (silence or a constant offset) is reported as silent.
 The existing shared resampler prepares one normalized channel at 22050 Hz. A relative trailing
 noise floor limits the useful analysis interval; the source itself is never trimmed or edited.
@@ -82,6 +83,35 @@ recording's floor, or the next strike in the trim). Within the span, even window
 estimation data and odd windows are held out for validation. Least squares on log amplitude
 versus time estimates exponential decay; T60 is minus ln(1000) divided by the slope. The
 window's damping-dependent amplitude bias is compensated before storing relative magnitudes.
+
+**Fast partials (algorithm version 4).** The envelope windows suit partials that ring for
+seconds, but the upper partials of a struck or plucked note (a synthesizer note whose filter
+closes, a piano's treble partials) fall 60 dB within a few tenths of a second, inside one or two
+of those windows, so no fit accepted them. They were only in the 0.25 s attack, and once it
+faded the note lost its brightness at once: measured on a synthesizer bass, the 2 kHz octave
+fell from -58 dB to below -130 dB at 0.3 s, and a piano chord's 500 Hz..2 kHz octaves were 6 dB
+low from 0.3 s on. So a candidate the envelope windows leave without a mode is measured again
+with **short windows**: the smallest power-of-two Hann size from 512 samples, below the envelope
+window size, whose main lobe stays clear of the nearest other candidate (size at least
+`4 * 22050 / gap`, the gap in Hz), cut from the start of the interval into at most 48
+consecutive windows. Its span, estimation and validation windows, error limits, late retry and
+loose rule are those above, and the window bias is compensated for the short window. A partial
+the short windows describe is kept like any other and competes for the recording's 64 modes by
+the same energy; one that fits neither stays out.
+
+**Stereo (algorithm version 4).** A model of one channel plays every partial in the middle,
+while a stereo recording spreads them: a piano's bass strings to one side and its treble to the
+other, a pad or a chord as wide as its two microphones (a measured piano chord has as much side
+as middle). So the other channel is prepared like the chosen one (its own mean, the chosen
+channel's scale, the same resampling, trailing-floor cut and vibrato flattening), and once the
+recording's modes are chosen, each is projected on both channels through the detection window.
+The ratio of the other channel's complex amplitude to the chosen channel's is the mode's
+**other-channel gain** (0..8) and **phase offset** (-pi..pi); a mode the chosen channel does not
+carry above 1e-9 of the largest projection keeps gain 1 and offset 0. The attack's other channel
+is the residual of the other channel against the modes with those gains and offsets, faded in
+the same way, and both attack channels are kept or dropped together (by their summed residual
+energy). A mono recording, or a stereo one whose channels match within 1e-6, stores no stereo
+part and plays as before.
 
 **Accepting a mode.** A mode is kept when it has at least three estimation and three validation
 windows, its slope decays with a T60 within 0.001..60 s, the fitted level falls at least 1 dB

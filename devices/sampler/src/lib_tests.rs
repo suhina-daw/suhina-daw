@@ -742,9 +742,22 @@ fn pitch_reverse_and_region_golden() {
     set(&mut s, "reverse", 1.);
     note(&mut s, 60);
     assert_eq!(render(&mut s, 3, 1), vec![0.99, 0.99, 0.98, 0.98, 0.97, 0.97]);
+    // A crossed pair plays between the markers: the one further right is the end.
     s.reset();
     set(&mut s, "start", 0.9);
     set(&mut s, "end", 0.1);
+    note(&mut s, 60);
+    let crossed = render(&mut s, 32, 7);
+    assert!(crossed.iter().any(|v| *v != 0.));
+    s.reset();
+    set(&mut s, "start", 0.1);
+    set(&mut s, "end", 0.9);
+    note(&mut s, 60);
+    assert_eq!(crossed, render(&mut s, 32, 7));
+    // An empty range is still silent.
+    s.reset();
+    set(&mut s, "start", 0.5);
+    set(&mut s, "end", 0.5);
     note(&mut s, 60);
     assert!(render(&mut s, 32, 7).iter().all(|v| *v == 0.));
 }

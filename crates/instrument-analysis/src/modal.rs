@@ -10,17 +10,22 @@ use std::{f64::consts::TAU, ops::Range};
 use suhina_dsp::{
     Resampler,
     modal::{
-        model::{MAX_MODEL_MODES, ModelMode, ModelRecording},
+        model::{MAX_MODEL_MODES, MAX_OTHER_GAIN, ModelMode, ModelRecording, Stereo},
         profile::{MAX_PROFILE_MODES, ModalProfile, ProfileMode},
         sustain::Sustain,
     },
 };
 
-/// Version 3 measures and removes vibrato first and adds the held layer.
-pub const VERSION: u32 = 3;
+/// Version 3 measures and removes vibrato first and adds the held layer; version 4 measures
+/// fast partials with short windows and a stereo recording's other channel.
+pub const VERSION: u32 = 4;
 const MIN_FRAME: usize = 1024;
 const MAX_FRAME: usize = 8192;
 const MAX_FRAMES: usize = 12;
+/// Short windows for partials that die within one or two envelope windows: the smallest size and
+/// how many consecutive windows from the start.
+const SHORT_FRAME: usize = 512;
+const SHORT_FRAMES: usize = 48;
 const MAX_CANDIDATES: usize = 96;
 /// Partials along the string (instrument-modal-fitting.md): the fundamental's distance from the
 /// reference key, the inharmonicity bound, the search width and the weakest partial kept.
@@ -110,7 +115,8 @@ pub struct ModeEvidence {
 pub struct Report {
     pub version: u32,
     pub range: Range<usize>,
-    /// Zero-based channel with greatest AC energy. Stereo width is not reconstructed.
+    /// Zero-based channel with greatest AC energy, which the modes are fitted on; a stereo
+    /// recording's other channel is measured against it (version 4).
     pub channel: u16,
     pub frame_size: usize,
     pub analyzed_seconds: f64,
@@ -169,7 +175,10 @@ pub fn fit(
     let first = range.start.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let last = range.end.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let input = samples.get(first..last).ok_or(Error::InvalidRange)?;
-    let total = 2 * length.div_ceil(CHUNK) + MAX_CANDIDATES * (REFINEMENTS + MAX_FRAMES + 4) + MAX_MODEL_MODES + 8;
+    let total = 2 * length.div_ceil(CHUNK)
+        + MAX_CANDIDATES * (REFINEMENTS + MAX_FRAMES + SHORT_FRAMES + 4)
+        + MAX_MODEL_MODES
+        + 8;
     let mut work = Work { done: 0, total, progress };
     let mut report = Report {
         version: VERSION,
@@ -226,26 +235,17 @@ pub fn fit(
     }
     let mean = sums[channel] / length as f64;
     let scale = (maxima[channel] - mean).abs().max((minima[channel] - mean).abs()).max(1e-12);
-    let mut resampler = Resampler::new(f64::from(sample_rate), f64::from(RATE));
-    let mut output = vec![0.0; (CHUNK as f64 * f64::from(RATE) / f64::from(sample_rate)).ceil() as usize + 1024];
-    let capacity = (length as f64 * f64::from(RATE) / f64::from(sample_rate)).ceil() as usize + 1024;
-    let mut mono = Vec::with_capacity(capacity);
-    let mut block = [0.0; CHUNK];
-    for chunk in input.chunks(CHUNK * channels) {
-        work.step()?;
-        let frames = chunk.len() / channels;
-        for (frame, value) in chunk.chunks_exact(channels).zip(block.iter_mut()) {
-            *value = (f64::from(frame.get(channel).copied().unwrap_or(0.0)) - mean) / scale;
-        }
-        let count = resampler.process(block.get(..frames).ok_or(Error::InvalidRange)?, &mut output);
-        mono.extend(output.iter().take(count).copied());
-    }
-    let count = resampler.flush(&mut output);
-    mono.extend(output.iter().take(count).copied());
-    // Output frame j is the source at time j / RATE (the resampler's latency is only in when
-    // frames come out), so time zero, every measured phase and the attack start at the
-    // source's first analyzed frame.
-    mono.truncate((length as f64 * f64::from(RATE) / f64::from(sample_rate)).floor() as usize);
+    let prepare = Prepare { input, channels, sample_rate, length, scale };
+    let mut mono = prepare.channel(channel, mean, &mut work)?;
+    // The other channel of a stereo recording, at the chosen channel's scale so their levels
+    // compare; none when it matches the chosen one.
+    let mut other = if channels == 2 {
+        let index = 1 - channel;
+        let prepared = prepare.channel(index, sums[index] / length as f64, &mut work)?;
+        prepared.iter().zip(&mono).any(|(a, b)| (a - b).abs() > 1e-6).then_some(prepared)
+    } else {
+        None
+    };
     // Long silent tails must not turn a quick strike into widely separated empty windows.
     // Use the residual's AC span, rather than a DC offset introduced by mean subtraction.
     let tail_mean = mono.iter().rev().take(MIN_FRAME).sum::<f64>() / mono.len().clamp(1, MIN_FRAME) as f64;
@@ -258,6 +258,10 @@ pub fn fit(
     let vibrato = pitch.as_ref().and_then(sustain::vibrato);
     if let (Some(pitch), Some(vibrato)) = (&pitch, &vibrato) {
         mono = sustain::flatten(&mono, pitch, vibrato);
+        other = other.map(|other| sustain::flatten(&other, pitch, vibrato));
+    }
+    if let Some(other) = other.as_mut() {
+        other.resize(mono.len(), 0.0);
     }
     work.step()?;
     let mut frame_size = MIN_FRAME;
@@ -325,14 +329,6 @@ pub fn fit(
             break;
         }
     }
-    let bias = |slope: f64| {
-        window
-            .iter()
-            .enumerate()
-            .map(|(i, w)| w * (slope * (i as f64 - frame_size as f64 / 2.0) / f64::from(RATE)).exp())
-            .sum::<f64>()
-            / window.iter().sum::<f64>()
-    };
     // The prominent peaks first: the string's other partials are predicted from them.
     let mut frequencies = Vec::with_capacity(MAX_CANDIDATES);
     for bin in candidates {
@@ -360,26 +356,39 @@ pub fn fit(
             frequencies.push(hz);
         }
     }
+    // Short windows, smallest first, for partials the envelope windows cannot follow.
+    let mut short_windows = Vec::new();
+    let mut size = SHORT_FRAME;
+    while size < frame_size {
+        short_windows.push(hann(size));
+        size *= 2;
+    }
     let mut accepted: Vec<Fitted> = Vec::with_capacity(MAX_CANDIDATES);
-    for hz in frequencies {
-        let mut measurements = Vec::with_capacity(frames);
-        let mut thetas = Vec::with_capacity(frames);
-        for index in 0..frames {
-            work.step()?;
-            let start = index * frame_size;
-            let frame = mono.get(start..start + frame_size).ok_or(Error::InvalidRange)?;
-            let (amplitude, theta) = projection_complex(frame, &window, hz);
-            thetas.push(theta);
-            if amplitude > 1e-7 {
-                measurements.push((index, (start + frame_size / 2) as f64 / f64::from(RATE), amplitude.ln()));
+    for (position, &hz) in frequencies.iter().enumerate() {
+        let (measurements, thetas) = measure(&mono, &window, frames, hz, &mut work)?;
+        let mut found = estimate(hz, &measurements).map(|e| (e, thetas, window.as_slice()));
+        if found.is_none() {
+            // The short window's main lobe (two bins each side) stays clear of the nearest
+            // other candidate.
+            let gap = frequencies
+                .iter()
+                .enumerate()
+                .filter(|(other, _)| *other != position)
+                .map(|(_, other)| (other - hz).abs())
+                .fold(f64::INFINITY, f64::min);
+            let needed = 4.0 * f64::from(RATE) / gap;
+            if let Some(short) = short_windows.iter().find(|w| w.len() as f64 >= needed) {
+                let count = (mono.len() / short.len()).min(SHORT_FRAMES);
+                let (measurements, thetas) = measure(&mono, short, count, hz, &mut work)?;
+                found = estimate(hz, &measurements).map(|e| (e, thetas, short.as_slice()));
             }
         }
-        let Some(estimate) = estimate(hz, &measurements) else { continue };
-        let slow = estimate.intercept.exp() / bias(estimate.slope);
-        let fast = estimate.fast.map_or(0.0, |(intercept, slope)| intercept.exp() / bias(slope));
+        let Some((estimate, thetas, used)) = found else { continue };
+        let slow = estimate.intercept.exp() / window_bias(used, estimate.slope);
+        let fast = estimate.fast.map_or(0.0, |(intercept, slope)| intercept.exp() / window_bias(used, slope));
         // Phase at the strike, from the first window of the mode's span.
         let theta = thetas.get(estimate.first_window).copied().unwrap_or(0.0);
-        let phase = wrap(theta - TAU * hz * (estimate.first_window * frame_size) as f64 / f64::from(RATE));
+        let phase = wrap(theta - TAU * hz * (estimate.first_window * used.len()) as f64 / f64::from(RATE));
         if slow.is_finite() && slow > 0.0 && fast.is_finite() {
             let mut evidence = estimate.evidence;
             evidence.phase = phase;
@@ -440,7 +449,33 @@ pub fn fit(
             None
         };
         work.step()?;
-        report.recording = recording(&accepted, &mono, reference_key, reference_hz, scale, layer);
+        // Each chosen mode on both channels through the detection window: the other channel's
+        // gain and phase offset against the chosen one.
+        let stereo = other.as_ref().and_then(|other| {
+            let other_detection = other.get(..detection_size)?;
+            let measured: Vec<_> = accepted
+                .iter()
+                .map(|f| {
+                    (
+                        projection_complex(detection, &detection_window, f.hz),
+                        projection_complex(other_detection, &detection_window, f.hz),
+                    )
+                })
+                .collect();
+            let largest = measured.iter().map(|((a, _), _)| *a).fold(0.0_f64, f64::max);
+            let placements = measured
+                .iter()
+                .map(|&((a, phase_a), (b, phase_b))| {
+                    if a > largest * 1e-9 && a > 0.0 {
+                        ((b / a).clamp(0.0, f64::from(MAX_OTHER_GAIN)), wrap(phase_b - phase_a))
+                    } else {
+                        (1.0, 0.0)
+                    }
+                })
+                .collect::<Vec<_>>();
+            Some((other.as_slice(), placements, channel as u8))
+        });
+        report.recording = recording(&accepted, &mono, reference_key, reference_hz, scale, layer, stereo);
         report.recording_modes = accepted.iter().map(|f| f.evidence).collect();
     }
     work.finish()?;
@@ -644,6 +679,10 @@ fn beat(mono: &[f64], window: &[f64], fitted: &Fitted) -> Option<(f64, f64)> {
 }
 
 /// The revision-4 recording: normalized modes, level in source units and the attack residual.
+/// A stereo recording's other channel, each mode's (gain, phase offset) on it and the reference
+/// channel.
+type StereoInput<'a> = (&'a [f64], Vec<(f64, f64)>, u8);
+
 fn recording(
     accepted: &[Fitted],
     mono: &[f64],
@@ -651,6 +690,7 @@ fn recording(
     reference_hz: f64,
     scale: f64,
     layer: Option<Sustain>,
+    stereo: Option<StereoInput<'_>>,
 ) -> Option<ModelRecording> {
     let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
     if !(sum.is_finite() && sum > 0.0) {
@@ -659,6 +699,7 @@ fn recording(
     let length = ((ATTACK_SECONDS * f64::from(RATE)) as usize).min(mono.len());
     let ln1000 = 1000.0_f64.ln();
     let mut attack = Vec::with_capacity(length);
+    let mut attack_other = Vec::with_capacity(if stereo.is_some() { length } else { 0 });
     let (mut residual_energy, mut signal_energy) = (0.0, 0.0);
     let half = length / 2;
     // A held mode swells in by its onset and rise: the attack holds what the modes miss, not the
@@ -677,13 +718,17 @@ fn recording(
     };
     for (n, x) in mono.iter().take(length).enumerate() {
         let t = n as f64 / f64::from(RATE);
-        let mut model = 0.0;
+        let (mut model, mut model_other) = (0.0, 0.0);
         for (index, fitted) in accepted.iter().enumerate() {
             let envelope = onset(index, t);
+            let (gain, offset) =
+                stereo.as_ref().and_then(|(_, placements, _)| placements.get(index).copied()).unwrap_or((1.0, 0.0));
             for (hz, t60, amplitude) in fitted.parts() {
                 if amplitude > 0.0 && t60 > 0.0 {
-                    model +=
-                        envelope * amplitude * (-ln1000 * t / t60).exp() * (TAU * hz * t + fitted.evidence.phase).sin();
+                    let level = envelope * amplitude * (-ln1000 * t / t60).exp();
+                    let angle = TAU * hz * t + fitted.evidence.phase;
+                    model += level * angle.sin();
+                    model_other += level * gain * (angle + offset).sin();
                 }
             }
         }
@@ -696,10 +741,19 @@ fn recording(
         residual_energy += residual * residual;
         signal_energy += x * x;
         attack.push((residual / sum) as f32);
+        if let Some(y) = stereo.as_ref().and_then(|(other, _, _)| other.get(n)) {
+            let residual = (y - model_other) * fade;
+            residual_energy += residual * residual;
+            signal_energy += y * y;
+            attack_other.push((residual / sum) as f32);
+        }
     }
+    // Both attack channels are kept or dropped together.
     if residual_energy < MIN_ATTACK_ENERGY * signal_energy {
         attack.clear();
+        attack_other.clear();
     }
+    attack_other.resize(attack.len(), 0.0);
     let modes: Vec<ModelMode> = accepted
         .iter()
         .map(|f| {
@@ -731,8 +785,89 @@ fn recording(
         attack_rate: if attack.is_empty() { 0 } else { RATE },
         attack,
         sustain: sustain.filter(|s| !s.is_empty() && s.validate(accepted.len()).is_ok()),
+        stereo: stereo.map(|(_, placements, reference)| Stereo {
+            reference,
+            gains: placements.iter().map(|(gain, _)| *gain as f32).collect(),
+            offsets: placements.iter().map(|(_, offset)| *offset as f32).collect(),
+            attack: attack_other,
+        }),
     };
     recording.validate().ok().map(|()| recording)
+}
+
+/// What preparing one channel of the analyzed input needs.
+struct Prepare<'a> {
+    input: &'a [f32],
+    channels: usize,
+    sample_rate: u32,
+    length: usize,
+    scale: f64,
+}
+
+impl Prepare<'_> {
+    /// One channel without its mean, divided by the scale and resampled to `RATE`.
+    fn channel<F: FnMut(usize, usize) -> bool>(
+        &self,
+        channel: usize,
+        mean: f64,
+        work: &mut Work<F>,
+    ) -> Result<Vec<f64>, Error> {
+        let rate = f64::from(RATE) / f64::from(self.sample_rate);
+        let mut resampler = Resampler::new(f64::from(self.sample_rate), f64::from(RATE));
+        let mut output = vec![0.0; (CHUNK as f64 * rate).ceil() as usize + 1024];
+        let mut prepared = Vec::with_capacity((self.length as f64 * rate).ceil() as usize + 1024);
+        let mut block = [0.0; CHUNK];
+        for chunk in self.input.chunks(CHUNK * self.channels) {
+            work.step()?;
+            let frames = chunk.len() / self.channels;
+            for (frame, value) in chunk.chunks_exact(self.channels).zip(block.iter_mut()) {
+                *value = (f64::from(frame.get(channel).copied().unwrap_or(0.0)) - mean) / self.scale;
+            }
+            let count = resampler.process(block.get(..frames).ok_or(Error::InvalidRange)?, &mut output);
+            prepared.extend(output.iter().take(count).copied());
+        }
+        let count = resampler.flush(&mut output);
+        prepared.extend(output.iter().take(count).copied());
+        // Output frame j is the source at time j / RATE (the resampler's latency is only in when
+        // frames come out), so time zero, every measured phase and the attack start at the
+        // source's first analyzed frame.
+        prepared.truncate((self.length as f64 * rate).floor() as usize);
+        Ok(prepared)
+    }
+}
+
+/// `hz` in `count` consecutive windows of `window`'s size from the start: the windows where it
+/// is above the floor as (window index, centre time, ln amplitude), and every window's phase.
+type Measured = (Vec<(usize, f64, f64)>, Vec<f64>);
+fn measure<F: FnMut(usize, usize) -> bool>(
+    mono: &[f64],
+    window: &[f64],
+    count: usize,
+    hz: f64,
+    work: &mut Work<F>,
+) -> Result<Measured, Error> {
+    let size = window.len();
+    let mut measurements = Vec::with_capacity(count);
+    let mut thetas = Vec::with_capacity(count);
+    for index in 0..count {
+        work.step()?;
+        let start = index * size;
+        let frame = mono.get(start..start + size).ok_or(Error::InvalidRange)?;
+        let (amplitude, theta) = projection_complex(frame, window, hz);
+        thetas.push(theta);
+        if amplitude > 1e-7 {
+            measurements.push((index, (start + size / 2) as f64 / f64::from(RATE), amplitude.ln()));
+        }
+    }
+    Ok((measurements, thetas))
+}
+
+/// How much a window over a decay with `slope` (per second) under- or overstates the level at
+/// its centre.
+fn window_bias(window: &[f64], slope: f64) -> f64 {
+    let centre = window.len() as f64 / 2.0;
+    window.iter().enumerate().map(|(i, w)| w * (slope * (i as f64 - centre) / f64::from(RATE)).exp()).sum::<f64>()
+        / window.iter().sum::<f64>()
 }
 
 fn projection(frame: &[f64], window: &[f64], hz: f64) -> f64 {

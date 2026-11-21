@@ -378,3 +378,67 @@ fn a_noisy_strike_keeps_an_attack_that_a_clean_one_barely_needs() {
     assert!(noisy_energy > 0.0, "the strike noise is kept as the attack");
     assert!(noisy_energy > 10.0 * clean_energy, "{noisy_energy} vs {clean_energy}");
 }
+
+/// Upper partials that die within one or two envelope windows are measured again with short
+/// windows (version 4), so the note keeps its brightness after the attack.
+#[test]
+fn partials_that_die_within_an_envelope_window_are_fitted_with_short_windows() {
+    let truth = [(220.0, 3.0, 0.5), (660.0, 2.5, 0.3), (1500.0, 0.25, 0.3), (2600.0, 0.2, 0.2)];
+    let pcm = struck(22050, 3.0, &truth);
+    let report = fit(&pcm, 22050, 1, 0..pcm.len(), 57, |_, _| true).unwrap();
+    assert_eq!(report.version, 4);
+    assert_eq!(report.frame_size, 4096, "envelope windows of 186 ms");
+    for &(hz, t60, _) in &truth {
+        let mode = report
+            .recording_modes
+            .iter()
+            .find(|m| (m.frequency_hz - hz).abs() < 2.0)
+            .unwrap_or_else(|| panic!("{hz} Hz missing: {:?}", report.recording_modes));
+        assert!((mode.decay_seconds - t60).abs() / t60 < 0.15, "{mode:?} vs {t60}");
+    }
+    assert_eq!(report, fit(&pcm, 22050, 1, 0..pcm.len(), 57, |_, _| true).unwrap());
+}
+
+/// A stereo recording keeps each mode's other-channel gain and phase offset and an attack for
+/// each channel; matching channels store no stereo part (version 4).
+#[test]
+fn a_stereo_recording_keeps_each_modes_placement() {
+    let truth = [(421.7, 1.8, 0.5), (1139.3, 1.1, 0.3)];
+    let placement = [(0.5, 0.6), (1.5, -1.0)];
+    let rate = 22050;
+    let left = struck(rate, 2.0, &truth);
+    let right: Vec<f32> = (0..left.len())
+        .map(|n| {
+            let t = n as f64 / f64::from(rate);
+            truth
+                .iter()
+                .zip(placement)
+                .enumerate()
+                .map(|(i, ((hz, t60, amplitude), (gain, offset)))| {
+                    gain * amplitude
+                        * (-1000.0_f64.ln() * t / t60).exp()
+                        * (TAU * hz * t + 0.37 * i as f64 + offset).sin()
+                })
+                .sum::<f64>() as f32
+        })
+        .collect();
+    let pcm: Vec<f32> = left.iter().zip(&right).flat_map(|(l, r)| [*l, *r]).collect();
+    let report = fit(&pcm, rate, 2, 0..left.len(), 57, |_, _| true).unwrap();
+    assert_eq!(report.channel, 0);
+    let recording = report.recording.unwrap();
+    let stereo = recording.stereo.as_ref().expect("a stereo part");
+    assert_eq!(stereo.reference, 0);
+    assert_eq!(stereo.attack.len(), recording.attack.len());
+    for ((hz, _, _), (gain, offset)) in truth.iter().zip(placement) {
+        let index = recording
+            .modes
+            .iter()
+            .position(|m| (m.ratio * 220.0 - hz).abs() < 1.0)
+            .unwrap_or_else(|| panic!("{hz} Hz missing"));
+        assert!((f64::from(stereo.gains[index]) - gain).abs() < 0.05, "{hz}: {stereo:?}");
+        assert!((f64::from(stereo.offsets[index]) - offset).abs() < 0.05, "{hz}: {stereo:?}");
+    }
+    let same: Vec<f32> = left.iter().flat_map(|x| [*x, *x]).collect();
+    let report = fit(&same, rate, 2, 0..left.len(), 57, |_, _| true).unwrap();
+    assert!(report.recording.unwrap().stereo.is_none(), "matching channels are mono");
+}

@@ -35,15 +35,17 @@ identifies Instrument and its experimental model, with Source always available. 
 
 - **Play:** the shared Gain and Release, Hybrid sample blend, the amplitude envelope (Attack,
   Decay, Sustain) shared by the Sample layer and fitted models, key/velocity admission ranges,
-  and a **Soft pedal** switch beside the page buttons (una corda for fitted models, the same as
-  controller 67 held down). Release is the damper for fitted models and the fade otherwise.
+  and a **Soft pedal** switch beside the page buttons, shown on every page as the Source menu
+  is (una corda for fitted models, the same as controller 67 held down). Release is the damper for fitted models and the fade otherwise.
 - **Model:** what it shows depends on the model revision, and every control applies to the
   next strike.
   - Revisions 2 and 4 (an accepted profile or a fitted set) show a Struck body group: Body decay,
     Brightness, Structure and Strike colour, a creative weighting of accepted modes, not a
     measured physical impact position. Profile adoption resets these four controls and enables
     all profile modes; the underlying stable parameter IDs remain the same. Revision 4 adds a
-    Fitted model group: Source morph, Velocity to brightness, Damper noise and Pedal resonance.
+    Fitted model group: Source morph, Velocity to brightness, Damper noise, Pedal resonance
+    and Model tune (semitones, for a model fitted at the wrong root or slightly off pitch; the
+    Sample layer is tuned with Root).
   - Revisions 1 and 3 show the bodies' page, from top to bottom:
     - The bodies as text tabs, Struck, Marimba, Vibraphone, Xylophone, Glockenspiel and Kalimba
       ([bar bodies](instrument.md#bar-bodies-revision-3)), which set Body; the one playing is
@@ -98,10 +100,9 @@ the same local state without modifying the DSP or exported parameter list.
 
 ## Appearance and validation
 
-Controls, labels, focus and selection use native SDK widgets, theme palette tokens and
-Suhina typography. The page buttons sit at the bottom left of every page, as text. With a
-light theme (a variant whose sheet declares a light colour scheme),
-both canvases draw the maintainer's warm ivory artwork behind every control
+Controls, labels, focus and selection use native SDK widgets and
+Suhina typography. The page buttons sit at the bottom left of every page, as text. With every
+theme, both canvases draw the maintainer's warm ivory artwork behind every control
 (`devices/instrument/panel/`, with its provenance). The compact panel's has soft relief waves and
 the Suhina logo at the bottom right, its bottom-right label stopping short of the logo. The
 expanded editor (880 × 560) has the same surface with its relief blurred to soft folds and no
@@ -109,10 +110,10 @@ logo of its own; the Suhina logo stands at its top centre, over "Modal bodies ·
 in small spaced capitals, in place of the Instrument title. Its own style sheet makes its
 buttons text: the page buttons, the body tabs and the choices, the chosen one underlined or
 marked in brass. Its dials have machined faces of the editor's own (an ivory dome with a brushed
-sheen on an espresso rim), with brass value arcs. A dark theme hides the artwork and the logo
-(the panel's own style sheet), since its light text would not read on them, shows the
-Instrument title, and keeps its own background and controls. Narrow windows scroll the full
-editor.
+sheen on an espresso rim), with brass value arcs. The look is the same with every theme: the canvases' own style sheet
+gives every control espresso ink and brass, and the drawings use colours of their own rather
+than the theme's palette, so a dark theme's light text never lands on the ivory. Narrow windows
+scroll the full editor.
 
 Tests validate every binding and hidden parameter, local-page bounds and malformed layouts,
 keyboard/click navigation without project actions, parameter command parity, sample target

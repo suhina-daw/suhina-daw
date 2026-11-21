@@ -232,8 +232,9 @@ with the vibrato. Rendering is identical for every block split, since control up
 samples from the note-on.
 
 **Budget.** A voice's held state (per-sine levels, ramps, onsets and couplings for 128 sines,
-eleven filters and the control state) adds under 4.5 KiB: a voice stays under 12 KiB, 16 voices
-under 192 KiB, within the runtime's 256 KiB inline target. The 32-sample control update retunes
+eleven filters and the control state) adds under 4.5 KiB: with the stereo weights of
+[the modal profile](instrument-modal-profile.md) a voice stays under 14 KiB, 16 voices under
+224 KiB, within the runtime's 256 KiB inline target. The 32-sample control update retunes
 at most 128 sines. A vibrato of 50 cents at 6 Hz moves less than one cent between updates.
 
 ## Validation

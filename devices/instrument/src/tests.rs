@@ -22,9 +22,10 @@ fn revision_one_matches_the_independent_analytical_reference_render() {
         );
         assert_eq!(buffer[frame * 2], buffer[frame * 2 + 1]);
     }
-    // A revision-4 voice: 128 fitted resonators beside the 16 of revisions 1 and 2, and its held
-    // layer (per-sine levels, ramps and couplings, eleven noise filters).
-    assert!(std::mem::size_of::<Voice>() <= 12 * 1024);
+    // A revision-4 voice: 128 fitted resonators with their stereo weights beside the 16 of
+    // revisions 1 and 2, and its held layer (per-sine levels, ramps and couplings, eleven noise
+    // filters).
+    assert!(std::mem::size_of::<Voice>() <= 14 * 1024);
     assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
 }
 
@@ -98,16 +99,29 @@ fn key_parameters_are_shown_as_note_names() {
     }
 }
 
-/// Both canvases draw the background artwork first, behind every control, and hide it with a
-/// dark theme.
+/// Both canvases draw the background artwork first, behind every control, with every theme: no
+/// sheet hides it, and the sheet colours the controls for it.
 #[test]
-fn both_canvases_carry_the_light_artwork_behind_their_controls() {
+fn both_canvases_carry_the_light_artwork_behind_their_controls_with_every_theme() {
     let layout = crate::panel::layout();
     for canvas in [layout.ui.as_ref().unwrap(), layout.expanded.as_ref().unwrap()] {
         assert!(canvas.assets.iter().any(|a| a.id == "artwork-light"), "the artwork is embedded");
         assert_eq!(canvas.controls.first().map(|c| c.id.as_str()), Some("artwork-light"));
-        assert!(canvas.style.as_deref().is_some_and(|s| s.contains("#artwork-light")));
+        let style = canvas.style.as_deref().unwrap_or_default();
+        assert!(!style.contains("prefers-color-scheme") && !style.contains("display: none"), "{style}");
+        assert!(style.contains("device-control { color: #34261d"), "{style}");
     }
+}
+
+/// The Soft pedal switch sits beside the page buttons on every page of the editor, so it can be
+/// found from the Sample page too, and Model tune is on the Model page's Fitted model group.
+#[test]
+fn soft_pedal_shows_on_every_page_and_model_tune_on_the_model_page() {
+    let layout = crate::panel::layout();
+    let editor = layout.expanded.as_ref().unwrap();
+    let switch = editor.controls.iter().find(|c| c.name == "Soft pedal").unwrap();
+    assert!(switch.visible_when.is_none(), "not tied to one page");
+    assert!(editor.controls.iter().any(|c| c.name == "Model tune"));
 }
 
 #[test]

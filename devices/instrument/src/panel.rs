@@ -16,16 +16,35 @@ use suhina_device_sdk::{
     },
 };
 
-/// The light themes' backgrounds (`devices/instrument/panel/README.md`): the compact panel's strip
-/// and the expanded editor's, each with the logo at its bottom right.
+/// The backgrounds (`devices/instrument/panel/README.md`): the compact panel's strip, with the
+/// logo at its bottom right, and the expanded editor's surface.
 const PANEL_LIGHT: &[u8] = include_bytes!("../panel/panel-light.jpg");
 const EDITOR_LIGHT: &[u8] = include_bytes!("../panel/editor-surface.jpg");
 /// The editor's logo at its top centre, and its dials' machined faces, large and small.
 const LOGO: &[u8] = include_bytes!("../panel/logo.png");
 const KNOB_LARGE: &[u8] = include_bytes!("../panel/knob-large.png");
 const KNOB_SMALL: &[u8] = include_bytes!("../panel/knob-small.png");
-/// The artwork shows with a light theme only: a dark theme's light text would not read on it.
-const ARTWORK_STYLE: &str = "@media (prefers-color-scheme: dark) { #artwork-light { display: none; } }";
+/// Both canvases look the same with every theme: their own sheet gives every control espresso
+/// ink and brass over the ivory artwork, so a dark theme's light text never lands on it.
+const ARTWORK_STYLE: &str = "device-section { background-color: transparent; color: #6b5543;
+  border-color: rgba(52, 38, 29, 0.22); border-width: 1px 0 0 0; radius: 0; box-shadow: none; }
+button { image: none; background-color: transparent; color: #6b5543; border-color: rgba(52, 38, 29, 0.35);
+  border-width: 0 0 1px 0; radius: 0; box-shadow: none; accent-color: #b8742f; }
+button:hover { color: #34261d; }
+button[checked] { background-color: transparent; color: #34261d; border-color: #b8742f; }
+dropdown { background-color: transparent; color: #34261d; border-color: rgba(52, 38, 29, 0.35);
+  border-width: 0 0 1px 0; radius: 0; }
+knob { color: #34261d; accent-color: #b8742f; }
+knob-ring { background-color: rgba(52, 38, 29, 0.14); }
+knob-pointer { color: #2a1c13; }
+label { color: #6b5543; }
+value { color: #34261d; accent-color: #8a5422; border-color: rgba(52, 38, 29, 0.3); background-color: transparent; }
+waveform { color: #34261d; accent-color: #b8742f; background-color: rgba(52, 38, 29, 0.05);
+  border-color: rgba(52, 38, 29, 0.22); }
+device-control { color: #34261d; accent-color: #b8742f; }";
+/// Espresso ink and the dark brass of values, for drawings that must not follow the theme.
+pub(super) const INK: [u8; 4] = [52, 38, 29, 255];
+pub(super) const VALUE: [u8; 4] = [138, 84, 34, 255];
 
 pub(super) struct Canvas {
     ui: DeviceUi,
@@ -47,9 +66,9 @@ impl Canvas {
         }
     }
 
-    /// The canvas's background artwork, behind every control and on every page: `bytes` as the
-    /// asset `artwork-light`, shown with a light theme. An image the SDK refuses leaves the
-    /// canvas without it rather than failing the panel.
+    /// The canvas's background artwork, behind every control and on every page, with every
+    /// theme: `bytes` as the asset `artwork-light`, and the sheet that colours the controls for
+    /// it. An image the SDK refuses leaves the canvas without it rather than failing the panel.
     pub(super) fn artwork(&mut self, bytes: &[u8]) {
         let Ok(asset) = ImageAsset::from_bytes("artwork-light", bytes) else { return };
         self.ui.assets.push(asset);
@@ -147,28 +166,6 @@ impl Canvas {
         }
     }
 
-    pub(super) fn title(&mut self, text: &str, bounds: [f32; 4], size: f32) {
-        self.add(
-            text,
-            Widget::Graphic {
-                drawing: vec![Draw::Text {
-                    position: [0.0.into(), 0.0.into()],
-                    text: text.into(),
-                    size,
-                    color: [3, 1, 1, 255],
-                    parameter: None,
-                    decimals: 0,
-                    align: TextAlign::Left,
-                    format: TextFormat::Number,
-                }],
-            },
-            bounds,
-            None,
-            UiGesture::Drag,
-            "",
-        );
-    }
-
     pub(super) fn group(&mut self, title: &str, bounds: [f32; 4]) {
         self.add(title, Widget::Panel { label: title.into() }, bounds, None, UiGesture::Drag, "");
     }
@@ -218,7 +215,7 @@ impl Canvas {
             Widget::Number {
                 decimals: if integer { 0 } else { 2 },
                 format: if integer { TextFormat::Key } else { TextFormat::Percent },
-                color: [3, 1, 5, 255],
+                color: VALUE,
                 center: false,
                 bordered: true,
                 prefix: String::new(),
@@ -279,13 +276,6 @@ impl Canvas {
         }
     }
 
-    /// Gives the last control the id `id`, for the panel's style sheet (`#id`).
-    pub(super) fn set_id(&mut self, id: &str) {
-        if let Some(control) = self.ui.controls.last_mut() {
-            control.id = id.into();
-        }
-    }
-
     /// Shows the last control only while `condition` holds, whatever its page said.
     pub(super) fn show_when(&mut self, condition: UiValue) {
         if let Some(control) = self.ui.controls.last_mut() {
@@ -293,8 +283,7 @@ impl Canvas {
         }
     }
 
-    /// Text drawn as a graphic: `align` against `bounds`' left or centre, in `color` (a palette
-    /// token, `[3, 1, k]`, follows the theme and the panel's sheet).
+    /// Text drawn as a graphic: `align` against `bounds`' left or centre, in `color`.
     pub(super) fn text(
         &mut self,
         name: &str,

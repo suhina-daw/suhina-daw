@@ -21,6 +21,7 @@ fn recording(attack: Vec<f32>) -> ModelRecording {
         attack_rate: if attack.is_empty() { 0 } else { 48000 },
         attack,
         sustain: None,
+        stereo: None,
     }
 }
 
@@ -230,6 +231,65 @@ fn the_soft_pedal_strikes_quieter_and_darker() {
     let mut switch = core(ModelSet::new(vec![recording(Vec::new())]).unwrap());
     switch.set_param(param::SOFT_PEDAL, 1.0);
     assert_eq!(play(&mut switch, 60, 1.0, 4800, 128), soft);
+}
+
+/// Model tune moves a fitted voice, its attack included, exactly as the pitch wheel's bend does,
+/// also when it changes under a sounding note.
+#[test]
+fn model_tune_moves_the_pitch_as_a_bend_does() {
+    let set = || ModelSet::new(vec![recording(vec![0.1; 2400])]).unwrap();
+    let mut tuned = core(set());
+    tuned.set_param(param::MODEL_TUNE, 1.0);
+    let mut bent = core(set());
+    bent.event(NoteEvent::PitchBend(0.5));
+    let up = play(&mut tuned, 60, 1.0, 4800, 128);
+    assert_eq!(up, play(&mut bent, 60, 1.0, 4800, 128));
+    assert_ne!(up, play(&mut core(set()), 60, 1.0, 4800, 128));
+
+    let continue_for = |core: &mut Instrument, frames: usize| {
+        let mut output = vec![0.0; frames * 2];
+        for buffer in output.chunks_mut(256) {
+            core.process(&ProcessContext::default(), buffer);
+        }
+        output
+    };
+    let mut retuned = core(set());
+    let mut rebent = core(set());
+    play(&mut retuned, 60, 1.0, 1200, 128);
+    play(&mut rebent, 60, 1.0, 1200, 128);
+    retuned.set_param(param::MODEL_TUNE, -0.5);
+    rebent.event(NoteEvent::PitchBend(-0.25));
+    assert_eq!(continue_for(&mut retuned, 2400), continue_for(&mut rebent, 2400));
+}
+
+/// A stereo recording plays its modes in the reference channel and, by their gains and offsets,
+/// in the other one, the attack too; a mono recording plays the same in both channels.
+#[test]
+fn a_stereo_recording_plays_wide_and_a_mono_one_in_the_middle() {
+    let frames = |core: &mut Instrument| {
+        core.event(NoteEvent::On { key: 60, velocity: 1.0 });
+        let mut output = vec![0.0; 4800 * 2];
+        for buffer in output.chunks_mut(256) {
+            core.process(&ProcessContext::default(), buffer);
+        }
+        output
+    };
+    let mono = frames(&mut core(ModelSet::new(vec![recording(vec![0.05; 2400])]).unwrap()));
+    assert!(mono.chunks(2).all(|f| f[0] == f[1]));
+    let mut wide = recording(vec![0.05; 2400]);
+    wide.stereo = Some(suhina_dsp::modal::model::Stereo {
+        reference: 1,
+        gains: vec![0.5, 2.0],
+        offsets: vec![1.0, -0.5],
+        attack: vec![-0.05; 2400],
+    });
+    let stereo = frames(&mut core(ModelSet::new(vec![wide]).unwrap()));
+    // The reference channel (right) is the mono rendering; the left differs.
+    for (m, s) in mono.chunks(2).zip(stereo.chunks(2)) {
+        assert!((m[1] - s[1]).abs() < 1e-6);
+    }
+    assert!(stereo.chunks(2).skip(32).take(2400).any(|f| (f[0] - f[1]).abs() > 0.01));
+    assert!(stereo.iter().all(|x| x.is_finite()));
 }
 
 fn held_recording() -> ModelRecording {

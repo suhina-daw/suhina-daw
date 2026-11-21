@@ -16,15 +16,16 @@ const STRUCK_BARS: &[u16] = &[1, 2, 3, 4];
 const KALIMBA: &[u16] = &[5];
 const STRUCK: &[u16] = &[0];
 
-/// Palette tokens (`[3, 1, k]`): the theme's text, fainter text, a hairline, a groove and the
-/// accent, so the page reads in a dark theme too; over the light artwork the panel's sheet makes
-/// them espresso and brass.
-const INK: [u8; 4] = [3, 1, 1, 255];
-const MUTED: [u8; 4] = [3, 1, 1, 170];
-const HAIRLINE: [u8; 4] = [3, 1, 1, 56];
-const GROOVE: [u8; 4] = [3, 1, 1, 34];
-const ACCENT: [u8; 4] = [3, 1, 5, 255];
-const GLOW: [u8; 4] = [3, 1, 5, 52];
+/// The page's own colours over the ivory artwork, the same with every theme: espresso ink,
+/// fainter text, a hairline, the dial's groove and ticks, and brass with its glow.
+const INK: [u8; 4] = super::INK;
+const MUTED: [u8; 4] = [107, 85, 67, 255];
+const HAIRLINE: [u8; 4] = [52, 38, 29, 56];
+const GROOVE: [u8; 4] = [52, 38, 29, 34];
+const TICK: [u8; 4] = [52, 38, 29, 96];
+const TICK_MINOR: [u8; 4] = [52, 38, 29, 46];
+const ACCENT: [u8; 4] = [184, 116, 47, 255];
+const GLOW: [u8; 4] = [214, 160, 86, 70];
 
 /// The bodies in Body's order: their name and a line on each.
 const BODIES: [(u16, &str, &str); 6] = [
@@ -98,7 +99,7 @@ fn large_dial(parameter: &str, caption: &str) -> Vec<Draw> {
         drawing.push(line(
             [c + inner * angle.cos(), c + inner * angle.sin()],
             [c + outer * angle.cos(), c + outer * angle.sin()],
-            if major { [3, 1, 1, 96] } else { [3, 1, 1, 46] },
+            if major { TICK } else { TICK_MINOR },
             if major { 1.6 } else { 1.0 },
         ));
     }

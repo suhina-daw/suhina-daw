@@ -71,16 +71,17 @@ pub mod param {
     pub const DAMPER_NOISE: usize = 25;
     pub const PEDAL_RESONANCE: usize = 26;
     pub const SOFT_PEDAL: usize = 27;
-    pub const BODY: usize = 28;
-    pub const HARDNESS: usize = 29;
-    pub const MALLET_MODEL: usize = 30;
-    pub const RESONATOR: usize = 31;
-    pub const STEREO_WIDTH: usize = 32;
-    pub const TUNING: usize = 33;
-    pub const RING: usize = 34;
-    pub const TORSION: usize = 35;
-    pub const MALLET_WEIGHT: usize = 36;
-    pub const COUNT: usize = 37;
+    pub const MODEL_TUNE: usize = 28;
+    pub const BODY: usize = 29;
+    pub const HARDNESS: usize = 30;
+    pub const MALLET_MODEL: usize = 31;
+    pub const RESONATOR: usize = 32;
+    pub const STEREO_WIDTH: usize = 33;
+    pub const TUNING: usize = 34;
+    pub const RING: usize = 35;
+    pub const TORSION: usize = 36;
+    pub const MALLET_WEIGHT: usize = 37;
+    pub const COUNT: usize = 38;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -116,6 +117,7 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("damper_noise", "Damper noise", (0.0, 1.0), 0.2, Unit::Percent),
     control("pedal_resonance", "Pedal resonance", (0.0, 1.0), 0.3, Unit::Percent),
     ParamInfo::toggle("soft_pedal", "Soft pedal", false),
+    control("model_tune", "Model tune", (-24.0, 24.0), 0.0, Unit::Semitones),
     ParamInfo::choice(
         "body",
         "Body",
@@ -218,8 +220,11 @@ struct Voice {
     serial: u64,
     amplitude: f32,
     gate: Smoother,
-    last_output: f32,
-    stolen_tail: f32,
+    /// Revision 4: the channel the fitted sines and the attack play in (0 left, 1 right); the
+    /// other channel plays them with the recording's stereo weights.
+    reference: u8,
+    last_output: [f32; 2],
+    stolen_tail: [f32; 2],
     stolen_fade: Smoother,
     /// Left and right gains: a bar's place in the row, unity for every other body.
     pan: (f32, f32),
@@ -246,8 +251,9 @@ impl Default for Voice {
             serial: 0,
             amplitude: 0.0,
             gate: Smoother::new(0.0, 1),
-            last_output: 0.0,
-            stolen_tail: 0.0,
+            reference: 0,
+            last_output: [0.0; 2],
+            stolen_tail: [0.0; 2],
             stolen_fade: Smoother::new(0.0, 1),
             pan: (1.0, 1.0),
             level_reference: 0.0,
@@ -405,6 +411,24 @@ impl Instrument {
         }
     }
 
+    /// Semitones every modal voice is moved by: the pitch wheel's bend plus Model tune.
+    fn modal_shift(&self) -> f64 {
+        self.bend_semitones + self.params.get(param::MODEL_TUNE)
+    }
+
+    /// Moves the sounding modal voices to the current bend and Model tune, keeping their phase.
+    fn retune(&mut self) {
+        let shift = self.modal_shift();
+        for voice in &mut self.voices {
+            if voice.body.is_active() {
+                match &mut voice.body {
+                    Body::Fitted(bank) if voice.layer.is_active() => voice.layer.bend(bank, shift),
+                    body => body.transpose(self.sample_rate, shift),
+                }
+            }
+        }
+    }
+
     fn strike(&mut self, key: u8, velocity: f32) {
         if !self.model_supported() {
             return;
@@ -478,6 +502,7 @@ impl Instrument {
         set.voice(key, velocity, &controls, self.sample_rate, &mut self.set_voice);
         let slot = self.free_or_oldest();
         self.serial = self.serial.saturating_add(1);
+        let shift = self.modal_shift();
         let Some(voice) = slot.and_then(|index| self.voices.get_mut(index)) else {
             return;
         };
@@ -489,15 +514,17 @@ impl Instrument {
             self.set_voice.modes.get(..count).unwrap_or(&[]),
             self.set_voice.phases.get(..count).unwrap_or(&[]),
         );
-        fitted.transpose(self.sample_rate, self.bend_semitones);
+        fitted.set_other(self.set_voice.other.get(..count).unwrap_or(&[]));
+        fitted.transpose(self.sample_rate, shift);
         voice.body = Body::Fitted(fitted);
+        voice.reference = self.set_voice.reference;
         voice.pan = (1.0, 1.0);
         voice.profile = None;
         voice.attack = self.set_voice.attack.map(|(recording, step)| (recording, 0.0, step));
         voice.attack_gain = self.set_voice.attack_gain as f32;
         // Seeded by the note's serial and key, so a render repeats exactly.
         let seed = (self.serial as u32).wrapping_mul(0x0100_0193) ^ u32::from(key);
-        voice.layer.start(&self.set_voice.held, self.sample_rate, self.bend_semitones, seed);
+        voice.layer.start(&self.set_voice.held, self.sample_rate, shift, seed);
         voice.envelope.start();
         voice.fitted_voice = true;
         voice.damped = false;
@@ -535,6 +562,7 @@ impl Instrument {
             .position(|voice| voice.key == key && voice.profile == Some(profile) && voice.body.is_active());
         let slot = same.or_else(|| self.free_or_oldest());
         self.serial = self.serial.saturating_add(1);
+        let shift = self.modal_shift();
         let Some(voice) = slot.and_then(|index| self.voices.get_mut(index)) else {
             return;
         };
@@ -542,12 +570,13 @@ impl Instrument {
             voice.start_steal_fade(self.sample_rate);
             voice.body = Body::Bar(StruckBar::default());
             voice.layer = Performer::default();
+            voice.reference = 0;
             voice.pan = bar_pan(key, self.params.get(param::STEREO_WIDTH));
         }
         if let Body::Bar(bar) = &mut voice.body {
             bar.set_modes(self.sample_rate, &modes);
             bar.set_tube(profile.tube(self.params.get(param::RESONATOR), key));
-            bar.transpose(self.bend_semitones);
+            bar.transpose(shift);
             bar.set_mallet_noise(profile.noise_gain(key));
             bar.strike(excitation, mallet, bars::MAX_SPEED * f64::from(velocity));
         }
@@ -571,6 +600,7 @@ impl Instrument {
 
     /// Revision 1's struck body, unchanged, or an accepted profile's modes.
     fn strike_struck(&mut self, key: u8, velocity: f32) {
+        let shift = self.modal_shift();
         let mut modes = [Mode { frequency_hz: 0.0, decay_seconds: 0.0, amplitude: 0.0 }; MAX_MODES];
         let fundamental = 440.0 * 2.0_f64.powf((f64::from(key) - 69.0) / 12.0);
         let structure = self.params.get(param::STRUCTURE);
@@ -613,9 +643,10 @@ impl Instrument {
             voice.start_steal_fade(self.sample_rate);
             let mut bank = ModalBank::default();
             bank.strike(self.sample_rate, &modes);
-            bank.transpose(self.sample_rate, self.bend_semitones);
+            bank.transpose(self.sample_rate, shift);
             voice.body = Body::Struck(bank);
             voice.layer = Performer::default();
+            voice.reference = 0;
             voice.pan = (1.0, 1.0);
             voice.profile = None;
             voice.attack = None;
@@ -683,8 +714,10 @@ impl Voice {
     /// The previous output fades for 2 ms while the voice starts another body.
     fn start_steal_fade(&mut self, sample_rate: f64) {
         self.stolen_tail = self.last_output;
-        self.stolen_fade =
-            Smoother::new(if self.last_output == 0.0 { 0.0 } else { 1.0 }, Smoother::ramp_frames(0.002, sample_rate));
+        self.stolen_fade = Smoother::new(
+            if self.last_output == [0.0; 2] { 0.0 } else { 1.0 },
+            Smoother::ramp_frames(0.002, sample_rate),
+        );
         self.stolen_fade.set_target(0.0);
     }
 
@@ -785,6 +818,9 @@ impl Device for Instrument {
         let Some(value) = self.params.set(index, value) else {
             return;
         };
+        if index == param::MODEL_TUNE {
+            self.retune();
+        }
         if index == param::GAIN {
             self.gain.set_target(suhina_dsp::gain::db_to_gain(value as f32));
         }
@@ -820,7 +856,8 @@ impl Device for Instrument {
                 frame.fill(0.0);
             }
         }
-        let bend_ratio = 2.0_f64.powf(self.bend_semitones / 12.0);
+        // The attack is read at the modal voices' pitch: the wheel's bend plus Model tune.
+        let bend_ratio = 2.0_f64.powf(self.modal_shift() / 12.0);
         let set = self.set.as_deref();
         let envelope = LinearEnvelopeSettings {
             attack: self.params.get(param::ATTACK),
@@ -844,22 +881,37 @@ impl Device for Instrument {
                 }
                 let shape =
                     if voice.fitted_voice { voice.envelope.next(&envelope, self.sample_rate) as f32 } else { 1.0 };
-                // Without a held layer the performer plays the fitted body unchanged.
-                let mut output = match &mut voice.body {
-                    Body::Fitted(bank) => voice.layer.next(bank),
-                    body => body.next_sample(),
+                // Without a held layer the performer plays the fitted body unchanged: the
+                // reference channel and the other channel with the recording's stereo weights.
+                let (mut reference, mut other) = match &mut voice.body {
+                    Body::Fitted(bank) => {
+                        let [reference, other] = voice.layer.next_stereo(bank);
+                        (reference, other)
+                    }
+                    body => {
+                        let plain = body.next_sample();
+                        (plain, plain)
+                    }
                 };
                 let mut attack_done = false;
                 if let Some((recording, position, step)) = voice.attack.as_mut() {
-                    let attack = set.map_or(&[][..], |set| set.attack(*recording));
+                    let (first, second) =
+                        set.map_or((&[][..], &[][..]), |set| (set.attack(*recording), set.attack_other(*recording)));
                     let index = *position as usize;
-                    if let (Some(a), Some(b)) = (attack.get(index), attack.get(index + 1)) {
-                        output += (a + (b - a) * (*position - index as f64) as f32) * voice.attack_gain;
+                    let fraction = (*position - index as f64) as f32;
+                    let read = |x: &[f32]| match (x.get(index), x.get(index + 1)) {
+                        (Some(a), Some(b)) => Some(a + (b - a) * fraction),
+                        _ => None,
+                    };
+                    if let (Some(a), Some(b)) = (read(first), read(second)) {
+                        reference += a * voice.attack_gain;
+                        other += b * voice.attack_gain;
                         *position += *step * bend_ratio;
                     } else {
                         attack_done = true;
                     }
                 }
+                let body = if voice.reference == 1 { [other, reference] } else { [reference, other] };
                 if attack_done {
                     voice.attack = None;
                 }
@@ -876,10 +928,15 @@ impl Device for Instrument {
                 if damper_done {
                     voice.damper = None;
                 }
-                voice.last_output = (output * shape * voice.amplitude + noise) * gate
-                    + voice.stolen_tail * voice.stolen_fade.next_value();
-                left += voice.last_output * voice.pan.0;
-                right += voice.last_output * voice.pan.1;
+                let stolen = voice.stolen_fade.next_value();
+                let pan = [voice.pan.0, voice.pan.1];
+                for (((output, body), tail), pan) in
+                    voice.last_output.iter_mut().zip(body).zip(voice.stolen_tail).zip(pan)
+                {
+                    *output = (body * shape * voice.amplitude + noise) * gate * pan + tail * stolen;
+                }
+                left += voice.last_output[0];
+                right += voice.last_output[1];
             }
             let sample_mix = self.sample_mix.next_value();
             let modal_mix = self.modal_mix.next_value();
@@ -963,16 +1020,7 @@ impl Device for Instrument {
             }
             NoteEvent::PitchBend(value) if value.is_finite() => {
                 self.bend_semitones = f64::from(value.clamp(-1.0, 1.0)) * 2.0;
-                for voice in &mut self.voices {
-                    if voice.body.is_active() {
-                        match &mut voice.body {
-                            Body::Fitted(bank) if voice.layer.is_active() => {
-                                voice.layer.bend(bank, self.bend_semitones)
-                            }
-                            body => body.transpose(self.sample_rate, self.bend_semitones),
-                        }
-                    }
-                }
+                self.retune();
             }
             _ => {}
         }
