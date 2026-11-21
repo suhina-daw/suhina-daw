@@ -125,6 +125,21 @@ fn every_refusal_names_its_reason() {
         m["programs"][0]["sha256"] = json!("0".repeat(64));
     });
     assert!(reason.contains("changed"), "{reason}");
+    // A script bigger than the cap: the scan reads it bounded, so it is refused by size
+    // before any digest is compared (the manifest is still sealed to the small one).
+    let fixture = Fixture::new("big-script", |id| manifest_for(id, SCRIPT));
+    // surface::MAX_MESSAGE_BYTES plus one block.
+    std::fs::write(fixture.folder().join("script.lua"), vec![b'x'; 1024 * 1024 + 1024]).expect("written");
+    let reason = extensions::Manifest::read(&fixture.folder()).expect_err("it is refused");
+    assert!(reason.contains("bigger than"), "{reason}");
+    // A licence text file bigger than the cap.
+    let fixture = Fixture::new("big-licence", |id| manifest_for(id, SCRIPT));
+    std::fs::write(fixture.folder().join("licence.bin"), vec![b'a'; 256 * 1024 + 1024]).expect("written");
+    let mut manifest = manifest_for(&fixture.id, SCRIPT);
+    manifest["license"] = json!({ "name": "Custom", "text_file": "licence.bin" });
+    std::fs::write(fixture.folder().join("extension.json"), manifest.to_string()).expect("written");
+    let reason = extensions::Manifest::read(&fixture.folder()).expect_err("it is refused");
+    assert!(reason.contains("bigger than"), "{reason}");
     // A program file that is gone: the manifest names one the folder does not hold.
     let fixture = Fixture::new("gone-script", |id| {
         let mut manifest = manifest_for(id, SCRIPT);
@@ -250,6 +265,39 @@ fn add_list_info_remove_round_trip() {
         !listed["extensions"].as_array().expect("a list").iter().any(|e| e["id"] == "round-trip"),
         "the removed one is not listed"
     );
+}
+
+#[test]
+fn a_failed_add_leaves_the_destination_clear() {
+    let fixture = Fixture::new("retry", |id| manifest_for(id, SCRIPT));
+    // A store of its own, and a source whose folder nests past the depth limit: the copy
+    // fails partway.
+    let root = std::env::temp_dir().join(format!("suhina-extensions-retry-store-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("made");
+    let source = std::env::temp_dir().join(format!("suhina-extensions-retry-source-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&source);
+    std::fs::create_dir_all(&source).expect("made");
+    for entry in ["extension.json", "script.lua", "LICENCE.txt"] {
+        std::fs::copy(fixture.folder().join(entry), source.join(entry)).expect("copied");
+    }
+    let mut deep = source.to_path_buf();
+    for level in 0..9 {
+        deep = deep.join(format!("d{level}"));
+    }
+    std::fs::create_dir_all(&deep).expect("made");
+    std::fs::write(deep.join("last"), "x").expect("written");
+    let mut projects = projects_with(&root);
+    let error =
+        run(&mut projects, "extensions.add", json!({ "folder": source.display().to_string() })).expect_err("refused");
+    assert!(error.message().contains("deeper"), "{}", error.message());
+    assert!(!root.join("retry").exists(), "the destination is clear: the staging folder was published nowhere");
+    // The source fixed, the add works: nothing of the failed one blocks it.
+    let _ = std::fs::remove_dir_all(source.join("d0"));
+    let added = run(&mut projects, "extensions.add", json!({ "folder": source.display().to_string() })).expect("added");
+    assert_eq!(added["id"], "retry");
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&source);
 }
 
 #[test]

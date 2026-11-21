@@ -164,8 +164,8 @@ impl Manifest {
                 text(name, MAX_NAME).map_err(|e| format!("license: name: {e}"))?;
                 let path = relative(text_file).map_err(|e| format!("license: text_file: {e}"))?;
                 let file = folder.join(&path);
-                let bytes =
-                    std::fs::read(&file).map_err(|_| format!("license: the text file {text_file} is missing"))?;
+                let bytes = capped(&file, MAX_LICENCE)
+                    .map_err(|reason| format!("license: the text file {text_file} {reason}"))?;
                 if std::str::from_utf8(&bytes).is_err() {
                     return Err(format!("license: the text file {text_file} is not UTF-8 text"));
                 }
@@ -192,8 +192,8 @@ impl Manifest {
         for program in &self.programs {
             let path = relative(&program.path).map_err(|e| format!("programs: {e}"))?;
             let file = folder.join(&path);
-            let bytes = std::fs::read(&file).map_err(|_| format!("programs: {} is missing", program.path))?;
-            let digest = sha256(&bytes);
+            let digest =
+                file_digest(&file, MAX_SCRIPT).map_err(|reason| format!("programs: {}: {reason}", program.path))?;
             if digest != program.sha256.to_ascii_lowercase() {
                 return Err(format!(
                     "programs: {} has changed (its SHA-256 is {digest}, the manifest says {})",
@@ -435,6 +435,11 @@ impl Extensions {
         folders.sort();
         for folder in folders {
             if !folder.is_dir() {
+                continue;
+            }
+            // A hidden folder is not an extension's: an add's staging folder (a copy that
+            // never finished) keeps out of the list.
+            if folder.file_name().is_some_and(|name| name.to_string_lossy().starts_with('.')) {
                 continue;
             }
             let Some(id) = folder.file_name().map(|n| n.to_string_lossy().to_string()) else { continue };
@@ -896,7 +901,24 @@ fn add(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     if destination.exists() {
         return Err(format!("an extension {:?} is already in the store; remove it first", manifest.id).into());
     }
-    copy_folder(source, &destination, 0)?;
+    // The copy is made in a staging folder and published only when it is whole: a failure
+    // leaves the destination clear, so the user fixes the source and adds it again — the
+    // store never holds half of one.
+    let staging = root.join(format!(".add-{}.staging", manifest.id));
+    let _ = std::fs::remove_dir_all(&staging);
+    if let Err(reason) = copy_folder(source, &staging, 0) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(reason);
+    }
+    // The copy is read before it is published: what arrived is what was validated.
+    if let Err(reason) = Manifest::read(&staging) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(reason.into());
+    }
+    if let Err(e) = std::fs::rename(&staging, &destination) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(format!("the extension cannot be put in the store: {e}").into());
+    }
     projects.extensions.reload();
     if let Some(reason) = &projects.extensions.known_mut(&manifest.id)?.reason {
         let _ = std::fs::remove_dir_all(&destination);
@@ -928,7 +950,11 @@ fn info(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> 
                 .and_then(|v| v.get("license"))
                 .and_then(|l| l.get("text_file"))
                 .and_then(Value::as_str);
-            file.and_then(|file| std::fs::read_to_string(extension.folder.join(file)).ok())
+            file.and_then(|file| {
+                capped(&extension.folder.join(relative(file).ok()?), MAX_LICENCE)
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes).ok())
+            })
         }
         _ => None,
     });
@@ -1143,10 +1169,49 @@ fn copy_folder(from: &Path, to: &Path, depth: usize) -> Result<(), CommandError>
     Ok(())
 }
 
-/// SHA-256 of a file's bytes, as the manifest's lowercase hex.
-fn sha256(bytes: &[u8]) -> String {
+/// A manifest-named file's size cap: a script this big is far past what a control surface's
+/// needs, and the store's scan reads every folder's, so the read is bounded by it.
+const MAX_SCRIPT: usize = suhina_plugins::surface::MAX_MESSAGE_BYTES;
+
+/// A licence text's size cap, at validation and at display: the store reads it whole.
+const MAX_LICENCE: usize = 256 * 1024;
+
+/// The SHA-256 of a file, hashed as it is read in chunks, no further than `limit`: a file the
+/// manifest names is read by the store's scan, so the read is bounded — the error says the
+/// file is missing, or it is bigger than the cap.
+fn file_digest(file: &Path, limit: usize) -> Result<String, String> {
     use sha2::{Digest, Sha256};
-    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    use std::io::Read;
+    let file = std::fs::File::open(file).map_err(|_| "is missing".to_string())?;
+    let mut taken = file.take((limit + 1) as u64);
+    let mut hasher = Sha256::new();
+    let mut chunk = [0u8; 64 * 1024];
+    let mut total = 0usize;
+    loop {
+        let read = taken.read(&mut chunk).map_err(|_| "cannot be read".to_string())?;
+        if read == 0 {
+            break;
+        }
+        total += read;
+        if total > limit {
+            return Err(format!("is bigger than {limit} bytes"));
+        }
+        hasher.update(&chunk[..read]);
+    }
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// A file's bytes, no further than `limit`; one byte past it is refused. The error says the
+/// file is missing, or it is bigger than the cap.
+fn capped(file: &Path, limit: usize) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let opened = std::fs::File::open(file).map_err(|_| "is missing".to_string())?;
+    let mut bytes = Vec::new();
+    opened.take((limit + 1) as u64).read_to_end(&mut bytes).map_err(|_| "cannot be read".to_string())?;
+    if bytes.len() > limit {
+        return Err(format!("is bigger than {limit} bytes"));
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]
