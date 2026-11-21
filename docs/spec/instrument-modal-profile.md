@@ -76,7 +76,7 @@ Decay multiplies T60 by `body_decay / 2`. Brightness applies the spectral tilt
 dispersion factor at the current value and at the neutral value 0.002. Strike multiplies
 magnitudes by a bounded modal-index excitation weight relative to its neutral value 0.25:
 `(0.25 + 0.75*abs(sin(pi*n*strike))) / (0.25 + 0.75*abs(sin(pi*n*0.25)))` for n=1..16.
-This is a creative excitation-colour control, not a measured impact position. Magnitudes are
+This is a creative excitation-color control, not a measured impact position. Magnitudes are
 normalized before ModalBank excitation; T60 and frequencies retain the bank's safety limits.
 Velocity excites a new strike and never rewrites a previous strike. No new automation IDs appear.
 
@@ -97,7 +97,7 @@ manual automation override contract as `device.setParam`. Lane points remain int
 restores the old profile, revision, controls, source and lane enabled/override state together.
 
 The compact and expanded SDK captions follow the stored revision. Revision 2 labels Strike as
-creative colour rather than physical position. A revision label identifies the requested model;
+creative color rather than physical position. A revision label identifies the requested model;
 it does not certify valid/correct calibration data. Unsupported or missing modal data is silent.
 
 The session's typed `apply_profile` helper performs those same mutations inside an existing
@@ -189,7 +189,7 @@ parameter space, never by mixing their audio:
 The voice level is `velocity * level`, so at the recording's own key a Modal note is as loud as
 the Sample note; magnitudes are normalized by their sum when it exceeds 1. The model controls
 transform each fused mode exactly as revision 2 transforms a profile mode (Decay scales both
-T60s, Brightness tilts by ratio, Structure disperses ratios, Strike colour weights by mode
+T60s, Brightness tilts by ratio, Structure disperses ratios, Strike color weights by mode
 index); the attack is not changed by them.
 
 **Hammer and felt.** A harder strike on a felt hammer or mallet is brighter and knocks more, not

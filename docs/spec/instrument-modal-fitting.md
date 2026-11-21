@@ -41,7 +41,7 @@ The existing shared resampler prepares one normalized channel at 22050 Hz. A rel
 noise floor limits the useful analysis interval; the source itself is never trimmed or edited.
 
 **Finding resonances.** A Hann-windowed FFT over the start of the analyzed interval, with the
-largest power-of-two length up to 8192 samples that fits it, proposes at most 32 prominent
+largest power-of-two length up to 8192 samples that fits it, proposes at most 192 prominent
 peaks: a local maximum within 60 dB of the strongest that stands 20 dB above the median of its
 neighbours 3..8 bins away. This detection window is independent of the envelope windows, so
 the partials of a low note in a short trim are resolved (version 1 searched only the first
@@ -69,7 +69,8 @@ peaks are refined, the fit predicts the rest from the stiff string, whose partia
    candidate lies within the candidate separation or 1 % of it, the strongest detection bin
    within 1 % of it becomes a candidate if it is a local maximum within 80 dB of the
    strongest bin and stands 6 dB above the median of its neighbours 3..8 bins away; candidates
-   stop at 96 in all.
+   stop at 192 in all (version 4; 96 before, which a piano chord's four notes used up: 124 were
+   found once the limit was raised).
 
 Every candidate is then measured and fitted alike (a predicted partial is kept, loose or
 validated, only when its envelope says so).
@@ -98,6 +99,19 @@ consecutive windows. Its span, estimation and validation windows, error limits, 
 loose rule are those above, and the window bias is compensated for the short window. A partial
 the short windows describe is kept like any other and competes for the recording's 64 modes by
 the same energy; one that fits neither stays out.
+
+**A fast first stage (algorithm version 4).** A piano partial often falls fast for its first
+second and then rings on slowly (two strings drifting out of phase, energy moving into the
+soundboard). In a long recording the envelope windows are long too (8192 samples, 0.37 s), so
+that first stage lies within one or two of them and the fit describes only the slow tail: a
+measured piano chord's 786 Hz partial was 8 dB too quiet at 0.5 s and 11 dB too loud at 1.5 s, and
+the note seemed to be damped as soon as its attack faded. So a mode fitted on the envelope
+windows without a fast part is measured again with the short windows it would get as a fast
+partial. From the loudest of the first four, while a window stands at least 1 dB above the
+slow decay (as that window would measure it), the excess is fitted as a second exponential. It
+becomes the mode's fast part when it covers at least three windows, decays faster than half the
+slow T60 (at least 1 ms) and lowers those windows' RMS error by at least 1 dB; its window bias
+is compensated like the slow part's.
 
 **Stereo (algorithm version 4).** A model of one channel plays every partial in the middle,
 while a stereo recording spreads them: a piano's bass strings to one side and its treble to the
@@ -136,7 +150,7 @@ playable sample remains usable.
 **The fitted recording.** Besides the schema-1 profile, a fit returns a `ModelRecording` for a
 revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-revision-4)):
 
-- **Up to 64 modes.** Detection and the string's partials propose at most 96 candidates; the
+- **Up to 64 modes.** Detection and the string's partials propose at most 192 candidates; the
   64 with the most energy (`magnitude^2 * T60`) are kept. The schema-1 profile keeps the 16 largest magnitudes.
 - **Phase.** The complex projection of a mode's first span window gives its phase at that
   window, carried back to the strike (the start of the analyzed interval) by its frequency. With
@@ -240,7 +254,7 @@ Both are compared before playing, and the fitted render is played at the origina
 the comparison is of timbre, not loudness (a level-matched A/B). The command reports, and the
 Sample page shows, the level difference before matching and a **spectral distance**: average power
 spectra (2048-sample Hann windows, hop 1024, at most eight seconds) summed into octave bands
-centred on 63 Hz..16 kHz below Nyquist; for each band within 60 dB of the original's loudest,
+centered on 63 Hz..16 kHz below Nyquist; for each band within 60 dB of the original's loudest,
 the absolute difference in dB after level matching; and their mean. Smaller is closer. These are
 measurements of the same recording, not a realism or listening score. Without an audio output the
 command still reports the comparison and says it played nothing. Auditioning changes neither the

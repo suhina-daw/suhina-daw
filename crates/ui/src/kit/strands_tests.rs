@@ -42,7 +42,7 @@ fn at_rest_the_first_ribbons_flow_and_the_others_wait_for_their_modes() {
         points(&CPU_PLAN).into_iter().filter_map(|p| place(p, &shared, &rest.colors).map(|d| (p, d))).collect();
     assert!(dots.len() > 1000, "the ribbons show at rest: {}", dots.len());
     assert!(dots.iter().all(|(p, _)| p[2] < 3.0), "the modes' own ribbons wait for sound");
-    // Fullest around the centre, thin towards the edges.
+    // Fullest around the center, thin towards the edges.
     let spread = |from: f32, to: f32| {
         let ys: Vec<f32> = dots.iter().filter(|(p, _)| p[0] >= from && p[0] < to).map(|(_, d)| d.y).collect();
         let (lo, hi) = ys.iter().fold((f32::MAX, f32::MIN), |(lo, hi), y| (lo.min(*y), hi.max(*y)));
@@ -74,7 +74,7 @@ fn sound_raises_the_modes_ribbons_and_a_strike_throws_sparks() {
     };
     assert!(count(3.0) > 0 && count(4.0) > 0 && count(5.0) > 0, "each sounding mode raises its ribbon");
     // Long after a strike its sparks are gone; just after one they show, and as it ages the shell
-    // spreads: the same spark dots near the centre are farther out a second on than at once.
+    // spreads: the same spark dots near the center are farther out a second on than at once.
     let quiet = Frame { modes: sounding.modes, colors: colors(), ..Frame::default() }.shared(880.0, 236.0);
     let sparks = |shared: &Shared| {
         points(&CPU_PLAN)
@@ -87,19 +87,19 @@ fn sound_raises_the_modes_ribbons_and_a_strike_throws_sparks() {
     assert!(sparks(&shared) > 0, "sparks just after one");
     let at = |since: f32| Frame { since, ..sounding }.shared(880.0, 236.0);
     let (first, later) = (at(0.05), at(1.0));
-    let from_centre = |d: &Dot| ((d.x - 440.0).powi(2) + (d.y - 118.0).powi(2)).sqrt();
+    let from_center = |d: &Dot| ((d.x - 440.0).powi(2) + (d.y - 118.0).powi(2)).sqrt();
     let mut moved = 0;
     for p in
         points(&CPU_PLAN).into_iter().filter(|p| (0.8..0.9).contains(&p[3]) && p[2] < 3.0 && (0.4..0.6).contains(&p[0]))
     {
         if let (Some(after), Some(before)) = (place(p, &later, &colors()), place(p, &first, &colors())) {
-            assert!(from_centre(&after) >= from_centre(&before) - 1e-3, "a spark flies outwards");
-            if from_centre(&after) > from_centre(&before) + 1.0 {
+            assert!(from_center(&after) >= from_center(&before) - 1e-3, "a spark flies outwards");
+            if from_center(&after) > from_center(&before) + 1.0 {
                 moved += 1;
             }
         }
     }
-    assert!(moved > 10, "the sparks near the centre fly out: {moved}");
+    assert!(moved > 10, "the sparks near the center fly out: {moved}");
     assert!(clock_rate(&sounding.modes, 0.5) > clock_rate(&[0.0; 6], 0.5), "the flow runs faster while it sounds");
 }
 

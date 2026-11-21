@@ -13,7 +13,7 @@ This is the research gate of the F11 family epic (#1609, part of #1579). It inve
 instruments, summarises the physics the models must reproduce, lists candidate models, measures
 the current modal core against them, and defines falsifiable experiments for the prototype gate.
 It contains no implementation decision that bypasses `docs/spec/`: a prototype writes its
-behaviour into [instrument.md](../spec/instrument.md) before code, as golden rule 1 requires.
+behavior into [instrument.md](../spec/instrument.md) before code, as golden rule 1 requires.
 
 Nothing here declares F11 playable, calibrated or complete. Ranges, ratios and timings below are
 targets and literature values for designing experiments, not measurements of Suhina.
@@ -26,7 +26,7 @@ reference recording is labelled by written note.
 
 | Instrument | Typical sounding range | Body | Tuned modes | Resonator | Characteristic gestures and transitions |
 |---|---|---|---|---|---|
-| Marimba | C2–C7 (5 oct.; 4.3 and 4.5 oct. common) | Wooden bars (rosewood or synthetic), arched undercut | 1 : 4, often 1 : 4 : 10 | Closed tube per bar, tuned to the fundamental | Single strokes, rolls (repeated alternating strokes on one bar), dead strokes, mallet hardness from yarn to rubber, strike position along the bar and centre vs. edge |
+| Marimba | C2–C7 (5 oct.; 4.3 and 4.5 oct. common) | Wooden bars (rosewood or synthetic), arched undercut | 1 : 4, often 1 : 4 : 10 | Closed tube per bar, tuned to the fundamental | Single strokes, rolls (repeated alternating strokes on one bar), dead strokes, mallet hardness from yarn to rubber, strike position along the bar and center vs. edge |
 | Vibraphone | F3–F6 (3 oct.) | Aluminium bars, undercut | 1 : 4 | Tubes with motor-driven rotating discs | Long sustain, damper pedal (half and full), motor tremolo on/off and speed, dead strokes, bowing the bar end, mallet dampening |
 | Xylophone | F4–C8 (sounds an octave above written) | Hard wood or synthetic bars | 1 : 3 (twelfth) | Short tubes, sometimes none | Short bright decay, rolls, glissandi across bars |
 | Glockenspiel / orchestra bells | G5–C8 (sounds two octaves above written) | Steel bars, mostly rectangular | Usually only the fundamental; higher modes follow the free bar | None in the orchestral form | Bright long ring, hard mallets, glissandi, damping by hand |
@@ -72,7 +72,7 @@ Avanzini & Rocchesso 2001). Contact time shortens as velocity and hardness rise,
 faster stroke excites higher modes: **brightness follows velocity physically**, which a level
 scale alone cannot reproduce. Strike position weights each mode by its mode shape at the contact
 point; a free-free bar's mode shapes are not the sines of a string, and the second mode has a
-node at the bar's centre.
+node at the bar's center.
 
 **Repeated impacts.** A roll strikes a bar that is still vibrating. The new contact meets a moving
 surface, so the result depends on the bar's phase and velocity at contact; it is not a second,
@@ -145,7 +145,7 @@ except the separate benchmark.
 | E1 | A bar profile places its tuned modes where the profile says | Render single strokes per note; pick spectral peaks | Tuned modes within ±5 cents of the profile's ratios over the profile's range |
 | E2 | Brightness follows velocity and hardness | Spectral centroid of the first 50 ms across velocities and hardnesses, for candidates A and B | Centroid rises monotonically with both; with references available (#1621), the slope lies within the references' spread |
 | E3 | A repeated stroke interacts with the moving bar | Two strokes on one bar at varied intervals; compare with the sum of two isolated strokes | Candidate A differs from superposition and stays bounded; output energy never exceeds the injected energy |
-| E4 | Strike position follows bar mode shapes | Centre and quarter-length strokes | Mode 2 at least 20 dB weaker at the centre than at a quarter of the length |
+| E4 | Strike position follows bar mode shapes | Center and quarter-length strokes | Mode 2 at least 20 dB weaker at the center than at a quarter of the length |
 | E5 | The resonator shapes the fundamental | Fundamental level and decay with and without coupling, candidate D both ways | The difference matches reference recordings of the same register within their spread; until references exist the experiment only reports |
 | E6 | Rolls stay within budget | Benchmark: 16 voices, dense rolls on every bar, motor on, 48 kHz at 64 and 256 frames, with the existing `devices/instrument` benchmark example extended | Mean and 99th percentile under the per-voice and per-instance budget set in #1619; until #1619 sets it, the provisional Instrument target in the spec (20% of one core, p99 under the block deadline) |
 | E7 | Low sample rates and extreme settings stay stable | Candidate A at 22.05 kHz with the hardest mallet and highest velocity; hostile parameters | Finite output, no growth, bounded contact iterations |
@@ -155,7 +155,7 @@ except the separate benchmark.
 
 Calibration and E2/E5 need permitted, dry recordings, owned by #1621. For each instrument
 instance: single strokes per note at several measured dynamics, at least three mallet hardnesses,
-centre/off-centre/edge positions, repeated strokes and rolls at known intervals, dead strokes,
+center/off-center/edge positions, repeated strokes and rolls at known intervals, dead strokes,
 pedal and motor states for the vibraphone, and the room, microphone position and noise floor.
 Self-recorded or CC0 material comes first; every candidate source's terms are checked file by
 file before use, and generated audio is never calibration evidence (#1621, #1629).
@@ -165,12 +165,12 @@ Candidates found so far, none adopted:
 - **University of Iowa Electronic Music Studios, Musical Instrument Samples:** marimba,
   xylophone, vibraphone, crotales and an unlabelled "Bells" set (C5–E8, plastic and brass
   mallets, anechoic). The page says the recordings may be used "for any projects, without
-  restrictions", but names no licence and does not mention redistribution. Usable at most as
+  restrictions", but names no license and does not mention redistribution. Usable at most as
   local measurement input; shipping or redistributing any file needs #1621's decision first
   (golden rule 14).
 - **Synthesis ToolKit (STK) `ModalBar`:** a permissively licensed (MIT-style, copyright Cook and
   Scavone) open-source struck-bar modal model with marimba and vibraphone presets. Its parameter
-  values are a licence question, not a clean-room one (golden rule 1); a port keeps the
+  values are a license question, not a clean-room one (golden rule 1); a port keeps the
   copyright and permission notice. They are a starting point to compare against, not calibration
   evidence.
 
@@ -229,7 +229,7 @@ author pages; the free-free bar ratios were also recomputed from the Euler–Ber
   collisions, power-law mallet nonlinearity).
 - P. R. Cook, *Real Sound Synthesis for Interactive Applications*, A K Peters, 2002 (modal
   synthesis, strings and bars).
-- Synthesis ToolKit in C++, P. R. Cook and G. P. Scavone, MIT-style licence:
+- Synthesis ToolKit in C++, P. R. Cook and G. P. Scavone, MIT-style license:
   [repository](https://github.com/thestk/stk), [`ModalBar`](https://ccrma.stanford.edu/software/stk/classstk_1_1ModalBar.html).
 - University of Iowa Electronic Music Studios, [Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html).
 - Current implementation: [instrument.md](../spec/instrument.md), `crates/dsp/src/modal.rs`.

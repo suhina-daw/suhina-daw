@@ -40,7 +40,7 @@ identifies Instrument and its experimental model, with Source always available. 
 - **Model:** what it shows depends on the model revision, and every control applies to the
   next strike.
   - Revisions 2 and 4 (an accepted profile or a fitted set) show a Struck body group: Body decay,
-    Brightness, Structure and Strike colour, a creative weighting of accepted modes, not a
+    Brightness, Structure and Strike color, a creative weighting of accepted modes, not a
     measured physical impact position. Profile adoption resets these four controls and enables
     all profile modes; the underlying stable parameter IDs remain the same. Revision 4 adds a
     Fitted model group: Source morph, Velocity to brightness, Damper noise, Pedal resonance
@@ -54,9 +54,9 @@ identifies Instrument and its experimental model, with Source always available. 
       ([sdk-custom-ui.md](sdk-custom-ui.md) › Reusable functional widgets) shows the body's
       sound: its ribbons flow at rest, a note's modes (the Instrument's live values,
       [instrument.md](instrument.md) › Live values for the panel) lift them and raise a ribbon
-      each, and a strike throws sparks out of the centre. Width sets how far they spread, Mallet
+      each, and a strike throws sparks out of the center. Width sets how far they spread, Mallet
       weight how wide they are, Hardness how fast they flow, and Resonator how strongly they show.
-    - At its centre the page's one large dial, Hardness (Touch for Kalimba, Brightness for
+    - At its center the page's one large dial, Hardness (Touch for Kalimba, Brightness for
       Struck, which has no mallet): a machined ivory knob on an espresso rim inside a scale of
       ticks, with a brass arc and pointer, its name and value inside it, the sound fullest around
       it.
@@ -106,12 +106,12 @@ theme, both canvases draw the maintainer's warm ivory artwork behind every contr
 (`devices/instrument/panel/`, with its provenance). The compact panel's has soft relief waves and
 the Suhina logo at the bottom right, its bottom-right label stopping short of the logo. The
 expanded editor (880 × 560) has the same surface with its relief blurred to soft folds and no
-logo of its own; the Suhina logo stands at its top centre, over "Modal bodies · experimental"
+logo of its own; the Suhina logo stands at its top center, over "Modal bodies · experimental"
 in small spaced capitals, in place of the Instrument title. Its own style sheet makes its
 buttons text: the page buttons, the body tabs and the choices, the chosen one underlined or
 marked in brass. Its dials have machined faces of the editor's own (an ivory dome with a brushed
 sheen on an espresso rim), with brass value arcs. The look is the same with every theme: the canvases' own style sheet
-gives every control espresso ink and brass, and the drawings use colours of their own rather
+gives every control espresso ink and brass, and the drawings use colors of their own rather
 than the theme's palette, so a dark theme's light text never lands on the ivory. Narrow windows
 scroll the full editor.
 

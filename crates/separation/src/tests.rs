@@ -78,7 +78,7 @@ fn every_weighting_is_above_zero_at_every_frame() {
             assert!(w.iter().all(|&x| x > 0.0 && x <= 1.0), "{weighting:?} {len}");
         }
     }
-    // The triangle is symmetric and peaks at the centre.
+    // The triangle is symmetric and peaks at the center.
     let t = Weighting::Triangle.weights(8);
     assert_eq!(t, [0.25, 0.5, 0.75, 1.0, 1.0, 0.75, 0.5, 0.25]);
 }

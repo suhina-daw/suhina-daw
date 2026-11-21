@@ -438,7 +438,7 @@ that. The labels derive from the device's shown name ("Amp Modeler: pack"),
 as the compact panels' tests find them.
 
 `Strands` is a host-drawn picture of sound as light: ribbons of very fine dots flowing across the
-control, fullest around its centre and thinning to a hair towards its edges, each fibre on a path of its own so
+control, fullest around its center and thinning to a hair towards its edges, each fibre on a path of its own so
 fibres part and cross like loose silk threads, drawn back to front with the near dots larger and
 stronger and the far ones smaller and softer. It has no binding and takes no input. Its fields
 are value expressions the host reads every frame:
@@ -446,12 +446,12 @@ are value expressions the host reads every frame:
 - `modes` (1 to 6 of them), each mode's energy, 0 to 1. The first carries three ribbons that
   always flow and swell with it; each further mode raises a ribbon of its own while it sounds.
 - `since`, seconds since the last strike, and `velocity`, its strength: a strike throws a shell
-  of sparks out of the centre that spreads and fades over about two seconds; between strikes a
-  tenth of the dots rest as a loose halo around the centre.
+  of sparks out of the center that spreads and fades over about two seconds; between strikes a
+  tenth of the dots rest as a loose halo around the center.
 - `height`, `thickness` and `speed` (0 to 1): how far the ribbons spread, how wide they are and
   how fast they flow.
 - `presence` (0 to 1): how strongly they show.
-- `light`, `mid`, `shadow` and `thread` (RGBA colours): a dot is `light` where its ribbon faces
+- `light`, `mid`, `shadow` and `thread` (RGBA colors): a dot is `light` where its ribbon faces
   the light, `mid` in between and `shadow` where it turns away; one fibre in seven is a `thread`.
 
 The flow advances with the host's clock at a rate that grows with the first mode's energy and

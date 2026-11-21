@@ -101,9 +101,9 @@ pub(crate) fn show(ui: &egui::Ui, painter: &egui::Painter, bounds: Rect, id: Id,
             channel(dot.color[2]),
             channel(dot.color[3]),
         );
-        let centre = bounds.min + Vec2::new(dot.x, dot.y);
+        let center = bounds.min + Vec2::new(dot.x, dot.y);
         let mesh = if dot.front { &mut ahead } else { &mut behind };
-        mesh.add_colored_rect(Rect::from_center_size(centre, Vec2::splat(dot.size * CPU_SIZE)), color);
+        mesh.add_colored_rect(Rect::from_center_size(center, Vec2::splat(dot.size * CPU_SIZE)), color);
     }
     painter.add(behind);
     painter.add(ahead);

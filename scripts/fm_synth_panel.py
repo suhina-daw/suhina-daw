@@ -248,14 +248,14 @@ def written(pid, x, y, value, suffix, decimals, size=11.0):
 
 def field(pid, caption, bounds, value, suffix="", decimals=0, log=False, visible=None, tag="", cid=None, invert=False, fill="bar", plain=False):
     """A number field that is its own slider: dragging up or down changes `pid` and the fill shows where
-    it is, from the left or, with `fill` "centre", from the middle. Tall enough, its name is over its
+    it is, from the left or, with `fill` "center", from the middle. Tall enough, its name is over its
     value; wide enough, beside it. In a table (`plain`) the column has its name."""
     _, _, w, h = bounds
     drawing = [rect(0.0, 0.0, w, h, CONTROL, 3.0)]
     share = par(pid, True, log)
     if fill == "bar":
         drawing.append(rect(0.0, 0.0, mul(share, w), h, FILL, 3.0))
-    elif fill == "centre":
+    elif fill == "center":
         drawing.append(rect(minimum(w / 2.0, mul(share, w)), 0.0, mul(maximum(sub(share, 0.5), sub(0.5, share)), w), h, FILL))
     if plain or (h < 28.0 and w < 90.0):
         drawing.append(written(pid, w / 2.0, (h - 13.0) / 2.0, value, suffix, decimals))
@@ -962,7 +962,7 @@ def mod_page(x, y, tag):
         controls.append(label_beside(f"mod_{source}_name{tag}", name, cx + 2.0, cy, 58.0, 24.0, shown))
         controls.append(menu(f"mod.{source}.dest1", f"{name} goes to", [cx + 60.0, cy + 1.0, 86.0, 22.0], shown, tag))
         controls.append(field(f"mod.{source}.amount1", f"{name} amount", [cx + 150.0, cy + 1.0, 88.0, 22.0], percent(f"mod.{source}.amount1"), " %",
-                              visible=shown, tag=tag, fill="centre", cid=f"mod.{source}.amount1{tag}", plain=True))
+                              visible=shown, tag=tag, fill="center", cid=f"mod.{source}.amount1{tag}", plain=True))
     controls.append(more(f"more_6{tag}", 6, [x + 245.0 + 60.0, y + 14.0 + 4.0 * 26.0 + 1.0, 178.0, 22.0], shown, "Second routes…"))
     return controls
 
@@ -1039,7 +1039,7 @@ def f_pct(pid, caption, fill="bar"):
 
 
 def f_both(pid, caption):
-    return f_pct(pid, caption, "centre")
+    return f_pct(pid, caption, "center")
 
 
 def f_ms(pid, caption):
@@ -1221,9 +1221,9 @@ def expanded_matrix(y, tag):
         row = y + 18.0 + i * 22.5
         controls.append(graphic(f"x_matrix_{source}", name, [x, row, 86.0, 21.0], [text(0.0, 4.0, name, TEXT, 11.0)], shown))
         controls.append(menu(f"mod.{source}.dest1", f"{name} goes to", [x + columns[0], row, 168.0, 21.0], shown, tag))
-        controls.append(field(f"mod.{source}.amount1", f"{name} amount", [x + columns[1], row, 72.0, 21.0], percent(f"mod.{source}.amount1"), " %", visible=shown, tag=tag, fill="centre", plain=True))
+        controls.append(field(f"mod.{source}.amount1", f"{name} amount", [x + columns[1], row, 72.0, 21.0], percent(f"mod.{source}.amount1"), " %", visible=shown, tag=tag, fill="center", plain=True))
         controls.append(menu(f"mod.{source}.dest2", f"{name} also to", [x + columns[2], row, 218.0, 21.0], shown, tag))
-        controls.append(field(f"mod.{source}.amount2", f"{name} second amount", [x + columns[3], row, 78.0, 21.0], percent(f"mod.{source}.amount2"), " %", visible=shown, tag=tag, fill="centre", plain=True))
+        controls.append(field(f"mod.{source}.amount2", f"{name} second amount", [x + columns[3], row, 78.0, 21.0], percent(f"mod.{source}.amount2"), " %", visible=shown, tag=tag, fill="center", plain=True))
     x, w = 670.0, 430.0
     controls.append(section("x_routes_title", "Classic controllers", x, y, w, shown))
     controls.append(table_heads("x_routes_heads", [(0.0, "Controller"), (84.0, "Range"), (168.0, "Goes to")], x, y + 18.0, w, shown))

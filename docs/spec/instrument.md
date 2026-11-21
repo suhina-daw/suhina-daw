@@ -36,7 +36,7 @@ folded into the audible band.
 The original remains revision 1. [Accepted modal profiles](instrument-modal-profile.md) use
 revision 2: a bounded stored list of ratios, magnitudes and T60 values replaces the heuristic
 modal data. Default model controls preserve that profile; Decay, Brightness, Structure and
-creative Strike colour transform it on the next strike. This runtime accepts data and does not
+creative Strike color transform it on the next strike. This runtime accepts data and does not
 fit, calibrate or infer a physical instrument from a recording.
 Release damps a released key; the sustain pedal holds it. Attack, Decay and Sustain are an
 amplitude envelope shared by the Sample layer and fitted (revision-4) models; the original
@@ -115,9 +115,9 @@ no per-mode measurements of vibraphone bars were found, so its law is an assumpt
 Mode `n`'s shape is the uniform free-free shape
 `phi_n(x) = (cosh(beta_n x) + cos(beta_n x) - s_n (sinh(beta_n x) + sin(beta_n x))) / 2` with
 `s_n = (cosh(beta_n) - cos(beta_n)) / (sinh(beta_n) - sin(beta_n))`, which is 1 or -1 at the ends;
-the second mode has a node at the centre. Strike position `p` measures from the centre to the
+the second mode has a node at the center. Strike position `p` measures from the center to the
 end: the contact point is `x = 0.5 * (0.98 - p) / 0.96` of the bar's length, so the lowest
-setting strikes the centre and the highest the end.
+setting strikes the center and the highest the end.
 
 **Mallet.** Velocity sets the impact speed `v = 4 m/s * velocity`. The mallet has mass
 `m = 0.025 kg` and a contact force `F = K * d^2.5 * (1 + lambda * d')` while it compresses
@@ -156,7 +156,7 @@ the model gives.
 A new stroke on a bar whose previous contact or pulse has not finished replaces it; the rest of
 the earlier stroke is dropped.
 
-**Torsion.** A stroke lands a little off the bar's centre line, so a Marimba bar also twists.
+**Torsion.** A stroke lands a little off the bar's center line, so a Marimba bar also twists.
 Its first two torsional modes sound at `T_n(key) * f1`, from the measurements of one rosewood
 marimba (La Favre): `T_1` is 1.56 at key 36, 1.8 at key 43, 2.05 from key 50 to 59 and 1.87 from
 key 60 up, linear in between, so it lies between the first two bending modes (as Yoo, Rossing &
@@ -201,9 +201,9 @@ anti-alias margin is left out with its mode.
 
 **Stereo.** The bars lie in a row, so each bar body's voice is panned by its key: pan
 `w * clamp((key - 60) / 36, -1, 1)`, low keys to the left and high keys to the right, by the
-equal-power law scaled to unity at the centre, where `w` is Stereo width (0 to 100 %, default
+equal-power law scaled to unity at the center, where `w` is Stereo width (0 to 100 %, default
 50 %). The pan is fixed when the bar takes its voice. Struck, accepted profiles and fitted sets stay
-in the centre on both channels, as before.
+in the center on both channels, as before.
 
 **More bodies.** Body's later entries keep the earlier ones' values (Struck 0, Marimba bar 1,
 Vibraphone bar 2) and add Xylophone bar (3), Glockenspiel bar (4) and Kalimba tine (5). Unless

@@ -36,15 +36,15 @@ pub(super) fn show(
         let maximized = ui.input(|input| input.viewport().maximized.unwrap_or(false));
         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
     }
-    // The bar's items in one row (#1372) across the rest: its start, its centre and its end, each
+    // The bar's items in one row (#1372) across the rest: its start, its center and its end, each
     // a group. The settings say which group the app's name and the project's information go in.
-    let (mut start, mut centre) = (Vec::new(), Vec::new());
+    let (mut start, mut center) = (Vec::new(), Vec::new());
     if settings.app_name_centered {
-        centre.push(("app-name", "Suhina"));
+        center.push(("app-name", "Suhina"));
     } else {
         start.push(("app-name", "Suhina"));
     }
-    let info = if settings.bar_project_centered { &mut centre } else { &mut start };
+    let info = if settings.bar_project_centered { &mut center } else { &mut start };
     if settings.bar_project_name && !project.is_empty() {
         info.push(("project-name", project));
     }
@@ -54,12 +54,12 @@ pub(super) fn show(
     let font = theme::ui_font(theme::TEXT);
     let mut items = vec![
         Item::named("group", "app-bar-start"),
-        Item::named("group", "app-bar-centre"),
+        Item::named("group", "app-bar-center"),
         Item::named("group", "app-bar-end"),
     ];
     // After the first of a group, an item's text starts with a dot that sets it apart.
     let mut texts = Vec::new();
-    for (group, list) in [(0, &start), (1, &centre)] {
+    for (group, list) in [(0, &start), (1, &center)] {
         for (index, (id, text)) in list.iter().enumerate() {
             let text = if index == 0 { (*text).to_owned() } else { format!("· {text}") };
             items.push(Item::named("bar-item", id).width(widgets::text_width(ui, &text, font.clone())).in_group(group));

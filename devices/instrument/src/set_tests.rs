@@ -29,7 +29,7 @@ fn core(set: ModelSet) -> Instrument {
     let mut core = Instrument::with_rate(RATE).unwrap();
     core.load_model_state(&set.encode()).unwrap();
     core.set_param(param::GAIN, 0.0);
-    // The recording as fitted: no envelope attack, no velocity colouring.
+    // The recording as fitted: no envelope attack, no velocity coloring.
     core.set_param(param::ATTACK, 0.0);
     core.set_param(param::VELOCITY_BRIGHTNESS, 0.0);
     core.reset();

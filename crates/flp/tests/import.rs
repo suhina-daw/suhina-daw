@@ -1220,7 +1220,7 @@ fn a_plugin_on_main_keys_from_a_track_routed_into_main() {
 }
 
 /// A plug-in generator's channel plays its plug-in 3 dB above the level curve, as FL renders a
-/// wrapped instrument at its default 78 % centred (`docs/spec/flp-model-mapping.md` › Channel
+/// wrapped instrument at its default 78 % centered (`docs/spec/flp-model-mapping.md` › Channel
 /// levels); a sampler channel stays on the curve.
 #[test]
 fn a_plug_in_generator_channel_plays_3_db_above_the_level_curve() {
@@ -1251,9 +1251,9 @@ fn rewritten(original: &[u8], mut f: impl FnMut(&mut Vec<u8>, u8, Vec<u8>)) -> O
 }
 
 /// A channel's colour without the flag event (projects from FL versions before it) is its own;
-/// FL's untouched grey is no choice, so the track gets the colour a new Suhina MIDI track gets.
+/// FL's untouched gray is no choice, so the track gets the colour a new Suhina MIDI track gets.
 #[test]
-fn channel_colours_without_a_flag_are_kept_and_fl_grey_becomes_suhinas_default() {
+fn channel_colours_without_a_flag_are_kept_and_fl_gray_becomes_suhinas_default() {
     let with = |value: u32| {
         rewritten(&fixture(96, 32), |out, id, payload| {
             event(out, id, &payload);
@@ -1266,9 +1266,9 @@ fn channel_colours_without_a_flag_are_kept_and_fl_grey_becomes_suhinas_default()
     let own = import_bytes(&with(0x00202260)).unwrap().project;
     assert!(own.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::Rgb(96, 34, 32))));
     // (92, 101, 106): FL's default channel colour.
-    let grey = import_bytes(&with(0x006A655C)).unwrap().project;
-    assert!(grey.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::NEW_MIDI_COLOUR)));
-    // A playlist row in FL's grey does not colour its clips or tracks either.
+    let gray = import_bytes(&with(0x006A655C)).unwrap().project;
+    assert!(gray.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::NEW_MIDI_COLOUR)));
+    // A playlist row in FL's gray does not colour its clips or tracks either.
     let mut row = [0u8; 66];
     row[..4].copy_from_slice(&1u32.to_le_bytes());
     row[4..8].copy_from_slice(&0x00565148u32.to_le_bytes());

@@ -49,7 +49,7 @@ const MAX_PENDING: usize = 256;
 const SUSTAIN_PEDAL: u8 = 64;
 
 const NOT_HELD: u64 = u64::MAX;
-/// Gain of a centred track at unity volume, which the sources of a chain track are mixed at
+/// Gain of a centered track at unity volume, which the sources of a chain track are mixed at
 /// (see `track_gains`); the track's real gains apply after the chain, divided by this.
 pub(crate) const CHAIN_INPUT_GAIN: f32 = 0.25;
 
@@ -109,10 +109,10 @@ pub(crate) struct Chain {
     /// a bus or an automated volume (those take a new graph).
     pub(crate) built_volume: Option<f64>,
     /// The pan it was built at, when its pan is applied live ([`Chain::set_live_pan`]): its gains
-    /// and its post-fader sends' are then built centred and [`Chain::pan`] carries the pan. None
+    /// and its post-fader sends' are then built centered and [`Chain::pan`] carries the pan. None
     /// for a bus (a group's pan does not apply) or a track with mix lanes, whose gains hold it.
     pub(crate) built_pan: Option<f64>,
-    /// The pan's equal-power factors on the left and right gains (1 and 1 centred), smoothed like
+    /// The pan's equal-power factors on the left and right gains (1 and 1 centered), smoothed like
     /// a fader as a live pan turns them; 1 and 1 without a live pan.
     pub(crate) pan: (LiveVolume, LiveVolume),
     /// A fader move since the graph was built, as a factor on `post`, its cue and its post-fader
@@ -579,7 +579,7 @@ impl Chain {
         self.pan.1.target = right;
     }
 
-    /// Builds the chain with its pan applied live from `pan`: its gains are centred.
+    /// Builds the chain with its pan applied live from `pan`: its gains are centered.
     pub(crate) fn set_built_pan(&mut self, pan: f64) {
         let (left, right) = pan_factors(pan);
         self.built_pan = Some(pan);
@@ -2000,7 +2000,7 @@ impl Default for LiveVolume {
     }
 }
 
-/// The equal-power factors of pan `pan` (-1 to 1) on centred gains: 1 and 1 centred, √2 and 0 at
+/// The equal-power factors of pan `pan` (-1 to 1) on centered gains: 1 and 1 centered, √2 and 0 at
 /// the left end.
 /// A live level's factor against the level a graph was built at: `level` clamped to the most a
 /// fader or a send can be (+6 dB), or `None` when the ratio is not a finite `f32` (a built level
@@ -2058,7 +2058,7 @@ mod live_volume_tests {
     use suhina_model::{AutomationLane, AutomationPoint, Channel, ChannelId};
 
     /// The left output of a passthrough chain fed ones, after a fader move to `volume` has
-    /// settled, with a pan lane at the centre when `pan_lane`.
+    /// settled, with a pan lane at the center when `pan_lane`.
     fn settled(volume: f64, pan_lane: bool) -> f32 {
         let mut chain = Chain::passthrough(TrackId(1), 0, 48_000);
         if pan_lane {

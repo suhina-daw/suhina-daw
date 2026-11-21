@@ -119,7 +119,7 @@ fn knob(ui: &mut DeviceUi, id: &str, label: &str, b: [f32; 4], log: bool) {
     });
 }
 
-/// `Strands`' colours when a layout leaves them out: warm ivory, champagne gold, deep bronze and
+/// `Strands`' colors when a layout leaves them out: warm ivory, champagne gold, deep bronze and
 /// a brass thread.
 pub const STRAND_LIGHT: [u8; 4] = [255, 249, 237, 255];
 pub const STRAND_MID: [u8; 4] = [222, 189, 135, 255];
@@ -270,8 +270,8 @@ pub enum Widget {
     DeviceNote,
     /// Host-drawn ribbons of very fine dots that show sound as light: they flow at rest, swell
     /// and raise a ribbon per further mode with the modes' energies, and throw a shell of sparks
-    /// out of the centre at a strike (docs/spec/sdk-custom-ui.md › Reusable functional widgets).
-    /// Every field but the colours is a value expression read each frame; it has no binding.
+    /// out of the center at a strike (docs/spec/sdk-custom-ui.md › Reusable functional widgets).
+    /// Every field but the colors is a value expression read each frame; it has no binding.
     Strands {
         /// 1 to 6 energies, 0 to 1. The first carries the ribbons that always flow.
         modes: Vec<crate::ui::UiValue>,

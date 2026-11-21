@@ -100,7 +100,7 @@ fn key_parameters_are_shown_as_note_names() {
 }
 
 /// Both canvases draw the background artwork first, behind every control, with every theme: no
-/// sheet hides it, and the sheet colours the controls for it.
+/// sheet hides it, and the sheet colors the controls for it.
 #[test]
 fn both_canvases_carry_the_light_artwork_behind_their_controls_with_every_theme() {
     let layout = crate::panel::layout();
@@ -566,7 +566,7 @@ The file as this run renders it, between the lines:
 }
 
 #[test]
-fn bars_spread_across_the_stereo_image_by_key_and_struck_stays_centred() {
+fn bars_spread_across_the_stereo_image_by_key_and_struck_stays_centerd() {
     let render = |body: f64, key: u8, width: f64| {
         let mut instrument = bar_instrument(body, 0.0);
         instrument.set_param(param::STEREO_WIDTH, width);

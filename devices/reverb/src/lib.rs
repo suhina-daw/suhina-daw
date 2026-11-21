@@ -337,7 +337,7 @@ pub mod param {
     pub const LOW_CUT: usize = 1;
     /// High Cut on the input band.
     pub const HIGH_CUT: usize = 2;
-    /// Centre of the input band in hertz.
+    /// Center of the input band in hertz.
     pub const INPUT_FREQUENCY: usize = 3;
     /// Width of the input band in octaves.
     pub const INPUT_WIDTH: usize = 4;
@@ -771,8 +771,8 @@ ramps! {
     scale,
     /// The natural log of Decay, read at the control rate.
     decay,
-    /// log2 of the input band's centre, read at the control rate.
-    centre,
+    /// log2 of the input band's center, read at the control rate.
+    center,
     /// The input band's width in octaves, read at the control rate.
     width,
     /// The diffusers' gain.
@@ -809,9 +809,9 @@ impl Ramps<Smoother> {
         .any(|s| !s.is_settled())
     }
 
-    /// Whether the input band's centre or width is still moving.
+    /// Whether the input band's center or width is still moving.
     fn band_moving(&self) -> bool {
-        !self.centre.is_settled() || !self.width.is_settled()
+        !self.center.is_settled() || !self.width.is_settled()
     }
 }
 
@@ -1049,7 +1049,7 @@ impl Reverb {
             shape: self.value(param::SHAPE),
             scale: self.value(param::SCALE),
             decay: self.value(param::DECAY).max(0.01).ln(),
-            centre: self.value(param::INPUT_FREQUENCY).max(1.0).log2(),
+            center: self.value(param::INPUT_FREQUENCY).max(1.0).log2(),
             width: self.value(param::INPUT_WIDTH),
             diffusion: self.value(param::DIFFUSION),
             high_frequency: self.value(param::HIGH_DAMPING_FREQUENCY).max(1.0).log2(),
@@ -1129,12 +1129,12 @@ impl Reverb {
         self.families_used = used;
     }
 
-    /// The input filters from the band's (ramped) centre and width.
+    /// The input filters from the band's (ramped) center and width.
     fn tune_input(&mut self) {
         let sr = self.sample_rate;
-        let centre = 2.0f64.powf(f64::from(self.ramps.centre.current()));
+        let center = 2.0f64.powf(f64::from(self.ramps.center.current()));
         let half = f64::from(self.ramps.width.current()) / 2.0;
-        let (low, high) = (centre / 2.0f64.powf(half), centre * 2.0f64.powf(half));
+        let (low, high) = (center / 2.0f64.powf(half), center * 2.0f64.powf(half));
         let identity = FirstOrderCoefficients::IDENTITY;
         let mut low_cut = [identity; 3];
         if low >= LOW_CUT_LOWEST {
@@ -1399,7 +1399,7 @@ impl Device for Reverb {
                 &mut r.shape,
                 &mut r.scale,
                 &mut r.decay,
-                &mut r.centre,
+                &mut r.center,
                 &mut r.width,
                 &mut r.high_frequency,
                 &mut r.high_gain,
@@ -1431,7 +1431,7 @@ impl Device for Reverb {
             // the predelay grows, and the network's input with it; a filtered one is a direct one
             // a family's delay later, so it is played from a mix of the direct ones per family.
             // With nothing moving, each tap's own delay falls on a whole frame and Spin's swing is
-            // added to it, as the reference's are (`reverb-spin-taps`: its swinging taps centre on the
+            // added to it, as the reference's are (`reverb-spin-taps`: its swinging taps center on the
             // frames its still ones are read at); without Spin the taps are read at whole frames.
             let mut spin = [0.0f64; SPIN_VOICES.len()];
             if spin_swing > 0.0 {

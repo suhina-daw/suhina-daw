@@ -3,7 +3,7 @@
 
 //! The picture behind the SDK's `Widget::Strands` (docs/spec/sdk-custom-ui.md › Reusable
 //! functional widgets): ribbons of very fine dots that flow across a rectangle, narrowest at its
-//! centre, swell with a sound's modes and throw sparks at a strike. This module holds what both
+//! center, swell with a sound's modes and throw sparks at a strike. This module holds what both
 //! renderers share: the inputs of a frame, where each dot goes and how it looks, and the host's
 //! GPU provider. A host with a GPU draws hundreds of thousands of dots through [`Provider`]
 //! (`suhina-ui-gpu`, with the same maths in WGSL); without one, `detail::strands` draws a few
@@ -32,7 +32,7 @@ pub struct Frame {
     pub presence: f32,
     /// The flow's own clock: it advances by the host's time at a rate that grows with the sound.
     pub clock: f32,
-    /// Light, mid, shadow and thread, RGBA in 0 to 1 (gamma-encoded, as egui's colours are).
+    /// Light, mid, shadow and thread, RGBA in 0 to 1 (gamma-encoded, as egui's colors are).
     pub colors: [[f32; 4]; 4],
 }
 
@@ -144,8 +144,8 @@ pub fn clock_rate(modes: &[f32; 6], speed: f32) -> f32 {
     (0.35 + 1.4 * (unit(modes[0]) + 0.5 * unit(modes[1]))) * (0.8 + 0.6 * unit(speed))
 }
 
-/// One dot as drawn: its centre, its size (in the rectangle's units, at one unit a point), its
-/// colour (gamma-encoded, premultiplied by its cover) and whether it lies in front.
+/// One dot as drawn: its center, its size (in the rectangle's units, at one unit a point), its
+/// color (gamma-encoded, premultiplied by its cover) and whether it lies in front.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Dot {
     pub x: f32,
@@ -179,15 +179,15 @@ pub fn place(point: [f32; 4], shared: &Shared, colors: &[[f32; 4]; 4]) -> Option
     let d = (u - 0.5) / 0.19;
     let body = 0.08 + 0.92 * exp(-d * d);
     let own = seed * std::f32::consts::TAU + lane * 1.7;
-    let centre = flow(u, c, phase) * (0.7 + 0.5 * shared.swell)
+    let center = flow(u, c, phase) * (0.7 + 0.5 * shared.swell)
         + 0.55 * (0.6 + shared.swell) * flow(u * 1.31 + 0.2, c * 1.21, own);
     let z = cos(u * 4.1 - c * 0.53 + own * 0.6) * 0.9;
     let persp = 1.0 + 0.25 * z;
     let mut x = shared.width * u;
     let mut y = shared.mid
-        + (shared.reach * body * centre * (0.6 + 0.4 * amp) + lane * shared.ribbon_width * wide * body * 0.35) * persp;
+        + (shared.reach * body * center * (0.6 + 0.4 * amp) + lane * shared.ribbon_width * wide * body * 0.35) * persp;
     let mut fade = 1.0;
-    // A strike throws a share of the dots out of the centre as a spreading shell of sparks.
+    // A strike throws a share of the dots out of the center as a spreading shell of sparks.
     if seed > 0.8 {
         let from_x = x - shared.width * 0.5;
         let from_y = y - shared.mid;

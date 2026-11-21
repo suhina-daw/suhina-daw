@@ -481,7 +481,7 @@ pub fn show(
             );
         }
     }
-    // Container centres mean inside; edges mean before/after, even when folded.
+    // Container centers mean inside; edges mean before/after, even when folded.
     let target_of = |x: f32| {
         spans.iter().find(|(_, span)| span.contains(x)).map(|(c, span)| {
             let fraction = (x - span.min) / span.span().max(1.0);
@@ -1510,7 +1510,7 @@ fn plain_clip(
 /// entered: the `background-color` of `clip[muted]`.
 #[derive(Clone, Copy)]
 struct SlotNative {
-    /// A deactivated clip's grey, and what a muted track's clips are mixed toward.
+    /// A deactivated clip's gray, and what a muted track's clips are mixed toward.
     muted: Color32,
 }
 
@@ -1562,7 +1562,7 @@ fn slot_cell(
     // where they differ from the plain clip's, else the native ones.
     let state = el.look();
     let plain = plain.cloned().unwrap_or_default();
-    // What a muted track's clips are mixed toward: the grey of a deactivated clip.
+    // What a muted track's clips are mixed toward: the gray of a deactivated clip.
     let muted = native.muted;
     // A clip under the pointer: `base` toward the theme's hovered background, or lighter.
     let lit = |base: Color32, light: f32| match hover_fill {
@@ -1590,7 +1590,7 @@ fn slot_cell(
             painter.rect_filled(mark_rect(EMPTY_MARK), 0.0, mark);
         }
         SlotState::Stopped | SlotState::Queued => {
-            // The clip in its colour, lighter under the pointer; a deactivated clip is grey
+            // The clip in its colour, lighter under the pointer; a deactivated clip is gray
             // (`clip[muted]`); a selected one the selection colour.
             let base = if let Some(fill) = selection_fill {
                 fill

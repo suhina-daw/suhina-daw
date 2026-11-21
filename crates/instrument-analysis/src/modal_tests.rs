@@ -442,3 +442,29 @@ fn a_stereo_recording_keeps_each_modes_placement() {
     let report = fit(&same, rate, 2, 0..left.len(), 57, |_, _| true).unwrap();
     assert!(report.recording.unwrap().stereo.is_none(), "matching channels are mono");
 }
+
+/// A partial that falls fast for its first tenths of a second and then rings on, in a recording
+/// long enough for 8192-sample envelope windows, keeps its fast first stage (version 4).
+#[test]
+fn a_fast_first_stage_inside_the_first_envelope_window_is_kept() {
+    let rate = 22050;
+    let ln1000 = 1000.0_f64.ln();
+    let pcm: Vec<f32> = (0..rate as usize * 5)
+        .map(|n| {
+            let t = n as f64 / f64::from(rate);
+            let decay = |t60: f64| (-ln1000 * t / t60).exp();
+            let two_stage = 0.45 * decay(0.3) + 0.15 * decay(8.0);
+            (0.4 * decay(6.0) * (TAU * 220.0 * t + 0.2).sin()
+                + two_stage * (TAU * 786.0 * t + 0.7).sin()
+                + 0.1 * decay(3.0) * (TAU * 1500.0 * t - 0.4).sin()) as f32
+        })
+        .collect();
+    let report = fit(&pcm, rate, 1, 0..pcm.len(), 57, |_, _| true).unwrap();
+    assert_eq!(report.frame_size, 8192);
+    let mode = report.recording_modes.iter().find(|m| (m.frequency_hz - 786.0).abs() < 1.0).unwrap();
+    assert!((mode.decay_seconds - 8.0).abs() / 8.0 < 0.15, "{mode:?}");
+    assert!((mode.fast_decay_seconds - 0.3).abs() / 0.3 < 0.3, "{mode:?}");
+    assert!((0.55..0.9).contains(&mode.fast_share), "{mode:?}");
+    let plain = report.recording_modes.iter().find(|m| (m.frequency_hz - 220.0).abs() < 1.0).unwrap();
+    assert_eq!(plain.fast_share, 0.0, "a single decay gets no fast part: {plain:?}");
+}

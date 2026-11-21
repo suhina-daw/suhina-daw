@@ -3,7 +3,7 @@
 
 // The dots of `Widget::Strands`, one instance each: the same maths as `kit::strands::place`
 // (suhina-ui), with the GPU's own sin, cos and exp. Each dot is a quad of two triangles; its
-// fragment is a soft disc. Colours are gamma-encoded and the output premultiplied, as egui's
+// fragment is a soft disc. Colors are gamma-encoded and the output premultiplied, as egui's
 // images are.
 
 struct Uniforms {
@@ -69,7 +69,7 @@ fn vertex(@builtin(vertex_index) corner_index: u32, @location(0) point: vec4<f32
     let d = (uu - 0.5) / 0.19;
     let body = 0.08 + 0.92 * exp(-d * d);
     let own = seed * 6.2831853 + lane * 1.7;
-    let centre = flow(uu, c, phases[r]) * (0.7 + 0.5 * swell) + 0.55 * (0.6 + swell) * flow(uu * 1.31 + 0.2, c * 1.21, own);
+    let center = flow(uu, c, phases[r]) * (0.7 + 0.5 * swell) + 0.55 * (0.6 + swell) * flow(uu * 1.31 + 0.2, c * 1.21, own);
     let z = cos(uu * 4.1 - c * 0.53 + own * 0.6) * 0.9;
     let front = z >= 0.0;
     if (front != (u.b.z > 0.5)) {
@@ -77,7 +77,7 @@ fn vertex(@builtin(vertex_index) corner_index: u32, @location(0) point: vec4<f32
     }
     let persp = 1.0 + 0.25 * z;
     var x = width * uu;
-    var y = mid + (reach * body * centre * (0.6 + 0.4 * amps[r]) + lane * u.a.x * wides[r] * body * 0.35) * persp;
+    var y = mid + (reach * body * center * (0.6 + 0.4 * amps[r]) + lane * u.a.x * wides[r] * body * 0.35) * persp;
     var fade = 1.0;
     if (seed > 0.8) {
         let from_x = x - width * 0.5;

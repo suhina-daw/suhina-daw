@@ -16,7 +16,7 @@ into Instrument, Marimba bar and Vibraphone bar, with two mallet models: **Conta
 a Hunt–Crossley contact simulated against the bar's motion) and **Pulse** (candidate B, a linear
 half-sine force whose duration follows velocity and hardness), a tube resonator under each bar
 (candidate D), mallet noise shaped by the contact force, torsional modes for the marimba, a stereo
-spread by key and graded mallets. Their behaviour and the sources of their values are specified in
+spread by key and graded mallets. Their behavior and the sources of their values are specified in
 [instrument.md](../spec/instrument.md) › Bar bodies; this report records what the experiments of
 the research's section 5 measured. It makes no calibration claim: no reference recordings were
 used (#1621), and no formal listening session took place (E8, #1631).
@@ -41,7 +41,7 @@ add at most two modes and a pan per voice.
 | E1 tuned modes | Pass (worst 0.14 cents) | Pass (worst 0.15 cents) |
 | E2 brightness | Pass on every cell | **Fails** for velocity at soft and medium hardness, and for hardness at one velocity |
 | E3 repeated strokes | Pass: differs from superposition by 0.4–11 % RMS; energy ≤ 0.92 of the strokes' | Superposes (differences ~1e-7, as designed); energy ≤ 0.48 |
-| E4 strike position | Pass (mode 2 ≥ 139 dB weaker at the centre) | Pass (same) |
+| E4 strike position | Pass (mode 2 ≥ 139 dB weaker at the center) | Pass (same) |
 | E5 resonator | The tube makes the fundamental 3–13 dB stronger and shorter; matching references needs #1621 | Same tube |
 | E6 budget | Pass: worst case 11 % of a core, p99 16 % of the deadline (64 frames) | Pass: 11 % / 16 % |
 | E7 stability | Pass at 8 and 22.05 kHz | Pass |
@@ -109,17 +109,17 @@ Pulse equals superposition to rounding, as candidate B predicts; the tube is lin
 stroke's noise starts from the stroke itself, so neither breaks it.
 
 Energy, measured on the bar's modes during one-second rolls (alternating 4 and 2.5 m/s strokes
-every 61 ms, soft and hard mallets, centre, default and end positions): the bar never held more
+every 61 ms, soft and hard mallets, center, default and end positions): the bar never held more
 than 0.91 (Marimba bar) or 0.92 (Vibraphone bar) of the mallet energy brought by the strokes so far
 with Contact, and 0.31 / 0.48 with Pulse. The shared DSP's tests check the same bound for single
 strokes and rolls at 8, 22.05, 48 and 192 kHz.
 
 ## E4: strike position
 
-Mode 2's level at the centre (the lowest Strike position) against a quarter of the bar's length,
-from a 0.2 s Hann-windowed DFT at mode 2's frequency: 139 dB weaker at the centre on Marimba bar
+Mode 2's level at the center (the lowest Strike position) against a quarter of the bar's length,
+from a 0.2 s Hann-windowed DFT at mode 2's frequency: 139 dB weaker at the center on Marimba bar
 and 140 dB on Vibraphone bar, for both mallets. The free-free shape's second mode has its node
-exactly at the centre, so the centre stroke leaves it unexcited and the measurement shows only the
+exactly at the center, so the center stroke leaves it unexcited and the measurement shows only the
 analysis floor. Real, undercut bars have shapes that differ from the uniform bar's, so the depth
 of this notch is a property of the model, not a prediction for an instrument.
 
@@ -219,7 +219,7 @@ editors' layouts and general UI guidance (one main control, no boxes, few contro
 page, the rest on an Advanced page). The result: the sound drawn as light across the page
 (`Widget::Strands`, a host-drawn SDK widget, drawn on the GPU with a lighter CPU version), moved
 by seven live values the Instrument now hands its panel (the first five modes' energies, the time
-since a note-on and its velocity), one large machined Hardness dial at its centre, one even row of
+since a note-on and its velocity), one large machined Hardness dial at its center, one even row of
 dials, and Tuning, Ring, Torsion, the mallet model and modes per voice on the Advanced page
 (`docs/spec/instrument-editor.md`, `docs/spec/sdk-custom-ui.md` › Reusable functional widgets).
 
@@ -246,8 +246,8 @@ longer step the output.
 - Vibraphone values: no per-mode decay, resonator or torsion measurements were found.
 - The marimba's base loss `a0` balances a marimba source (Stevens) against a xylophone bar
   (Rucz et al.); a measured marimba would settle it.
-- Strike position measures from the centre with uniform-bar shapes; undercut bars' shapes and
-  centre-versus-edge strokes need references.
+- Strike position measures from the center with uniform-bar shapes; undercut bars' shapes and
+  center-versus-edge strokes need references.
 - Dead strokes, the damper pedal and the motor are not modelled.
 - The glockenspiel's decay law, the kalimba's decay law, box quality and box frequency are
   assumptions; recordings of either instrument would settle them. The kalimba's tines are thin

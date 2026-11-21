@@ -356,7 +356,7 @@ mod sounds {
         }
     }
 
-    fn normalise(mut s: Vec<f32>, peak: f32) -> Vec<f32> {
+    fn normalize(mut s: Vec<f32>, peak: f32) -> Vec<f32> {
         let m = s.iter().fold(0.0f32, |m, v| m.max(v.abs())).max(1e-9);
         s.iter_mut().for_each(|v| *v *= peak / m);
         s
@@ -376,7 +376,7 @@ mod sounds {
                 phase.sin() * (-t * 7.0).exp() + click.get(i).copied().unwrap_or(0.0) * 0.3
             })
             .collect();
-        normalise(out, 0.9)
+        normalize(out, 0.9)
     }
 
     /// A short tone near 200 Hz under bright noise.
@@ -391,7 +391,7 @@ mod sounds {
                 (std::f32::consts::TAU * hz * t).sin() * (-t * 30.0).exp() * 0.5 + rattle[i] * 2.0
             })
             .collect();
-        normalise(out, 0.9)
+        normalize(out, 0.9)
     }
 
     /// Three or four noise bursts a few milliseconds apart, around 1.5 kHz, and a short tail.
@@ -410,7 +410,7 @@ mod sounds {
                 s * level
             })
             .collect();
-        normalise(out, 0.9)
+        normalize(out, 0.9)
     }
 
     /// Very short, very high noise.
@@ -418,7 +418,7 @@ mod sounds {
         let n = samples(0.12);
         let mut out = high(&high(&noise(v + 400, n), 7_000.0), 7_000.0);
         decay(&mut out, 0.012 + (v % 4) as f32 * 0.003);
-        normalise(out, 0.9)
+        normalize(out, 0.9)
     }
 
     /// Jingles: high ringing partials, struck a few times, over high noise, ringing longer than a
@@ -437,7 +437,7 @@ mod sounds {
                 ring * strikes * 0.2 + shimmer[i]
             })
             .collect();
-        normalise(out, 0.8)
+        normalize(out, 0.8)
     }
 
     /// Band noise around 6 kHz that swells in and out, without a sharp attack.
@@ -453,7 +453,7 @@ mod sounds {
                 s * (std::f32::consts::PI * t / length).sin().powi(2)
             })
             .collect();
-        normalise(out, 0.7)
+        normalize(out, 0.7)
     }
 
     /// A sine between 90 and 200 Hz that falls a little, ringing longer than a snare.
@@ -470,7 +470,7 @@ mod sounds {
                 (phase.sin() + 0.3 * (2.0 * phase).sin()) * (-t * 5.0).exp() + skin[i] * 0.5
             })
             .collect();
-        normalise(out, 0.9)
+        normalize(out, 0.9)
     }
 
     /// A held low tone, rich in harmonics, with no fall in pitch.
@@ -485,7 +485,7 @@ mod sounds {
                 tone * envelope
             })
             .collect();
-        normalise(out, 0.8)
+        normalize(out, 0.8)
     }
 
     /// The sound after `seconds` of silence (with a faint noise floor, as a recording has).

@@ -663,7 +663,7 @@ impl Instrument {
 }
 
 /// A bar's left and right gains: its key's place in the row, scaled by `width`, by the shared
-/// equal-power law at unity in the centre.
+/// equal-power law at unity in the center.
 fn bar_pan(key: u8, width: f64) -> (f32, f32) {
     let place = ((f64::from(key) - 60.0) / 36.0).clamp(-1.0, 1.0);
     let pan = if width.is_finite() { width.clamp(0.0, 1.0) * place } else { 0.0 };

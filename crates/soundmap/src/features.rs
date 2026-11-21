@@ -369,16 +369,16 @@ fn mel_filters() -> Vec<Vec<f32>> {
     edges
         .windows(3)
         .map(|w| {
-            let (low, centre, high) = (w[0], w[1], w[2]);
+            let (low, center, high) = (w[0], w[1], w[2]);
             (0..bins)
                 .map(|k| {
                     let hz = k as f32 * bin_hz;
                     if hz <= low || hz >= high {
                         0.0
-                    } else if hz <= centre {
-                        (hz - low) / (centre - low).max(1e-6)
+                    } else if hz <= center {
+                        (hz - low) / (center - low).max(1e-6)
                     } else {
-                        (high - hz) / (high - centre).max(1e-6)
+                        (high - hz) / (high - center).max(1e-6)
                     }
                 })
                 .collect()

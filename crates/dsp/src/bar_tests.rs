@@ -28,7 +28,7 @@ fn hard() -> Mallet {
 }
 
 #[test]
-fn free_free_shapes_are_normalised_orthogonal_and_have_the_textbook_nodes() {
+fn free_free_shapes_are_normalized_orthogonal_and_have_the_textbook_nodes() {
     assert!((uniform_ratio(2) - 2.7565).abs() < 1e-4);
     assert!((uniform_ratio(4) - 8.9330).abs() < 1e-4);
     assert!((beta(17) - 35.0 * PI / 2.0).abs() < 1e-12);
@@ -36,7 +36,7 @@ fn free_free_shapes_are_normalised_orthogonal_and_have_the_textbook_nodes() {
         assert!((mode_shape(n, 0.0) - 1.0).abs() < 1e-9, "mode {n} at one end");
         assert!((mode_shape(n, 1.0).abs() - 1.0).abs() < 1e-9, "mode {n} at the other end");
     }
-    assert!(mode_shape(2, 0.5).abs() < 1e-12, "mode 2 has a node at the centre");
+    assert!(mode_shape(2, 0.5).abs() < 1e-12, "mode 2 has a node at the center");
     assert!(mode_shape(1, 0.2242).abs() < 1e-3, "mode 1's nodes are near 0.224");
     let integral = |f: &dyn Fn(f64) -> f64| (0..20000).map(|i| f((i as f64 + 0.5) / 20000.0)).sum::<f64>() / 20000.0;
     for m in 1..=16 {
@@ -463,7 +463,7 @@ fn harder_and_faster_strokes_knock_louder() {
 }
 
 #[test]
-fn tine_shapes_are_clamped_normalised_and_orthogonal() {
+fn tine_shapes_are_clamped_normalized_and_orthogonal() {
     assert!((tine_ratio(2) - 6.2669).abs() < 1e-3);
     assert!((tine_ratio(3) - 17.5475).abs() < 1e-3);
     for n in 1..=12 {

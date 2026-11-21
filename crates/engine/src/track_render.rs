@@ -16,7 +16,7 @@ use crate::{AUDIO_HEADROOM, AudioPool, MAX_RENDER_SECONDS, RenderError, Renderer
 const BLOCK_FRAMES: usize = 512;
 
 /// Renders the first `frames` of `track`'s arrangement lane into interleaved stereo: each audio
-/// clip with its own gain, fades and warping, at unity gain and centred, with no devices, no
+/// clip with its own gain, fades and warping, at unity gain and centered, with no devices, no
 /// other track and no headroom, so a full-scale file plays back at full scale. Notes on the lane
 /// play the engine's test voice; `clip.consolidate` renders only audio lanes.
 pub fn render_track(
@@ -43,7 +43,7 @@ pub fn render_track(
     for block in out.chunks_mut(BLOCK_FRAMES * 2) {
         renderer.process(block);
     }
-    // Undo the centred pan and the headroom the mix gives every audio clip.
+    // Undo the centered pan and the headroom the mix gives every audio clip.
     let undo = |gain: f32| if gain > 0.0 { 1.0 / (gain * AUDIO_HEADROOM) } else { 0.0 };
     let (left, right) = (undo(left), undo(right));
     for [l, r] in out.as_chunks_mut::<2>().0 {
@@ -225,7 +225,7 @@ mod tests {
             let expected = (al * l * AUDIO_HEADROOM, ar * r * AUDIO_HEADROOM);
             assert!((expected.0 - ml).abs() < 1e-5 && (expected.1 - mr).abs() < 1e-5, "frame {frame}");
         }
-        // Left and right are the same: centred.
+        // Left and right are the same: centered.
         assert!(alone.as_chunks::<2>().0.iter().all(|[l, r]| (l - r).abs() < 1e-6));
     }
 

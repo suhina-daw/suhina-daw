@@ -264,10 +264,10 @@ fn e4_strike_position_follows_bar_mode_shapes() {
                 let signal = render(&mut instrument, 9600, &[(0, NoteEvent::On { key: 60, velocity: 0.8 })]);
                 magnitude(&signal, rate, mode_two)
             };
-            // The lowest Strike position is the centre; a quarter of the length is x = 0.25.
+            // The lowest Strike position is the center; a quarter of the length is x = 0.25.
             let quarter = 0.98 - 0.96 * 2.0 * 0.25;
             let difference = 20.0 * (level(quarter) / level(0.02)).log10();
-            println!("E4 {name} {model_name}: mode 2 is {difference:.1} dB weaker at the centre than at a quarter");
+            println!("E4 {name} {model_name}: mode 2 is {difference:.1} dB weaker at the center than at a quarter");
             assert!(difference >= 20.0, "{name} {model_name}: {difference} dB");
         }
     }

@@ -190,7 +190,7 @@ impl Section {
 
 /// The named colours a new tag takes its name and colour from: the seven a library starts
 /// with first, then the CSS named colours (W3C Color Module Level 4) trimmed — no colour
-/// carries two names (gray/grey, aqua/cyan, magenta/fuchsia) and consecutive entries sit
+/// carries two names (aqua/cyan, magenta/fuchsia) and consecutive entries sit
 /// apart ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
 pub fn named_colours() -> &'static [(&'static str, &'static str)] {
     &[
@@ -200,7 +200,7 @@ pub fn named_colours() -> &'static [(&'static str, &'static str)] {
         ("Green", "#7FA673"),
         ("Blue", "#73AAC0"),
         ("Purple", "#A497CC"),
-        ("Grey", "#8C8A85"),
+        ("Gray", "#8C8A85"),
         ("Maroon", "#800000"),
         ("Brown", "#A52A2A"),
         ("Salmon", "#FA8072"),

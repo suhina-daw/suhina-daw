@@ -36,7 +36,7 @@ fn the_density_waits_for_a_resize_to_settle_but_not_for_a_change_of_content() {
     let key = DensityKey {
         points: None,
         zoom: 1.0,
-        centre: [0.5, 0.5],
+        center: [0.5, 0.5],
         legend: Vec::new(),
         similar: None,
         spread: 1,
@@ -53,9 +53,9 @@ fn the_density_waits_for_a_resize_to_settle_but_not_for_a_change_of_content() {
     assert_eq!(density_plan(Some((&key, small)), &zoomed, large, 1.0, 1.0), DensityPlan::Build, "zoomed");
     let filtered = DensityKey { legend: vec![Kind::Kick], ..key.clone() };
     assert_eq!(density_plan(Some((&key, small)), &filtered, small, 0.0, 0.0), DensityPlan::Build);
-    // The grey and the kinds' colours are baked into the raster: a theme change draws it again.
-    let regrey = DensityKey { hint: Color32::RED, ..key.clone() };
-    assert_eq!(density_plan(Some((&key, small)), &regrey, small, 0.0, 0.0), DensityPlan::Build, "hint");
+    // The gray and the kinds' colours are baked into the raster: a theme change draws it again.
+    let regray = DensityKey { hint: Color32::RED, ..key.clone() };
+    assert_eq!(density_plan(Some((&key, small)), &regray, small, 0.0, 0.0), DensityPlan::Build, "hint");
     let mut kinds = key.kind_colours;
     kinds[0] = Color32::RED;
     let recoloured = DensityKey { kind_colours: kinds, ..key.clone() };
@@ -110,7 +110,7 @@ fn transform_round_trips_and_zoom_keeps_the_point_under_the_pointer() {
     view.zoom_at(rect, pointer, 1e-6);
     assert_eq!(view.zoom, MIN_ZOOM);
     view.fit();
-    assert_eq!((view.zoom, view.centre), (1.0, [0.5, 0.5]));
+    assert_eq!((view.zoom, view.center), (1.0, [0.5, 0.5]));
 }
 
 #[test]
@@ -154,7 +154,7 @@ fn the_legend_counts_and_the_clusters_follow_the_points() {
 }
 
 #[test]
-fn grid_positions_are_cell_centres() {
+fn grid_positions_are_cell_centers() {
     let points = vec![point(0.0, 0.0, Kind::Kick), point(1.0, 1.0, Kind::Kick)];
     let grid = Grid { columns: 2, rows: 1, cells: vec![(0, 0), (1, 0)] };
     // A 2 by 1 grid sits in the middle of a square view.
@@ -487,7 +487,7 @@ fn a_new_layout_rebinds_the_point_states_to_their_items() {
 }
 
 /// Without a theme sheet each kind takes the colour the user-agent sheet's own cascade gives it,
-/// whatever form its rules are written in; no kind falls back to grey.
+/// whatever form its rules are written in; no kind falls back to gray.
 #[test]
 fn every_kind_has_the_user_agent_sheets_colour() {
     let colours = user_agent_kind_colours();

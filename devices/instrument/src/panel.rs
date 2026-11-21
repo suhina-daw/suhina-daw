@@ -20,7 +20,7 @@ use suhina_device_sdk::{
 /// logo at its bottom right, and the expanded editor's surface.
 const PANEL_LIGHT: &[u8] = include_bytes!("../panel/panel-light.jpg");
 const EDITOR_LIGHT: &[u8] = include_bytes!("../panel/editor-surface.jpg");
-/// The editor's logo at its top centre, and its dials' machined faces, large and small.
+/// The editor's logo at its top center, and its dials' machined faces, large and small.
 const LOGO: &[u8] = include_bytes!("../panel/logo.png");
 const KNOB_LARGE: &[u8] = include_bytes!("../panel/knob-large.png");
 const KNOB_SMALL: &[u8] = include_bytes!("../panel/knob-small.png");
@@ -67,7 +67,7 @@ impl Canvas {
     }
 
     /// The canvas's background artwork, behind every control and on every page, with every
-    /// theme: `bytes` as the asset `artwork-light`, and the sheet that colours the controls for
+    /// theme: `bytes` as the asset `artwork-light`, and the sheet that colors the controls for
     /// it. An image the SDK refuses leaves the canvas without it rather than failing the panel.
     pub(super) fn artwork(&mut self, bytes: &[u8]) {
         let Ok(asset) = ImageAsset::from_bytes("artwork-light", bytes) else { return };
@@ -283,7 +283,7 @@ impl Canvas {
         }
     }
 
-    /// Text drawn as a graphic: `align` against `bounds`' left or centre, in `color`.
+    /// Text drawn as a graphic: `align` against `bounds`' left or center, in `color`.
     pub(super) fn text(
         &mut self,
         name: &str,

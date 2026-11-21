@@ -37,7 +37,7 @@ const NOISE_START: f64 = 0.25;
 const MASK_BINS: f64 = 4.5;
 const DB: f64 = 20.0 / std::f64::consts::LN_10;
 
-/// The pitch curve of a tone: cents against the tracked partials' centre, per frame.
+/// The pitch curve of a tone: cents against the tracked partials' center, per frame.
 pub(crate) struct Pitch {
     /// (time, cents) per frame, gaps filled, over the held region.
     pub curve: Vec<(f64, f64)>,
@@ -368,8 +368,8 @@ pub(crate) fn vibrato(pitch: &Pitch) -> Option<Vibrato> {
     }
     let p = lag.round().max(2.0) as usize;
     let mut depths = Vec::with_capacity(v.len());
-    for (centre, &(t, _)) in pitch.curve.iter().enumerate() {
-        let Some(begin) = centre.checked_sub(p / 2) else { continue };
+    for (center, &(t, _)) in pitch.curve.iter().enumerate() {
+        let Some(begin) = center.checked_sub(p / 2) else { continue };
         let (Some(values), Some(times)) = (v.get(begin..begin + p), pitch.curve.get(begin..begin + p)) else {
             continue;
         };
@@ -721,9 +721,9 @@ fn noise(mono: &[f64], modes: &[ModeInput], until: f64, sum: f64) -> [f32; NOISE
     let bin_hz = rate / NOISE_FRAME as f64;
     let mut masked = vec![false; power.len()];
     let mut mask = |hz: f64| {
-        let centre = hz / bin_hz;
-        let low = (centre - MASK_BINS).ceil().max(0.0) as usize;
-        let high = ((centre + MASK_BINS).floor().max(0.0) as usize).min(masked.len().saturating_sub(1));
+        let center = hz / bin_hz;
+        let low = (center - MASK_BINS).ceil().max(0.0) as usize;
+        let high = ((center + MASK_BINS).floor().max(0.0) as usize).min(masked.len().saturating_sub(1));
         for flag in masked.iter_mut().take(high + 1).skip(low) {
             *flag = true;
         }
@@ -754,8 +754,8 @@ fn noise(mono: &[f64], modes: &[ModeInput], until: f64, sum: f64) -> [f32; NOISE
     let correction = 1.0 - 1.0 / (3.0 * frames as f64);
     let edge = 2.0_f64.powf(1.0 / 3.0);
     for (band, slot) in out.iter_mut().enumerate() {
-        let centre = noise_center_hz(band);
-        let (low, high) = ((centre / edge / bin_hz).ceil() as usize, (centre * edge / bin_hz).floor() as usize);
+        let center = noise_center_hz(band);
+        let (low, high) = ((center / edge / bin_hz).ceil() as usize, (center * edge / bin_hz).floor() as usize);
         let mut values: Vec<f64> = (low..=high.min(power.len().saturating_sub(1)))
             .filter(|&k| !masked.get(k).copied().unwrap_or(true))
             .filter_map(|k| power.get(k).copied())
@@ -767,7 +767,7 @@ fn noise(mono: &[f64], modes: &[ModeInput], until: f64, sum: f64) -> [f32; NOISE
         let density = 2.0 * band_power / (rate * window_power);
         let amplitude = density.sqrt() / sum;
         // Under -80 dB of the modes over its band, a band is numerical floor, not noise.
-        let width = centre * (edge - 1.0 / edge);
+        let width = center * (edge - 1.0 / edge);
         if amplitude.is_finite() && amplitude * width.sqrt() >= 1e-4 {
             *slot = amplitude.min(1.0) as f32;
         }

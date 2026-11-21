@@ -193,7 +193,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                             }
                         });
                         if let Some(comparison) = &view.comparison {
-                                let bands: Vec<String> = comparison.bands.iter().map(|b| format!("{:.0} Hz {:+.1} dB", b.centre_hz, b.difference_db)).collect();
+                                let bands: Vec<String> = comparison.bands.iter().map(|b| format!("{:.0} Hz {:+.1} dB", b.center_hz, b.difference_db)).collect();
                                 ui.label(format!("Spectral distance {:.1} dB · level {:+.1} dB", comparison.mean_distance_db, comparison.level_difference_db))
                                     .on_hover_text(format!("Octave bands after level matching, fitted minus original: {}. Smaller is closer; this measures the same recording, not realism.", bands.join(", ")));
                         }
@@ -208,7 +208,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     return;
                 }
                 let Some(report) = &view.report else { return; };
-                // One stable note, or else the tonal centre of a loop or phrase.
+                // One stable note, or else the tonal center of a loop or phrase.
                 let proposed = report.proposal.map(|proposal| (
                     proposal.root,
                     format!("Measured {:.2} Hz ({} {:+.1} cents)",proposal.hz,key_name(proposal.root),proposal.cents),
@@ -253,7 +253,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     ui.label(match report.outcome {
                         SampleAnalysisOutcome::Silent => "The analyzed region is silent or constant. Choose a sounding region.",
                         SampleAnalysisOutcome::TooShort => "The analyzed region is too short for a stable root. Use a longer isolated note.",
-                        SampleAnalysisOutcome::NoStablePitch | SampleAnalysisOutcome::Stable | SampleAnalysisOutcome::TonalCentre => "No stable note or clear key was found. Keep the sample playable and set Root by ear.",
+                        SampleAnalysisOutcome::NoStablePitch | SampleAnalysisOutcome::Stable | SampleAnalysisOutcome::TonalCenter => "No stable note or clear key was found. Keep the sample playable and set Root by ear.",
                     });
                 }
             }

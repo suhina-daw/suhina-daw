@@ -15,7 +15,7 @@ pub const MAX_SPEED: f64 = 4.0;
 pub const OUTPUT_SCALE: f64 = 0.08;
 /// Mallet noise per newton of contact force at the reference bar mass.
 const NOISE_PER_NEWTON: f64 = 3e-5;
-/// The stroke's offset from the centre line, relative to the cross-section's radius of gyration.
+/// The stroke's offset from the center line, relative to the cross-section's radius of gyration.
 const TORSION_OFFSET: f64 = 0.2;
 /// Torsional modes radiate weakly: their output weight relative to a bending mode's.
 const TORSION_WEIGHT: f64 = 0.25;
@@ -270,7 +270,7 @@ impl Profile {
         }
     }
 
-    /// The contact point, from Strike position `strike`: a bar's from its centre to its end, a
+    /// The contact point, from Strike position `strike`: a bar's from its center to its end, a
     /// tine's from its free end towards the clamp.
     fn contact(self, strike: f64) -> f64 {
         match self {
@@ -298,7 +298,7 @@ impl Profile {
         let ring = if shaping.ring.is_finite() { shaping.ring.clamp(0.0, 1.0) } else { 0.5 } - 0.5;
         let torsion_weight =
             TORSION_WEIGHT * 2.0 * if shaping.torsion.is_finite() { shaping.torsion.clamp(0.0, 1.0) } else { 0.5 };
-        // A stroke slightly off the centre line also twists a bar with known torsional modes.
+        // A stroke slightly off the center line also twists a bar with known torsional modes.
         let torsion = self.torsion(key);
         let available = torsion.iter().filter(|ratio| **ratio > 0.0).count();
         let torsional = if count >= 16 {

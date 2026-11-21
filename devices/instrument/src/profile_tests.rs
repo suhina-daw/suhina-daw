@@ -149,7 +149,7 @@ fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
                 assert_eq!(visible("Experimental struck and bar bodies · revision 3"), revision == 3.0);
                 assert_eq!(visible("Experimental fitted model · revision 4"), revision == 4.0);
                 // A profile or fitted set keeps #1599's struck-body group on the Model page.
-                assert_eq!(visible("Strike colour"), !bodies && model, "{at}");
+                assert_eq!(visible("Strike color"), !bodies && model, "{at}");
                 assert_eq!(visible("Body decay"), !bodies && model, "{at}");
                 assert_eq!(visible("Modes per voice"), !bodies && model, "{at}");
                 // The bodies' Model page.

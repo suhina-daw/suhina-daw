@@ -289,7 +289,7 @@ pub fn window(input: &Input) -> Option<Window> {
 }
 
 /// The strip between a `panel` and the `main` view beside, above or under it, where its splitter
-/// goes: their gap, at least `thickness` across, centred on it; nothing when they overlap.
+/// goes: their gap, at least `thickness` across, centered on it; nothing when they overlap.
 pub fn splitter_between(panel: Rect, main: Rect, thickness: f32) -> Rect {
     let strip = |from: f32, to: f32| {
         let middle = (from + to) / 2.0;

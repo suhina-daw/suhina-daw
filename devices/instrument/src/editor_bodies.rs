@@ -3,7 +3,7 @@
 
 //! The Model and Advanced pages of the struck, bar and tine bodies (revision 3, and 1 read as 3):
 //! the body tabs, the sound drawn across the page (`Widget::Strands`, from the Instrument's live
-//! values), the large dial at its centre, the body's name and one even row of dials, and the
+//! values), the large dial at its center, the body's name and one even row of dials, and the
 //! Advanced page's shaping dials and engine choices (docs/spec/instrument-editor.md).
 
 use super::{Canvas, any_of, both, page_is};
@@ -16,7 +16,7 @@ const STRUCK_BARS: &[u16] = &[1, 2, 3, 4];
 const KALIMBA: &[u16] = &[5];
 const STRUCK: &[u16] = &[0];
 
-/// The page's own colours over the ivory artwork, the same with every theme: espresso ink,
+/// The page's own colors over the ivory artwork, the same with every theme: espresso ink,
 /// fainter text, a hairline, the dial's groove and ticks, and brass with its glow.
 const INK: [u8; 4] = super::INK;
 const MUTED: [u8; 4] = [107, 85, 67, 255];
@@ -173,7 +173,7 @@ const BRIGHTNESS: DialSpec = ("brightness", "Brightness", "Energy in the higher 
 const STRIKE: DialSpec = (
     "strike",
     "Strike",
-    "Where the mallet or finger meets the body: a bar from its centre to its end, a tine from its free end. Next strike",
+    "Where the mallet or finger meets the body: a bar from its center to its end, a tine from its free end. Next strike",
 );
 const STRUCTURE: DialSpec = ("structure", "Structure", "Stretch the resonance frequencies; next strike");
 const WIDTH: DialSpec = ("stereo_width", "Width", "Spread the bars from left (low) to right (high)");
@@ -225,7 +225,7 @@ pub(super) fn body_page(ui: &mut Canvas) {
     );
     ui.show_when(both(any_of("model_revision", BODY_REVISIONS), add(page_is(1), page_is(3))));
 
-    // The large dial at the centre: Hardness for a struck bar, Touch for the tine, Brightness for
+    // The large dial at the center: Hardness for a struck bar, Touch for the tine, Brightness for
     // the abstract body, which has no mallet.
     for (bodies, parameter, name, tooltip) in [
         (

@@ -8,7 +8,7 @@
 //! dB/octave, so bass moves the gain less when the corner is raised) and takes the louder of the
 //! two as the level, so both sides always get the same gain and the stereo image stays put. The
 //! level in decibels goes through the gain computer (threshold, ratio, a quadratic soft knee
-//! centred on the threshold), and the gain reduction it asks for is smoothed in decibels: it
+//! centered on the threshold), and the gain reduction it asks for is smoothed in decibels: it
 //! moves toward a larger reduction with the attack time and back with the release time (each a
 //! time constant, 63 % of a step after that long). The reduced signal is blended with the
 //! uncompressed one (both after the input gain) by the dry/wet mix, and the output gain applies
@@ -70,7 +70,7 @@ static PARAMS: [ParamInfo; param::COUNT] = [
 pub static INFO: DeviceInfo = DeviceInfo::new("compressor", "Compressor", Role::Effect, &PARAMS);
 
 /// Gain change, in decibels (zero or negative), the gain computer asks for at `level_db` with
-/// `threshold` (dB), `slope` (1 - 1/ratio) and a soft knee `knee` dB wide centred on the
+/// `threshold` (dB), `slope` (1 - 1/ratio) and a soft knee `knee` dB wide centered on the
 /// threshold.
 #[inline]
 fn gain_change(level_db: f64, threshold: f64, slope: f64, knee: f64) -> f64 {

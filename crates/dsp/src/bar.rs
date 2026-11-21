@@ -78,7 +78,7 @@ pub fn tine_ratio(n: usize) -> f64 {
     (tine_beta(n) / TINE_BETA[0]).powi(2)
 }
 
-/// Mode `n`'s shape at `x` (0 at the clamp, 1 at the free end), normalised to ±1 at the free end,
+/// Mode `n`'s shape at `x` (0 at the clamp, 1 at the free end), normalized to ±1 at the free end,
 /// in a form without the cancellation of `cosh - sinh` for high modes. Zero for `n == 0` or a
 /// non-finite `x`; `x` is clamped to the tine.
 pub fn tine_shape(n: usize, x: f64) -> f64 {
@@ -101,7 +101,7 @@ pub fn uniform_ratio(n: usize) -> f64 {
     (beta(n) / BETA[0]).powi(2)
 }
 
-/// Mode `n`'s shape at `x` (0 to 1 along the bar), normalised to ±1 at the ends. Evaluated in a
+/// Mode `n`'s shape at `x` (0 to 1 along the bar), normalized to ±1 at the ends. Evaluated in a
 /// form without the cancellation of `cosh - sinh` for high modes. Zero for `n == 0` or a
 /// non-finite `x`; `x` is clamped to the bar.
 pub fn mode_shape(n: usize, x: f64) -> f64 {

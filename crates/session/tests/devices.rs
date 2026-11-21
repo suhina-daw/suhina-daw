@@ -793,7 +793,7 @@ fn a_nam_device_loads_its_file_with_the_command() {
         run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": &ir_file })).unwrap_err();
     assert!(error.contains(".nam"), "{error}");
 
-    // A behaviour after a failed read: a file that is not a model leaves a note.
+    // A behavior after a failed read: a file that is not a model leaves a note.
     let broken = models.join("broken.nam");
     std::fs::write(&broken, "{not json").unwrap();
     let error = run(

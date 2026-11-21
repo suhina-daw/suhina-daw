@@ -459,11 +459,11 @@ fn the_base_sheet_colours_everything_from_variables() {
     }
 }
 
-/// A muted clip and a muted track's header are grey in the base sheet, whatever their colour, in
-/// the Arrangement only, so a deactivated Launcher clip keeps its own look (#1393); each grey is a
+/// A muted clip and a muted track's header are gray in the base sheet, whatever their colour, in
+/// the Arrangement only, so a deactivated Launcher clip keeps its own look (#1393); each gray is a
 /// core variable with its earlier value, and the user-agent sheet holds none of them.
 #[test]
-fn the_base_sheet_greys_muted_clips_and_headers() {
+fn the_base_sheet_grays_muted_clips_and_headers() {
     for (rule, variable, value) in [
         (
             "arrangement clip[muted] { background-color: var(--clip-mutedBackground); }",

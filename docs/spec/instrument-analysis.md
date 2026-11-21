@@ -70,7 +70,7 @@ choose a different root, but that choice is explicit and is not presented as a m
 ### Loops and melodic material
 
 A loop or phrase with several notes has no single pitch, so the note path above withholds its
-proposal. Analysis version 2 then proposes the material's **tonal centre** as the root: the
+proposal. Analysis version 2 then proposes the material's **tonal center** as the root: the
 tonic of its estimated key, so playing the loop from another key transposes it musically. This
 proposal is only made when no stable single note was found and the analyzed range is active.
 
@@ -87,7 +87,7 @@ proposal is only made when no stable single note was found and the analyzed rang
   are used, so chords and bass lines contribute and stereo polarity cannot cancel anything.
 - **Key.** The twelve-value profile is correlated (Pearson) with the 24 rotations of the major
   and minor key profiles published by Krumhansl and Kessler. The best key's tonic is the
-  proposal's pitch class. A correlation below 0.6 means the material has no clear tonal centre
+  proposal's pitch class. A correlation below 0.6 means the material has no clear tonal center
   (unpitched drums, noise, atonal material) and no proposal is made. The runner-up key and both
   correlations are reported; relative major/minor keys share their pitch classes and often
   differ by little, which the interface shows instead of hiding. Correlations are measurements
@@ -101,7 +101,7 @@ proposal is only made when no stable single note was found and the analyzed rang
   integer root.
 
 The analyzed range is the selected trim, as for a single note; loop start and end do not
-change it. The command report marks such a result with outcome `tonalCentre` and a `key`
+change it. The command report marks such a result with outcome `tonalCenter` and a `key`
 object (tonic, mode, correlation, runner-up, tuning cents, root). Acceptance, correction and
 undo work exactly as for a single-note proposal. A key estimate from one short loop can be
 wrong, for example between relative keys or when the loop dwells on its dominant; the person

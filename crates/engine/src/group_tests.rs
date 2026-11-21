@@ -117,7 +117,7 @@ fn a_branch_pans_with_the_channel_law() {
     assert!(peak(&l) < 1e-6 && peak(&r) > 0.1);
     let whole = reference();
     let whole_right: Vec<f32> = whole.as_chunks::<2>().0.iter().map(|[_, r]| *r).collect();
-    // Hard right is √2 louder on the right than centred, as a channel's pan.
+    // Hard right is √2 louder on the right than centered, as a channel's pan.
     assert!(max_diff(&r, &scaled(&whole_right, std::f32::consts::SQRT_2)) < 1e-4);
 }
 

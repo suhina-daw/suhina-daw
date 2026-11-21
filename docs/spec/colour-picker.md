@@ -3,7 +3,7 @@ description: Track colour selection, the floating colour window, recent colours,
 read_when: track colour, colour picker, recent colours, related shades, F2, colour wheel
 type: spec
 status: planned
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - crates/ui/src/interaction/colour_picker.rs
   - crates/session/src/colours.rs
