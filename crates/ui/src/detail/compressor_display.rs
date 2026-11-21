@@ -191,7 +191,12 @@ struct History(VecDeque<Reading>);
 impl History {
     /// Adds `live` at `time` when a reading is due, and drops what has scrolled out.
     fn record(&mut self, time: f64, live: &Live) {
-        let due = self.0.back().is_none_or(|last| time - last.time >= 1.0 / HISTORY_RATE - 1e-6 || time < last.time);
+        // A clock that went back (another window's time) starts the history again, so it stays in
+        // order.
+        if self.0.back().is_some_and(|last| time < last.time) {
+            self.0.clear();
+        }
+        let due = self.0.back().is_none_or(|last| time - last.time >= 1.0 / HISTORY_RATE - 1e-6);
         if due {
             self.0.push_back(Reading {
                 time,
@@ -200,7 +205,7 @@ impl History {
                 reduction: live.reduction as f32,
             });
         }
-        while self.0.front().is_some_and(|first| time - first.time > HISTORY_SECONDS || first.time > time) {
+        while self.0.front().is_some_and(|first| time - first.time > HISTORY_SECONDS) {
             self.0.pop_front();
         }
     }
@@ -661,25 +666,54 @@ fn push_edits(
     }
 }
 
-/// Where a drag on `response` started, kept while the button is held: the value(s) it moves
-/// from.
-fn drag_start<T: Clone + Send + Sync + 'static>(
+/// A drag on a handle, kept while the button is held: the value(s) it moves from and how far
+/// it has moved, each frame's movement scaled by [`fine`] then, so pressing or releasing Shift
+/// halfway changes the pace from there on and never makes the value jump.
+#[derive(Debug, Clone, Copy)]
+struct Drag<T> {
+    from: T,
+    moved: Vec2,
+    /// The pointer's distance from the press as last seen, to take each frame's movement from.
+    seen: Vec2,
+}
+
+/// The drag on `response`, if one is held: where it started and how far it has moved.
+fn drag_state<T: Clone + Send + Sync + 'static>(
     ui: &egui::Ui,
     response: &egui::Response,
     state: egui::Id,
     at_press: T,
-) -> Option<T> {
+) -> Option<(T, Vec2)> {
     let held = response.is_pointer_button_down_on();
-    let start = ui.ctx().data_mut(|d| {
-        if held && d.get_temp::<T>(state).is_none() {
-            d.insert_temp(state, at_press);
+    let total = response.total_drag_delta().unwrap_or_default();
+    let scale = fine(ui);
+    let drag = ui.ctx().data_mut(|d| {
+        if held && d.get_temp::<Drag<T>>(state).is_none() {
+            d.insert_temp(state, Drag { from: at_press, moved: Vec2::ZERO, seen: Vec2::ZERO });
         }
-        d.get_temp::<T>(state)
+        let mut drag = d.get_temp::<Drag<T>>(state)?;
+        drag.moved += (total - drag.seen) * scale;
+        drag.seen = total;
+        d.insert_temp(state, drag.clone());
+        Some(drag)
     });
     if !held && !response.drag_stopped() {
-        ui.ctx().data_mut(|d| d.remove::<T>(state));
+        ui.ctx().data_mut(|d| d.remove::<Drag<T>>(state));
     }
-    start
+    drag.map(|drag| (drag.from, drag.moved))
+}
+
+/// `value` held inside `min ..= max`, whichever way round they are, without the panic
+/// `f64::clamp` has for a range given backwards.
+fn bounded(value: f64, min: f64, max: f64) -> f64 {
+    value.max(min.min(max)).min(max.max(min))
+}
+
+/// The range a drag on the curve moves the ratio over: the parameter's own, within the view's
+/// 1 : 1 to 20 : 1, or the parameter's alone when the two do not meet.
+fn ratio_bounds(min: f64, max: f64) -> (f64, f64) {
+    let (low, high) = (min.max(RATIO_RANGE.0), max.min(RATIO_RANGE.1));
+    if low <= high { (low, high) } else { (min, max) }
 }
 
 /// How far a drag moves for each point: a quarter with Shift.
@@ -727,13 +761,12 @@ fn threshold_arrow(
     let Some(threshold) = parameter(parameters, "threshold") else {
         return;
     };
-    let start = drag_start(ui, &response, id.with("threshold-arrow-drag"), y);
+    let drag = drag_state(ui, &response, id.with("threshold-arrow-drag"), y);
     if response.double_clicked() {
         push_edits(actions, &[(threshold, threshold.default)], track, at, "compressor-threshold");
-    } else if let Some(start_y) = start {
+    } else if let Some((start_y, moved)) = drag {
         if response.dragged() {
-            let total = response.total_drag_delta().unwrap_or_default();
-            let new = y_level(start_y + total.y * fine(ui), areas.input).clamp(threshold.min, threshold.max);
+            let new = bounded(y_level(start_y + moved.y, areas.input), threshold.min, threshold.max);
             if (new - threshold.value).abs() > 1e-9 {
                 push_edits(actions, &[(threshold, new)], track, at, "compressor-threshold");
             }
@@ -776,18 +809,20 @@ fn drag_ring(
     let (Some(threshold), Some(ratio)) = (parameter(parameters, "threshold"), parameter(parameters, "ratio")) else {
         return;
     };
-    let start = drag_start(ui, &response, id.with("ring-drag"), (position.x, values.ratio));
+    let drag = drag_state(ui, &response, id.with("ring-drag"), (position.x, values.ratio));
     if response.double_clicked() {
         push_edits(actions, &[(threshold, threshold.default), (ratio, ratio.default)], track, at, "compressor-ring");
-    } else if let Some((start_x, start_ratio)) = start {
+    } else if let Some(((start_x, start_ratio), total)) = drag {
         if response.dragged() {
-            let total = response.total_drag_delta().unwrap_or_default() * fine(ui);
-            let new_threshold = x_level(start_x + total.x, rect).clamp(threshold.min, threshold.max);
+            let new_threshold = bounded(x_level(start_x + total.x, rect), threshold.min, threshold.max);
             // The ratio moves on its logarithmic scale: the view's height spans its range.
             let span = (RATIO_RANGE.1 / RATIO_RANGE.0).ln();
-            let new_ratio = (start_ratio.max(RATIO_RANGE.0).ln() + f64::from(total.y / rect.height().max(1.0)) * span)
-                .exp()
-                .clamp(ratio.min.max(RATIO_RANGE.0), ratio.max.min(RATIO_RANGE.1));
+            let (low, high) = ratio_bounds(ratio.min, ratio.max);
+            let new_ratio = bounded(
+                (start_ratio.max(RATIO_RANGE.0).ln() + f64::from(total.y / rect.height().max(1.0)) * span).exp(),
+                low,
+                high,
+            );
             let mut edits = Vec::new();
             if (new_threshold - threshold.value).abs() > 1e-9 {
                 edits.push((threshold, new_threshold));
@@ -830,13 +865,12 @@ fn drag_line(
     let Some(threshold) = parameter(parameters, "threshold") else {
         return;
     };
-    let start = drag_start(ui, &response, id.with("line-drag"), y);
+    let drag = drag_state(ui, &response, id.with("line-drag"), y);
     if response.double_clicked() {
         push_edits(actions, &[(threshold, threshold.default)], track, at, "compressor-threshold");
-    } else if let Some(start_y) = start {
+    } else if let Some((start_y, moved)) = drag {
         if response.dragged() {
-            let total = response.total_drag_delta().unwrap_or_default();
-            let new = y_level(start_y + total.y * fine(ui), rect).clamp(threshold.min, threshold.max);
+            let new = bounded(y_level(start_y + moved.y, rect), threshold.min, threshold.max);
             if (new - threshold.value).abs() > 1e-9 {
                 push_edits(actions, &[(threshold, new)], track, at, "compressor-threshold");
             }

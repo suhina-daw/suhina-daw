@@ -88,6 +88,71 @@ fn the_history_keeps_the_last_seconds_at_its_rate() {
     // A clock that went back (another window's time) starts the history again.
     history.record(1.0, &live);
     assert_eq!(history.0.len(), 1);
+    // Also when it goes back to a time still inside what is kept: never out of order.
+    let mut history = History::default();
+    for time in [0.0, 0.025, 0.05] {
+        history.record(time, &live);
+    }
+    history.record(0.03, &live);
+    let times: Vec<f64> = history.0.iter().map(|r| r.time).collect();
+    assert_eq!(times, vec![0.03]);
+}
+
+#[test]
+fn a_range_given_backwards_or_apart_from_the_views_never_panics() {
+    assert_eq!(bounded(5.0, 0.0, 1.0), 1.0);
+    assert_eq!(bounded(5.0, 1.0, 0.0), 1.0, "a backwards range holds the value as well");
+    assert_eq!(bounded(-5.0, 1.0, 0.0), 0.0);
+    assert_eq!(ratio_bounds(1.0, 20.0), (1.0, 20.0), "the built-in ratio drags over the view's range");
+    assert_eq!(ratio_bounds(1.0, 50.0), (1.0, 20.0));
+    assert_eq!(ratio_bounds(30.0, 40.0), (30.0, 40.0), "a range apart from the view's keeps its own");
+}
+
+/// Drags a handle from (50, 50) down by `steps`, each `(dy, shift)`, and returns how far the
+/// drag has moved the value after each one.
+fn drag_steps(steps: &[(f32, bool)]) -> Vec<f32> {
+    let ctx = egui::Context::default();
+    let state = egui::Id::unique("drag-test");
+    let mut moved = Vec::new();
+    let frame = |mut events: Vec<egui::Event>, shift: bool, moved: &mut Vec<f32>| {
+        let modifiers = if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
+        events.insert(0, egui::Event::ModifiersChanged(modifiers));
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(200.0))),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            let rect = Rect::from_center_size(Pos2::new(50.0, 50.0), Vec2::splat(20.0));
+            let response = ui.interact(rect, state.with("handle"), Sense::click_and_drag());
+            if let Some((_, distance)) = drag_state(ui, &response, state, 0.0_f32) {
+                moved.push(distance.y);
+            }
+        });
+        output.textures_delta.clear();
+    };
+    let press = |pressed| egui::Event::PointerButton {
+        pos: Pos2::new(50.0, 50.0),
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    frame(vec![egui::Event::PointerMoved(Pos2::new(50.0, 50.0))], false, &mut moved);
+    frame(vec![press(true)], false, &mut moved);
+    moved.clear();
+    let mut y = 50.0;
+    for &(dy, shift) in steps {
+        y += dy;
+        frame(vec![egui::Event::PointerMoved(Pos2::new(50.0, y))], shift, &mut moved);
+    }
+    moved
+}
+
+#[test]
+fn shift_pressed_halfway_through_a_drag_slows_it_from_there_without_a_jump() {
+    // 20 points, then Shift with no movement, then 8 more points at a quarter of the pace.
+    let moved = drag_steps(&[(20.0, false), (0.0, true), (8.0, true), (0.0, false), (4.0, false)]);
+    assert_eq!(moved, vec![20.0, 20.0, 22.0, 22.0, 26.0]);
 }
 
 #[test]
