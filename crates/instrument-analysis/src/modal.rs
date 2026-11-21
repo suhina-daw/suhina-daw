@@ -45,6 +45,8 @@ const TAIL_MIN_FRAMES: usize = 4;
 const TAIL_MIN_DROP_DB: f64 = 6.0;
 /// A band's tail must hold at least this share of the power the modes play in it.
 const TAIL_MIN_SHARE: f64 = 1e-3;
+/// And at least this share of what the modes play in every band together (-60 dB).
+const TAIL_MIN_WHOLE: f64 = 1e-6;
 /// How many bins around a mode the tail leaves out, and how many open bins a band needs.
 const TAIL_MASK_BINS: f64 = 2.0;
 const TAIL_MIN_OPEN_BINS: usize = 2;
@@ -1121,9 +1123,12 @@ fn tail(modes: &[Fitted], mono: &[f64], other: Option<&[f64]>) -> Option<Missing
         // Far under what the modes play in the band, it is their own small error, not a tail.
         let fitted_frames = first..first + points.len();
         let heard: f64 = series.iter().take(points.len()).map(|(_, a, _)| a).sum();
-        let modal: f64 =
-            played_power.get(fitted_frames).map_or(0.0, |rows| rows.iter().filter_map(|r| r.get(band)).sum());
-        if heard < TAIL_MIN_SHARE * modal {
+        let rows = played_power.get(fitted_frames).unwrap_or(&[]);
+        let modal: f64 = rows.iter().filter_map(|r| r.get(band)).sum();
+        // And far under the whole sound, a band with no modes of its own holds only their
+        // sidelobes' error.
+        let whole: f64 = rows.iter().map(|r| r.iter().sum::<f64>()).sum();
+        if heard < TAIL_MIN_SHARE * modal || heard < TAIL_MIN_WHOLE * whole {
             continue;
         }
         let Some((_, slope)) = line(&points) else { continue };

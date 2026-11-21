@@ -238,7 +238,8 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   when it has at least four frames, decays (its T60 within 0.05..60 s) and falls at least 6 dB
   across them, so a recording's steady hiss is not taken for a tail, and when it holds at least
   -30 dB of what the modes play in the band over those frames (below that it is the modes' own
-  small error, and inaudible beside them). Each channel's level is
+  small error, and inaudible beside them) and at least -60 dB of what they play in all bands
+  together (a band with no modes of its own otherwise passed on their sidelobes' tiny error). Each channel's level is
   stored as an amplitude density in the recording's normalized units per square-root hertz, as
   the held layer's noise is; the decay is one per band for both channels.
 
