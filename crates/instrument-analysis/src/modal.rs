@@ -27,6 +27,9 @@ const MAX_FRAMES: usize = 12;
 /// how many consecutive windows from the start.
 const SHORT_FRAME: usize = 512;
 const SHORT_FRAMES: usize = 48;
+/// A neighbour weaker than this share of a candidate's detection level does not bound its short
+/// window (-20 dB).
+const NEIGHBOUR_SHARE: f64 = 0.1;
 /// A fast first stage: how far above the slow decay a short window must stand, and in how many.
 const EARLY_EXCESS_DB: f64 = 1.0;
 const EARLY_MIN_WINDOWS: usize = 3;
@@ -105,6 +108,21 @@ const LOOSE_MAX_DB: f64 = 15.0;
 /// Each third of a loose span's windows is on average at least this much below the one before:
 /// a burst followed by a flat floor is not a decay.
 const LOOSE_THIRD_DB: f64 = 1.0;
+/// Prompt sound and aftersound: how deep the null lies under the peak, how smooth the aftersound
+/// must be, how well the pair must describe the windows, and the aftersound's largest share of
+/// the prompt sound at the strike.
+const ANTI_NULL_DB: f64 = 10.0;
+const ANTI_SMOOTH_DB: f64 = 3.0;
+const ANTI_MAX_DB: f64 = 6.0;
+const ANTI_MAX_SHARE: f64 = 0.5;
+/// How far the short windows look for a null, and how far above the aftersound a window before
+/// it must stand to count for the prompt sound.
+const ANTI_SECONDS: f64 = 6.0;
+const ANTI_EARLY: f64 = 3.0;
+/// The aftersound is fitted while within this many decibels of its loudest window.
+const ANTI_LATE_DB: f64 = 20.0;
+/// Work steps of the null search with the shortest window (6 s of 512-sample windows).
+const ANTI_WORK: usize = (ANTI_SECONDS * RATE as f64) as usize / SHORT_FRAME;
 /// The last resort: windows it needs and how far its first third must stand above its last.
 const FALLBACK_MIN_WINDOWS: usize = 4;
 const FALLBACK_DROP_DB: f64 = 3.0;
@@ -226,7 +244,7 @@ pub fn fit(
     let last = range.end.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let input = samples.get(first..last).ok_or(Error::InvalidRange)?;
     let total = 2 * length.div_ceil(CHUNK)
-        + MAX_CHORD_CANDIDATES * (REFINEMENTS + MAX_FRAMES + 2 * SHORT_FRAMES + 4)
+        + MAX_CHORD_CANDIDATES * (REFINEMENTS + MAX_FRAMES + 2 * SHORT_FRAMES + ANTI_WORK + 4)
         + MAX_MODEL_MODES
         + 8;
     let mut work = Work { done: 0, total, progress };
@@ -417,7 +435,7 @@ pub fn fit(
     let fitter = Fitter { mono: &mono, window: &window, frames, short_windows: &short_windows };
     let mut accepted: Vec<Fitted> = Vec::with_capacity(MAX_CANDIDATES);
     for (position, &hz) in frequencies.iter().enumerate() {
-        if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position), &mut work)? {
+        if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position, &string), &mut work)? {
             accepted.push(fitted);
         }
     }
@@ -442,7 +460,7 @@ pub fn fit(
         }
         for position in start..frequencies.len() {
             let Some(&hz) = frequencies.get(position) else { continue };
-            if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position), &mut work)? {
+            if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position, &string), &mut work)? {
                 accepted.push(fitted);
             }
         }
@@ -476,7 +494,7 @@ pub fn fit(
         }
         for position in start..frequencies.len() {
             let Some(&hz) = frequencies.get(position) else { continue };
-            if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position), &mut work)? {
+            if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position, &string), &mut work)? {
                 accepted.push(fitted);
             }
         }
@@ -885,7 +903,7 @@ fn recording(
             let envelope = onset(index, t);
             let (gain, offset) = fitted.other;
             for (hz, t60, amplitude) in fitted.parts() {
-                if amplitude > 0.0 && t60 > 0.0 {
+                if amplitude != 0.0 && t60 > 0.0 {
                     let level = envelope * amplitude * (-ln1000 * t / t60).exp();
                     let angle = TAU * hz * t + fitted.evidence.phase;
                     model += level * angle.sin();
@@ -1036,7 +1054,7 @@ fn tail(modes: &[Fitted], mono: &[f64], other: Option<&[f64]>) -> Option<Missing
     let mut masked = vec![false; TAIL_FRAME / 2];
     for fitted in modes {
         for (hz, _, amplitude) in fitted.parts() {
-            if amplitude <= 0.0 {
+            if amplitude == 0.0 {
                 continue;
             }
             let center = hz / bin_hz;
@@ -1186,7 +1204,7 @@ fn render_modes(modes: &[Fitted], length: usize, other: bool) -> (Vec<f64>, Vec<
     for fitted in modes {
         let (gain, offset) = fitted.other;
         for (hz, t60, amplitude) in fitted.parts() {
-            if !(amplitude > 0.0 && t60 > 0.0 && hz < f64::from(RATE) * 0.5) {
+            if !(amplitude != 0.0 && t60 > 0.0 && hz < f64::from(RATE) * 0.5) {
                 continue;
             }
             let radius = (-ln1000 / (t60 * f64::from(RATE))).exp();
@@ -1387,13 +1405,17 @@ fn series_distance(note: &Note, hz: f64) -> Option<f64> {
         .or_else(|| (hz < f0).then_some((f0 / hz - 1.0) + 1.0))
 }
 
-/// How far the candidate at `position` lies from its nearest other candidate, in Hz.
-fn gap(frequencies: &[f64], position: usize) -> f64 {
+/// How far the candidate at `position` lies from its nearest other candidate that is at most 20 dB
+/// weaker in the detection spectrum, in Hz.
+fn gap(frequencies: &[f64], position: usize, spectrum: &Spectrum<'_>) -> f64 {
     let hz = frequencies.get(position).copied().unwrap_or(0.0);
+    let level = |f: f64| spectrum.values.get((f / spectrum.bin_hz).round() as usize).copied().unwrap_or(0.0);
+    // A neighbour more than 20 dB weaker leaks too little into a short window to matter.
+    let floor = level(hz) * NEIGHBOUR_SHARE;
     frequencies
         .iter()
         .enumerate()
-        .filter(|(other, _)| *other != position)
+        .filter(|(other, f)| *other != position && level(**f) >= floor)
         .map(|(_, other)| (other - hz).abs())
         .fold(f64::INFINITY, f64::min)
 }
@@ -1421,8 +1443,19 @@ impl Fitter<'_> {
         // candidate.
         let needed = 4.0 * f64::from(RATE) / gap;
         let short = self.short_windows.iter().find(|w| w.len() as f64 >= needed);
+        // A null the long envelope windows would smooth over: the short windows look first.
+        let mut found = None;
+        if let Some(short) = short {
+            // Far enough for a null seconds in: up to 6 s.
+            let reach = (ANTI_SECONDS * f64::from(RATE)) as usize / short.len();
+            let count = (mono.len() / short.len()).min(reach);
+            let (measurements, thetas) = measure(mono, short, count, hz, work)?;
+            found = anti_phase(hz, &measurements).map(|e| (e, thetas, short.as_slice()));
+        }
         let (measurements, thetas) = measure(mono, self.window, self.frames, hz, work)?;
-        let mut found = estimate(hz, &measurements).map(|e| (e, thetas, self.window));
+        if found.is_none() {
+            found = estimate(hz, &measurements).map(|e| (e, thetas, self.window));
+        }
         if found.is_none()
             && let Some(short) = short
         {
@@ -1443,10 +1476,12 @@ impl Fitter<'_> {
             fast_part = early_stage(&early, slow, estimate.slope, short);
         }
         let fast = fast_part.map_or(0.0, |(amplitude, _)| amplitude);
+        // An aftersound in opposite phase, at most half the prompt sound at the strike.
+        let slow = if estimate.anti { -slow.min(ANTI_MAX_SHARE * fast) } else { slow };
         // Phase at the strike, from the first window of the mode's span.
         let theta = thetas.get(estimate.first_window).copied().unwrap_or(0.0);
         let phase = wrap(theta - TAU * hz * (estimate.first_window * used.len()) as f64 / f64::from(RATE));
-        if !(slow.is_finite() && slow > 0.0 && fast.is_finite()) {
+        if !(slow.is_finite() && slow != 0.0 && slow + fast > 0.0 && fast.is_finite()) {
             return Ok(None);
         }
         let mut evidence = estimate.evidence;
@@ -1671,12 +1706,18 @@ struct Estimate {
     fast: Option<(f64, f64)>,
     /// Window index where the mode's span starts.
     first_window: usize,
+    /// The slow part (an aftersound) starts in opposite phase to the fast part.
+    anti: bool,
 }
 
 /// Decay of one mode from its (window, time, log amplitude) measurements: fitted on its own
 /// span, once more on the span's last two thirds when a long span fails, and with a faster
 /// first part when that describes the span clearly better.
 fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
+    // A null the partial comes back from: prompt sound and aftersound in opposite phase.
+    if let Some(anti) = anti_phase(hz, values) {
+        return Some(anti);
+    }
     let span = envelope_span(values);
     let first_window = span.first()?.0;
     let single = fit_span(hz, span);
@@ -1693,6 +1734,7 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
         evidence,
         fast: None,
         first_window,
+        anti: false,
     };
     let two_stage = late.and_then(|(intercept, slope, evidence)| {
         let early = span.get(..span.len() / 3)?;
@@ -1715,7 +1757,17 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
             return None;
         }
         let rms = span_rms(span, |t| ((intercept + slope * t).exp() + (fast_intercept + fast_slope * t).exp()).ln());
-        Some((Estimate { intercept, slope, evidence, fast: Some((fast_intercept, fast_slope)), first_window }, rms))
+        Some((
+            Estimate {
+                intercept,
+                slope,
+                evidence,
+                fast: Some((fast_intercept, fast_slope)),
+                first_window,
+                anti: false,
+            },
+            rms,
+        ))
     });
     match (single, two_stage) {
         (Some(one), Some((two, rms))) => {
@@ -1812,6 +1864,111 @@ fn early_stage(early: &[(usize, f64, f64)], slow: f64, slope: f64, window: &[f64
     let single = rms(&|t| predicted(t));
     let two = rms(&|t| predicted(t) + (intercept + fast_slope * t).exp());
     (two + TWO_STAGE_GAIN_DB <= single).then(|| (intercept.exp() / window_bias(window, fast_slope), fast_slope))
+}
+
+/// A prompt sound and an aftersound in opposite phase (`Prompt sound and aftersound` in the
+/// spec): a null at least 10 dB under the head's peak that a later window stands 6 dB above, a
+/// smooth aftersound after it and a faster prompt sound before it whose difference describes the
+/// windows within 6 dB RMS. The estimate's line is the aftersound, its fast part the prompt sound.
+fn anti_phase(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
+    let head = values.get(..values.len().min(3))?;
+    let start = head.iter().enumerate().max_by(|a, b| a.1.2.total_cmp(&b.1.2))?.0;
+    let peak = values.get(start)?.2;
+    let rest = values.get(start..)?;
+    // The first null: a local minimum (over two windows each side) deep enough under the peak
+    // that a later window stands well above (a beat's later nulls come after the aftersound).
+    let null_index = rest.iter().enumerate().position(|(index, value)| {
+        let later = rest.get(index + 1..).unwrap_or_default().iter().map(|v| v.2).fold(f64::NEG_INFINITY, f64::max);
+        let around = rest.get(index.saturating_sub(2)..(index + 3).min(rest.len())).unwrap_or_default();
+        (later - value.2) * DB >= RERISE_DB
+            && (peak - value.2) * DB >= ANTI_NULL_DB
+            && around.iter().all(|v| v.2 >= value.2)
+    })?;
+    let after = rest.get(null_index + 1..)?;
+    // The aftersound up to the next null: from its loudest window while within 20 dB of it.
+    let recovery = after.iter().enumerate().max_by(|a, b| a.1.2.total_cmp(&b.1.2))?.0;
+    let top = after.get(recovery)?.2;
+    let late: Vec<(f64, f64)> = after
+        .get(recovery..)?
+        .iter()
+        .take_while(|v| (peak - v.2) * DB <= SPAN_FLOOR_DB && (top - v.2) * DB <= ANTI_LATE_DB)
+        .map(|v| (v.1, v.2))
+        .collect();
+    if late.len() < 3 {
+        return None;
+    }
+    let (slow_intercept, fitted_slope) = line(&late)?;
+    let smooth = (late.iter().map(|(t, y)| ((y - slow_intercept - fitted_slope * t) * DB).powi(2)).sum::<f64>()
+        / late.len() as f64)
+        .sqrt();
+    if fitted_slope > 0.0 || smooth > ANTI_SMOOTH_DB {
+        return None;
+    }
+    // The longest T60 a mode keeps: a flatter aftersound rings that long.
+    let slope = fitted_slope.min(-1000.0_f64.ln() / SUSTAINED_SECONDS);
+    let slow_intercept = slow_intercept + (fitted_slope - slope) * late.first().map_or(0.0, |p| p.0);
+    let early: Vec<(f64, f64)> = rest
+        .get(..null_index)?
+        .iter()
+        .filter_map(|v| {
+            let (measured, after) = (v.2.exp(), (slow_intercept + slope * v.1).exp());
+            (measured >= ANTI_EARLY * after).then(|| (v.1, (measured + after).ln()))
+        })
+        .collect();
+    if early.len() < 3 {
+        return None;
+    }
+    let (fast_intercept, fast_slope) = line(&early)?;
+    let slow_decay = -1000.0_f64.ln() / slope;
+    let fast_decay = -1000.0_f64.ln() / fast_slope;
+    if !(fast_slope < slope && fast_slope < 0.0 && (0.001..slow_decay * 0.5).contains(&fast_decay)) {
+        return None;
+    }
+    let floor = peak - SPAN_FLOOR_DB / DB;
+    // The null itself and its neighbours are left out: the pair's exact zero there and the
+    // measured floor always differ.
+    let covered: Vec<&(usize, f64, f64)> = rest
+        .iter()
+        .take(null_index + 1 + recovery + late.len())
+        .enumerate()
+        .filter(|(index, _)| index.abs_diff(null_index) > 1)
+        .map(|(_, v)| v)
+        .collect();
+    let rms = (covered
+        .iter()
+        .map(|v| {
+            let model = ((fast_intercept + fast_slope * v.1).exp() - (slow_intercept + slope * v.1).exp()).abs();
+            let model = model.max(1e-300).ln().max(floor);
+            ((v.2.max(floor) - model) * DB).powi(2)
+        })
+        .sum::<f64>()
+        / covered.len().max(1) as f64)
+        .sqrt();
+    if rms > ANTI_MAX_DB {
+        return None;
+    }
+    Some(Estimate {
+        intercept: slow_intercept,
+        slope,
+        evidence: ModeEvidence {
+            frequency_hz: hz,
+            decay_seconds: slow_decay,
+            estimation_rms_db: rms,
+            validation_rms_db: rms,
+            estimation_windows: covered.len(),
+            validation_windows: 0,
+            sustained: false,
+            fast_decay_seconds: 0.0,
+            fast_share: 0.0,
+            beat_hz: 0.0,
+            beat_share: 0.0,
+            phase: 0.0,
+            loose: true,
+        },
+        fast: Some((fast_intercept, fast_slope)),
+        first_window: values.get(start)?.0,
+        anti: true,
+    })
 }
 
 /// A last resort for a partial that clearly fades but whose envelope no fit describes (a deep,

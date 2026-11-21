@@ -138,7 +138,9 @@ with no two at the same key, velocity and source. `encode()` writes magic `SHMSE
 little-endian u16 schema 2, u16 revision 4, u8 count and three zero bytes; then per recording:
 u8 key, u8 source, two zero bytes, f32 velocity, f64 level, u8 mode count, three zero bytes, u32 attack rate, u32 attack
 length, the modes as eight little-endian f64 each (ratio, magnitude, decay, fast decay, fast
-share, beat ratio, beat share, phase) and the attack as little-endian f32. `decode` accepts only
+share 0..2, beat ratio, beat share, phase; a fast share above 1 makes the slow part
+`magnitude * (1 - fast share)` negative: an aftersound in opposite phase to the prompt sound,
+which a coupled piano string pair gives) and the attack as little-endian f32. `decode` accepts only
 canonical bytes within these bounds (at most 32 recordings, 64 modes and 12000 attack samples
 each, every number finite) and fails before returning anything otherwise. **Schema 4** adds a
 stereo part: the schema-3 held-layer flags (all present, possibly all zero) and then, per
@@ -232,6 +234,11 @@ envelope shapes it with them. **Schema 5** stores the tail after the schema-4 pa
 recording `[1, 0, 0, 0]` and 33 f32 (the fitted channel's eleven densities, the other
 channel's, the eleven T60s), or `[0, 0, 0, 0]`; densities are 0..1 and T60s 0 (band off) or
 0.05..60.
+
+**Exact levels.** A fitted voice strikes its resonators with the sines' amplitudes as they are
+(`ModalBank::strike_phased_exact`): the revision 1 and 2 banks scale a strike down when the
+absolute amplitudes sum above 1, which an aftersound in opposite phase makes them do, and a
+piano C4 played 2 dB quieter than its recording.
 
 **Stereo playback.** A note takes each sine's stereo placement from the anchor recording's mode
 it comes from (its phase comes from there too): the reference channel plays the sine, the other

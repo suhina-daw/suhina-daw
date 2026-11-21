@@ -516,7 +516,7 @@ impl Instrument {
         voice.start_steal_fade(self.sample_rate);
         let count = self.set_voice.count;
         let mut fitted = ModalBank::default();
-        fitted.strike_phased(
+        fitted.strike_phased_exact(
             self.sample_rate,
             self.set_voice.modes.get(..count).unwrap_or(&[]),
             self.set_voice.phases.get(..count).unwrap_or(&[]),

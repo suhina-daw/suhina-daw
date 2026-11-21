@@ -19,6 +19,9 @@ pub const MODEL_SCHEMA_HELD: u16 = 3;
 pub const MODEL_SCHEMA_STEREO: u16 = 4;
 /// Schema of a set whose recordings carry noise tails: schema 4 plus a third trailer.
 pub const MODEL_SCHEMA_TAIL: u16 = 5;
+/// Largest fast share: above 1 the slow part starts in opposite phase (a piano string pair's
+/// aftersound), at most half the prompt sound.
+pub const MAX_FAST_SHARE: f64 = 2.0;
 /// Largest other-channel gain of a mode.
 pub const MAX_OTHER_GAIN: f32 = 8.0;
 pub const MODEL_REVISION: u16 = 4;
@@ -159,7 +162,7 @@ impl ModelRecording {
                 mode.fast_share == 0.0
             } else {
                 (0.001..=mode.decay_seconds).contains(&mode.fast_decay_seconds)
-                    && (0.0..=1.0).contains(&mode.fast_share)
+                    && (0.0..=MAX_FAST_SHARE).contains(&mode.fast_share)
             };
             let beat_ok = if mode.beat_ratio == 1.0 {
                 mode.beat_share == 0.0
@@ -176,7 +179,7 @@ impl ModelRecording {
                 || !(-PI..=PI).contains(&mode.phase)
             {
                 return fail(
-                    "fitted modes need increasing ratios, magnitudes 0..1, T60 0.001..60, a faster fast part, a partner within 3 % and phases within pi",
+                    "fitted modes need increasing ratios, magnitudes 0..1, T60 0.001..60, a faster fast part with a share of 0..2, a partner within 3 % and phases within pi",
                 );
             }
             previous = mode.ratio;
@@ -746,7 +749,8 @@ impl ModelSet {
             // Every part of the mode sits where the anchor recording's mode sits.
             let other = anchor_recording.stereo.as_ref().map_or([1.0, 0.0], |s| s.weights(index));
             for (frequency_hz, decay_seconds, amplitude, phase) in parts {
-                if amplitude > 0.0
+                // A negative part is in opposite phase (an aftersound).
+                if amplitude != 0.0
                     && decay_seconds > 0.0
                     && frequency_hz < sample_rate * 0.45
                     && let Some(slot) = candidates.get_mut(count)
@@ -754,7 +758,7 @@ impl ModelSet {
                     *slot = Candidate {
                         mode: Mode { frequency_hz, decay_seconds, amplitude },
                         phase,
-                        score: amplitude * decay_seconds.sqrt(),
+                        score: amplitude.abs() * decay_seconds.sqrt(),
                         held,
                         other,
                     };

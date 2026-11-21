@@ -57,6 +57,10 @@ impl<const N: usize> ModalBank<N> {
     /// Replace the previous strike. Frequencies must be positive and below 0.45 of the
     /// sample rate. Decay is capped at 60 seconds; amplitude at unity before normalization.
     pub fn strike(&mut self, sample_rate: f64, modes: &[Mode]) {
+        self.strike_with(sample_rate, modes, true);
+    }
+
+    fn strike_with(&mut self, sample_rate: f64, modes: &[Mode], normalize: bool) {
         self.reset();
         if !sample_rate.is_finite() || !(1000.0..=384000.0).contains(&sample_rate) {
             return;
@@ -81,9 +85,11 @@ impl<const N: usize> ModalBank<N> {
             target.radius = radius;
             amplitude_sum += target.real.abs();
         }
-        let normalization = amplitude_sum.max(1.0);
-        for mode in &mut self.modes {
-            mode.real /= normalization;
+        if normalize {
+            let normalization = amplitude_sum.max(1.0);
+            for mode in &mut self.modes {
+                mode.real /= normalization;
+            }
         }
         self.active = amplitude_sum > 0.0;
     }
@@ -253,6 +259,18 @@ impl<const N: usize> ModalBank<N> {
     /// the caller ramps its gate.
     pub fn strike_phased(&mut self, sample_rate: f64, modes: &[Mode], phases: &[f64]) {
         self.strike(sample_rate, modes);
+        self.set_phases(phases);
+    }
+
+    /// Like [`strike_phased`](Self::strike_phased) with each amplitude as given (still at most 1),
+    /// not normalized to a sum of 1: a fitted voice's sines are its recording's own levels, and an
+    /// aftersound in opposite phase makes their absolute sum exceed their sum.
+    pub fn strike_phased_exact(&mut self, sample_rate: f64, modes: &[Mode], phases: &[f64]) {
+        self.strike_with(sample_rate, modes, false);
+        self.set_phases(phases);
+    }
+
+    fn set_phases(&mut self, phases: &[f64]) {
         for (target, phase) in self.modes.iter_mut().zip(phases) {
             let phase = if phase.is_finite() { *phase } else { 0.0 };
             let amplitude = target.real;
