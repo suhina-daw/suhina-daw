@@ -580,9 +580,16 @@ impl ModelSet {
         *out = Voice::default();
         let morph = if controls.morph.is_finite() { controls.morph.clamp(0.0, 1.0) } else { 0.5 };
         let mut chosen = [(usize::MAX, 0.0_f64); MAX_RECORDINGS];
+        // Velocity counts from the nearest velocity recorded: recordings that share one (a
+        // chord's notes, single strikes of several keys) are told apart by key alone.
+        let nearest_velocity = self
+            .recordings
+            .iter()
+            .map(|r| (f64::from(velocity) - f64::from(r.velocity)).abs())
+            .fold(f64::INFINITY, f64::min);
         for (index, recording) in self.recordings.iter().enumerate() {
             let distance = (f64::from(key) - f64::from(recording.key)).abs() / 12.0
-                + 2.0 * (f64::from(velocity) - f64::from(recording.velocity)).abs();
+                + 2.0 * ((f64::from(velocity) - f64::from(recording.velocity)).abs() - nearest_velocity).max(0.0);
             // Source morph tilts the weights across the sources present, in source order.
             let factor = match self.source_ranks.get(usize::from(recording.source)).copied().flatten() {
                 Some(rank) if self.sources >= 2 => {

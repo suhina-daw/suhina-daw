@@ -159,8 +159,14 @@ for this recording.
 parameter space, never by mixing their audio:
 
 1. Each recording gets weight `1 / (d^2 + 1e-6)` with distance
-   `d = |key - recording key| / 12 + 2 * |velocity - recording velocity|`, times its source's
-   morph factor; all recordings take part and the weights are normalized. Recordings of one note
+   `d = |key - recording key| / 12 + 2 * max(0, |velocity - recording velocity| - v)`, where `v`
+   is the smallest `|velocity - recording velocity|` in the set, times its source's morph
+   factor; all recordings take part and the weights are normalized. Velocity counts from the
+   nearest velocity recorded: recordings that share one velocity (a chord split into notes,
+   single strikes of several keys) are told apart by key alone at every played velocity, so a
+   recorded key plays its own recording (before, a velocity away from the recorded one added the
+   same distance to every recording and blended the neighbouring notes in, shifting partials a
+   chord's notes share so that they cancelled when played together). Recordings of one note
    at one velocity from several sources (ten pianos playing one note) therefore average with
    equal weight at the neutral morph; between recorded keys, the nearer recordings dominate.
    **Source morph** `m` (0..1, neutral 0.5) tilts the weights across the sources present, in
@@ -270,6 +276,12 @@ refuses it). A recording at the same key, velocity and source as an existing one
 are a thirty-third recording or a device without a revision-4 set. The Sample page offers both
 **Add to model** (source 0) and **Add as new source**. It selects Source Modal and leaves
 the model controls alone. The proposal invalidation rules of fitting apply.
+
+With `notes`, `instrument.acceptFit` adopts a chord's fit as its notes instead: a new set with
+one recording per note at its key ([splitting a chord](instrument-modal-fitting.md#splitting-a-chord-into-notes)),
+in the same single undo step and with the same control reset. A fit without two notes, or a
+folder's fit, refuses it. The Sample page shows **Accept as notes** with the notes' names when
+the fit found a chord.
 
 ## Evidence and limits
 

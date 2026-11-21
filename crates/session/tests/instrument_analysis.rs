@@ -238,6 +238,7 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     assert_eq!(reopened.project(), &replaced);
     modal_fitting_lifecycle();
     folder_fitting_lifecycle();
+    chord_notes_lifecycle();
 }
 
 fn strike(scale: f64) -> Vec<f32> {
@@ -531,4 +532,41 @@ fn modal_fitting_lifecycle() {
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(render(reopened.project(), reopened.audio()), model_sound);
     assert!(reopened.instrument_analysis_view().is_none());
+}
+
+/// A chord fits as its notes too: `notes` adopts one recording per key, a single note's fit and a
+/// folder's refuse it.
+fn chord_notes_lifecycle() {
+    let folder = super::temp_dir::TempDir::new("instrument-chord-fit");
+    let path = folder.join("authored-chord.wav");
+    let (a, c_sharp, e) = (note(57, 1.0), note(61, 0.8), note(64, 0.7));
+    let chord: Vec<f32> = a.iter().zip(&c_sharp).zip(&e).map(|((a, b), c)| (a + b + c) * 0.5).collect();
+    suhina_test_support::write_wav(&path, 48000, 1, suhina_test_support::WavFormat::Float32, &chord);
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({"id":"instrument"}));
+    run(&mut session, "device.loadSample", json!({"path":path}));
+    run(&mut session, "device.setParam", json!({"param":"root","value":57}));
+    let job = run(&mut session, "instrument.fitSample", json!({}));
+    session.sync_instrument_analysis();
+    let status = run(&mut session, "instrument.analysis", json!({}));
+    let keys: Vec<u64> =
+        status["modal"]["notes"].as_array().unwrap().iter().map(|n| n["key"].as_u64().unwrap()).collect();
+    assert_eq!(keys, [57, 61, 64], "{status}");
+    let depth = session.undo_steps();
+    let accepted = run(&mut session, "instrument.acceptFit", json!({"job":job["job"],"notes":true}));
+    assert_eq!(accepted["recordings"], 3);
+    assert_eq!(accepted["notes"], json!([57, 61, 64]));
+    assert_eq!(session.undo_steps().0, depth.0 + 1);
+
+    // One note has no chord to split.
+    let single = folder.join("authored-note.wav");
+    suhina_test_support::write_wav(&single, 48000, 1, suhina_test_support::WavFormat::Float32, &note(57, 1.0));
+    run(&mut session, "device.loadSample", json!({"path":single}));
+    let job = run(&mut session, "instrument.fitSample", json!({}));
+    session.sync_instrument_analysis();
+    let status = run(&mut session, "instrument.analysis", json!({}));
+    assert_eq!(status["modal"]["notes"], json!([]), "{status}");
+    assert!(
+        session.execute("instrument.acceptFit", &json!({"track":1,"device":0,"job":job["job"],"notes":true})).is_err()
+    );
 }

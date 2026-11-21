@@ -515,3 +515,19 @@ fn stereo_parts_use_schema_four_and_place_each_sine() {
     set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut voice);
     assert_eq!((voice.reference, voice.other[0]), (0, [1.0, 0.0]), "a mono anchor plays in both channels");
 }
+
+/// Velocity counts from the nearest recorded velocity: recordings that share one are told apart
+/// by key alone, so a recorded key plays its own recording at any velocity.
+#[test]
+fn recordings_sharing_a_velocity_are_told_apart_by_key_alone() {
+    let set = ModelSet::new(vec![recording(48, 0.8, 2.0, 2.0), recording(60, 0.8, 2.05, 1.0)]).unwrap();
+    let (mut at_recorded, mut harder) = (Voice::default(), Voice::default());
+    set.voice(48, 0.8, &Controls::NEUTRAL, 48000.0, &mut at_recorded);
+    set.voice(48, 1.0, &Controls::NEUTRAL, 48000.0, &mut harder);
+    assert_eq!(at_recorded.count, harder.count);
+    for (a, b) in at_recorded.modes[..at_recorded.count].iter().zip(&harder.modes[..harder.count]) {
+        assert_eq!(a.frequency_hz, b.frequency_hz);
+        assert_eq!(a.amplitude, b.amplitude);
+    }
+    assert_eq!(at_recorded.level, harder.level);
+}
