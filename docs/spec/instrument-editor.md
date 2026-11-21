@@ -122,9 +122,15 @@ The pages (`#page`) are:
     **Accept** (one undoable change) and its cents and frequency (or a loop's key) under it;
     **Again** analyzes once more; **Fit model** and **Fit folder…** fit a model from the sample
     or a folder of notes, and **Discard** drops a proposal. Nothing changes until a proposal is
-    accepted. While a fitted model waits for acceptance its result (what was fitted, Accept or
-    Add, the A/B against the source, Discard) covers the envelope and the root on a card that
-    takes the pointer, so the controls under it wait until the result is settled. The text
+    accepted. While a fitted sound waits for acceptance it covers the envelope and the root,
+    drawn on the page's own surface and taking the pointer, so the controls under it wait until
+    the result is settled:
+    what was fitted in a few words (its partials, the root and how close it is to the
+    recording, the measurements in the tooltip), **Play original**, **Play fitted** and
+    **Discard**, and how the body layer uses it, in words that say so: **Use as model** (or
+    **Replace model** when it has one), **Use each note** for a chord, **Add to model** and
+    **Add as another instrument**. The card's bottom line says what the button pointed at
+    does; until then, to listen first and then choose. The text
     takes the page's espresso ink and the buttons are set in spaced capitals, Accept underlined
     in brass.
 

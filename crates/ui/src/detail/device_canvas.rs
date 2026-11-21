@@ -303,6 +303,26 @@ fn clock(seconds: f64) -> String {
     if fraction == 0 { format!("{minutes}:{rest:02}") } else { format!("{minutes}:{rest:02}.{fraction:03}") }
 }
 
+/// The share of a canvas's background artwork under `bounds` (canvas units): its texture and the
+/// texture coordinates there, for a host widget that covers what is under it with the canvas's own
+/// surface. The background is the canvas's first control when that is one image over the whole
+/// canvas; `None` without one.
+fn canvas_ground(canvas: &DeviceUi, loaded: &Loaded, [x, y, w, h]: [f32; 4]) -> Option<(egui::TextureId, Rect)> {
+    let Some(Widget::Graphic { drawing }) = &canvas.controls.first()?.widget else { return None };
+    let [Draw::Image { asset, rect, uv, .. }] = drawing.as_slice() else { return None };
+    let [rx, ry, rw, rh] = rect.clone().map(|v| v.evaluate(&|_, _, _| 0.0));
+    let [width, height] = canvas.size;
+    if rx.abs() > 0.5 || ry.abs() > 0.5 || (rw - width).abs() > 0.5 || (rh - height).abs() > 0.5 {
+        return None;
+    }
+    let index = loaded.source.assets.iter().position(|a| a.id == *asset)?;
+    let texture = loaded.images.get(index)?.as_ref().ok()?;
+    let [u0, v0, u1, v1] = *uv;
+    let u = |at: f32| u0 + (u1 - u0) * at / width.max(1.0);
+    let v = |at: f32| v0 + (v1 - v0) * at / height.max(1.0);
+    Some((texture.id(), Rect::from_min_max(Pos2::new(u(x), v(y)), Pos2::new(u(x + w), v(y + h)))))
+}
+
 /// Plays a slice's note for a moment, as a click on the slice does.
 fn audition(ui: &egui::Ui, actions: &mut Vec<Action>, track: TrackId, key: u8) {
     let id = egui::Id::unique("sample-audition");
@@ -2503,6 +2523,7 @@ pub(crate) fn show_scaled(
                 ink: control_scope.color(),
                 accent: control_scope.accent(),
                 scale: stretch.min_elem(),
+                ground: canvas_ground(canvas, &loaded, control.bounds),
             };
             super::instrument_analysis::show(ui, bounds, look, (track, device), at, actions);
             continue;
@@ -2512,6 +2533,7 @@ pub(crate) fn show_scaled(
                 ink: control_scope.color(),
                 accent: control_scope.accent(),
                 scale: stretch.min_elem(),
+                ground: None,
             };
             super::instrument_analysis::sample_file(ui, bounds, look, sample_source_id(track, device));
             continue;
@@ -2987,10 +3009,13 @@ pub(crate) fn show_scaled(
                 let mut popup = egui::Popup::menu(&response).gap(2.0);
                 // A canvas whose sheet gives its menus a ground of their own (`popup {
                 // background-color }`) keeps its look in them: its rows' ink on its own surface,
-                // not on the theme's (a dark theme's frame under an ivory canvas's dark ink).
-                let ground = crate::kit::element::POPUP.enter().background_or(Color32::TRANSPARENT);
-                if ground.a() > 0 {
-                    popup = popup.frame(egui::Frame::popup(ui.style()).fill(ground));
+                // not on the theme's (a dark theme's frame under an ivory canvas's dark ink). Read
+                // only while the menu shows or opens, so a closed menu costs no element.
+                if popup.is_open() || response.clicked() || key_open {
+                    let ground = crate::kit::element::POPUP.enter().background_or(Color32::TRANSPARENT);
+                    if ground.a() > 0 {
+                        popup = popup.frame(egui::Frame::popup(ui.style()).fill(ground));
+                    }
                 }
                 if response.double_clicked() {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Bool(false)));

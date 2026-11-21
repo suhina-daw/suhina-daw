@@ -74,6 +74,9 @@ pub(crate) struct Look {
     pub ink: Color32,
     pub accent: Color32,
     pub scale: f32,
+    /// The canvas's own background under the bounds (its texture and texture coordinates), which
+    /// a result that covers the controls under it is drawn on.
+    pub ground: Option<(egui::TextureId, Rect)>,
 }
 
 impl Look {
@@ -377,8 +380,29 @@ pub(crate) fn show(
     });
 }
 
+/// A button on the fit card: its words say what it does, and while it is pointed at or has the
+/// keyboard's focus `explain` replaces the card's bottom line, so each choice tells what it does.
+#[allow(clippy::too_many_arguments)]
+fn choice(
+    ui: &mut Ui,
+    look: &Look,
+    label: &str,
+    text: &str,
+    primary: bool,
+    explain: &str,
+    hint: &mut Option<String>,
+) -> bool {
+    let response = button(ui, look, label, text, primary, true);
+    if response.hovered() || response.has_focus() {
+        *hint = Some(explain.to_owned());
+    }
+    response.clicked()
+}
+
 /// A fitted model's result waiting for acceptance, over the whole region on a card that takes
-/// the pointer: what was fitted, Accept or Add, the A/B against the source, and Discard.
+/// the pointer: what was fitted in a few words (the details in its tooltip), how the body layer
+/// can use it, the A/B against the source, and Discard. The bottom line says what the button
+/// pointed at does; until then, to listen first and then choose.
 fn fit_result(
     ui: &mut Ui,
     look: &Look,
@@ -388,24 +412,32 @@ fn fit_result(
     (track, device): (&serde_json::Value, &serde_json::Value),
     actions: &mut Vec<Action>,
 ) {
-    ui.painter().rect_filled(bounds, 0.0, CARD);
-    ui.painter().hline(bounds.x_range(), bounds.top() + 0.5, egui::Stroke::new(1.0, look.ink.gamma_multiply(0.22)));
+    // On the canvas's own surface where it has one, so the result reads as part of the page.
+    if let Some((texture, uv)) = look.ground {
+        ui.painter().image(texture, bounds, uv, Color32::WHITE);
+    } else {
+        ui.painter().rect_filled(bounds, 0.0, CARD);
+    }
     // The card takes the pointer, so the controls under it wait until the result is settled.
     let _ = ui.interact(bounds, ui.scope_id().with("fit-card"), egui::Sense::click_and_drag());
-    let header = place(0.0, 4.0, 768.0, 16.0);
-    caption(ui, look, header, if view.folder.is_some() { "Folder fit" } else { "Model fit" });
+    let mut hint: Option<String> = None;
+    let job = &view.job;
+    let header = place(0.0, 4.0, 760.0, 16.0);
+    caption(ui, look, header, "Fitted sound ready");
     row(ui, look, header, true, |ui| {
-        if button(ui, look, "Discard proposal", "Discard", false, true).clicked() {
-            actions
-                .push(Action::new("instrument.cancelAnalysis", json!({"track":track,"device":device,"job":view.job})));
+        if choice(ui, look, "Discard proposal", "Discard", false, "Drop this result; nothing changes.", &mut hint) {
+            actions.push(Action::new("instrument.cancelAnalysis", json!({"track":track,"device":device,"job":job})));
         }
         if view.modal.as_ref().is_some_and(|report| report.profile.is_some()) {
             // Level-matched A/B against the source before accepting.
-            for (label, which) in [("Play fitted", "fitted"), ("Play original", "original")] {
-                if button(ui, look, label, label, false, true).clicked() {
+            for (label, which, explain) in [
+                ("Play fitted", "fitted", "Hear the fitted sound, at the recording's level."),
+                ("Play original", "original", "Hear the recording it was fitted from."),
+            ] {
+                if choice(ui, look, label, label, false, explain, &mut hint) {
                     actions.push(Action::new(
                         "instrument.auditionFit",
-                        json!({"track":track,"device":device,"job":view.job,"which":which}),
+                        json!({"track":track,"device":device,"job":job,"which":which}),
                     ));
                 }
             }
@@ -414,6 +446,19 @@ fn fit_result(
     let summary_rect = place(0.0, 26.0, 768.0, 16.0);
     let actions_rect = place(0.0, 48.0, 768.0, 18.0);
     let note_rect = place(0.0, 72.0, 768.0, 16.0);
+    // How the model the body layer has now is named on the buttons.
+    let has_model = view.model_recordings.is_some();
+    let recordings = view.model_recordings.unwrap_or(0);
+    let replace = if has_model { "Replace model" } else { "Use as model" };
+    let replace_explain = if has_model {
+        format!("The body layer plays this sound instead of its model's {recordings} recording(s). One undo step.")
+    } else {
+        "The body layer plays this sound as its model. One undo step.".to_owned()
+    };
+    let add_explain =
+        format!("Joins the model's {recordings} recording(s): notes and velocities between them blend. One undo step.");
+    let source_explain = "Joins the model as an instrument of its own: Source morph on the body layer blends between instruments. One undo step.";
+    let listen = "Listen with Play original and Play fitted, then choose how the body layer uses it.";
     if let Some(folder) = &view.folder {
         let skipped = folder.files.iter().filter(|f| f.outcome.reason().is_some()).count();
         let left_out = folder.files.iter().filter(|f| f.outcome == FolderFileOutcome::LeftOut).count();
@@ -458,21 +503,21 @@ fn fit_result(
             return;
         }
         row(ui, look, actions_rect, false, |ui| {
-            if button(ui, look, "Accept model", "Accept model", true, true).clicked() {
-                actions
-                    .push(Action::new("instrument.acceptFit", json!({"track":track,"device":device,"job":view.job})));
+            let explain = format!("{replace_explain} Files of one note become velocity layers, quietest first.");
+            if choice(ui, look, "Accept model", replace, true, &explain, &mut hint) {
+                actions.push(Action::new("instrument.acceptFit", json!({"track":track,"device":device,"job":job})));
             }
-            if let Some(count) = view.model_recordings {
-                if button(ui, look, &format!("Add to model ({count})"), &format!("Add to model ({count})"), false, true)
-                    .clicked()
+            if has_model {
+                let explain = format!("{add_explain} None join if a note and velocity is there already.");
+                if choice(ui, look, &format!("Add to model ({recordings})"), "Add to model", false, &explain, &mut hint)
                 {
-                    actions
-                        .push(Action::new("instrument.addFit", json!({"track":track,"device":device,"job":view.job})));
+                    actions.push(Action::new("instrument.addFit", json!({"track":track,"device":device,"job":job})));
                 }
-                if button(ui, look, "Add as new source", "New source", false, true).clicked() {
+                if choice(ui, look, "Add as new source", "Add as another instrument", false, source_explain, &mut hint)
+                {
                     actions.push(Action::new(
                         "instrument.addFit",
-                        json!({"track":track,"device":device,"job":view.job,"newSource":true}),
+                        json!({"track":track,"device":device,"job":job,"newSource":true}),
                     ));
                 }
             }
@@ -481,8 +526,8 @@ fn fit_result(
             ui,
             look,
             note_rect,
-            "Files of one note are velocity layers, quietest first. Accept replaces the model with them; Add puts them all into it, or none if a note and velocity is there already. One undo step each.",
-            10.0,
+            hint.as_deref().unwrap_or("Choose how the body layer uses these recordings."),
+            10.5,
             None,
         );
         return;
@@ -510,7 +555,14 @@ fn fit_result(
     let error = report.modes.iter().map(|m| m.validation_rms_db).fold(0.0_f64, f64::max);
     // The revision-4 recording when there is one; its modes are what will play.
     let modes = if report.recording.is_some() { &report.recording_modes } else { &report.modes };
-    let mut summary = format!("Experimental: {} modes", modes.len());
+    // In a few words what was fitted; the measurements in the tooltip.
+    let summary = format!(
+        "{} partials from {}, within {:.1} dB of the recording · experimental",
+        modes.len(),
+        key_name(profile.reference_key()),
+        error
+    );
+    let mut details = format!("{} modes", modes.len());
     for (count, what) in [
         (modes.iter().filter(|m| m.sustained).count(), "sustained"),
         (modes.iter().filter(|m| m.fast_share > 0.0).count(), "two-part"),
@@ -518,11 +570,11 @@ fn fit_result(
         (modes.iter().filter(|m| m.loose).count(), "loose"),
     ] {
         if count > 0 {
-            summary.push_str(&format!(" · {count} {what}"));
+            details.push_str(&format!(" · {count} {what}"));
         }
     }
     if let Some(recording) = report.recording.as_ref().filter(|r| !r.attack.is_empty()) {
-        summary.push_str(&format!(
+        details.push_str(&format!(
             " · attack {:.0} ms",
             recording.attack.len() as f64 * 1000.0 / f64::from(recording.attack_rate.max(1))
         ));
@@ -530,79 +582,71 @@ fn fit_result(
     // The held layer of a bowed, blown or sung recording.
     if let Some(held) = report.recording.as_ref().and_then(|r| r.sustain) {
         if held.vibrato_hz > 0.0 {
-            summary.push_str(&format!(" · vibrato {:.1} Hz ±{:.0} cents", held.vibrato_hz, held.vibrato_cents));
+            details.push_str(&format!(" · vibrato {:.1} Hz ±{:.0} cents", held.vibrato_hz, held.vibrato_cents));
         }
         if held.tremolo_hz > 0.0 {
-            summary.push_str(&format!(" · tremolo {:.1} Hz", held.tremolo_hz));
+            details.push_str(&format!(" · tremolo {:.1} Hz", held.tremolo_hz));
         }
         if held.noise.iter().any(|v| *v > 0.0) {
-            summary.push_str(" · held noise");
+            details.push_str(" · held noise");
         }
         if held.release_seconds > 0.0 {
-            summary.push_str(&format!(" · release {:.2} s", held.release_seconds));
+            details.push_str(&format!(" · release {:.2} s", held.release_seconds));
         }
     }
-    summary.push_str(&format!(" · root {} · envelope error ≤ {:.2} dB", key_name(profile.reference_key()), error));
+    if let Some(comparison) = &view.comparison {
+        let bands: Vec<String> =
+            comparison.bands.iter().map(|b| format!("{:.0} Hz {:+.1} dB", b.center_hz, b.difference_db)).collect();
+        details.push_str(&format!(
+            "\nSpectral distance {:.1} dB, level {:+.1} dB. Octave bands after level matching, fitted minus original: {}. Smaller is closer; this measures the same recording, not realism.",
+            comparison.mean_distance_db,
+            comparison.level_difference_db,
+            bands.join(", ")
+        ));
+    }
     let hover = format!(
-        "Largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Phases and the attack are measured from this recording; room response is not separated.",
+        "{details}\nEnvelope error ≤ {error:.2} dB: the largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Phases and the attack are measured from this recording; room response is not separated.",
         report.channel + 1,
         report.range.start,
         report.range.end,
         report.analyzed_seconds
     );
     line_in(ui, look, summary_rect, &summary, 11.0, Some(&hover));
-    // Accept and Add first, then a chord's notes and another source.
     row(ui, look, actions_rect, false, |ui| {
-        if button(ui, look, "Accept model", "Accept model", true, true).clicked() {
-            actions.push(Action::new("instrument.acceptFit", json!({"track":track,"device":device,"job":view.job})));
+        if choice(ui, look, "Accept model", replace, true, &replace_explain, &mut hint) {
+            actions.push(Action::new("instrument.acceptFit", json!({"track":track,"device":device,"job":job})));
         }
         // A chord: each note becomes its own recording on its own key.
         if report.notes.len() >= 2 {
             let names: Vec<String> = report.notes.iter().map(|n| key_name(n.key)).collect();
             let label = format!("Accept as notes ({})", names.join(" "));
-            if button(ui, look, &label, &format!("As notes ({})", names.join(" ")), false, true).clicked() {
+            let explain = format!(
+                "Each note of the chord ({}) becomes a recording of its own, on its own key{}. One undo step.",
+                names.join(" "),
+                if has_model { ", instead of the model" } else { "" }
+            );
+            if choice(ui, look, &label, "Use each note", false, &explain, &mut hint) {
                 actions.push(Action::new(
                     "instrument.acceptFit",
-                    json!({"track":track,"device":device,"job":view.job,"notes":true}),
+                    json!({"track":track,"device":device,"job":job,"notes":true}),
                 ));
             }
         }
         // A recording joins the model already accepted on this Instrument.
-        if let Some(count) = view.model_recordings.filter(|n| *n < MAX_RECORDINGS && report.recording.is_some()) {
-            if button(ui, look, &format!("Add to model ({count})"), &format!("Add to model ({count})"), false, true)
-                .clicked()
+        if view.model_recordings.is_some_and(|n| n < MAX_RECORDINGS) && report.recording.is_some() {
+            if choice(ui, look, &format!("Add to model ({recordings})"), "Add to model", false, &add_explain, &mut hint)
             {
-                actions.push(Action::new("instrument.addFit", json!({"track":track,"device":device,"job":view.job})));
+                actions.push(Action::new("instrument.addFit", json!({"track":track,"device":device,"job":job})));
             }
             // Another instrument: Source morph weighs it against the others.
-            if button(ui, look, "Add as new source", "New source", false, true).clicked() {
+            if choice(ui, look, "Add as new source", "Add as another instrument", false, source_explain, &mut hint) {
                 actions.push(Action::new(
                     "instrument.addFit",
-                    json!({"track":track,"device":device,"job":view.job,"newSource":true}),
+                    json!({"track":track,"device":device,"job":job,"newSource":true}),
                 ));
             }
         }
     });
-    let note = "Accept replaces the model; Add joins it by note and velocity. One undo step each. Set Root first.";
-    if let Some(comparison) = &view.comparison {
-        let bands: Vec<String> =
-            comparison.bands.iter().map(|b| format!("{:.0} Hz {:+.1} dB", b.center_hz, b.difference_db)).collect();
-        let text = format!(
-            "Spectral distance {:.1} dB · level {:+.1} dB  ·  {note}",
-            comparison.mean_distance_db, comparison.level_difference_db
-        );
-        line_in(
-            ui,
-            look,
-            note_rect,
-            &text,
-            10.0,
-            Some(&format!(
-                "Octave bands after level matching, fitted minus original: {}. Smaller is closer; this measures the same recording, not realism.",
-                bands.join(", ")
-            )),
-        );
-    } else {
-        line_in(ui, look, note_rect, note, 10.0, None);
-    }
+    let note = hint.unwrap_or_else(|| format!("{listen} Set Root first."));
+    line_in(ui, look, note_rect, &note, 10.5, None);
 }

@@ -422,7 +422,8 @@ and presents the session job's progress, result, correction and acceptance contr
 canvas's own artwork it takes the canvas's ink and accent (`device-control { color;
 accent-color }`) and scales with the canvas: the suggestion and its actions stand at the right of
 its bounds, as text buttons in spaced capitals, and a result that waits for acceptance covers
-the whole bounds on a card that takes the pointer. Exported hosts must implement their own
+the whole bounds and takes the pointer, drawn on the canvas's background artwork (its first
+control, when that is one image over the whole canvas) or else on a plain card. Exported hosts must implement their own
 preparation integration before exposing equivalent controls.
 
 `SampleFile` shows the loaded sample's file name in spaced capitals and its facts under it
