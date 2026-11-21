@@ -44,7 +44,7 @@ const RUNNERS: &[&str] = &["lua"];
 const PERMISSIONS: &[&str] = &["project.read", "project.write", "audio.read"];
 
 /// One `provides` entry: what the extension offers, by id and label; a non-surface entry names
-/// the command namespace it serves, a surface entry ([`is_surface`]) carries none.
+/// the command namespace it serves, a surface entry ([`Provides::is_surface`]) carries none.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Provides {
     pub id: String,
@@ -928,7 +928,9 @@ fn format_cap(cap: usize) -> String {
 fn relative(path: &str) -> Result<PathBuf, String> {
     text(path, MAX_NAME * 4)?;
     let path = Path::new(path);
-    if path.is_absolute() {
+    // A rooted path is absolute for the folder's sake on every platform: Windows calls
+    // `/etc/passwd` drive-relative, but it never lands in the folder either way.
+    if path.is_absolute() || path.has_root() {
         return Err(format!("{path:?} is absolute; the folder's paths are relative"));
     }
     let mut out = PathBuf::new();
