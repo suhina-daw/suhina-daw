@@ -12,11 +12,58 @@ use std::io::{BufRead, BufReader, Write as IoWrite};
 use std::process::{Child, Command, Stdio};
 
 use interprocess::TryClone;
-use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Stream, prelude::*};
+use interprocess::local_socket::{GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Stream, prelude::*};
 use serde_json::{Value, json};
 use suhina_plugins::parse_address;
 
 static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// How long a runner child may stay alive without connecting before the watchdog ends it: the
+/// supervisor's own start deadline's shape — the tests end with a failure instead of hanging
+/// on a child that wedged before it spoke.
+const START_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Spawns the runner child for `address`'s socket and takes its connection. The accept is
+/// nonblocking and the child is watched while it is waited for: one that exits before
+/// connecting ends the wait with its status, and one that stays alive without connecting is
+/// ended at the watchdog's deadline — the tests end, not hang. From the spawn on, the helper
+/// owns the child's cleanup: every way out of it kills and reaps first.
+fn spawn_and_connect(script_path: &std::path::Path, address: &str, stderr: Stdio) -> (Child, Stream) {
+    let (_, name) = parse_address(address).unwrap();
+    let listener =
+        ListenerOptions::new().name(name).nonblocking(ListenerNonblockingMode::Accept).create_sync().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_suhina-lua-runner"))
+        .args(["--control", address, script_path.to_str().unwrap()])
+        .stdout(Stdio::null())
+        .stderr(stderr)
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + START_WATCHDOG;
+    let stream = loop {
+        match listener.accept() {
+            Ok(stream) => break stream,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("accept: {e}");
+            }
+        }
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!("the runner exited while starting: {status}");
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("the runner never connected in 30 s");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    };
+    // The accepted stream took the listener's nonblocking mode; the harness's reads block on
+    // it by design, so it is made blocking here.
+    stream.set_nonblocking(false).unwrap();
+    (child, stream)
+}
 
 /// The harness: the runner as a child process, and the two halves of its socket.
 struct Harness {
@@ -40,27 +87,9 @@ impl Harness {
         } else {
             format!("fs:{}", std::env::temp_dir().join(&id).display())
         };
-        let (_, name) = parse_address(&address).unwrap();
-        let listener = ListenerOptions::new().name(name).create_sync().unwrap();
         let script_path = std::env::temp_dir().join(format!("{id}.lua"));
         std::fs::write(&script_path, script).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_suhina-lua-runner"))
-            .args(["--control", &address, script_path.to_str().unwrap()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .unwrap();
-        // The child connects or exits; either ends the wait, and a hung start is a failure.
-        let stream = loop {
-            match listener.accept() {
-                Ok(stream) => break stream,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => panic!("accept: {e}"),
-            }
-            if child.try_wait().unwrap().is_some() {
-                panic!("the runner exited while starting");
-            }
-        };
+        let (child, stream) = spawn_and_connect(&script_path, &address, Stdio::inherit());
         let writer = stream.try_clone().unwrap();
         let mut harness = Self { child, reader: BufReader::new(stream), writer };
         harness.send(json!({ "op": "hello", "version": 1 }));
@@ -130,6 +159,35 @@ fn a_port_message_comes_back_as_a_send() {
     runner.send(json!({ "op": "port_message", "port": "Pad in", "timestamp": 1_234_568, "bytes": "803c00" }));
     runner.send(json!({ "op": "ping", "id": 7 }));
     assert_eq!(runner.line(), json!({ "op": "pong", "id": 7 }), "no send-back for an unanswered note");
+    runner.quit();
+}
+
+/// A payload at the per-message cap queues, one past it is refused without a copy, and the
+/// refusal is the script's `false` — not a crash and not a silent wedge.
+#[test]
+fn a_send_at_the_message_cap_queues_and_one_past_it_is_refused() {
+    let mut runner = Harness::new(
+        r#"
+        suhina.on_port_message(function(bytes, port)
+            if bytes == "\x90\x3c\x7f" then
+                suhina.send("Pad", string.rep("a", 1024 * 1024))
+                local ok = suhina.send("Pad", string.rep("b", 1024 * 1024 + 1))
+                suhina.send("Pad", suhina.midi.cc(1, ok and 0 or 1, 0))
+            end
+        end)
+        "#,
+    )
+    .expect_ready();
+    runner.send(json!({ "op": "port_message", "port": "Pad in", "timestamp": 1, "bytes": "903c7f" }));
+    // The payload at the cap went out whole: 1 MiB of `a` as hex is 2 MiB of "61".
+    let sent = runner.line();
+    assert_eq!(sent["op"], "send", "{sent}");
+    assert_eq!(sent["port"], "Pad");
+    let bytes = sent["bytes"].as_str().expect("the payload");
+    assert_eq!(bytes.len(), 2 * 1024 * 1024, "{} bytes of hex", bytes.len());
+    assert!(bytes.starts_with("61"), "{}…", &bytes[..16.min(bytes.len())]);
+    // One past the cap: refused, so the pad says so — the next line is the refusal's marker.
+    assert_eq!(runner.line(), json!({ "op": "send", "port": "Pad", "bytes": "b10100" }));
     runner.quit();
 }
 
@@ -280,17 +338,9 @@ fn a_wrong_version_is_refused() {
     } else {
         format!("fs:{}", std::env::temp_dir().join(&id).display())
     };
-    let (_, name) = parse_address(&address).unwrap();
-    let listener = ListenerOptions::new().name(name).create_sync().unwrap();
     let script_path = std::env::temp_dir().join(format!("{id}.lua"));
     std::fs::write(&script_path, "return 1").unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_suhina-lua-runner"))
-        .args(["--control", &address, script_path.to_str().unwrap()])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let stream = listener.accept().unwrap();
+    let (mut child, stream) = spawn_and_connect(&script_path, &address, Stdio::null());
     let mut writer = stream.try_clone().unwrap();
     let mut reader = BufReader::new(stream);
     // The runner speaks first: its hello, then the refusal of ours, then the exit.
@@ -358,5 +408,46 @@ fn a_control_storm_drops_messages_instead_of_dying() {
     runner.send(
         json!({ "op": "command_result", "token": last.expect("the last command")["token"], "ok": true, "error": null }),
     );
+    runner.quit();
+}
+
+/// The full wait queue keeps a stream's last value: a final value that arrives when the
+/// queue is full takes the same stream's last queued value's place, so what the handler
+/// finally drains ends at the newest — stamp 1026's marker, not the dropped 1025's.
+#[test]
+fn a_final_value_past_the_full_queue_takes_its_streams_place() {
+    let mut runner = Harness::new(
+        r#"
+        suhina.on_port_message(function(bytes, port, stamp)
+            if stamp == 1 then
+                suhina.command("transport.setTempo", { bpm = 110 })
+            end
+            suhina.send("Pad", suhina.midi.cc(stamp % 16, stamp % 128, 1))
+        end)
+        "#,
+    )
+    .expect_ready();
+    // The first press runs the handler, which waits on its command; the harness holds the
+    // answer, so every later message queues.
+    runner.send(json!({ "op": "port_message", "port": "Pad in", "timestamp": 1, "bytes": "903c7f" }));
+    let command = runner.line();
+    assert_eq!(command["op"], "command", "the handler's command");
+    // The queue fills: stamps 2 to 1025, 1024 messages.
+    for stamp in 2..=1025 {
+        runner.send(json!({ "op": "port_message", "port": "Pad in", "timestamp": stamp, "bytes": "903c7f" }));
+    }
+    // The final value, different from the last queued one: it takes stamp 1025's place.
+    runner.send(json!({ "op": "port_message", "port": "Pad in", "timestamp": 1026, "bytes": "903c7f" }));
+    runner.send(json!({ "op": "command_result", "token": command["token"], "ok": true, "error": null }));
+    // The waiting handler's send, then the queued ones in order — 1024 of them, the queue's
+    // last being stamp 1026, which took stamp 1025's place: the last marker is cc 2
+    // (1026 mod 128), which stamp 1025's drop would have made cc 1.
+    let mut last = None;
+    for _ in 0..1025 {
+        let mut line = runner.line();
+        assert_eq!(line["op"], "send", "{line}");
+        last = Some(line["bytes"].take());
+    }
+    assert_eq!(last.expect("the last value's marker"), json!("b20201"), "the newest value is what stands");
     runner.quit();
 }

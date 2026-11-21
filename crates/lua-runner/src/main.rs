@@ -405,10 +405,18 @@ fn deliver(link: &Shared<Link>, runner: &Shared<Run>, lua: &Lua, message: &Messa
             if runner.queued.len() >= WAIT_QUEUE_MAX {
                 // A storm of control messages outrunning the answers is not a wedge: the
                 // droppable ones are dropped and counted (the way a mapped control's full
-                // queue drops), and the last one stands in for its run. The pings are what
+                // queue drops). A stream's newest value is not the drop, though — it takes
+                // the same stream's last queued value's place, so what the script drains
+                // ends at the value that stands for the run, and a final fader position is
+                // never the one lost. Unrelated events are untouched. The pings are what
                 // makes a real wedge — a handler that never returns — visible.
                 let droppable = matches!(message, Message::PortMessage { .. } | Message::State { .. } | Message::Tick);
-                if droppable {
+                if droppable && supersedes(&runner.queued, message) {
+                    runner.queued.pop_back();
+                    runner.queued.push_back(message.clone());
+                    runner.dropped_while_waiting += 1;
+                    Decision::Skip
+                } else if droppable {
                     runner.dropped_while_waiting += 1;
                     Decision::Skip
                 } else {
@@ -464,6 +472,18 @@ fn deliver(link: &Shared<Link>, runner: &Shared<Run>, lua: &Lua, message: &Messa
             emit(link, runner, &Message::ScriptError { handler: handler_name.into(), message })?;
             Ok(())
         }
+    }
+}
+
+/// Whether the incoming message supersedes the wait queue's last one: the same stream's —
+/// the same port's message, or the same token's state — so the newer value takes the older's
+/// place and the run's last value is never the one the full queue loses.
+fn supersedes(queued: &std::collections::VecDeque<Message>, incoming: &Message) -> bool {
+    let Some(last) = queued.back() else { return false };
+    match (last, incoming) {
+        (Message::PortMessage { port: held, .. }, Message::PortMessage { port, .. }) => held == port,
+        (Message::State { token: held, .. }, Message::State { token, .. }) => held == token,
+        _ => false,
     }
 }
 
@@ -555,15 +575,23 @@ fn register_api(lua: &Lua, runner: &Shared<Run>, link: &Shared<Link>) -> Result<
     let send = {
         let runner = Rc::clone(runner);
         lua.create_function(move |_, (port, bytes): (String, mlua::LuaString)| {
-            let bytes = bytes.as_bytes().to_vec();
+            // The checks come before the copy: a payload past the per-message cap or the
+            // queue's remaining room is refused without one — the host would refuse the
+            // send anyway, and an unbounded copy of an input-sized payload is not the
+            // runner's to make. A payload exactly at the cap queues when there is room.
+            let len = bytes.as_bytes().len();
+            if len > surface::MAX_MESSAGE_BYTES {
+                return Ok(false);
+            }
             let mut runner = runner.borrow_mut();
             if !runner.outputs.iter().any(|open| open == &port) {
                 return Ok(false);
             }
-            if runner.out.len() >= SEND_QUEUE_MAX || runner.out_bytes + bytes.len() > SEND_QUEUE_BYTES {
+            if runner.out.len() >= SEND_QUEUE_MAX || runner.out_bytes + len > SEND_QUEUE_BYTES {
                 return Ok(false);
             }
-            runner.out_bytes += bytes.len();
+            let bytes = bytes.as_bytes().to_vec();
+            runner.out_bytes += len;
             runner.out.push_back((port, bytes));
             Ok(true)
         })

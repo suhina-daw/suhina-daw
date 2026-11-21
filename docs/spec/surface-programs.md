@@ -184,7 +184,10 @@ A value over its cap is refused with the reason, and input is hostile as everywh
   `suhina.send` says false and sends nothing.
 - At most 1024 messages queue while a handler waits on an answer. Past it, the droppable ones
   — `port_message` and `state`, which a storm of control messages arrives faster than the
-  answers — are dropped and counted, and the last one stands for its run; anything else still
+  answers — are dropped and counted; a stream's newest value is not the drop: it takes the
+  same stream's last queued value's place, so what the handler finally drains ends at the
+  value that stands for the run, and a final fader position is never the one lost; anything
+  else still
   wedges, and the pings its wedge delays are what makes Suhina see the hang. A handler that
   returns is never a wedge.
 - At most 64 live subscriptions per program; a `subscribe` past it is refused with an `error`
