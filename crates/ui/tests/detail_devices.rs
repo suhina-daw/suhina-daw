@@ -532,6 +532,41 @@ fn a_nam_panels_render_for_the_hand_check() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Renders the Compressor's panel in each of its display's views to
+/// `target/ui-snapshots/compressor-<view>.png`, for looking at:
+/// `cargo test -p suhina-ui --test main -- --ignored the_compressor_views_render_for_the_hand_check`.
+#[test]
+#[ignore = "needs a GPU adapter; run with --ignored"]
+fn the_compressor_views_render_for_the_hand_check() {
+    let mut project = demo_project();
+    let params = suhina_device_registry::info("compressor")
+        .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
+        .unwrap_or_default();
+    project.channels[0].devices.push(Device { params, ..device("Compressor") });
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .wgpu()
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Launcher view").click();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
+    std::fs::create_dir_all(&out).unwrap_or_else(|e| panic!("{e}"));
+    for view in ["Curve", "Activity", "Meters"] {
+        harness.get_by_label(view).click();
+        harness.run();
+        let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
+        image.save(out.join(format!("compressor-{}.png", view.to_lowercase()))).unwrap_or_else(|e| panic!("{e}"));
+    }
+}
+
 /// A channel device's state as the project holds it, by its index.
 fn channel_device_state(harness: &Harness<'static, App>, index: usize) -> String {
     harness.state().session().unwrap().project().channels[0]

@@ -2479,6 +2479,18 @@ pub(crate) fn show(
             super::eq_curve::show(ui, bounds, parameters, track, at, actions);
             continue;
         }
+        // parameter set claim it.
+        // The CompressorDisplay is host-drawn as well: only the built-in Compressor's own
+        // parameter set may claim it. Its ground, reduction and level colours are theme tokens.
+        if matches!(control.widget, Some(Widget::CompressorDisplay)) {
+            let palette = super::compressor_display::Palette {
+                display: tokens.color([3, 0, 1, 255]),
+                reduction: tokens.color([3, 0, 2, 255]),
+                level: tokens.color([3, 0, 3, 255]),
+            };
+            super::compressor_display::show(ui, bounds, parameters, palette, track, at, actions);
+            continue;
+        }
         if let Some(Widget::Handle { color: line_color, span, offset, dot, relative, hollow }) = &control.widget {
             handle(
                 ui,

@@ -317,14 +317,11 @@ fn every_layout_loads_and_names_only_its_devices_parameters() {
 }
 
 #[test]
-fn the_compressors_knobs_fill_the_compact_panel_without_scrolling() {
-    use suhina_device_sdk::ParameterControl::{Knob, LogKnob};
-    let panel = panel("compressor").unwrap();
-    for p in &panel.parameters {
-        assert!(matches!(p.control, Knob | LogKnob), "{} is not a knob", p.id);
-        let ([x, y], [w, h]) = (p.ui.position.unwrap(), p.ui.size.unwrap());
-        assert!(x + w <= builtin::COMPACT_WIDTH && y + h <= builtin::COMPACT_HEIGHT, "{} is outside", p.id);
-    }
+fn the_compressors_canvas_holds_every_parameter_around_its_display() {
+    let canvas = panel("compressor").unwrap().ui.clone().unwrap();
+    assert_eq!(canvas.size[1], builtin::COMPACT_HEIGHT);
+    assert_eq!(canvas.hidden_parameters.len(), suhina_device_compressor::INFO.params.len());
+    assert!(canvas.controls.iter().any(|c| matches!(c.widget, Some(suhina_device_sdk::ui::Widget::CompressorDisplay))));
 }
 
 #[test]

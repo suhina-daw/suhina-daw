@@ -17,10 +17,17 @@
 //!
 //! Gains, threshold, ratio, knee and mix are ramped, so they can be moved while playing. There
 //! is no lookahead, so the device adds no latency.
+//!
+//! After each block the device hands its panel what it heard and did ([`readout`]): the level
+//! the detector read, the input and output peaks and the gain reduction, for the panel's
+//! transfer curve, activity history and meters (docs/spec/compressor.md › The panel). The panel
+//! itself is [`panel`].
+
+pub mod panel;
 
 use suhina_device_api::{
-    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
-    check_sample_rate,
+    DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, MAX_READOUTS, ParamBank, ParamInfo, ProcessContext, Role,
+    Scale, Unit, check_sample_rate,
 };
 use suhina_dsp::biquad::BUTTERWORTH_Q;
 use suhina_dsp::gain::{db_to_gain, db_to_gain_f64};
@@ -33,6 +40,30 @@ pub const RAMP_SECONDS: f64 = 0.02;
 pub const MAX_REDUCTION_DB: f64 = 120.0;
 /// Detector levels below this (about -200 dB) count as silence.
 const LEVEL_FLOOR: f64 = 1e-10;
+/// The lowest level the readouts hand the panel, in dBFS: silence reads as this.
+pub const READOUT_FLOOR_DB: f64 = -100.0;
+/// How fast the readouts' level peaks fall back, a time constant in seconds (about 60 dB per
+/// second), so a peak between two of the panel's frames still shows.
+const LEVEL_FALL_SECONDS: f64 = 0.145;
+/// How fast the readout's gain reduction falls back once the reduction itself has, a time
+/// constant in seconds: short, so the activity history keeps the shape of the release.
+const REDUCTION_FALL_SECONDS: f64 = 0.03;
+
+/// What the device hands its panel after each block (`Device::readouts`), from the block's
+/// frames (docs/spec/compressor.md › Readouts).
+pub mod readout {
+    /// The level the detector read (the key while keyed), after the input gain and the
+    /// side-chain high-pass, the louder side, dBFS, a falling peak.
+    pub const DETECTOR: usize = 0;
+    /// The device's own input after the input gain, the louder side, dBFS, a falling peak.
+    pub const INPUT: usize = 1;
+    /// The output, the louder side, dBFS, a falling peak.
+    pub const OUTPUT: usize = 2;
+    /// The gain reduction, dB (zero or positive), the block's largest, falling back.
+    pub const REDUCTION: usize = 3;
+    /// 1 while the detector reads a key, else 0.
+    pub const KEYED: usize = 4;
+}
 
 /// Parameter indices, in [`INFO`] order.
 pub mod param {
@@ -71,9 +102,9 @@ pub static INFO: DeviceInfo = DeviceInfo::new("compressor", "Compressor", Role::
 
 /// Gain change, in decibels (zero or negative), the gain computer asks for at `level_db` with
 /// `threshold` (dB), `slope` (1 - 1/ratio) and a soft knee `knee` dB wide centred on the
-/// threshold.
+/// threshold. The panel's transfer curve is drawn from it, so the curve is what sounds.
 #[inline]
-fn gain_change(level_db: f64, threshold: f64, slope: f64, knee: f64) -> f64 {
+pub fn gain_change(level_db: f64, threshold: f64, slope: f64, knee: f64) -> f64 {
     let over = level_db - threshold;
     if knee > 1e-6 && over.abs() <= knee / 2.0 {
         let into = over + knee / 2.0;
@@ -98,6 +129,36 @@ pub struct Compressor {
     detectors: [Biquad; 2],
     /// Smoothed gain reduction in decibels, zero or positive.
     reduction: f64,
+    /// The panel's falling peaks, linear: detector, input, output; and the reduction in dB.
+    meters: Meters,
+    /// The per-frame factors the meters fall by: the levels' and the reduction's.
+    fall: (f64, f64),
+    readouts: [f32; MAX_READOUTS],
+}
+
+/// The falling peaks the readouts are taken from.
+#[derive(Debug, Clone, Copy, Default)]
+struct Meters {
+    detector: f64,
+    input: f64,
+    output: f64,
+    reduction: f64,
+}
+
+/// A level, linear, as the readouts write it: dBFS, never under [`READOUT_FLOOR_DB`].
+fn readout_db(level: f64) -> f32 {
+    if level > 0.0 { (20.0 * level.log10()).max(READOUT_FLOOR_DB) as f32 } else { READOUT_FLOOR_DB as f32 }
+}
+
+/// The readouts of a device that has heard nothing.
+fn idle_readouts() -> [f32; MAX_READOUTS] {
+    let mut readouts = [0.0; MAX_READOUTS];
+    for index in [readout::DETECTOR, readout::INPUT, readout::OUTPUT] {
+        if let Some(slot) = readouts.get_mut(index) {
+            *slot = READOUT_FLOOR_DB as f32;
+        }
+    }
+    readouts
 }
 
 impl Default for Compressor {
@@ -131,6 +192,9 @@ impl Compressor {
             dynamics: AttackRelease::default(),
             detectors: [Biquad::default(); 2],
             reduction: 0.0,
+            meters: Meters::default(),
+            fall: (0.0, 0.0),
+            readouts: idle_readouts(),
         };
         compressor.rebuild();
         compressor
@@ -182,6 +246,10 @@ impl Compressor {
         self.detectors = [Biquad::default(); 2];
         self.tune();
         self.reduction = 0.0;
+        let fall = |seconds: f64| (-1.0 / (seconds * self.sample_rate)).exp();
+        self.fall = (fall(LEVEL_FALL_SECONDS), fall(REDUCTION_FALL_SECONDS));
+        self.meters = Meters::default();
+        self.readouts = idle_readouts();
     }
 }
 
@@ -217,6 +285,10 @@ impl Device for Compressor {
         self.params.param(index)
     }
 
+    fn readouts(&self) -> Option<[f32; MAX_READOUTS]> {
+        Some(self.readouts)
+    }
+
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {
         self.compress(buffer, None);
     }
@@ -234,6 +306,8 @@ impl Compressor {
     /// frame the key does not cover reads silence), else the buffer itself. Never allocates.
     fn compress(&mut self, buffer: &mut [f32], key: Option<&[f32]>) {
         let keys = key.map(|k| k.as_chunks::<2>().0);
+        let (level_fall, reduction_fall) = self.fall;
+        let mut meters = self.meters;
         for (index, frame) in buffer.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             let [input, threshold, ratio, knee, output, mix] = self.smoothers().map(|s| f64::from(s.next_value()));
             let [left, right] = frame.map(|s| f64::from(s) * input);
@@ -256,7 +330,19 @@ impl Compressor {
             for (sample, x) in frame.iter_mut().zip([left, right]) {
                 *sample = (x * applied) as f32;
             }
+            let peak = |meter: f64, x: f64| if x > meter { x } else { meter * level_fall };
+            let finite = |x: f64| if x.is_finite() { x.abs() } else { 0.0 };
+            meters.detector = peak(meters.detector, level);
+            meters.input = peak(meters.input, finite(left).max(finite(right)));
+            meters.output = peak(meters.output, finite(left * applied).max(finite(right * applied)));
+            meters.reduction = self.reduction.max(meters.reduction * reduction_fall);
         }
+        self.meters = meters;
+        self.readouts[readout::DETECTOR] = readout_db(meters.detector);
+        self.readouts[readout::INPUT] = readout_db(meters.input);
+        self.readouts[readout::OUTPUT] = readout_db(meters.output);
+        self.readouts[readout::REDUCTION] = meters.reduction as f32;
+        self.readouts[readout::KEYED] = if key.is_some() { 1.0 } else { 0.0 };
     }
 }
 

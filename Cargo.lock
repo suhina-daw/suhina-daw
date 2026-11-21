@@ -5550,6 +5550,7 @@ name = "suhina-device-compressor"
 version = "0.0.1"
 dependencies = [
  "suhina-device-api",
+ "suhina-device-sdk",
  "suhina-dsp",
 ]
 
@@ -6028,6 +6029,7 @@ dependencies = [
  "rustfft",
  "serde_json",
  "suhina-device-api",
+ "suhina-device-compressor",
  "suhina-device-eq",
  "suhina-device-registry",
  "suhina-device-sdk",

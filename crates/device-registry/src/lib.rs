@@ -133,7 +133,7 @@ pub const ENTRIES: [Entry; 18] = [
     Entry {
         info: &suhina_device_compressor::INFO,
         make: |rate| boxed(suhina_device_compressor::Compressor::with_rate(rate)),
-        layout: LayoutSource::Json(include_str!("../../../devices/compressor/panel.json")),
+        layout: LayoutSource::Rust(suhina_device_compressor::panel::layout),
         file: None,
     },
     Entry {
