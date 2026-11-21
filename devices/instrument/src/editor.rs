@@ -248,8 +248,8 @@ fn strip(ui: &mut Canvas) {
         vec![
             line([56.0, 432.5], [824.0, 432.5], HAIRLINE, 1.0),
             text([56.0, 447.0], &spaced("Blend"), 8.5, TextAlign::Left, MUTED),
-            text([rail.0, 446.0], &spaced("Body"), 7.5, TextAlign::Left, MUTED),
-            text([rail.1 - 54.0, 446.0], &spaced("Sample"), 7.5, TextAlign::Left, MUTED),
+            text([rail.0, 446.0], &spaced("Body"), 8.0, TextAlign::Left, MUTED),
+            text([rail.1 - 56.0, 446.0], &spaced("Sample"), 8.0, TextAlign::Left, MUTED),
             line([rail.0, rail.2], [rail.1, rail.2], RAIL, 2.0),
             Draw::Rect {
                 rect: [add(thumb_x.clone(), (-1.0).into()), 456.0.into(), 12.0.into(), 22.0.into()],

@@ -287,7 +287,7 @@ fn the_computer_keyboard_still_plays_after_a_knob_in_the_editor_is_used() {
     let mut h = editor();
     h.get_by_label("Open editor").click();
     h.run_steps(4);
-    h.get_by_label("Brightness").focus();
+    h.get_by_label("Strike").focus();
     // A control locks the arrows once it has held the focus for a frame, as it always has by
     // the time a person presses one.
     h.run_steps(2);

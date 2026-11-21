@@ -91,16 +91,22 @@ fn key_parameters_are_shown_as_note_names() {
     for canvas in [layout.ui.as_ref().unwrap(), layout.expanded.as_ref().unwrap()] {
         for id in ["root", "key_low", "key_high"] {
             for control in canvas.controls.iter().filter(|c| bound(c, id)) {
-                // A field or dial writes the note's name; a marker on the keys writes nothing.
+                // A field or dial writes the note's name, and so does a control drawn whole (the
+                // root key, large); a marker on the keys writes nothing.
+                let drawn_key = control.widget.is_none()
+                    && control.drawing.iter().any(|draw| {
+                        matches!(draw, Draw::Text { parameter: Some(p), format: TextFormat::Key, .. } if p == id)
+                    });
                 assert!(
-                    matches!(
-                        control.widget,
-                        Some(
-                            Widget::Number { format: TextFormat::Key, .. }
-                                | Widget::Dial { format: TextFormat::Key, .. }
-                                | Widget::Handle { .. }
-                        )
-                    ),
+                    drawn_key
+                        || matches!(
+                            control.widget,
+                            Some(
+                                Widget::Number { format: TextFormat::Key, .. }
+                                    | Widget::Dial { format: TextFormat::Key, .. }
+                                    | Widget::Handle { .. }
+                            )
+                        ),
                     "{id}: {}",
                     control.name
                 );

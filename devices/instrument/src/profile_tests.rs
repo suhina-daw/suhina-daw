@@ -125,7 +125,7 @@ fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
     let ui = layout.expanded.as_ref().unwrap();
     for revision in [1.0, 2.0, 3.0, 4.0] {
         for body in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0] {
-            for page in [1.0, 3.0] {
+            for page in [0.0, 2.0] {
                 let visible = |name: &str| {
                     ui.controls.iter().any(|control| {
                         control.name == name
@@ -140,23 +140,23 @@ fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
                     })
                 };
                 let bodies = revision == 1.0 || revision == 3.0;
-                let model = page == 1.0;
-                let advanced = bodies && page == 3.0;
+                let model = page == 0.0;
+                let advanced = bodies && page == 2.0;
                 let struck_bar = bodies && (1.0..=4.0).contains(&body);
                 let tine = bodies && body == 5.0;
                 let at = format!("revision {revision}, body {body}, page {page}");
-                assert_eq!(visible("Experimental struck modal · revision 1"), revision == 1.0);
-                assert_eq!(visible("Experimental struck and bar bodies · revision 3"), revision == 3.0);
-                assert_eq!(visible("Experimental fitted model · revision 4"), revision == 4.0);
-                // A profile or fitted set keeps #1599's struck-body group on the Model page.
+                assert_eq!(visible("Struck modal · experimental"), revision == 1.0);
+                assert_eq!(visible("Modal bodies · experimental"), revision == 3.0);
+                assert_eq!(visible("Fitted model · experimental"), revision == 4.0);
+                // A profile or fitted set keeps #1599's struck-body group on the body layer.
                 assert_eq!(visible("Strike color"), !bodies && model, "{at}");
                 assert_eq!(visible("Body decay"), !bodies && model, "{at}");
                 assert_eq!(visible("Modes per voice"), !bodies && model, "{at}");
-                // The bodies' Model page.
+                // The bodies' layer.
                 for tab in ["Struck", "Marimba", "Vibraphone", "Xylophone", "Glockenspiel", "Kalimba"] {
                     assert_eq!(visible(tab), bodies && model, "{tab} at {at}");
                 }
-                assert_eq!(visible("Sound"), bodies, "the sound shows on Model and Advanced: {at}");
+                assert_eq!(visible("Sound"), bodies, "the sound shows on the body layer and Advanced: {at}");
                 assert_eq!(visible("Advanced page"), bodies && model, "{at}");
                 assert_eq!(visible("Decay"), bodies && model, "{at}");
                 assert_eq!(visible("Strike"), bodies && model, "{at}");
@@ -172,14 +172,14 @@ fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
                 assert_eq!(
                     visible("Structure"),
                     (!bodies && model) || (bodies && body == 0.0),
-                    "Structure: the profile's group, or Struck's Model and Advanced pages: {at}"
+                    "Structure: the profile's group, or Struck's body layer and Advanced page: {at}"
                 );
                 // The Advanced page: the body's shaping dials and the engine's choices.
                 assert_eq!(visible("Tuning"), advanced && body > 0.0, "{at}");
                 assert_eq!(visible("Ring"), advanced && body > 0.0, "{at}");
                 assert_eq!(visible("Torsion"), advanced && (1.0..=4.0).contains(&body), "a tine has no torsion: {at}");
                 assert_eq!(visible("16 modes"), advanced, "{at}");
-                assert_eq!(visible("Model page back"), advanced, "{at}");
+                assert_eq!(visible("Body page back"), advanced, "{at}");
             }
         }
     }
