@@ -625,8 +625,8 @@ impl Extensions {
     }
 
     /// The programs' shared event queue and its signal, for the tests' pump-while-waiting
-    /// ([`Projects::test_extensions_pump_until`]): the first running program's, or none while
-    /// no program runs.
+    /// (the fixture's `pump_until`, around [`Projects::poll_plugins`]): the first running
+    /// program's, or none while no program runs.
     pub(crate) fn event_queue(&self) -> Option<Shared> {
         self.known.iter().filter_map(|extension| extension.program.as_ref()).map(|program| program.shared()).next()
     }
