@@ -44,19 +44,16 @@ fn instrument_editor_pages_are_keyboard_accessible_view_state() {
     assert!(!h.state().session().unwrap().can_undo());
     h.get_by_label("Open editor").click();
     h.run_steps(4);
-    assert!(h.query_by_label("Output gain").is_some());
-    h.get_by_label("Model page").focus();
+    // The editor starts on the body layer; Gain is in the strip on every page.
+    assert!(h.query_by_label("Strike").is_some() && h.query_by_label("Output gain").is_some());
+    h.get_by_label("Show the sample layer").focus();
     h.step();
     h.key_press(egui::Key::Enter);
     h.run_steps(4);
-    assert!(h.query_by_label("Strike").is_some());
-    assert!(h.query_by_label("Output gain").is_none());
-    h.key_press(egui::Key::Tab);
-    h.step();
-    h.key_press(egui::Key::Space);
-    h.run_steps(4);
     assert!(h.query_by_label("One shot").is_some());
-    h.get_by_label("Sample page").click();
+    assert!(h.query_by_label("Strike").is_none());
+    assert!(h.query_by_label("Output gain").is_some());
+    h.get_by_label("Show the sample layer").click();
     h.run_steps(4);
     assert!(h.query_by_label("One shot").is_some(), "repeated selection keeps the page");
     h.get_by_label("Close expanded panel").click();
@@ -67,7 +64,7 @@ fn instrument_editor_pages_are_keyboard_accessible_view_state() {
     // The page is kept with the project, outside the undo history; nothing else changed.
     let after = h.state().session().unwrap().project().clone();
     let device = after.channels[0].devices[0].id;
-    assert_eq!(after.panel_page(device), 2, "the Sample page is kept with the project");
+    assert_eq!(after.panel_page(device), 1, "the sample layer is kept with the project");
     assert_eq!(suhina_engine::model::Project { panel_pages: Vec::new(), ..after }, before);
     assert!(!h.state().session().unwrap().can_undo());
     h.key_press(egui::Key::Escape);
@@ -95,7 +92,7 @@ fn instrument_editor_sound_edits_share_compact_state_and_one_undo() {
     let after = parameter(&h, "gain");
     assert!(after < before, "a downward drag changes the native gain: {before} to {after}");
     assert_eq!(h.state().session().unwrap().undo_steps().0, 1);
-    h.get_by_label("Model page").click();
+    h.get_by_label("Show the sample layer").click();
     h.run_steps(4);
     h.get_by_label("Close expanded panel").click();
     h.run_steps(4);
@@ -114,7 +111,7 @@ fn instrument_editor_opens_on_the_page_the_project_keeps() {
     let mut h = editor();
     h.get_by_label("Open editor").click();
     h.run_steps(4);
-    h.get_by_label("Model page").click();
+    h.get_by_label("Show the sample layer").click();
     h.run_steps(4);
     let saved = h.state().session().unwrap().project().clone();
     h.state_mut().set_session(Session::new(saved), &[]);
@@ -126,8 +123,8 @@ fn instrument_editor_opens_on_the_page_the_project_keeps() {
         h.get_by_label("Expand Instrument (experimental)").click();
         h.run_steps(4);
     }
-    assert!(h.query_by_label("Strike").is_some(), "the reopened project shows the Model page");
-    assert!(h.query_by_label("Output gain").is_none());
+    assert!(h.query_by_label("One shot").is_some(), "the reopened project shows the sample layer");
+    assert!(h.query_by_label("Strike").is_none());
 }
 
 /// The expanded panel floats as a window of its canvas's size, narrower than the main area, and
@@ -182,14 +179,14 @@ fn the_expanded_panels_corner_resizes_it_and_the_canvas_scales_with_it() {
 }
 
 #[test]
-fn instrument_editor_pages_do_not_leak_to_another_project_and_narrow_windows_scroll() {
+fn instrument_editor_pages_do_not_leak_to_another_project_and_a_narrow_window_fits() {
     let mut h = editor();
     let project = h.state().session().unwrap().project().clone();
     h.get_by_label("Open editor").click();
     h.run_steps(4);
-    h.get_by_label("Model page").click();
+    h.get_by_label("Show the sample layer").click();
     h.run_steps(4);
-    assert!(h.query_by_label("Strike").is_some());
+    assert!(h.query_by_label("One shot").is_some());
     h.state_mut().set_session(Session::new(project), &[]);
     h.state_mut().view.selected = Some(TrackId(1));
     h.state_mut().detail_open = true;
@@ -199,16 +196,14 @@ fn instrument_editor_pages_do_not_leak_to_another_project_and_narrow_windows_scr
         h.get_by_label("Expand Instrument (experimental)").click();
         h.run_steps(4);
     }
-    assert!(h.query_by_label("Output gain").is_some(), "same device address in a new project starts on Play");
-    assert!(h.query_by_label("Strike").is_none());
+    assert!(h.query_by_label("Strike").is_some(), "same device address in a new project starts on the body layer");
+    assert!(h.query_by_label("One shot").is_none());
     h.set_size(Vec2::new(640.0, 600.0));
     h.run_steps(4);
-    h.get_by_label("Highest velocity").focus();
-    h.run_steps(5);
-    let rect = h.get_by_label("Highest velocity").rect();
+    let rect = h.get_by_label("Output gain").rect();
     assert!(
         rect.center().x > 0.0 && rect.center().x < 640.0 && rect.center().y > 0.0 && rect.center().y < 600.0,
-        "keyboard focus scrolls a distant control into the narrow editor: {rect:?}"
+        "the window shrinks to fit the narrow app, the strip at its bottom included: {rect:?}"
     );
     assert!(!h.state().session().unwrap().can_undo());
 }
@@ -218,7 +213,7 @@ fn instrument_expanded_waveform_is_a_drop_target_without_unsupported_sample_menu
     let mut h = editor();
     h.get_by_label("Open editor").click();
     h.run_steps(4);
-    h.get_by_label("Sample page").click();
+    h.get_by_label("Show the sample layer").click();
     h.run_steps(4);
     let wave =
         h.get_all_by_label("Sample waveform").map(|n| n.rect()).min_by(|a, b| a.top().total_cmp(&b.top())).unwrap();
@@ -256,7 +251,7 @@ fn instrument_expanded_drop_plan_imports_and_undo_clears_both_presentations() {
     let mut h = editor();
     h.get_by_label("Open editor").click();
     h.run_steps(4);
-    h.get_by_label("Sample page").click();
+    h.get_by_label("Show the sample layer").click();
     h.run_steps(4);
     let wave =
         h.get_all_by_label("Sample waveform").map(|n| n.rect()).min_by(|a, b| a.top().total_cmp(&b.top())).unwrap();
@@ -292,7 +287,7 @@ fn the_computer_keyboard_still_plays_after_a_knob_in_the_editor_is_used() {
     let mut h = editor();
     h.get_by_label("Open editor").click();
     h.run_steps(4);
-    h.get_by_label("Output gain").focus();
+    h.get_by_label("Brightness").focus();
     // A control locks the arrows once it has held the focus for a frame, as it always has by
     // the time a person presses one.
     h.run_steps(2);

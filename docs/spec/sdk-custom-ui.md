@@ -418,8 +418,16 @@ the saved parameter units.
 
 `SampleAnalysis` places host-owned local sample analysis and explicit root-proposal adoption.
 It has no parameter bindings: the stock host dispatches the `instrument.*` preparation commands
-and presents the session job's progress, result, correction and acceptance controls. Exported
-hosts must implement their own preparation integration before exposing equivalent controls.
+and presents the session job's progress, result, correction and acceptance controls. Over a
+canvas's own artwork it takes the canvas's ink and accent (`device-control { color;
+accent-color }`) and scales with the canvas: the suggestion and its actions stand at the right of
+its bounds, as text buttons in spaced capitals, and a result that waits for acceptance covers
+the whole bounds on a card that takes the pointer. Exported hosts must implement their own
+preparation integration before exposing equivalent controls.
+
+`SampleFile` shows the loaded sample's file name in spaced capitals and its facts under it
+(sample rate, mono or stereo, length), or "No sample", from the source the host decoded for the
+device's waveform. It has no bindings and takes no input.
 
 `SampleWaveform` is a host-backed source view for the native sampler. It has no
 parameter axis bindings. The host supplies decoded audio; start/end and loop

@@ -4,7 +4,7 @@
 //! Native SDK presentation shared by the compact stock panel and expanded editor.
 
 #[path = "editor.rs"]
-mod editor;
+pub(crate) mod editor;
 #[path = "editor_bodies.rs"]
 mod editor_bodies;
 #[path = "editor_pages.rs"]
@@ -45,7 +45,8 @@ label { color: #6b5543; }
 value { color: #34261d; accent-color: #8a5422; border-color: rgba(52, 38, 29, 0.3); background-color: transparent; }
 waveform { color: #34261d; accent-color: #b8742f; background-color: rgba(52, 38, 29, 0.05);
   border-color: rgba(52, 38, 29, 0.22); }
-device-control { color: #34261d; accent-color: #b8742f; }";
+device-control { color: #34261d; accent-color: #b8742f; }
+popup { background-color: #efe4d2; color: #34261d; border-color: rgba(52, 38, 29, 0.3); }";
 /// Espresso ink and the dark brass of values, for drawings that must not follow the theme.
 pub(super) const INK: [u8; 4] = [52, 38, 29, 255];
 pub(super) const VALUE: [u8; 4] = [138, 84, 34, 255];
@@ -61,7 +62,8 @@ const VEIL_ALPHA: u8 = 140;
 
 pub(super) struct Canvas {
     ui: DeviceUi,
-    page: Option<u16>,
+    /// While which pages the controls added now show: none for every page.
+    page: Option<UiValue>,
     /// The share of the artwork image behind the canvas, once it has the artwork.
     artwork_uv: Option<[f32; 4]>,
 }
@@ -122,7 +124,17 @@ impl Canvas {
     }
 
     pub(super) fn page(&mut self, page: u16) {
-        self.page = Some(page);
+        self.page = Some(page_is(page));
+    }
+
+    /// The controls added from now on show on any of `pages`.
+    pub(super) fn pages(&mut self, pages: &[u16]) {
+        self.page = Some(any_of(PAGE_ID, pages));
+    }
+
+    /// The controls added from now on show on every page.
+    pub(super) fn every_page(&mut self) {
+        self.page = None;
     }
 
     fn add(
@@ -146,12 +158,7 @@ impl Canvas {
             x: if vertical { None } else { binding.clone() },
             y: if vertical { binding } else { None },
             drawing: vec![],
-            visible_when: self.page.map(|page| {
-                UiValue::Expression(Box::new(UiExpression::Equal {
-                    a: UiValue::parameter(PAGE_ID, false),
-                    b: f32::from(page).into(),
-                }))
-            }),
+            visible_when: self.page.clone(),
         });
     }
 
@@ -180,6 +187,11 @@ impl Canvas {
             .map(|value| value_is(id, *value))
             .reduce(|a, b| UiValue::Expression(Box::new(UiExpression::Add { a, b })));
         self.when(controls, &condition.unwrap_or_else(|| 0.0_f32.into()));
+    }
+
+    /// Show the last `controls` controls only while `condition` holds too.
+    pub(super) fn also_when(&mut self, controls: usize, condition: &UiValue) {
+        self.when(controls, condition);
     }
 
     /// Show the last `controls` controls only while `condition` holds, on their page.
@@ -240,15 +252,6 @@ impl Canvas {
         }
     }
 
-    /// The last control's caption, when it is a dial, apart from its accessible name.
-    pub(super) fn caption(&mut self, label: &str) {
-        if let Some(control) = self.ui.controls.last_mut()
-            && let Some(Widget::Dial { label: caption, .. }) = control.widget.as_mut()
-        {
-            *caption = label.into();
-        }
-    }
-
     /// A value written as text, centered in `bounds`, that vertical drags change.
     pub(super) fn readout(&mut self, id: &str, name: &str, bounds: [f32; 4], format: TextFormat, decimals: usize) {
         self.add(
@@ -266,18 +269,6 @@ impl Canvas {
             Some(id),
             UiGesture::Drag,
             "Drag vertically; Shift for precision; double click resets",
-        );
-    }
-
-    /// A page button of the editor, named "*name* page".
-    pub(super) fn navigate(&mut self, name: &str, bounds: [f32; 4], page: u16) {
-        self.add(
-            &format!("{name} page"),
-            Widget::Button { label: name.into(), off_label: None, indicator: false },
-            bounds,
-            Some(PAGE_ID),
-            UiGesture::Set(page),
-            "Show this editor page; sound and undo history stay unchanged",
         );
     }
 
@@ -420,7 +411,31 @@ impl Canvas {
             x: x.map(|(id, logarithmic)| UiBinding { logarithmic, ..UiBinding::new(id) }),
             y: y.map(UiBinding::new),
             drawing: vec![],
-            visible_when: self.page.map(page_is),
+            visible_when: self.page.clone(),
+        });
+    }
+
+    /// A horizontal slider for `id` across `bounds`, drawn by the canvas itself: it takes the
+    /// pointer anywhere along `bounds` and moves the value to it ([`Widget::Handle`], unseen).
+    pub(super) fn slider(&mut self, id: &str, name: &str, bounds: [f32; 4], tooltip: &str) {
+        self.ui.controls.push(CustomControl {
+            id: format!("control_{}", self.ui.controls.len()),
+            name: name.into(),
+            tooltip: tooltip.into(),
+            bounds,
+            widget: Some(Widget::Handle {
+                color: [0, 0, 0, 0],
+                span: None,
+                offset: None,
+                dot: false,
+                relative: false,
+                hollow: false,
+            }),
+            gesture: UiGesture::Position,
+            x: Some(UiBinding::new(id)),
+            y: None,
+            drawing: vec![],
+            visible_when: self.page.clone(),
         });
     }
 
@@ -466,7 +481,7 @@ impl Canvas {
             x: None,
             y: Some(UiBinding::new(id)),
             drawing,
-            visible_when: self.page.map(page_is),
+            visible_when: self.page.clone(),
         });
     }
 
@@ -528,7 +543,7 @@ fn revision_is(revision: u16) -> UiValue {
     value_is("model_revision", revision)
 }
 
-fn value_is(id: &str, value: u16) -> UiValue {
+pub(super) fn value_is(id: &str, value: u16) -> UiValue {
     UiValue::Expression(Box::new(UiExpression::Equal { a: UiValue::parameter(id, false), b: f32::from(value).into() }))
 }
 
@@ -599,9 +614,9 @@ pub fn layout() -> Layout {
     Layout { ui: Some(compact()), expanded: Some(editor::canvas()), ..Layout::default() }
 }
 
-/// The compact panel (620 × 168): the logo and the body at the top left, Source and the way
-/// into the editor at the right; the body's sound (or the sample's waveform, or both in Hybrid)
-/// at the left and six dials at the right; the model's name under them.
+/// The compact panel (620 × 168): the logo and the body at the top left, the two layers and the
+/// way into the editor at the right; the body's sound (or the sample's waveform, or both with both
+/// layers on) at the left and five dials at the right; the model's name under them.
 fn compact() -> DeviceUi {
     let mut panel = Canvas::new([620.0, 168.0]);
     panel.artwork_cropped(EDITOR_LIGHT, COMPACT_CROP);
@@ -622,18 +637,43 @@ fn compact() -> DeviceUi {
         "The body Modal plays: the abstract struck body, a struck bar or a plucked tine",
     );
     panel.only_revisions(BODY_REVISIONS, 1);
-    panel.text("Source caption", &spaced("Source"), [394.0, 12.0, 60.0, 10.0], 8.0, TextAlign::Left, MUTED);
-    // Source switches by clicking it: the button of the current Source sets the next one.
-    for (value, name) in [(0_u16, "Modal"), (1, "Sample"), (2, "Hybrid")] {
+    // The two layers, each a lamp and its name that turn it on or off (Source); the one layer
+    // left on stays on.
+    for (name, x, w, other) in [("Body", 352.0, 54.0, 1_u16), ("Sample", 424.0, 72.0, 0)] {
+        let layer = name.to_lowercase();
+        let center = [(x + 6.0).into(), 17.0.into()];
+        panel.graphic(
+            &format!("{name} lamp lit"),
+            vec![Draw::Circle { center: center.clone(), radius: 3.5.into(), color: BRASS }],
+        );
+        panel.show_when(not(value_is("source", other)));
+        panel.graphic(
+            &format!("{name} lamp unlit"),
+            vec![Draw::Arc {
+                center,
+                radius: 3.5.into(),
+                start: 0.0.into(),
+                end: std::f32::consts::TAU.into(),
+                color: MUTED,
+                width: 1.2,
+            }],
+        );
+        panel.show_when(value_is("source", other));
+        let bounds = [x + 14.0, 8.0, w - 14.0, 18.0];
+        let label = spaced(name);
         panel.choice_labelled(
             "source",
-            (value + 1) % 3,
-            "Source",
-            name,
-            [458.0, 6.0, 72.0, 22.0],
-            "Source: click for the next of Modal, local Sample and both in Hybrid",
+            other,
+            &format!("Turn off the {layer} layer"),
+            &label,
+            bounds,
+            "Turn this layer off",
         );
-        panel.show_when(value_is("source", value));
+        panel.show_when(value_is("source", 2));
+        panel.choice_labelled("source", 2, &format!("Turn on the {layer} layer"), &label, bounds, "Turn this layer on");
+        panel.show_when(value_is("source", other));
+        panel.text(&format!("{name} layer alone"), &label, [x + 14.0, 12.0, w - 14.0, 12.0], 8.0, TextAlign::Left, INK);
+        panel.show_when(value_is("source", 1 - other));
     }
     for page in 0..=editor::LAST_PAGE {
         panel.open_editor(page, [540.0, 6.0, 66.0, 22.0]);
@@ -675,41 +715,31 @@ fn compact() -> DeviceUi {
     );
     panel.show_when(not(sample_silent()));
 
-    // Six dials: the mallet (the finger's Touch for the tine), the body's Decay and Brightness,
-    // Release, the Hybrid blend and Gain.
-    let step = 340.0 / 6.0;
+    // Five dials: the body's Decay and Brightness, Release, Blend and Gain.
+    let step = 340.0 / 5.0;
     let at = |n: usize| [266.0 + step * (n as f32 + 0.5) - 28.0, 42.0, 56.0, 104.0];
-    for (tine, name, tooltip) in [
-        (false, "Hardness", "How hard the mallet is: harder sounds brighter"),
-        (true, "Touch", "How hard the finger is: harder sounds brighter"),
-    ] {
-        panel.face_dial("mallet_hardness", name, at(0), tooltip, "knob-small");
-        panel.show_when(if tine { value_is("body", 5) } else { not(value_is("body", 5)) });
-    }
     for (n, (id, name, tooltip)) in [
-        ("body_decay", "Decay", "Modal: how long the body rings; next strike"),
-        ("brightness", "Brightness", "Modal: energy in the higher resonances; next strike"),
-        ("release", "Release", "After note-off, for the modal body and the sample"),
-        ("blend", "Blend", "Hybrid only: from the modal body to the sample"),
-        ("gain", "Gain", "Output gain for both sources"),
+        ("body_decay", "Decay", "The body layer: how long it rings; next strike"),
+        ("brightness", "Brightness", "The body layer: energy in the higher resonances; next strike"),
+        ("release", "Release", "After note-off, for both layers"),
+        ("blend", "Blend", "With both layers on: from the body to the sample"),
+        ("gain", "Gain", "Output gain for both layers"),
     ]
     .into_iter()
     .enumerate()
     {
-        panel.face_dial(id, name, at(n + 1), tooltip, "knob-small");
+        panel.face_dial(id, name, at(n), tooltip, "knob-small");
     }
-    // Faded while they have no effect: the mallet with Sample, with the Struck body (no mallet)
-    // and with a profile or fitted model; the body's dials with Sample; Blend outside Hybrid.
-    let mallet = both(both(not(modal_silent()), any_of("model_revision", BODY_REVISIONS)), not(value_is("body", 0)));
-    panel.dim("Hardness dimmed", &[at(0)], &not(mallet));
-    panel.dim("Modal dimmed", &[at(1), at(2)], &modal_silent());
-    panel.dim("Blend dimmed", &[at(4)], &blend_silent());
+    // Faded while they have no effect: the body's dials with the body layer off; Blend with one
+    // layer on.
+    panel.dim("Modal dimmed", &[at(0), at(1)], &modal_silent());
+    panel.dim("Blend dimmed", &[at(3)], &blend_silent());
 
     for (revision, name) in [
-        (1, "STRUCK MODAL · EXPERIMENTAL V1"),
-        (2, "MODAL PROFILE · EXPERIMENTAL V2"),
-        (3, "MODAL BODIES · EXPERIMENTAL V3"),
-        (4, "FITTED MODEL · EXPERIMENTAL V4"),
+        (1, "STRUCK MODAL · EXPERIMENTAL"),
+        (2, "MODAL PROFILE · EXPERIMENTAL"),
+        (3, "MODAL BODIES · EXPERIMENTAL"),
+        (4, "FITTED MODEL · EXPERIMENTAL"),
     ] {
         panel.text(name, name, [266.0, 152.0, 340.0, 12.0], 8.0, TextAlign::Center, MUTED);
         panel.only_revision(revision);

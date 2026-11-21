@@ -2499,11 +2499,21 @@ pub(crate) fn show_scaled(
         if matches!(control.widget, Some(Widget::SampleAnalysis)) {
             // Its text in the panel sheet's ink (`device-control { color }`), so it reads over a
             // canvas's own artwork as the canvas's other text does, not in the theme's.
-            let ink = control_scope.color();
-            ui.scope(|ui| {
-                ui.visuals_mut().override_text_color = Some(ink);
-                super::instrument_analysis::show(ui, bounds, track, at, actions);
-            });
+            let look = super::instrument_analysis::Look {
+                ink: control_scope.color(),
+                accent: control_scope.accent(),
+                scale: stretch.min_elem(),
+            };
+            super::instrument_analysis::show(ui, bounds, look, (track, device), at, actions);
+            continue;
+        }
+        if matches!(control.widget, Some(Widget::SampleFile)) {
+            let look = super::instrument_analysis::Look {
+                ink: control_scope.color(),
+                accent: control_scope.accent(),
+                scale: stretch.min_elem(),
+            };
+            super::instrument_analysis::sample_file(ui, bounds, look, sample_source_id(track, device));
             continue;
         }
         if matches!(control.widget, Some(Widget::DeviceSwitch)) {
@@ -2975,6 +2985,13 @@ pub(crate) fn show_scaled(
                 // The menu sits a little clear of its control: glued to its bottom edge it
                 // reads as clipping into it (the EQ's Mode, seen in use).
                 let mut popup = egui::Popup::menu(&response).gap(2.0);
+                // A canvas whose sheet gives its menus a ground of their own (`popup {
+                // background-color }`) keeps its look in them: its rows' ink on its own surface,
+                // not on the theme's (a dark theme's frame under an ivory canvas's dark ink).
+                let ground = crate::kit::element::POPUP.enter().background_or(Color32::TRANSPARENT);
+                if ground.a() > 0 {
+                    popup = popup.frame(egui::Frame::popup(ui.style()).fill(ground));
+                }
                 if response.double_clicked() {
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Bool(false)));
                     control_actions.push(Action::new("device.setParam",json!({"track":track.0,"device":at.value(),"param":p.id,"value":p.default,"gesture":control.id})));

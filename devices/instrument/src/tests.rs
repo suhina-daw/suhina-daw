@@ -139,7 +139,7 @@ fn the_open_editor_button_keeps_the_page_the_editor_showed_last() {
     use suhina_device_sdk::ui::{PAGE_ID, UiGesture};
     let layout = panel::layout();
     let compact = layout.ui.as_ref().unwrap();
-    for page in 0..=3_u16 {
+    for page in 0..=crate::panel::editor::LAST_PAGE {
         let open: Vec<_> = compact
             .controls
             .iter()
@@ -155,66 +155,147 @@ fn the_open_editor_button_keeps_the_page_the_editor_showed_last() {
         if let UiGesture::Set(page) = control.gesture
             && control.x.as_ref().is_some_and(|b| b.parameter == PAGE_ID)
         {
-            assert!(page <= 3, "{} opens page {page}, which the compact panel cannot reopen", control.name);
+            assert!(
+                page <= crate::panel::editor::LAST_PAGE,
+                "{} opens page {page}, which the compact panel cannot reopen",
+                control.name
+            );
         }
     }
 }
 
-/// Every sound parameter has a control in the editor, and the Play and Sample pages carry theirs
-/// with any Source: the Play page its envelope, keys and velocities, the Sample page its region,
-/// loop, Playback and envelope, and the way to the sample analysis.
+/// Every sound parameter has a control in the editor: the strip's on every page, the sample
+/// layer's on its page, the keys' and the soft pedal on the keys pages, and Source in the header
+/// with any Source. The analysis and the file are on the sample layer, under the waveform.
 #[test]
-fn every_parameter_is_reachable_and_play_and_sample_carry_theirs() {
+fn every_parameter_is_reachable_and_each_page_carries_its_own() {
+    use crate::panel::editor::{ADVANCED, BODY, KEYS_OVER_BODY, KEYS_OVER_SAMPLE, SAMPLE};
     use suhina_device_sdk::ui::{UiGesture, Widget};
     let layout = panel::layout();
     let editor = layout.expanded.as_ref().unwrap();
     for info in PARAMS.iter().filter(|p| p.id != "model_revision") {
         assert!(editor.controls.iter().any(|c| bound(c, &info.id)), "{} has no control", info.id);
     }
-    let on = |page: f64, source: f64, id: &str| {
-        editor
-            .controls
-            .iter()
-            .any(|c| bound(c, id) && shown(c, &[("#page", page), ("source", source), ("model_revision", 3.0)]))
+    let on = |page: u16, source: f64, id: &str| {
+        editor.controls.iter().any(|c| {
+            bound(c, id)
+                && shown(c, &[("#page", f64::from(page)), ("source", source), ("model_revision", 3.0), ("body", 1.0)])
+        })
     };
     for source in [0.0, 1.0, 2.0] {
+        for page in [BODY, SAMPLE, ADVANCED, KEYS_OVER_BODY, KEYS_OVER_SAMPLE] {
+            for id in ["gain", "release", "blend", "source"] {
+                assert!(on(page, source, id), "page {page}: {id}, source {source}");
+            }
+        }
         for id in [
-            "gain",
-            "release",
-            "blend",
-            "attack",
-            "decay",
-            "sustain",
-            "key_low",
-            "key_high",
-            "velocity_low",
-            "velocity_high",
-            "soft_pedal",
-            "source",
+            "body",
+            "mallet_hardness",
+            "body_decay",
+            "brightness",
+            "strike",
+            "mallet_weight",
+            "resonator",
+            "stereo_width",
+            "mallet_model",
         ] {
-            assert!(on(0.0, source, id), "Play: {id}, source {source}");
+            assert!(on(BODY, source, id), "Body: {id}, source {source}");
         }
-        for id in
-            ["root", "playback", "start", "end", "loop_start", "loop_end", "attack", "decay", "sustain", "release"]
-        {
-            assert!(on(2.0, source, id), "Sample: {id}, source {source}");
+        for id in ["root", "playback", "start", "end", "loop_start", "loop_end", "attack", "decay", "sustain"] {
+            assert!(on(SAMPLE, source, id), "Sample: {id}, source {source}");
         }
+        for page in [KEYS_OVER_BODY, KEYS_OVER_SAMPLE] {
+            for id in ["key_low", "key_high", "velocity_low", "velocity_high", "soft_pedal"] {
+                assert!(on(page, source, id), "Keys {page}: {id}, source {source}");
+            }
+        }
+        assert!(!on(BODY, source, "soft_pedal") && !on(SAMPLE, source, "key_low"));
     }
     let playback: Vec<_> = editor.controls.iter().filter(|c| bound(c, "playback")).map(|c| c.gesture).collect();
     assert_eq!(playback, [UiGesture::Set(0), UiGesture::Set(1), UiGesture::Set(2)], "Gate, One shot, Loop");
-    // The sample analysis is on the Sample page itself, under the waveform, with any Source.
-    let widget = editor.controls.iter().find(|c| matches!(c.widget, Some(Widget::SampleAnalysis))).unwrap();
-    for source in [0.0, 1.0, 2.0] {
-        assert!(shown(widget, &[("#page", 2.0), ("source", source)]), "source {source}");
+    for widget in [Widget::SampleAnalysis, Widget::SampleFile] {
+        let control = editor.controls.iter().find(|c| c.widget.as_ref() == Some(&widget)).unwrap();
+        for source in [0.0, 1.0, 2.0] {
+            assert!(shown(control, &[("#page", 1.0), ("source", source)]), "{widget:?} source {source}");
+        }
+        assert!(!shown(control, &[("#page", 0.0)]) && !shown(control, &[("#page", 4.0)]), "{widget:?}");
     }
-    assert!(!shown(widget, &[("#page", 0.0)]) && !shown(widget, &[("#page", 3.0)]));
-    let wave = editor.controls.iter().find(|c| matches!(c.widget, Some(Widget::SampleWaveform))).unwrap();
-    assert!(wave.bounds[1] + wave.bounds[3] <= widget.bounds[1], "the analysis is under the waveform");
-    assert!(editor.controls.iter().all(|c| c.name != "Analysis page"), "no page of its own");
-    // The waveform and its drop target belong to the Sample page alone in the editor.
+    let analysis = editor.controls.iter().find(|c| matches!(c.widget, Some(Widget::SampleAnalysis))).unwrap();
     let waves: Vec<_> = editor.controls.iter().filter(|c| matches!(c.widget, Some(Widget::SampleWaveform))).collect();
-    assert_eq!(waves.len(), 1);
-    assert!(shown(waves[0], &[("#page", 2.0)]) && !shown(waves[0], &[("#page", 0.0)]));
+    assert_eq!(waves.len(), 1, "the waveform belongs to the sample layer alone");
+    assert!(waves[0].bounds[1] + waves[0].bounds[3] <= analysis.bounds[1], "the analysis is under the waveform");
+    assert!(shown(waves[0], &[("#page", 1.0)]) && !shown(waves[0], &[("#page", 0.0)]));
+}
+
+/// The header's layers: a layer's lamp turns it off while both are on and on while it is off
+/// (both then play), the one layer on cannot be turned off, and a layer's name shows it. The
+/// keys open over the layer shown and Done goes back to it; a page whose layer is off offers to
+/// turn it on.
+#[test]
+fn the_layers_turn_on_and_off_and_the_keys_open_over_the_layer_shown() {
+    use crate::panel::editor::{ADVANCED, BODY, KEYS_OVER_BODY, KEYS_OVER_SAMPLE, SAMPLE};
+    use suhina_device_sdk::ui::{PAGE_ID, UiGesture};
+    let layout = panel::layout();
+    for canvas in [layout.expanded.as_ref().unwrap(), layout.ui.as_ref().unwrap()] {
+        for (source, body, sample) in [(0, None, Some(2)), (1, Some(2), None), (2, Some(1), Some(0))] {
+            let values = [("source", f64::from(source)), ("#page", 0.0), ("model_revision", 3.0)];
+            let lamp = |layer: &str| {
+                let found: Vec<_> = canvas
+                    .controls
+                    .iter()
+                    .filter(|c| {
+                        c.name.starts_with("Turn ") && c.name.ends_with(&format!("{layer} layer")) && shown(c, &values)
+                    })
+                    .filter(|c| bound(c, "source"))
+                    .map(|c| c.gesture)
+                    .collect();
+                assert!(found.len() <= 1, "{layer}: {found:?}");
+                found.first().copied()
+            };
+            assert_eq!(lamp("body"), body.map(UiGesture::Set), "source {source}");
+            assert_eq!(lamp("sample"), sample.map(UiGesture::Set), "source {source}");
+        }
+    }
+    let editor = layout.expanded.as_ref().unwrap();
+    let goes = |name: &str, page: u16| {
+        let found: Vec<_> = editor
+            .controls
+            .iter()
+            .filter(|c| c.name == name && shown(c, &[("#page", f64::from(page))]))
+            .filter(|c| c.x.as_ref().is_some_and(|b| b.parameter == PAGE_ID))
+            .map(|c| c.gesture)
+            .collect();
+        assert_eq!(found.len(), 1, "{name} on page {page}");
+        found[0]
+    };
+    for page in [BODY, SAMPLE, ADVANCED, KEYS_OVER_BODY, KEYS_OVER_SAMPLE] {
+        assert_eq!(goes("Show the body layer", page), UiGesture::Set(BODY));
+        assert_eq!(goes("Show the sample layer", page), UiGesture::Set(SAMPLE));
+    }
+    for (from, to) in [
+        (BODY, KEYS_OVER_BODY),
+        (ADVANCED, KEYS_OVER_BODY),
+        (SAMPLE, KEYS_OVER_SAMPLE),
+        (KEYS_OVER_BODY, BODY),
+        (KEYS_OVER_SAMPLE, SAMPLE),
+    ] {
+        assert_eq!(goes("Keys and velocity", from), UiGesture::Set(to), "from {from}");
+    }
+    assert_eq!(goes("Done", KEYS_OVER_BODY), UiGesture::Set(BODY));
+    assert_eq!(goes("Done", KEYS_OVER_SAMPLE), UiGesture::Set(SAMPLE));
+    for (name, page, off) in [("Turn the body layer on", BODY, 1.0), ("Turn the sample layer on", SAMPLE, 0.0)] {
+        for source in [0.0, 1.0, 2.0] {
+            let control: Vec<_> = editor
+                .controls
+                .iter()
+                .filter(|c| c.name == name && shown(c, &[("#page", f64::from(page)), ("source", source)]))
+                .collect();
+            assert_eq!(control.len(), usize::from(source == off), "{name}, source {source}");
+            if let Some(control) = control.first() {
+                assert_eq!(control.gesture, UiGesture::Set(2));
+            }
+        }
+    }
 }
 
 /// The rectangles a dimming veil draws, when `control` is one.
@@ -262,66 +343,56 @@ fn controls_without_effect_in_the_current_source_are_dimmed() {
             assert!(matches!(control.widget, Some(Widget::Graphic { .. })), "{}", control.name);
         }
     }
-    let dial = |canvas: &DeviceUi, page: Option<f64>, id: &str| {
-        canvas
-            .controls
-            .iter()
-            .find(|c| {
-                matches!(c.widget, Some(Widget::Dial { .. }))
-                    && bound(c, id)
-                    && page.is_none_or(|page| shown(c, &[("#page", page), ("model_revision", 3.0), ("body", 1.0)]))
-            })
-            .cloned()
-            .unwrap()
+    // The control that edits `id` shown with `values`.
+    let edits = |canvas: &DeviceUi, id: &str, values: &[(&str, f64)]| {
+        canvas.controls.iter().find(|c| bound(c, id) && shown(c, values)).cloned().unwrap()
     };
     for revision in [3.0, 4.0] {
         for source in [0.0, 1.0, 2.0] {
             let at = format!("source {source}, revision {revision}");
-            for page in [0.0, 2.0] {
-                let values = [("#page", page), ("source", source), ("model_revision", revision), ("body", 1.0)];
-                let envelope = source == 0.0 && revision != 4.0;
-                for id in ["attack", "decay", "sustain"] {
-                    assert_eq!(dimmed(editor, &dial(editor, Some(page), id), &values), envelope, "{id} p{page} {at}");
-                }
-                assert!(!dimmed(editor, &dial(editor, Some(page), "release"), &values), "release p{page} {at}");
+            let sample = [("#page", 1.0), ("source", source), ("model_revision", revision), ("body", 1.0)];
+            let envelope = source == 0.0 && revision != 4.0;
+            for id in ["attack", "decay", "sustain"] {
+                assert_eq!(dimmed(editor, &edits(editor, id, &sample), &sample), envelope, "{id} {at}");
             }
-            let play = [("#page", 0.0), ("source", source), ("model_revision", revision)];
-            assert_eq!(dimmed(editor, &dial(editor, Some(0.0), "blend"), &play), source != 2.0, "{at}");
-            assert!(!dimmed(editor, &dial(editor, Some(0.0), "gain"), &play), "{at}");
-            let sample = [("#page", 2.0), ("source", source), ("model_revision", revision)];
-            assert_eq!(dimmed(editor, &dial(editor, Some(2.0), "root"), &sample), source == 0.0, "{at}");
+            assert_eq!(dimmed(editor, &edits(editor, "root", &sample), &sample), source == 0.0, "{at}");
             for name in ["Source start", "Loop end", "One shot"] {
                 let control = editor.controls.iter().find(|c| c.name == name).unwrap();
                 assert_eq!(dimmed(editor, control, &sample), source == 0.0, "{name} {at}");
             }
+            for page in [0.0, 1.0, 3.0] {
+                let values = [("#page", page), ("source", source), ("model_revision", revision), ("body", 1.0)];
+                for id in ["release", "gain"] {
+                    assert!(!dimmed(editor, &edits(editor, id, &values), &values), "{id} p{page} {at}");
+                }
+                assert_eq!(
+                    dimmed(editor, &edits(editor, "blend", &values), &values),
+                    source != 2.0,
+                    "blend p{page} {at}"
+                );
+            }
+            let keys = [("#page", 3.0), ("source", source), ("model_revision", revision)];
             for name in ["Lowest velocity", "Highest velocity"] {
                 let control = editor.controls.iter().find(|c| c.name == name).unwrap();
-                assert!(!dimmed(editor, control, &play), "{name} {at}");
+                assert!(!dimmed(editor, control, &keys), "{name} {at}");
             }
-            for body in [0.0, 1.0, 5.0] {
-                let values = [("source", source), ("model_revision", revision), ("body", body)];
-                let hardness =
-                    compact.controls.iter().find(|c| bound(c, "mallet_hardness") && shown(c, &values)).unwrap();
-                let mallet = source != 1.0 && revision == 3.0 && body != 0.0;
-                assert_eq!(dimmed(compact, hardness, &values), !mallet, "hardness, body {body}, {at}");
-                for id in ["body_decay", "brightness"] {
-                    assert_eq!(dimmed(compact, &dial(compact, None, id), &values), source == 1.0, "{id} {at}");
-                }
-                assert_eq!(dimmed(compact, &dial(compact, None, "blend"), &values), source != 2.0, "{at}");
-                for id in ["release", "gain"] {
-                    assert!(!dimmed(compact, &dial(compact, None, id), &values), "{id} {at}");
-                }
+            let values = [("source", source), ("model_revision", revision), ("body", 1.0)];
+            for id in ["body_decay", "brightness"] {
+                assert_eq!(dimmed(compact, &edits(compact, id, &values), &values), source == 1.0, "{id} {at}");
+            }
+            assert_eq!(dimmed(compact, &edits(compact, "blend", &values), &values), source != 2.0, "{at}");
+            for id in ["release", "gain"] {
+                assert!(!dimmed(compact, &edits(compact, id, &values), &values), "{id} {at}");
             }
         }
     }
 }
 
-/// The compact panel: the body's sound with Modal, the sample's waveform with Sample, both with
-/// Hybrid; Source switches to the next one by clicking it; the body is named for revisions 1 and
-/// 3, and the Kalimba's mallet is its Touch.
+/// The compact panel: the body's sound with the body layer on, the sample's waveform with the
+/// sample layer on, both with both; the body is named for revisions 1 and 3; five dials.
 #[test]
-fn the_compact_panel_follows_the_source_and_switches_it_by_clicking() {
-    use suhina_device_sdk::ui::{UiGesture, Widget};
+fn the_compact_panel_follows_the_layers() {
+    use suhina_device_sdk::ui::Widget;
     let layout = panel::layout();
     let compact = layout.ui.as_ref().unwrap();
     for source in [0_u16, 1, 2] {
@@ -333,18 +404,16 @@ fn the_compact_panel_follows_the_source_and_switches_it_by_clicking() {
             source != 0,
             "source {source}"
         );
-        let switch: Vec<_> = compact.controls.iter().filter(|c| c.name == "Source" && shown(c, &values)).collect();
-        assert_eq!(switch.len(), 1);
-        assert_eq!(switch[0].gesture, UiGesture::Set((source + 1) % 3), "source {source}");
-        assert!(visible("Touch") && !visible("Hardness"));
     }
     for (revision, body) in [(1.0, true), (2.0, false), (3.0, true), (4.0, false)] {
         let named = compact.controls.iter().any(|c| c.name == "Body" && shown(c, &[("model_revision", revision)]));
         assert_eq!(named, body, "revision {revision}");
     }
-    for name in ["Hardness", "Decay", "Brightness", "Release", "Blend", "Gain", "Open editor"] {
+    for name in ["Decay", "Brightness", "Release", "Blend", "Gain", "Open editor"] {
         assert!(compact.controls.iter().any(|c| c.name == name), "{name}");
     }
+    let dials = compact.controls.iter().filter(|c| matches!(c.widget, Some(Widget::Dial { .. }))).count();
+    assert_eq!(dials, 5);
 }
 
 // Both canvases draw the background artwork first, behind every control, with every theme: no
@@ -359,17 +428,19 @@ fn both_canvases_carry_the_light_artwork_behind_their_controls_with_every_theme(
         assert!(!style.contains("prefers-color-scheme") && !style.contains("display: none"), "{style}");
         assert!(style.contains("device-control { color: #34261d"), "{style}");
     }
+    assert_eq!(layout.expanded.as_ref().unwrap().size, [880.0, 500.0]);
 }
 
-/// The Soft pedal switch sits beside the page buttons on every page of the editor, so it can be
-/// found from the Sample page too, and Model tune is on the Model page's Fitted model group.
+/// The Soft pedal switch is on the keys pages, with the keyboard's facts, and Model tune on the
+/// body layer's Fitted model group.
 #[test]
-fn soft_pedal_shows_on_every_page_and_model_tune_on_the_model_page() {
+fn soft_pedal_is_with_the_keys_and_model_tune_on_the_body_layer() {
     let layout = crate::panel::layout();
     let editor = layout.expanded.as_ref().unwrap();
     let switch = editor.controls.iter().find(|c| c.name == "Soft pedal").unwrap();
-    assert!(switch.visible_when.is_none(), "not tied to one page");
-    assert!(editor.controls.iter().any(|c| c.name == "Model tune"));
+    assert!(shown(switch, &[("#page", 3.0)]) && shown(switch, &[("#page", 4.0)]) && !shown(switch, &[("#page", 0.0)]));
+    let tune = editor.controls.iter().find(|c| c.name == "Model tune").unwrap();
+    assert!(shown(tune, &[("#page", 0.0), ("model_revision", 4.0)]));
 }
 
 #[test]

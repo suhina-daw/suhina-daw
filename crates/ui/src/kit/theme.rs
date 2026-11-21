@@ -1023,6 +1023,22 @@ pub fn ui_font(size: f32) -> FontId {
     FontId::new(super::style_class::inherited_font_size(size), FontFamily::Proportional)
 }
 
+/// The UI typeface at another weight than its usual 500: [`UI_BOLD`] (700) for captions and text
+/// buttons set in spaced capitals, [`UI_LIGHT`] (300) for large names and values. Before
+/// [`install`] has given `ctx` the family it is the usual [`ui_font`].
+pub fn ui_font_weight(ctx: &egui::Context, size: f32, family: &str) -> FontId {
+    let name = FontFamily::Name(family.into());
+    if ctx.fonts(|fonts| fonts.definitions().families.contains_key(&name)) {
+        FontId::new(super::style_class::inherited_font_size(size), name)
+    } else {
+        ui_font(size)
+    }
+}
+
+/// The family names [`ui_font_weight`] takes.
+pub const UI_BOLD: &str = "manrope-bold";
+pub const UI_LIGHT: &str = "manrope-light";
+
 /// Every number, time and position is monospaced.
 pub fn mono_font(size: f32) -> FontId {
     FontId::new(super::style_class::inherited_font_size(size), FontFamily::Monospace)
@@ -1054,6 +1070,19 @@ fn fonts() -> egui::FontDefinitions {
     fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "encode-sans".into());
     fonts.families.entry(FontFamily::Proportional).or_default().insert(0, "manrope".into());
     fonts.families.insert(FontFamily::Name("encode-sans".into()), vec!["encode-sans".into()]);
+    // The same typeface at 700 and at 300, each with the usual fallbacks behind it.
+    for (family, weight) in [(UI_BOLD, 700.0), (UI_LIGHT, 300.0)] {
+        let face = egui::FontData::from_static(UI_FONT).tweak(egui::FontTweak {
+            coords: egui::epaint::text::VariationCoords::new([(b"wght", weight)]),
+            ..Default::default()
+        });
+        fonts.font_data.insert(family.into(), std::sync::Arc::new(face));
+        let mut faces = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+        if let Some(first) = faces.first_mut() {
+            *first = family.into();
+        }
+        fonts.families.insert(FontFamily::Name(family.into()), faces);
+    }
     fonts.families.entry(FontFamily::Monospace).or_default().insert(0, "ibm-plex-mono".into());
     fonts
 }

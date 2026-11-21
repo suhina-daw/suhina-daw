@@ -152,6 +152,9 @@ pub enum Widget {
     SampleRecording,
     /// Host-owned local analysis/proposal commands; never an automatable sound parameter.
     SampleAnalysis,
+    /// The loaded sample's file name and its facts (sample rate, channels, length), or that no
+    /// file is loaded; host-drawn, it takes no input.
+    SampleFile,
     /// Cumulative ADSR; omitting release makes a bipolar Attack/Decay envelope.
     Envelope {
         attack: String,
@@ -582,6 +585,7 @@ impl Widget {
             Self::SampleWaveform
             | Self::SampleRecording
             | Self::SampleAnalysis
+            | Self::SampleFile
             | Self::Envelope { .. }
             | Self::EqCurve => {}
             // Host-rendered: the host draws them from its own state.
