@@ -273,7 +273,10 @@ pub struct Instrument {
     params: ParamBank<{ param::COUNT }>,
     sampler: Sampler,
     sample_silent: bool,
-    voices: [Voice; MAX_VOICES],
+    /// On the heap, allocated once at construction: sixteen voices are about 240 KB, which a
+    /// debug build copying the Instrument through its constructors would put on the stack
+    /// several times over (a plug-in scanner's 1 MB stack overflowed).
+    voices: Box<[Voice]>,
     serial: u64,
     pedal: bool,
     bend_semitones: f64,
@@ -318,7 +321,7 @@ impl Instrument {
             params: ParamBank::new(&PARAMS),
             sampler,
             sample_silent: true,
-            voices: [Voice::default(); MAX_VOICES],
+            voices: vec![Voice::default(); MAX_VOICES].into_boxed_slice(),
             serial: 0,
             pedal: false,
             bend_semitones: 0.0,
@@ -922,7 +925,7 @@ impl Device for Instrument {
                     }
                 };
                 // A fitted recording's noise tail; silent for every other body.
-                let [tail_reference, tail_other] = voice.tail.next();
+                let [tail_reference, tail_other] = voice.tail.next_frame();
                 reference += tail_reference;
                 other += tail_other;
                 let mut attack_done = false;

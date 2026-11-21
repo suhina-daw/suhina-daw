@@ -26,7 +26,10 @@ fn revision_one_matches_the_independent_analytical_reference_render() {
     // revisions 1 and 2, its held layer (per-sine levels, ramps and couplings, eleven noise
     // filters) and its tail (eleven bands of three sections in two channels).
     assert!(std::mem::size_of::<Voice>() <= 15 * 1024);
-    assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
+    // The voices live on the heap (allocated at construction), so the Instrument itself stays
+    // small enough to move through a debug build's constructors on a 1 MB stack.
+    assert!(std::mem::size_of::<Instrument>() <= 32 * 1024);
+    assert!(std::mem::size_of::<Instrument>() + MAX_VOICES * std::mem::size_of::<Voice>() <= 256 * 1024);
 }
 
 #[test]

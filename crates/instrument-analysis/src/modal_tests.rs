@@ -489,12 +489,37 @@ fn decaying_noise_the_modes_miss_becomes_the_tail() {
         .collect();
     let report = fit(&noisy, rate, 1, 0..noisy.len(), 57, |_, _| true).unwrap();
     let tail = report.recording.unwrap().tail.expect("a tail");
-    let kept: Vec<f32> = tail.decay.iter().copied().filter(|d| *d > 0.0).collect();
-    assert!(kept.len() >= 5, "{tail:?}");
+    // From band 6 (800 Hz) up a band has dozens of bins; the lowest bands have three or four,
+    // too few for a close decay.
+    let kept: Vec<f32> = tail.decay.iter().skip(6).copied().filter(|d| *d > 0.0).collect();
+    assert!(kept.len() >= 4, "{tail:?}");
     for decay in &kept {
-        assert!((decay - 1.0).abs() < 0.35, "{tail:?}");
+        assert!((decay - 1.0).abs() < 0.2, "{tail:?}");
     }
     assert_eq!(tail.level, tail.other, "a mono recording's channels are the same");
     let report = fit(&clean, rate, 1, 0..clean.len(), 57, |_, _| true).unwrap();
     assert!(report.recording.unwrap().tail.is_none());
+}
+
+/// The attack is cut at the source's own rate up to 48 kHz, so the knock keeps its top octave;
+/// a faster source falls back to the prepared 22050 Hz (version 4).
+#[test]
+fn the_attack_keeps_the_source_rate_up_to_48_khz() {
+    for (rate, expected) in [(44100, 44100), (48000, 48000), (96000, 22050)] {
+        let mut seed = 0x9e37_79b9_u32;
+        let pcm: Vec<f32> = struck(rate, 2.0, &[(421.7, 1.8, 0.5), (1139.3, 1.1, 0.3)])
+            .iter()
+            .enumerate()
+            .map(|(n, x)| {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                // A short noisy knock the modes cannot explain.
+                let knock =
+                    if n < rate as usize / 100 { (f64::from(seed >> 8) / 8_388_608.0 - 1.0) * 0.3 } else { 0.0 };
+                x + knock as f32
+            })
+            .collect();
+        let recording = fit(&pcm, rate, 1, 0..pcm.len(), 57, |_, _| true).unwrap().recording.unwrap();
+        assert_eq!(recording.attack_rate, expected, "{rate}");
+        assert_eq!(recording.attack.len(), expected as usize / 4, "{rate}");
+    }
 }

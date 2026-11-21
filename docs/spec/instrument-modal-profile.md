@@ -146,8 +146,8 @@ recording, four bytes `[1, reference channel, 0, 0]` followed by each mode's oth
 (0..8) and phase offset (-pi..pi) as little-endian f32, a u32 length (0, or the attack's length)
 and the attack's other channel as f32; or `[0, 0, 0, 0]` for a recording without one. A set
 without a stereo part encodes as schema 3 or 2 as before. The model layer's opaque state limit
-is 2 MiB, which holds 32 stereo recordings with their two 22050 Hz attack channels (about
-1.6 MB).
+is 4 MiB, which holds 32 stereo recordings with two 48 kHz attack channels each (about 3.2 MB):
+an attack is kept at its source's rate, up to 48 kHz.
 Decoding precomputes, off the audio thread, which mode of every other recording each mode
 matches (the nearest ratio within 3 %, `|ln(r2 / r1)| <= 0.03`, each mode used at most once) and
 each recording's **decay law**: the least-squares slope of `ln T60` against `ln frequency` over
@@ -281,9 +281,12 @@ by Release against its default 0.25 s). The layer, its fusion and how a voice pl
 **Budget.** A revision-4 voice holds 128 resonators (each with its two other-channel weights),
 an attack read position, its envelope, its held layer's state (per-sine levels, ramps and
 couplings, eleven noise filters) and its tail's (eleven bands of three `f32` sections in two
-channels) beside the 16 resonators of revisions 1 and 2 or a bar body: under 15 KiB per voice; the whole
-Instrument measured 240,304 bytes, within the runtime's 256 KiB inline target. The set itself
-(at most 2 MiB) is shared and prepared off the
+channels) beside the 16 resonators of revisions 1 and 2 or a bar body: under 15 KiB per voice, about 240 KB
+for the sixteen, within the runtime's 256 KiB target. The voices are one heap allocation made
+when the Instrument is built (never on the audio thread): inline, a debug build copied the whole
+Instrument through its constructors several times on the stack, and a plug-in scanner's 1 MB
+stack overflowed. The set itself
+(at most 4 MiB) is shared and prepared off the
 audio thread. Note-on fuses at most 32 recordings of 64 modes without allocating.
 
 **Commands.** `instrument.acceptFit` adopts a set with the fitted recording as its only member
