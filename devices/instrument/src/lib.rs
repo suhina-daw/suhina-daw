@@ -625,7 +625,7 @@ impl Device for Instrument {
                 // reference channel and the other channel with the recording's stereo weights.
                 let plain = voice.bank.next_sample();
                 let [mut reference, mut other] = voice.layer.next_stereo(&mut voice.fitted);
-                let [tail_reference, tail_other] = voice.tail.next();
+                let [tail_reference, tail_other] = voice.tail.next_frame();
                 reference += tail_reference;
                 other += tail_other;
                 let mut attack_done = false;

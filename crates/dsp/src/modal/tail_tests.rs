@@ -20,7 +20,7 @@ fn rms(x: &[f32]) -> f64 {
 fn play(player: &mut TailPlayer, frames: usize) -> (Vec<f32>, Vec<f32>) {
     let (mut left, mut right) = (Vec::with_capacity(frames), Vec::with_capacity(frames));
     for _ in 0..frames {
-        let [a, b] = player.next();
+        let [a, b] = player.next_frame();
         left.push(a);
         right.push(b);
     }
@@ -74,7 +74,7 @@ fn the_tail_fades_in_and_the_damper_caps_it() {
     let mut empty = TailPlayer::default();
     empty.start(&Tail::NONE, 1.0, RATE, (0, 0), true, 1);
     assert!(!empty.is_active());
-    assert_eq!(empty.next(), [0.0, 0.0]);
+    assert_eq!(empty.next_frame(), [0.0, 0.0]);
 }
 
 #[test]

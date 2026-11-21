@@ -85,6 +85,20 @@ estimation data and odd windows are held out for validation. Least squares on lo
 versus time estimates exponential decay; T60 is minus ln(1000) divided by the slope. The
 window's damping-dependent amplitude bias is compensated before storing relative magnitudes.
 
+**Partials a neighbour hid (algorithm version 4).** A partial a few hertz beside a much
+stronger one fails the prominence test, since the stronger one is among the neighbours whose
+median it must stand above; a piano chord's 1..2 kHz partials were missing that way, and a noise
+tail standing in for them sounded like applause behind the notes. So once the candidates are
+fitted (and a chord's notes have added theirs), the fitted modes are rendered and subtracted from
+the recording over a detection-window length that starts after the 0.25 s attack (whose broadband
+knock would hide them again; at the start when the interval is too short), and the residual's
+spectrum is searched like the recording's:
+local maxima within 60 dB of the recording's strongest that stand 6 dB above the median of
+their neighbours 3..8 bins away **in the residual** (as a string's predicted partials must; the
+recording's 20 dB let two of 134 through on a piano chord), strongest first, not within the candidate
+separation of a candidate, until 384 candidates in all. Each is refined on the residual and
+measured and fitted on the recording like any candidate.
+
 **Fast partials (algorithm version 4).** The envelope windows suit partials that ring for
 seconds, but the upper partials of a struck or plucked note (a synthesizer note whose filter
 closes, a piano's treble partials) fall 60 dB within a few tenths of a second, inside one or two
@@ -163,7 +177,13 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   three windows until 60 dB below that peak (no rise rule), it has at least six windows, a
   least-squares line through them falls by at least 6 dB with a T60 within 0.001..60 s, and the
   line's RMS envelope error is at most 15 dB, and the mean level of each third of those windows
-  is at least 1 dB below the third before it (a burst followed by a flat floor is no decay). A
+  is at least 1 dB below the third before it (a burst followed by a flat floor is no decay).
+  As a last resort (algorithm version 4), a candidate that still fails but clearly fades is kept
+  loose too: from its loudest window in the first third of its windows until 60 dB below it, at
+  least four windows whose first third stands at least 3 dB above their last, with the
+  least-squares decay (a T60 within 0.001..60 s) and no error limit. On a piano chord the
+  partials this keeps (1062, 1478, 1548, 1620, 1994, 2057 and 2122 Hz among them, uneven from
+  beating and from energy moving between strings) were the 1..2 kHz energy the model lacked. A
   loose mode joins the fitted recording with that
   T60 (and may get a beating partner below), but never the schema-1 profile or its reported
   validation errors, and a sound with loose modes only has no model.
@@ -197,10 +217,13 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   the fit also renders the modes (with their stereo placements) over the whole interval and
   measures, in Hann frames of 2048 samples every 1024, how much power the recording has beyond
   them in each of the eleven 2/3-octave noise bands of the held layer
-  ([held tones](instrument-sustained-models.md)): `max(0, recording - modes)` per bin, summed
-  over the band's bins further than two bins (the Hann main lobe) from every part of every mode and scaled to the
-  band's whole width (a band with fewer than two such bins in a frame counts nothing there), so
-  a mode's small level error is not taken for noise; for the fitted channel and the other one. From the first frame centred after
+  ([held tones](instrument-sustained-models.md)): the median of `max(0, recording - modes)`
+  over the band's bins further than two bins (the Hann main lobe) from every part of every mode,
+  divided by `ln 2` (a noise bin's median against its mean) and scaled to the band's whole width
+  (a band with fewer than two such bins in a frame counts nothing there), for the fitted channel
+  and the other one. The median is the noise between the peaks: a mode's small level error is
+  not taken for noise, and neither is a partial the modes miss, which a tail summing every bin
+  played back as hiss. From the first frame centred after
   0.1 s, while a band's summed missing power stays within 50 dB of its largest and 10 dB above
   the band's floor (the median of its last eight frames: the recording's own noise, into which
   a decay must not be fitted, or the fitted chord's 4..8 kHz tail rang 10 dB too long), a least-squares

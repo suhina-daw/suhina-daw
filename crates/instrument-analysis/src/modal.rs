@@ -66,6 +66,8 @@ const NOTE_ORDER_COST: f64 = 2e-4;
 const MAX_CANDIDATES: usize = 192;
 /// Candidates in all once a chord's notes add their own partials.
 const MAX_CHORD_CANDIDATES: usize = 384;
+/// Where the residual is searched for hidden partials: after the 0.25 s attack.
+const RESIDUAL_OFFSET: usize = (ATTACK_SECONDS * RATE as f64) as usize;
 /// Partials along the string (instrument-modal-fitting.md): the fundamental's distance from the
 /// reference key, the inharmonicity bound, the search width and the weakest partial kept.
 const FUNDAMENTAL_RATIO: f64 = 1.041_299; // 70 cents
@@ -101,6 +103,9 @@ const LOOSE_MAX_DB: f64 = 15.0;
 /// Each third of a loose span's windows is on average at least this much below the one before:
 /// a burst followed by a flat floor is not a decay.
 const LOOSE_THIRD_DB: f64 = 1.0;
+/// The last resort: windows it needs and how far its first third must stand above its last.
+const FALLBACK_MIN_WINDOWS: usize = 4;
+const FALLBACK_DROP_DB: f64 = 3.0;
 /// A fast part is kept when it lowers the span's RMS envelope error by this much, or leaves at
 /// most this fraction of a single exponential's error of at least this much.
 const TWO_STAGE_GAIN_DB: f64 = 1.0;
@@ -438,6 +443,40 @@ pub fn fit(
             }
         }
     }
+    // Analysis by synthesis: a partial a strong neighbour hid in the detection spectrum stands
+    // out once the fitted modes are subtracted from the detection window.
+    if !accepted.is_empty() {
+        // After the attack, whose broadband knock would hide them again, when the interval is
+        // long enough.
+        let offset = if mono.len() >= RESIDUAL_OFFSET + detection_size { RESIDUAL_OFFSET } else { 0 };
+        let (rendered, _) = render_modes(&accepted, offset + detection_size, false);
+        let heard = mono.get(offset..offset + detection_size).unwrap_or(detection);
+        let residual: Vec<f64> = heard.iter().zip(rendered.get(offset..).unwrap_or(&[])).map(|(x, m)| x - m).collect();
+        let mut bins: Vec<Complex64> =
+            residual.iter().zip(&detection_window).map(|(x, w)| Complex64::new(x * w, 0.0)).collect();
+        work.step()?;
+        fft.process_with_scratch(&mut bins, &mut scratch);
+        let left: Vec<f64> = bins.iter().take(detection_size / 2).map(|x| x.norm()).collect();
+        let start = frequencies.len();
+        for bin in residual_peaks(&left, &frequencies, &string, MAX_CHORD_CANDIDATES) {
+            let hz = refine(
+                &residual,
+                &detection_window,
+                (bin as f64 - 0.75) * bin_hz,
+                (bin as f64 + 0.75) * bin_hz,
+                &mut work,
+            )?;
+            if (low_hz..=high_hz).contains(&hz) {
+                frequencies.push(hz);
+            }
+        }
+        for position in start..frequencies.len() {
+            let Some(&hz) = frequencies.get(position) else { continue };
+            if let Some(fitted) = fitter.fit(hz, gap(&frequencies, position), &mut work)? {
+                accepted.push(fitted);
+            }
+        }
+    }
     // Schema-1 profile: the 16 largest slow magnitudes of validated modes, as before.
     let mut largest: Vec<&Fitted> = accepted.iter().filter(|f| !f.evidence.loose).collect();
     largest.sort_by(|a, b| b.slow.total_cmp(&a.slow).then_with(|| a.hz.total_cmp(&b.hz)));
@@ -516,7 +555,8 @@ pub fn fit(
         let missing = tail(&accepted, &mono, stereo.map(|(other, _)| other));
         let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
         let own_tail = missing.as_ref().and_then(|m| m.tail(sum, 1.0));
-        report.recording = recording(&accepted, &whole, &mono, reference_key, reference_hz, scale, stereo, own_tail);
+        let source = Source { mono: &mono, scale, stereo };
+        report.recording = recording(&accepted, &whole, &source, reference_key, reference_hz, own_tail);
         report.recording_modes = accepted.iter().map(|f| f.evidence).collect();
         // A chord: one recording per note, its attack the residual against every note's modes.
         if notes.len() >= 2 {
@@ -537,7 +577,7 @@ pub fn fit(
                     let hz = 440.0 * 2.0_f64.powf((f64::from(key) - 69.0) / 12.0);
                     let sum: f64 = modes.iter().map(Fitted::magnitude).sum();
                     let note_tail = missing.as_ref().and_then(|m| m.tail(sum, power_share));
-                    recording(modes, &shared, &mono, key, hz, scale, stereo, note_tail)
+                    recording(modes, &shared, &source, key, hz, note_tail)
                 })
                 .collect();
             if report.notes.len() < 2 {
@@ -746,18 +786,25 @@ struct Residual<'a> {
     layer: Option<Sustain>,
 }
 
-/// The recording of `accepted` at `key`, its attack the residual against `residual.against`, and
-/// with a stereo recording's other channel and reference channel its stereo part.
+/// The prepared source a recording is cut from: the fitted channel, its scale against the
+/// source's full scale, and a stereo recording's other channel with the fitted channel's index.
+struct Source<'a> {
+    mono: &'a [f64],
+    scale: f64,
+    stereo: Option<(&'a [f64], u8)>,
+}
+
+/// The recording of `accepted` at `key` (`reference_hz` its frequency), its attack the residual
+/// against `residual.against`, its stereo part from the source's other channel and its `tail`.
 fn recording(
     accepted: &[Fitted],
     residual: &Residual<'_>,
-    mono: &[f64],
+    source: &Source<'_>,
     key: u8,
     reference_hz: f64,
-    scale: f64,
-    stereo: Option<(&[f64], u8)>,
     tail: Option<Tail>,
 ) -> Option<ModelRecording> {
+    let (mono, scale, stereo) = (source.mono, source.scale, source.stereo);
     let layer = residual.layer;
     let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
     if !(sum.is_finite() && sum > 0.0) {
@@ -910,33 +957,7 @@ fn tail(modes: &[Fitted], mono: &[f64], other: Option<&[f64]>) -> Option<Missing
         return None;
     }
     let span = (frames - 1) * TAIL_HOP + TAIL_FRAME;
-    // The modes by recursion: each part a rotating, decaying phasor.
-    let (mut model, mut model_other) = (vec![0.0; span], vec![0.0; if other.is_some() { span } else { 0 }]);
-    let ln1000 = 1000.0_f64.ln();
-    for fitted in modes {
-        let (gain, offset) = fitted.other;
-        for (hz, t60, amplitude) in fitted.parts() {
-            if !(amplitude > 0.0 && t60 > 0.0 && hz < f64::from(RATE) * 0.5) {
-                continue;
-            }
-            let radius = (-ln1000 / (t60 * f64::from(RATE))).exp();
-            let (step_sin, step_cos) = (TAU * hz / f64::from(RATE)).sin_cos();
-            let (rotate_re, rotate_im) = (radius * step_cos, radius * step_sin);
-            let phase = fitted.evidence.phase;
-            let (mut re, mut im) = (amplitude * phase.cos(), amplitude * phase.sin());
-            let (offset_sin, offset_cos) = offset.sin_cos();
-            for (n, slot) in model.iter_mut().enumerate() {
-                *slot += im;
-                if let Some(o) = model_other.get_mut(n) {
-                    *o += gain * (im * offset_cos + re * offset_sin);
-                }
-                (re, im) = (re * rotate_re - im * rotate_im, re * rotate_im + im * rotate_re);
-                if re.abs() + im.abs() < 1e-12 {
-                    break;
-                }
-            }
-        }
-    }
+    let (model, model_other) = render_modes(modes, span, other.is_some());
     let window = hann(TAIL_FRAME);
     let fft = FftPlanner::<f64>::new().plan_fft_forward(TAIL_FRAME);
     let mut scratch = vec![Complex64::default(); fft.get_inplace_scratch_len()];
@@ -1001,11 +1022,15 @@ fn tail(modes: &[Fitted], mono: &[f64], other: Option<&[f64]>) -> Option<Missing
                 if open.len() < TAIL_MIN_OPEN_BINS {
                     continue;
                 }
-                let sum: f64 = open
+                // The median bin, not the mean: the noise floor between peaks, so a partial the
+                // modes miss is not played back as hiss. A single periodogram bin of noise is
+                // exponentially distributed, its median ln 2 of its mean.
+                let mut differences: Vec<f64> = open
                     .iter()
                     .map(|&k| (heard.get(k).copied().unwrap_or(0.0) - played.get(k).copied().unwrap_or(0.0)).max(0.0))
-                    .sum();
-                let power = sum * (high + 1).saturating_sub(low) as f64 / open.len() as f64;
+                    .collect();
+                let floor = median(&mut differences) / std::f64::consts::LN_2;
+                let power = floor * (high + 1).saturating_sub(low) as f64;
                 if channel == 0 { cell.0 = power } else { cell.1 = power }
             }
         }
@@ -1100,6 +1125,73 @@ fn median(values: &mut [f64]) -> f64 {
         _ if n % 2 == 1 => values.get(n / 2).copied().unwrap_or(0.0),
         _ => (values.get(n / 2 - 1).copied().unwrap_or(0.0) + values.get(n / 2).copied().unwrap_or(0.0)) / 2.0,
     }
+}
+
+/// `modes` rendered over `length` samples from the strike: the fitted channel and, with `other`,
+/// the other channel by their stereo placements. Each part is a rotating, decaying phasor.
+fn render_modes(modes: &[Fitted], length: usize, other: bool) -> (Vec<f64>, Vec<f64>) {
+    let (mut model, mut model_other) = (vec![0.0; length], vec![0.0; if other { length } else { 0 }]);
+    let ln1000 = 1000.0_f64.ln();
+    for fitted in modes {
+        let (gain, offset) = fitted.other;
+        for (hz, t60, amplitude) in fitted.parts() {
+            if !(amplitude > 0.0 && t60 > 0.0 && hz < f64::from(RATE) * 0.5) {
+                continue;
+            }
+            let radius = (-ln1000 / (t60 * f64::from(RATE))).exp();
+            let (step_sin, step_cos) = (TAU * hz / f64::from(RATE)).sin_cos();
+            let (rotate_re, rotate_im) = (radius * step_cos, radius * step_sin);
+            let phase = fitted.evidence.phase;
+            let (mut re, mut im) = (amplitude * phase.cos(), amplitude * phase.sin());
+            let (offset_sin, offset_cos) = offset.sin_cos();
+            for (n, slot) in model.iter_mut().enumerate() {
+                *slot += im;
+                if let Some(o) = model_other.get_mut(n) {
+                    *o += gain * (im * offset_cos + re * offset_sin);
+                }
+                (re, im) = (re * rotate_re - im * rotate_im, re * rotate_im + im * rotate_re);
+                if re.abs() + im.abs() < 1e-12 {
+                    break;
+                }
+            }
+        }
+    }
+    (model, model_other)
+}
+
+/// Detection bins of the residual's peaks (the detection window less the fitted modes): local
+/// maxima within 60 dB of the recording's strongest that stand 6 dB above the median of their
+/// neighbours 3..8 bins away in the residual and are not within the candidate separation of a
+/// candidate, strongest first, until `total` candidates.
+fn residual_peaks(residual: &[f64], found: &[f64], spectrum: &Spectrum<'_>, total: usize) -> Vec<usize> {
+    let mut peaks: Vec<(usize, f64)> = (2..residual.len().saturating_sub(9))
+        .filter_map(|bin| {
+            let (value, before, after) = (*residual.get(bin)?, *residual.get(bin - 1)?, *residual.get(bin + 1)?);
+            if value < spectrum.highest * 1e-3 || value <= before || value <= after {
+                return None;
+            }
+            let mut nearby = [0.0_f64; 12];
+            for (slot, delta) in nearby.iter_mut().zip([-8_isize, -7, -6, -5, -4, -3, 3, 4, 5, 6, 7, 8]) {
+                *slot = bin.checked_add_signed(delta).and_then(|b| residual.get(b)).copied().unwrap_or(value);
+            }
+            nearby.sort_by(f64::total_cmp);
+            (value >= nearby[6] * PARTIAL_PROMINENCE).then_some((bin, value))
+        })
+        .collect();
+    peaks.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let mut taken: Vec<f64> = found.to_vec();
+    let mut bins = Vec::new();
+    for (bin, _) in peaks {
+        if taken.len() >= total {
+            break;
+        }
+        let hz = bin as f64 * spectrum.bin_hz;
+        if taken.iter().all(|f| (f - hz).abs() >= spectrum.separation_hz) {
+            taken.push(hz);
+            bins.push(bin);
+        }
+    }
+    bins
 }
 
 /// The 64 modes with most energy (`magnitude^2 * T60`), in frequency order.
@@ -1583,7 +1675,7 @@ fn estimate(hz: f64, values: &[(usize, f64, f64)]) -> Option<Estimate> {
         }
         (Some(one), None) => Some(plain(one)),
         (None, Some((two, _))) => Some(two),
-        (None, None) => late.or_else(|| loose_span(hz, values)).map(plain),
+        (None, None) => late.or_else(|| loose_span(hz, values)).or_else(|| fallback_span(hz, values)).map(plain),
     }
 }
 
@@ -1635,7 +1727,6 @@ fn loose_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEv
     ))
 }
 
-/// Least-squares intercept and slope through (time, value) points.
 /// A fast first stage the envelope windows averaged away, from short-window measurements:
 /// the excess over the slow decay (true amplitude `slow`, `slope` per second, as `window` would
 /// measure it), from the loudest of the first four windows while it is at least 1 dB, fitted as
@@ -1672,6 +1763,52 @@ fn early_stage(early: &[(usize, f64, f64)], slow: f64, slope: f64, window: &[f64
     (two + TWO_STAGE_GAIN_DB <= single).then(|| (intercept.exp() / window_bias(window, fast_slope), fast_slope))
 }
 
+/// A last resort for a partial that clearly fades but whose envelope no fit describes (a deep,
+/// uneven beat, energy moving between strings): from its loudest of the first third of the
+/// windows to the floor, the least-squares decay, kept loose when it falls at least 3 dB from the
+/// first third to the last and needs no error limit.
+fn fallback_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEvidence)> {
+    let third = (values.len() / 3).max(1);
+    let head = values.get(..third)?;
+    let start = head.iter().enumerate().max_by(|a, b| a.1.2.total_cmp(&b.1.2))?.0;
+    let peak = values.get(start)?.2;
+    let span: Vec<(f64, f64)> =
+        values.get(start..)?.iter().take_while(|v| (peak - v.2) * DB <= SPAN_FLOOR_DB).map(|v| (v.1, v.2)).collect();
+    if span.len() < FALLBACK_MIN_WINDOWS {
+        return None;
+    }
+    let mean = |part: &[(f64, f64)]| part.iter().map(|p| p.1).sum::<f64>() / part.len().max(1) as f64;
+    let part = (span.len() / 3).max(1);
+    let fall_db = (mean(span.get(..part)?) - mean(span.get(span.len() - part..)?)) * DB;
+    let (intercept, slope) = line(&span)?;
+    let decay = -1000.0_f64.ln() / slope;
+    if !(slope < 0.0 && fall_db >= FALLBACK_DROP_DB && (0.001..=SUSTAINED_SECONDS).contains(&decay)) {
+        return None;
+    }
+    let rms_db =
+        (span.iter().map(|(t, y)| ((y - intercept - slope * t) * DB).powi(2)).sum::<f64>() / span.len() as f64).sqrt();
+    Some((
+        intercept,
+        slope,
+        ModeEvidence {
+            frequency_hz: hz,
+            decay_seconds: decay,
+            estimation_rms_db: rms_db,
+            validation_rms_db: rms_db,
+            estimation_windows: span.len(),
+            validation_windows: 0,
+            sustained: false,
+            fast_decay_seconds: 0.0,
+            fast_share: 0.0,
+            beat_hz: 0.0,
+            beat_share: 0.0,
+            phase: 0.0,
+            loose: true,
+        },
+    ))
+}
+
+/// Least-squares intercept and slope through (time, value) points.
 fn line(points: &[(f64, f64)]) -> Option<(f64, f64)> {
     let n = points.len() as f64;
     let mean_t = points.iter().map(|p| p.0).sum::<f64>() / n;

@@ -192,7 +192,7 @@ impl TailPlayer {
     }
 
     /// The next sample of the fitted channel and of the other channel.
-    pub fn next(&mut self) -> [f32; 2] {
+    pub fn next_frame(&mut self) -> [f32; 2] {
         if !self.active {
             return [0.0; 2];
         }
