@@ -251,13 +251,10 @@ pub(crate) fn show(
             });
         };
         let Some(view) = view else {
-            wrapped_in(
-                ui,
-                &look,
-                block(24.0, 44.0),
-                "Analyze a root, fit one decaying strike, or fit a folder of notes.",
-                Some("Fitting is experimental. Inspect the result before accepting; the source stays playable."),
-            );
+            // Two short lines that fit the block; the rest in their tooltip.
+            let more = "Analyze checks the file's root. Fit model fits one decaying strike, Fit folder… a folder of notes. Fitting is experimental: inspect the result before accepting; the source stays playable.";
+            line_in(ui, &look, block(26.0, 16.0), "Check the file's root,", 10.5, Some(more));
+            line_in(ui, &look, block(42.0, 16.0), "or fit a model from it.", 10.5, Some(more));
             fit_buttons(ui, actions);
             return;
         };
