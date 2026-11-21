@@ -26,7 +26,10 @@ const MAX_FRAMES: usize = 12;
 /// how many consecutive windows from the start.
 const SHORT_FRAME: usize = 512;
 const SHORT_FRAMES: usize = 48;
-const MAX_CANDIDATES: usize = 96;
+/// A fast first stage: how far above the slow decay a short window must stand, and in how many.
+const EARLY_EXCESS_DB: f64 = 1.0;
+const EARLY_MIN_WINDOWS: usize = 3;
+const MAX_CANDIDATES: usize = 192;
 /// Partials along the string (instrument-modal-fitting.md): the fundamental's distance from the
 /// reference key, the inharmonicity bound, the search width and the weakest partial kept.
 const FUNDAMENTAL_RATIO: f64 = 1.041_299; // 70 cents
@@ -365,34 +368,45 @@ pub fn fit(
     }
     let mut accepted: Vec<Fitted> = Vec::with_capacity(MAX_CANDIDATES);
     for (position, &hz) in frequencies.iter().enumerate() {
+        // The short window's main lobe (two bins each side) stays clear of the nearest other
+        // candidate.
+        let gap = frequencies
+            .iter()
+            .enumerate()
+            .filter(|(other, _)| *other != position)
+            .map(|(_, other)| (other - hz).abs())
+            .fold(f64::INFINITY, f64::min);
+        let needed = 4.0 * f64::from(RATE) / gap;
+        let short = short_windows.iter().find(|w| w.len() as f64 >= needed);
         let (measurements, thetas) = measure(&mono, &window, frames, hz, &mut work)?;
         let mut found = estimate(hz, &measurements).map(|e| (e, thetas, window.as_slice()));
-        if found.is_none() {
-            // The short window's main lobe (two bins each side) stays clear of the nearest
-            // other candidate.
-            let gap = frequencies
-                .iter()
-                .enumerate()
-                .filter(|(other, _)| *other != position)
-                .map(|(_, other)| (other - hz).abs())
-                .fold(f64::INFINITY, f64::min);
-            let needed = 4.0 * f64::from(RATE) / gap;
-            if let Some(short) = short_windows.iter().find(|w| w.len() as f64 >= needed) {
-                let count = (mono.len() / short.len()).min(SHORT_FRAMES);
-                let (measurements, thetas) = measure(&mono, short, count, hz, &mut work)?;
-                found = estimate(hz, &measurements).map(|e| (e, thetas, short.as_slice()));
-            }
+        if found.is_none()
+            && let Some(short) = short
+        {
+            let count = (mono.len() / short.len()).min(SHORT_FRAMES);
+            let (measurements, thetas) = measure(&mono, short, count, hz, &mut work)?;
+            found = estimate(hz, &measurements).map(|e| (e, thetas, short.as_slice()));
         }
         let Some((estimate, thetas, used)) = found else { continue };
         let slow = estimate.intercept.exp() / window_bias(used, estimate.slope);
-        let fast = estimate.fast.map_or(0.0, |(intercept, slope)| intercept.exp() / window_bias(used, slope));
+        let mut fast_part = estimate.fast.map(|(intercept, slope)| (intercept.exp() / window_bias(used, slope), slope));
+        // A fast first stage inside the first envelope windows, seen by the short windows.
+        if fast_part.is_none()
+            && used.len() == frame_size
+            && let Some(short) = short
+        {
+            let count = (mono.len() / short.len()).min(SHORT_FRAMES);
+            let (early, _) = measure(&mono, short, count, hz, &mut work)?;
+            fast_part = early_stage(&early, slow, estimate.slope, short);
+        }
+        let fast = fast_part.map_or(0.0, |(amplitude, _)| amplitude);
         // Phase at the strike, from the first window of the mode's span.
         let theta = thetas.get(estimate.first_window).copied().unwrap_or(0.0);
         let phase = wrap(theta - TAU * hz * (estimate.first_window * used.len()) as f64 / f64::from(RATE));
         if slow.is_finite() && slow > 0.0 && fast.is_finite() {
             let mut evidence = estimate.evidence;
             evidence.phase = phase;
-            if let Some((_, fast_slope)) = estimate.fast {
+            if let Some((_, fast_slope)) = fast_part {
                 evidence.fast_decay_seconds = -1000.0_f64.ln() / fast_slope;
                 evidence.fast_share = fast / (slow + fast);
             }
@@ -1041,6 +1055,42 @@ fn loose_span(hz: f64, values: &[(usize, f64, f64)]) -> Option<(f64, f64, ModeEv
 }
 
 /// Least-squares intercept and slope through (time, value) points.
+/// A fast first stage the envelope windows averaged away, from short-window measurements:
+/// the excess over the slow decay (true amplitude `slow`, `slope` per second, as `window` would
+/// measure it), from the loudest of the first four windows while it is at least 1 dB, fitted as
+/// a second exponential. Kept when it covers at least three windows, decays faster than half the
+/// slow T60 (at least 1 ms) and lowers those windows' RMS error by at least 1 dB. Returns its
+/// true amplitude and slope.
+fn early_stage(early: &[(usize, f64, f64)], slow: f64, slope: f64, window: &[f64]) -> Option<(f64, f64)> {
+    let predicted = |t: f64| slow * window_bias(window, slope) * (slope * t).exp();
+    let head = early.get(..early.len().min(4))?;
+    let start = head.iter().enumerate().max_by(|a, b| a.1.2.total_cmp(&b.1.2))?.0;
+    let mut excess = Vec::new();
+    let mut covered = Vec::new();
+    for &(_, t, y) in early.get(start..)? {
+        let (measured, model) = (y.exp(), predicted(t));
+        if !(model > 0.0 && (measured / model).ln() * DB >= EARLY_EXCESS_DB) {
+            break;
+        }
+        excess.push((t, (measured - model).ln()));
+        covered.push((t, y));
+    }
+    if excess.len() < EARLY_MIN_WINDOWS {
+        return None;
+    }
+    let (intercept, fast_slope) = line(&excess)?;
+    let fast_decay = -1000.0_f64.ln() / fast_slope;
+    if !(fast_slope < 0.0 && fast_slope < 2.0 * slope && fast_decay >= 0.001) {
+        return None;
+    }
+    let rms = |model: &dyn Fn(f64) -> f64| {
+        (covered.iter().map(|(t, y)| ((y - model(*t).ln()) * DB).powi(2)).sum::<f64>() / covered.len() as f64).sqrt()
+    };
+    let single = rms(&|t| predicted(t));
+    let two = rms(&|t| predicted(t) + (intercept + fast_slope * t).exp());
+    (two + TWO_STAGE_GAIN_DB <= single).then(|| (intercept.exp() / window_bias(window, fast_slope), fast_slope))
+}
+
 fn line(points: &[(f64, f64)]) -> Option<(f64, f64)> {
     let n = points.len() as f64;
     let mean_t = points.iter().map(|p| p.0).sum::<f64>() / n;
