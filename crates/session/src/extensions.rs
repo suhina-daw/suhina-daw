@@ -594,7 +594,7 @@ impl Extensions {
     pub(crate) fn apply_sub_results(
         &mut self,
         results: Vec<(String, u64, Result<Value, String>)>,
-    ) -> Vec<(String, u64, Value)> {
+    ) -> Vec<(String, u64, String, Value)> {
         let mut pushed = Vec::new();
         for (program, token, result) in results {
             let Ok(value) = result else {
@@ -605,7 +605,7 @@ impl Extensions {
             };
             if sub.last.as_ref() != Some(&value) {
                 sub.last = Some(value.clone());
-                pushed.push((sub.program.clone(), sub.token, value));
+                pushed.push((sub.program.clone(), sub.token, sub.cmd.clone(), value));
             }
         }
         pushed

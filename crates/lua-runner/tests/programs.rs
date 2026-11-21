@@ -102,6 +102,26 @@ suhina.on_state(function(token, value)
 end)
 suhina.subscribe("track.setVolume", { tracks = { 1 } })
 "#;
+/// One MiB of payload on every press: the send-back queue's byte budget is what a storm of
+/// them is judged by, not the count alone.
+const SCRIPT_BIG_SEND: &str = r#"
+suhina.on_port_message(function(bytes, port)
+    suhina.send("APC out", string.rep("a", 1024 * 1024))
+end)
+"#;
+/// Two commands keyed by the press: one that fails (the stale answer's), one that works (the
+/// fresh wait's). The controller byte says which answer the fresh wait heard.
+const SCRIPT_TWO_COMMANDS: &str = r#"
+suhina.on_port_message(function(bytes, port)
+    if bytes == "\x90\x3c\x7f" then
+        local ok, err = suhina.command("no.such.command")
+        suhina.send("APC out", suhina.midi.cc(1, ok and 1 or 0, 0))
+    elseif bytes == "\x90\x3d\x7f" then
+        local ok, err = suhina.command("transport.setTempo", { bpm = 110 })
+        suhina.send("APC out", suhina.midi.cc(2, ok and 1 or 0, 0))
+    end
+end)
+"#;
 
 impl Fixture {
     /// Makes `id` with `script` as its whole script, and a `Projects` whose extensions store
@@ -846,6 +866,58 @@ fn a_subscription_of_an_edit_pushes_nothing() {
         }
     }
     assert!(fixture.midi.written_for("APC out").is_empty(), "{:?}", fixture.midi.written_for("APC out"));
+}
+
+/// The send-back queue's byte budget holds: the queue never holds more than its eight MiB,
+/// whatever the runner sends — the drop is said on the extension, and what a drain writes
+/// out is within the budget.
+#[test]
+fn the_send_back_queue_holds_at_most_eight_mib() {
+    let mut fixture = Fixture::claiming("bigsend", SCRIPT_BIG_SEND);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    // Twenty one-MiB sends with no drain between them: the eighth queues, and the ninth's
+    // enqueue — the first past the byte budget — is the drop the wait is on.
+    for _ in 0..20 {
+        fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    }
+    fixture.expect(|e| matches!(e, programs::Event::Dropped(_)), "the byte budget's drop");
+    fixture.projects.poll_plugins();
+    let written = fixture.midi.written_for("APC out");
+    let bytes: usize = written.iter().map(|m| m.len()).sum();
+    assert!(written.len() <= 8, "{} send-backs written", written.len());
+    assert!(bytes <= 8 * 1024 * 1024, "{bytes} bytes written");
+    let listed = fixture.projects.execute("extensions.list", &json!({})).expect("listed");
+    let entry = find(&listed, &fixture.id).expect("listed");
+    let error = entry["lastError"].as_str().expect("the drop is said");
+    assert!(error.contains("dropped"), "{error}");
+}
+
+/// A dead process's answer never completes the replacement's wait: the stale command's
+/// answer is queued while the restart's fresh script happens to wait on the same token
+/// number, and what reaches it is the answer of its own command — the pad says which.
+#[test]
+fn a_dead_processs_answer_does_not_complete_the_replacements_wait() {
+    let mut fixture = Fixture::claiming("stale", SCRIPT_TWO_COMMANDS);
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    // The press whose answer will be the stale one: queued, never dispatched.
+    fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    // The process dies and the supervisor starts another one.
+    let pid = fixture.pid();
+    let sent = fixture.projects.test_extensions_program().expect("running").test_kill(pid);
+    assert!(sent, "the kill was sent");
+    fixture.expect(|e| matches!(e, programs::Event::Crashed(_)), "the crash");
+    fixture.expect(|e| *e == programs::Event::Running, "running again");
+    // The fresh script's press, queued behind the stale event: one look dispatches both.
+    fixture.midi.play("APC in", 1, &[0x90, 0x3D, 0x7F]);
+    fixture.projects.poll_plugins();
+    // The fresh wait heard its own command's answer — the stale one is not its answer.
+    fixture.pump_until(|f| written_contains(f, [0xB2, 0x01, 0x00]), "the fresh command's ok");
+    let written = fixture.midi.written_for("APC out");
+    assert!(!written.iter().any(|m| m.as_slice() == [0xB2, 0x00, 0x00]), "{written:?}");
 }
 
 /// The storm through the real pipeline: the CCs arrive through the supervisor, the commands

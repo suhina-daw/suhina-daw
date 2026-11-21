@@ -346,7 +346,7 @@ impl Projects {
         // step they shared is unchanged — while each of them is answered either way, so the
         // runner's handler completes and the storm drains in one look instead of one round
         // trip each.
-        let mut dropped: Vec<(String, u64)> = Vec::new();
+        let mut dropped: Vec<(String, u64, String)> = Vec::new();
         let mut kept: Vec<(String, programs::Event)> = Vec::new();
         for (program, event) in drained {
             match &event {
@@ -378,7 +378,7 @@ impl Projects {
                             // This value supersedes the one waiting: the older token is
                             // answered at once, and the newest dispatches in its place.
                             if let (_, programs::Event::Command { token: old_token, .. }) = kept.remove(at) {
-                                dropped.push((program.clone(), old_token));
+                                dropped.push((program.clone(), old_token, id.clone()));
                             }
                             kept.push((program, event));
                         }
@@ -388,9 +388,9 @@ impl Projects {
                 _ => kept.push((program, event)),
             }
         }
-        for (program, token) in dropped {
+        for (program, token, id) in dropped {
             if let Some(handle) = self.extensions.program(&program) {
-                handle.command_answer(token, true, None);
+                handle.command_answer(token, &id, true, None);
             }
         }
         for (program, event) in kept {
@@ -404,7 +404,7 @@ impl Projects {
                         Err(e) => (false, Some(String::from(e))),
                     };
                     if let Some(handle) = self.extensions.program(&program) {
-                        handle.command_answer(token, ok, error);
+                        handle.command_answer(token, &id, ok, error);
                     }
                 }
                 programs::Event::Read { token, id, params } => {
@@ -413,7 +413,7 @@ impl Projects {
                         Err(e) => (false, None, Some(String::from(e))),
                     };
                     if let Some(handle) = self.extensions.program(&program) {
-                        handle.read_answer(token, ok, value, error);
+                        handle.read_answer(token, &id, ok, value, error);
                     }
                 }
                 // A subscription the store registers in the drain; its reads run below.
@@ -435,9 +435,9 @@ impl Projects {
             let result = self.read_for_program(&id, &params);
             results.push((program, token, result.map_err(String::from)));
         }
-        for (program, token, value) in self.extensions.apply_sub_results(results) {
+        for (program, token, id, value) in self.extensions.apply_sub_results(results) {
             if let Some(handle) = self.extensions.program(&program) {
-                handle.state_update(token, &value);
+                handle.state_update(token, &id, &value);
             }
         }
     }

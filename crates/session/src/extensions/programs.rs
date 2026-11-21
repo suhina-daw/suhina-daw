@@ -66,12 +66,12 @@ pub(crate) enum ToProgram {
     TestTick,
     /// The user (or the session going away) stops the program.
     Stop,
-    /// The session's answer to the script's `command`.
-    CommandAnswer { token: u64, ok: bool, error: Option<String> },
-    /// The session's answer to the script's `read`.
-    ReadAnswer { token: u64, ok: bool, value: Option<Value>, error: Option<String> },
-    /// A subscription's value, as it is now.
-    StateUpdate { token: u64, value: Value },
+    /// The session's answer to the script's `command`, named by the command it answered.
+    CommandAnswer { token: u64, id: String, ok: bool, error: Option<String> },
+    /// The session's answer to the script's `read`, named by the command it answered.
+    ReadAnswer { token: u64, id: String, ok: bool, value: Option<Value>, error: Option<String> },
+    /// A subscription's value, as it is now, for the command the subscription watches.
+    StateUpdate { token: u64, id: String, value: Value },
 }
 
 /// What a program reports to the session.
@@ -192,18 +192,18 @@ impl Handle {
     }
 
     /// The session's answer to the script's `command`.
-    pub(crate) fn command_answer(&self, token: u64, ok: bool, error: Option<String>) {
-        let _ = self.to.send(ToProgram::CommandAnswer { token, ok, error });
+    pub(crate) fn command_answer(&self, token: u64, id: &str, ok: bool, error: Option<String>) {
+        let _ = self.to.send(ToProgram::CommandAnswer { token, id: id.to_string(), ok, error });
     }
 
     /// The session's answer to the script's `read`.
-    pub(crate) fn read_answer(&self, token: u64, ok: bool, value: Option<Value>, error: Option<String>) {
-        let _ = self.to.send(ToProgram::ReadAnswer { token, ok, value, error });
+    pub(crate) fn read_answer(&self, token: u64, id: &str, ok: bool, value: Option<Value>, error: Option<String>) {
+        let _ = self.to.send(ToProgram::ReadAnswer { token, id: id.to_string(), ok, value, error });
     }
 
     /// A subscription's value, as it is now.
-    pub(crate) fn state_update(&self, token: u64, value: &Value) {
-        let _ = self.to.send(ToProgram::StateUpdate { token, value: value.clone() });
+    pub(crate) fn state_update(&self, token: u64, id: &str, value: &Value) {
+        let _ = self.to.send(ToProgram::StateUpdate { token, id: id.to_string(), value: value.clone() });
     }
 
     /// A raw port message with no timestamp, as the tests drive the script without a MIDI
@@ -339,6 +339,7 @@ fn run(
 ) {
     let mut crashes: Vec<Instant> = Vec::new();
     let mut ports: (Vec<String>, Vec<String>) = initial_ports;
+    let mut pending = Pending::default();
     loop {
         // Too many crashes too close together: the restarts stop and the user decides.
         crashes.retain(|at| at.elapsed() < CRASH_WINDOW);
@@ -348,7 +349,7 @@ fn run(
             give_up(events, &reason);
             return;
         }
-        match watch(runner, script, &from, events, pid, &mut ports) {
+        match watch(runner, script, &from, events, pid, &mut ports, &mut pending) {
             Ok(()) => {
                 suhina_plugins::trace!("surface {id} stopped cleanly");
                 give_up(events, "the program stopped");
@@ -400,15 +401,68 @@ impl Child {
     }
 }
 
+/// How many bytes the send-backs waiting for the session may hold, with their count cap: the
+/// runner's own send queue's budget, the same policy on the host's side of the pipe.
+const SEND_BACKS_BYTES: usize = 8 * 1024 * 1024;
+
+/// One send-back's enqueue, whatever the phase — the startup's and the running loop's alike:
+/// the count cap and the bytes cap, and what did not fit counted (the first and every 64th
+/// said, as the runner's own queue does). A waiter of the store's blocking drain sleeps on
+/// the queue's signal; a push without the notify would leave it there however many
+/// send-backs come.
+fn enqueue_send_back(events: &Shared, port: String, bytes: Vec<u8>, dropped: &mut usize) {
+    let mut queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let count = queue.iter().filter(|e| matches!(e, Event::SendBack { .. })).count();
+    let held: usize = queue
+        .iter()
+        .filter_map(|e| match e {
+            Event::SendBack { bytes, .. } => Some(bytes.len()),
+            _ => None,
+        })
+        .sum();
+    if count < SEND_BACKS_MAX && held + bytes.len() <= SEND_BACKS_BYTES {
+        queue.push_back(Event::SendBack { port, bytes });
+        *dropped = 0;
+    } else {
+        *dropped += 1;
+        if *dropped == 1 || dropped.is_multiple_of(64) {
+            queue.push_back(Event::Dropped(*dropped));
+        }
+    }
+    events.signal.notify_one();
+}
+
+/// The requests the process now running has made, per kind: each token with the command it
+/// asked about. The answers and updates the session queued are named by their command, so a
+/// dead process's leftover — its tokens begin again with the replacement — cannot complete a
+/// fresh wait that happens to reuse the number: only the same command's answer does.
+#[derive(Default)]
+struct Pending {
+    commands: std::collections::BTreeMap<u64, String>,
+    reads: std::collections::BTreeMap<u64, String>,
+    subs: std::collections::BTreeMap<u64, String>,
+}
+
+impl Pending {
+    fn clear(&mut self) {
+        self.commands.clear();
+        self.reads.clear();
+        self.subs.clear();
+    }
+}
+
 /// One order from the session, applied to the program's link and process. A send that
 /// cannot complete is returned: the runner stopped reading, and the caller ends the
 /// process — a wait of the script's must not outlive the answer it waits on. A Ports
-/// order is remembered, so the next process hears the same ports at its handshake.
+/// order is remembered, so the next process hears the same ports at its handshake. An
+/// answer whose token the process now running never asked about is dropped: it is a dead
+/// process's leftover, and the tokens begin again with each process.
 fn apply(
     order: ToProgram,
     link: &mut Link,
     child: &mut Child,
     ports: &mut (Vec<String>, Vec<String>),
+    pending: &mut Pending,
 ) -> Result<(), String> {
     match order {
         ToProgram::Ports { inputs, outputs } => {
@@ -433,36 +487,59 @@ fn apply(
             child.stop();
             Ok(())
         }
-        ToProgram::CommandAnswer { token, ok, error } => link.send(&Message::CommandResult { token, ok, error }),
-        ToProgram::ReadAnswer { token, ok, value, error } => {
-            link.send(&Message::ReadResult { token, ok, value, error })
+        ToProgram::CommandAnswer { token, id, ok, error } => {
+            if pending.commands.get(&token) == Some(&id) {
+                pending.commands.remove(&token);
+                link.send(&Message::CommandResult { token, ok, error })
+            } else {
+                Ok(())
+            }
         }
-        ToProgram::StateUpdate { token, value } => link.send(&Message::State { token, value }),
+        ToProgram::ReadAnswer { token, id, ok, value, error } => {
+            if pending.reads.get(&token) == Some(&id) {
+                pending.reads.remove(&token);
+                link.send(&Message::ReadResult { token, ok, value, error })
+            } else {
+                Ok(())
+            }
+        }
+        ToProgram::StateUpdate { token, id, value } => {
+            if pending.subs.get(&token) == Some(&id) {
+                link.send(&Message::State { token, value })
+            } else {
+                Ok(())
+            }
+        }
     }
 }
 
 /// The script's requests, forwarded to the session in the order they came: true for the four
 /// the session services (a command, a read, a subscription and its end), so the caller's
-/// catch-all does not refuse them.
-fn is_request(message: &Message, events: &Shared) -> bool {
+/// catch-all does not refuse them. A request's token is noted, so its answers and updates
+/// are known to be the process now running's.
+fn is_request(message: &Message, events: &Shared, pending: &mut Pending) -> bool {
     match message {
         Message::Command { token, id, params, gesture } => {
             report(
                 events,
                 Event::Command { token: *token, id: id.clone(), params: params.clone(), gesture: gesture.clone() },
             );
+            pending.commands.insert(*token, id.clone());
             true
         }
         Message::Read { token, id, params } => {
             report(events, Event::Read { token: *token, id: id.clone(), params: params.clone() });
+            pending.reads.insert(*token, id.clone());
             true
         }
         Message::Subscribe { token, id, params } => {
             report(events, Event::Subscribe { token: *token, id: id.clone(), params: params.clone() });
+            pending.subs.insert(*token, id.clone());
             true
         }
         Message::Unsubscribe { token } => {
             report(events, Event::Unsubscribe { token: *token });
+            pending.subs.remove(token);
             true
         }
         _ => false,
@@ -471,7 +548,8 @@ fn is_request(message: &Message, events: &Shared) -> bool {
 
 /// One process, from the spawn to its end: the handshake, the pings, the restarts' verdict.
 /// `Err` is why the process needs another one; `Ok` says the program was stopped. `ports` is
-/// what the session last sent, heard by the new process at its handshake.
+/// what the session last sent, heard by the new process at its handshake; `pending` begins
+/// empty — the tokens begin again with each process, and a dead one's answers are dropped.
 fn watch(
     runner: &Path,
     script: &Path,
@@ -479,7 +557,9 @@ fn watch(
     events: &Shared,
     pid: &std::sync::atomic::AtomicU32,
     ports: &mut (Vec<String>, Vec<String>),
+    pending: &mut Pending,
 ) -> Result<(), String> {
+    pending.clear();
     let (address, name) = control_name().map_err(|e| format!("the control socket's name cannot be made: {e}"))?;
     let listener = ListenerOptions::new()
         .name(name)
@@ -544,12 +624,13 @@ fn watch(
     link.send(&Message::Ports { inputs: ports.0.clone(), outputs: ports.1.clone() })
         .map_err(|reason| child.end(reason))?;
     let mut script_errored = false;
+    let mut startup_dropped = 0usize;
     loop {
         match link.read().map_err(|reason| child.end(reason))? {
             Some(line) => match Message::decode(&line) {
                 // A request from the chunk, forwarded to the session: the answer reaches it
                 // when the session's next look services it.
-                Some(message) if is_request(&message, events) => {}
+                Some(message) if is_request(&message, events, pending) => {}
                 Some(Message::Hello { version }) if version == PROTOCOL => {}
                 Some(Message::Hello { version }) => {
                     let _ = link.send(&Message::Error {
@@ -570,7 +651,7 @@ fn watch(
                     // The chunk runs before `ready`, and its `on_ports` answers the ports the
                     // host sent with a full LED rewrite: the send-backs are queued like the
                     // running loop's, taken when the program is running.
-                    report(events, Event::SendBack { port: port.clone(), bytes: bytes.clone() });
+                    enqueue_send_back(events, port, bytes, &mut startup_dropped);
                 }
                 other => {
                     suhina_plugins::trace!("programs handshake refused {other:?}");
@@ -598,7 +679,7 @@ fn watch(
                     order,
                     ToProgram::CommandAnswer { .. } | ToProgram::ReadAnswer { .. } | ToProgram::StateUpdate { .. }
                 ) {
-                    if let Err(reason) = apply(order, &mut link, &mut child, ports) {
+                    if let Err(reason) = apply(order, &mut link, &mut child, ports, pending) {
                         return Err(child.end(format!("the runner stopped taking the host's messages: {reason}")));
                     }
                 } else {
@@ -614,7 +695,7 @@ fn watch(
     }
     for order in deferred {
         let stopped = matches!(order, ToProgram::Stop);
-        if let Err(reason) = apply(order, &mut link, &mut child, ports) {
+        if let Err(reason) = apply(order, &mut link, &mut child, ports, pending) {
             return Err(child.end(format!("the runner stopped taking the host's messages: {reason}")));
         }
         if stopped {
@@ -651,7 +732,7 @@ fn watch(
                     return Ok(());
                 }
                 Ok(order) => {
-                    if let Err(reason) = apply(order, &mut link, &mut child, ports) {
+                    if let Err(reason) = apply(order, &mut link, &mut child, ports, pending) {
                         return Err(child.end(format!("the runner stopped taking the host's messages: {reason}")));
                     }
                 }
@@ -664,25 +745,13 @@ fn watch(
                 Ok(Some(line)) => match Message::decode(&line) {
                     Some(Message::Pong { .. }) => last_pong = Instant::now(),
                     Some(Message::Send { port, bytes }) => {
-                        let mut queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                        if queue.iter().filter(|e| matches!(e, Event::SendBack { .. })).count() < SEND_BACKS_MAX {
-                            queue.push_back(Event::SendBack { port, bytes });
-                            dropped = 0;
-                        } else {
-                            dropped += 1;
-                            if dropped == 1 || dropped.is_multiple_of(64) {
-                                queue.push_back(Event::Dropped(dropped));
-                            }
-                        }
-                        // A waiter of the store's blocking drain sleeps on this signal; a push
-                        // without the notify would leave it there however many send-backs come.
-                        events.signal.notify_one();
+                        enqueue_send_back(events, port, bytes, &mut dropped);
                     }
                     Some(Message::ScriptError { handler, message }) => {
                         report(events, Event::ScriptError(format!("{handler}: {message}")));
                     }
                     Some(Message::Hello { .. }) | Some(Message::Ready) => {}
-                    Some(message) if is_request(&message, events) => {}
+                    Some(message) if is_request(&message, events, pending) => {}
                     Some(Message::Error { message }) => {
                         return Err(child.end(format!("the runner sent an error: {message}")));
                     }
@@ -802,32 +871,38 @@ impl Link {
 
     /// One complete line already readable, without waiting: `None` when nothing whole is there
     /// yet. A partial line stays put until its end arrives.
+    /// One complete line already readable, without waiting: `None` when nothing whole is there
+    /// yet. A partial line stays put until its end arrives — and what is already readable is
+    /// taken whole in one call, so a big line (a one-MiB send-back's) is not paid one poll
+    /// breath per bufferful, which a healthy runner could not outpace.
     fn read(&mut self) -> Result<Option<String>, String> {
-        match self.reader.fill_buf() {
-            Ok(available) => {
-                if available.is_empty() {
-                    return Err("the connection closed".into());
-                }
-                if let Some(end) = available.iter().position(|b| *b == b'\n') {
-                    let mut line = std::mem::take(&mut self.partial);
-                    line.extend_from_slice(&available[..end]);
-                    self.reader.consume(end + 1);
-                    if line.len() > surface::MAX_LINE {
+        loop {
+            match self.reader.fill_buf() {
+                Ok(available) => {
+                    if available.is_empty() {
+                        return Err("the connection closed".into());
+                    }
+                    if let Some(end) = available.iter().position(|b| *b == b'\n') {
+                        let mut line = std::mem::take(&mut self.partial);
+                        line.extend_from_slice(&available[..end]);
+                        self.reader.consume(end + 1);
+                        if line.len() > surface::MAX_LINE {
+                            return Err("a line longer than the protocol allows".into());
+                        }
+                        return String::from_utf8(line).map(Some).map_err(|_| "a line that is not UTF-8 text".into());
+                    }
+                    let read = available.len();
+                    self.partial.extend_from_slice(available);
+                    self.reader.consume(read);
+                    if self.partial.len() > surface::MAX_LINE {
                         return Err("a line longer than the protocol allows".into());
                     }
-                    return String::from_utf8(line).map(Some).map_err(|_| "a line that is not UTF-8 text".into());
+                    // What was there is in `partial`; what is readable next is taken at once,
+                    // and when the socket has no more, the poll breathes.
                 }
-                let read = available.len();
-                self.partial.extend_from_slice(available);
-                self.reader.consume(read);
-                if self.partial.len() > surface::MAX_LINE {
-                    return Err("a line longer than the protocol allows".into());
-                }
-                // What was there is in `partial`; the rest arrives between the polls.
-                Ok(None)
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(None),
+                Err(e) => return Err(format!("cannot read: {e}")),
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
-            Err(e) => Err(format!("cannot read: {e}")),
         }
     }
 }
@@ -845,8 +920,15 @@ mod tests {
         let events: Shared = Arc::new(Queue::default());
         let pid = std::sync::atomic::AtomicU32::new(0);
         let mut ports = (Vec::new(), Vec::new());
-        let watch_result =
-            watch(Path::new("/nonexistent/runner"), Path::new("script.lua"), &from, &events, &pid, &mut ports);
+        let watch_result = watch(
+            Path::new("/nonexistent/runner"),
+            Path::new("script.lua"),
+            &from,
+            &events,
+            &pid,
+            &mut ports,
+            &mut Pending::default(),
+        );
         assert_eq!(watch_result, Ok(()));
         assert_eq!(pid.load(std::sync::atomic::Ordering::Relaxed), 0, "no process was started");
         let queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -891,7 +973,15 @@ mod tests {
             let script = script.clone();
             std::thread::spawn(move || {
                 let mut ports = (Vec::new(), Vec::new());
-                let _ = done.send(watch(&runner, &script, &from, &thread_events, &thread_pid, &mut ports));
+                let _ = done.send(watch(
+                    &runner,
+                    &script,
+                    &from,
+                    &thread_events,
+                    &thread_pid,
+                    &mut ports,
+                    &mut Pending::default(),
+                ));
             });
             done_rx
         };
