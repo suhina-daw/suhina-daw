@@ -18,6 +18,7 @@ mod comping;
 mod groups;
 mod id_list;
 mod ids;
+mod instrument_profile;
 mod lane_layout;
 pub mod names;
 mod tempo;

@@ -1746,6 +1746,39 @@ pub(crate) fn push_button(ui: &Ui, painter: &Painter, rect: Rect, id: &str, resp
     push_face(painter, rect, &el, hover, label);
 }
 
+/// A [`push_button`] in a layout: as wide as its words with 8 px on each side, 20 px tall, its
+/// accessible label its words. Not `enabled`, it is drawn at half strength and takes no click.
+pub(crate) fn flow_button(ui: &mut Ui, text: &str, enabled: bool) -> Response {
+    let width = text_width(ui, text, theme::ui_font(theme::TEXT_SMALL)) + 16.0;
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 20.0), sense);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
+    if ui.is_rect_visible(rect) {
+        let mut painter = ui.painter().clone();
+        if !enabled {
+            painter.multiply_opacity(0.5);
+        }
+        push_button(ui, &painter, rect, "flow-button", &response, text);
+    }
+    response
+}
+
+/// A progress bar in a layout: the width left, 16 px tall, `fraction` (0 to 1) of it filled in
+/// the accent colour over a fader rail's recess, `text` on it in the value colour.
+pub(crate) fn progress_bar(ui: &mut Ui, fraction: f32, text: &str) -> Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width().max(40.0), 16.0), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::ProgressIndicator, true, text));
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        painter.rect_filled(rect, 2.0, super::mixer_controls::recess());
+        let filled = Rect::from_min_size(rect.min, Vec2::new(rect.width() * fraction.clamp(0.0, 1.0), rect.height()));
+        painter.rect_filled(filled, 2.0, super::element::accent_ink());
+        let font = theme::ui_font(theme::TEXT_SMALL);
+        text_in(painter, rect, Align2::CENTER_CENTER, text, font, super::element::value_ink());
+    }
+    response
+}
+
 /// [`push_button`] of the button `el`, its caller entered.
 pub(crate) fn push_face(painter: &Painter, rect: Rect, el: &Entered, hover: f32, label: &str) {
     let fill = el.hover_fade(hover, Look::background);

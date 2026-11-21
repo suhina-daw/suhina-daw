@@ -403,6 +403,29 @@ fn a_lit_toggle_is_the_palette_s_where_no_rule_reaches_it() {
     output.textures_delta.clear();
 }
 
+/// A layout button is as wide as its words; a disabled one is laid out alike but takes no click,
+/// and a progress bar takes the width left.
+#[test]
+fn a_flow_button_fits_its_words_and_a_disabled_one_takes_no_click() {
+    let ctx = egui::Context::default();
+    let mut seen = Vec::new();
+    let mut bar = 0.0;
+    let mut output = ctx.run_ui(Default::default(), |ui| {
+        let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+        for enabled in [true, false] {
+            let response = flow_button(ui, "Fit folder…", enabled);
+            seen.push((response.rect.width(), response.rect.height(), response.sense.senses_click()));
+        }
+        let width = ui.available_width();
+        bar = progress_bar(ui, 2.0, "Fitting").rect.width() - width;
+    });
+    output.textures_delta.clear();
+    assert_eq!(seen.len(), 2);
+    assert!(seen[0].0 > 16.0 && seen[0].0 == seen[1].0, "{seen:?}");
+    assert_eq!((seen[0].1, seen[0].2, seen[1].2), (20.0, true, false));
+    assert_eq!(bar, 0.0);
+}
+
 /// A flat button paints its fill and its words in the palette's colours where no rule reaches it,
 /// and the colours of a rule for `button` where one does.
 #[test]

@@ -22,8 +22,14 @@ fn revision_one_matches_the_independent_analytical_reference_render() {
         );
         assert_eq!(buffer[frame * 2], buffer[frame * 2 + 1]);
     }
-    assert!(std::mem::size_of::<Voice>() <= 2048);
-    assert!(std::mem::size_of::<Instrument>() <= 256 * 1024);
+    // A revision-4 voice: 128 fitted resonators with their stereo weights beside the 16 of
+    // revisions 1 and 2, its held layer (per-sine levels, ramps and couplings, eleven noise
+    // filters) and its tail (eleven bands of three sections in two channels).
+    assert!(std::mem::size_of::<Voice>() <= 15 * 1024);
+    // The voices live on the heap (allocated at construction), so the Instrument itself stays
+    // small enough to move through a debug build's constructors on a 1 MB stack.
+    assert!(std::mem::size_of::<Instrument>() <= 32 * 1024);
+    assert!(std::mem::size_of::<Instrument>() + MAX_VOICES * std::mem::size_of::<Voice>() <= 256 * 1024);
 }
 
 #[test]
@@ -73,6 +79,50 @@ fn single_sample_maps_play_through_the_shared_runtime() {
     instrument.event(NoteEvent::On { key: 60, velocity: 1.0 });
     instrument.process(&ProcessContext::default(), &mut buffer);
     assert!((buffer[512] - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn key_parameters_are_shown_as_note_names() {
+    use suhina_device_sdk::ui::{TextFormat, Widget};
+    for index in [param::ROOT, param::KEY_LOW, param::KEY_HIGH] {
+        assert_eq!(PARAMS[index].unit, Unit::Key, "{}", PARAMS[index].id);
+    }
+    let layout = panel::layout();
+    let editor = layout.expanded.as_ref().unwrap();
+    for id in ["root", "key_low", "key_high"] {
+        let fields: Vec<_> = editor
+            .controls
+            .iter()
+            .filter(|c| c.y.as_ref().or(c.x.as_ref()).is_some_and(|b| b.parameter == id))
+            .collect();
+        assert!(!fields.is_empty(), "{id} has a field");
+        for field in fields {
+            assert!(matches!(field.widget, Some(Widget::Number { format: TextFormat::Key, .. })), "{id}");
+        }
+    }
+}
+
+/// Both canvases draw the background artwork first, behind every control, and hide it with a
+/// dark theme.
+#[test]
+fn both_canvases_carry_the_light_artwork_behind_their_controls() {
+    let layout = crate::panel::layout();
+    for canvas in [layout.ui.as_ref().unwrap(), layout.expanded.as_ref().unwrap()] {
+        assert!(canvas.assets.iter().any(|a| a.id == "artwork-light"), "the artwork is embedded");
+        assert_eq!(canvas.controls.first().map(|c| c.id.as_str()), Some("artwork-light"));
+        assert!(canvas.style.as_deref().is_some_and(|s| s.contains("#artwork-light")));
+    }
+}
+
+/// The Soft pedal switch sits beside the page buttons on every page of the editor, so it can be
+/// found from the Sample page too, and Model tune is on the Model page's Fitted model group.
+#[test]
+fn soft_pedal_shows_on_every_page_and_model_tune_on_the_model_page() {
+    let layout = crate::panel::layout();
+    let editor = layout.expanded.as_ref().unwrap();
+    let switch = editor.controls.iter().find(|c| c.name == "Soft pedal").unwrap();
+    assert!(switch.visible_when.is_none(), "not tied to one page");
+    assert!(editor.controls.iter().any(|c| c.name == "Model tune"));
 }
 
 #[test]

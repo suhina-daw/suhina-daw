@@ -659,12 +659,14 @@ pub mod controller {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DeviceError {
     InvalidSampleRate(f64),
+    InvalidModelState(&'static str),
 }
 
 impl fmt::Display for DeviceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidSampleRate(sr) => write!(f, "sample rate {sr} is not supported"),
+            Self::InvalidModelState(reason) => write!(f, "model state is not supported: {reason}"),
         }
     }
 }
@@ -799,6 +801,13 @@ pub trait SampleSource {
 /// allocate, free, lock, block, log or do I/O, and never panic, whatever values they get.
 pub trait Device: Send {
     fn info(&self) -> &DeviceInfo;
+
+    /// Prepare a device's data-only native model off the audio thread, before parameter
+    /// restoration. A rejected model leaves its model layer silent, never a default substitute;
+    /// independent layers may still run. Hosts retain the saved bytes for correction.
+    fn load_model_state(&mut self, _state: &[u8]) -> Result<(), DeviceError> {
+        Err(DeviceError::InvalidModelState("this device has no native model loader"))
+    }
 
     /// Live values for the device's panel (a band's level, its gain change), read after each
     /// block: up to [`MAX_READOUTS`], in an order the device's panel knows. `None` for a device

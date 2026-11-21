@@ -159,6 +159,11 @@ impl SlotFactory<'_> {
         // Made at the renderer's rate, so nothing builds for 48 kHz and again here, and a Sampler
         // gets its stretch voices once, for this rate, when it is given its sample (#1402).
         let mut device = self.devices.create(id, f64::from(self.sample_rate), asset)?;
+        if let Some(model) = stored.instrument_modal_profile() {
+            // The device keeps an invalid model layer silent. Independent sample layers and
+            // the persisted bytes remain available; never substitute another modal revision.
+            let _ = device.load_model_state(model);
+        }
         // What a chain gives a device that plays samples: the decoded sample, the manual slices
         // and the source corrections.
         let slices: Option<std::sync::Arc<[f64]>> = stored.sample_slices().map(std::sync::Arc::from);

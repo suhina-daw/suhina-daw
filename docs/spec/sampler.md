@@ -148,8 +148,12 @@ longer select an editor.
 Numeric values drag vertically, Shift gives precision, and double-click resets.
 All edits use the shared device parameter command, persistence and undo.
 
-Start/end and loop markers are fractions of the source. Empty or crossed ranges
-produce silence. Forward loops wrap at the boundary; ping-pong reflects the
+Start/end and loop markers are fractions of the source. Of a crossed pair the marker further
+right is always the end: Start past End plays from End to Start (and Loop start past Loop end
+loops between them), so dragging a marker over the other never silences the instrument. The
+waveform labels the left marker S and the right one E while it is dragged, and when the drag ends
+past the other marker the two values are swapped in the same undo step, so the fields read in
+order again. An empty range produces silence. Forward loops wrap at the boundary; ping-pong reflects the
 read head. Ping-pong remains readable in saved projects but has no panel control.
 Changing playback mode immediately silences existing voices; selecting the current
 mode leaves them playing. Gate releases on note-off; one-shot ignores note-off. Reset silences all
@@ -242,6 +246,33 @@ preview locally without preparing an audio graph per frame; releasing commits
 until release, then new notes use the edited map. View navigation
 never changes project data. The host resets the view when source audio changes.
 
+## Sustain playback
+
+**Sustain** (the Playback menu's fifth value, `playback` 4; the Instrument's Sample playback
+**Sustain**, its value 3) holds a note with the recording itself, as long as the key is down: a
+bowed, blown or sung tone, a pad or a texture keeps its real sound (its noise, its highs, its
+stereo and its own movement), which no model of sines gives back. In Sample mode, playing
+forward, the note plays from Start like Gate until it reaches Loop start; from there it holds in
+**grains** of the loop region:
+
+- A grain is two fifths of the loop region long, 0.2..0.6 s (at least two and a half periods of
+  the root key's pitch), read at the note's step, under a Hann window. Grains of 120 ms changed
+  17 times a second and fluttered like a fast LFO, each catching a cello's vibrato and bow at
+  another phase. Grains overlap by half: each half grain a new one starts and
+  the oldest has ended, so the two windows sum to one and the level stays.
+- The first grain is the direct playback at its window's peak, fading out; nothing is cut.
+- Of four random points of the loop region (leaving room for the grain and a period before Loop
+  end), each moved by up to one period of the root key to where its waveform best continues the
+  grain at its peak (the normalized correlation over 64 points every two steps of the mono sum),
+  a new grain starts at the one scoring highest after a penalty for a level unlike the followed
+  grain's (a quarter of the absolute log of their energy ratio). The two grains then run in phase, so the hold has
+  neither the comb filtering nor the flutter of grains at random phases.
+- Note-off releases the envelope as for Gate; the grains go on through the release.
+- A loop region too short for a grain plays as Gate. Reverse turns Sustain off.
+
+The seeded random points and the per-sample counters make a render the same for every block
+split.
+
 ## LFO destinations and waveform handles
 
 One bipolar LFO drives independent depths: pitch (semitones), filter cutoff
@@ -253,7 +284,8 @@ wave * depth to the base pan and clamps to -1..1. All destinations use the same
 per-sample phase in both Sample and Grain, with no allocation or locking.
 
 There are no separate arrow handles for loops. In Sample/Loop playback, S/E edit
-loop_start/loop_end; otherwise S/E edit start/end. Grain always uses source
+loop_start/loop_end; otherwise S/E edit start/end. A crossed pair is labelled by position (see
+the marker rule above). Grain always uses source
 boundaries, since its scan reads the source region rather than a sample loop. Hover text explains the current
 role. Source and loop ranges remain independently editable through numeric fields.
 All SDK drag-value controls traverse their full normalized range in 400 logical

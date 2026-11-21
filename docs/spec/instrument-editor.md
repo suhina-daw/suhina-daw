@@ -22,7 +22,8 @@ slice #1597 of #1579, designed from the maintainer's requested interactions and 
 The lower device area presents Source, a local sample waveform/drop target, Body decay,
 Brightness, Release, Hybrid sample blend and Gain. A visible Open editor button and the
 standard device-header expand button open the same expanded editor. The current model is
-identified as experimental struck modal revision 1, separately from its sound controls.
+identified as experimental struck modal revision 1 or modal profile revision 2, separately from
+its sound controls. The revision label names the stored request, not calibration acceptance.
 The panel fits the standard 168-point body height and uses less width than the initial
 900-point panel. Narrow device areas scroll instead of shrinking controls below readable sizes.
 
@@ -31,12 +32,23 @@ The panel fits the standard 168-point body height and uses less width than the i
 The larger canvas uses the existing centred, scrollable SDK expanded-panel path. Its header
 identifies Instrument and its experimental model, with Source always available. The pages are:
 
-- **Play:** the shared Gain and Release, Hybrid sample blend, sample Attack and Sustain,
-  and key/velocity admission ranges. Labels distinguish sample-only and Hybrid-only controls.
+- **Play:** the shared Gain and Release, Hybrid sample blend, the amplitude envelope (Attack,
+  Decay, Sustain) shared by the Sample layer and fitted models, key/velocity admission ranges,
+  and a **Soft pedal** switch beside the page buttons, shown on every page as the Source menu
+  is (una corda for fitted models, the same as controller 67 held down). Release is the damper for fitted models and the fade otherwise.
+  Below the ranges, **Legato glide** and **Glide time** (seconds): a fitted note played while
+  another key is held glides from that key's pitch ([modal profiles](instrument-modal-profile.md)
+  › Glide).
 - **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
-  describe the actual struck-modal model, and apply to the next strike.
-- **Sample:** local waveform/drop target, Root, Playback, source Start/End, loop Start/End,
-  Attack and Sustain. A source imported here uses `device.loadSample`, including the same
+  describe the actual struck-modal model, and apply to the next strike. Revision 2 labels the
+  excitation control Strike color: a creative weighting of accepted modes, not a measured
+  physical impact position. Profile adoption resets the four model controls and enables all
+  profile modes; the underlying stable parameter IDs remain the same. Revision 4 (fitted models)
+  adds a Fitted model group: Source morph, Velocity to brightness, Damper noise, Pedal
+  resonance and Model tune (semitones, for a model fitted at the wrong root or slightly off
+  pitch; the Sample layer is tuned with Root).
+- **Sample:** local waveform/drop target, Root (shown as a note name, 60 is C3), Playback, source Start/End, loop Start/End,
+  Attack, Decay and Sustain. A source imported here uses `device.loadSample`, including the same
   Source automation override and one-step undo as the compact panel.
 
 All sound controls use the existing stable parameter IDs and `device.setParam`, including
@@ -66,10 +78,15 @@ the same local state without modifying the DSP or exported parameter list.
 ## Appearance and validation
 
 Controls, labels, focus and selection use native SDK widgets, theme palette tokens and
-Suhina typography. The supplied warm background is visual direction only: this slice
-ships no unverified bitmap and keeps text/branding independent from artwork. The canvas
-uses a quiet centre with grouped controls, distinct primary controls and explicit source
-limitations; all themes retain their own contrast. Narrow windows scroll the full editor.
+Suhina typography. With a light theme (a variant whose sheet declares a light color scheme),
+both canvases draw the maintainer's warm ivory artwork behind every control: a cream surface
+with soft relief waves and the Suhina logo at the bottom right
+(`devices/instrument/panel/`, with its provenance). The expanded editor is 880 × 560, its last
+40 points free of controls so the logo stays clear; the compact panel's bottom-right label
+stops short of it. A dark theme hides the artwork (the panel's own style sheet), since its
+light text would not read on it, and keeps its own background. Text and controls stay native
+over the artwork. The canvas uses a quiet centre with grouped controls, distinct primary
+controls and explicit source limitations. Narrow windows scroll the full editor.
 
 Tests validate every binding and hidden parameter, local-page bounds and malformed layouts,
 keyboard/click navigation without project actions, parameter command parity, sample target

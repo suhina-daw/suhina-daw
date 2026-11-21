@@ -397,9 +397,16 @@ on the control's (from the font's own cap height), not the SDK's guess at the li
 put it low once the font or its size differed (#1487 B12).
 Format `tempo` displays BPM, or Auto for zero (a device may use that value to request tempo detection).
 Formats `seconds`, `percent`, `decibels` and `balance` display milliseconds/seconds,
-fractional percentages, dB and centre/L/R respectively. Existing Dial definitions
+fractional percentages, dB and centre/L/R respectively. Format `key` displays a MIDI key as its
+note name (60 is C3), spelled with sharps or flats as the host's note-name setting says; a
+number bound to a parameter whose unit is `key` gets it automatically. Existing Dial definitions
 keep their previous readouts. The sampler uses these formats without changing
 the saved parameter units.
+
+`SampleAnalysis` places host-owned local sample analysis and explicit root-proposal adoption.
+It has no parameter bindings: the stock host dispatches the `instrument.*` preparation commands
+and presents the session job's progress, result, correction and acceptance controls. Exported
+hosts must implement their own preparation integration before exposing equivalent controls.
 
 `SampleWaveform` is a host-backed source view for the native sampler. It has no
 parameter axis bindings. The host supplies decoded audio; start/end and loop

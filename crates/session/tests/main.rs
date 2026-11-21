@@ -29,6 +29,8 @@ mod flp_import;
 mod follow;
 mod ids;
 mod instrument;
+mod instrument_analysis;
+mod instrument_profile;
 mod launch_mappings;
 mod launch_settings;
 mod launcher;

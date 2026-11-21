@@ -27,7 +27,17 @@ mode amplitudes, Structure stretches their frequency ratios, Strike position cha
 excitation pattern and Decay sets the fundamental's time to lose 60 dB. High modes decay faster.
 Quality selects 8 or 16 modes. Modes at or above 0.45 times the sample rate are omitted, not
 folded into the audible band.
-Release damps a released key; the sustain pedal holds it. Gain and the Hybrid sample blend are
+
+The original remains revision 1. [Accepted modal profiles](instrument-modal-profile.md) use
+revision 2: a bounded stored list of ratios, magnitudes and T60 values replaces the heuristic
+modal data. Default model controls preserve that profile; Decay, Brightness, Structure and
+creative Strike color transform it on the next strike. This runtime accepts data and does not
+fit, calibrate or infer a physical instrument from a recording.
+Release damps a released key; the sustain pedal holds it. Attack, Decay and Sustain are an
+amplitude envelope shared by the Sample layer and fitted (revision-4) models; the original
+struck model (revision 1) and profiles (revision 2) keep their 2 ms onset. For fitted models
+Release is a damper that caps every resonance's T60, and the soft pedal (controller 67), damper
+noise and pedal resonance apply ([fitted model sets](instrument-modal-profile.md#fitted-model-sets-revision-4)). Gain and the Hybrid sample blend are
 smoothed. Changing the body controls or Source affects the next strike, so a held body does
 not jump to another body's state. Modal mode starts no sample voices; Sample mode starts no
 modal voices. Hybrid starts and advances both layers even at Blend 0% or 100%, so moving Blend
@@ -70,12 +80,14 @@ one undoable project edit and selects Sample, so the next note plays the importe
 Like manually selecting Source, import overrides an enabled Source automation lane while keeping
 its points. Undo restores the previous source reference, Source value and lane state together;
 redo restores the complete import.
-Root defaults to MIDI 60; the user sets it when the file was recorded at another pitch. Pitch
-detection, automatic segmentation and fitting are not silently guessed. Source bytes use the
+Root defaults to MIDI 60. The explicit [local analysis workflow](instrument-analysis.md) can
+propose a root from the loaded audio; the person checks it and accepts it in one undo step,
+including the normal root-automation override. Completion itself changes nothing. Automatic
+segmentation and physical-model fitting are not part of that pitch proposal. Source bytes use the
 existing decoded-audio and sample-reference lifecycle: project save rebases the path, keeps
 an absolute fallback, and the existing collect/missing-file/relink workflow applies.
 
-All sound controls are stored as stable native parameter IDs. `model_revision` persists 1 as
+All sound controls are stored as stable native parameter IDs. `model_revision` persists 1 or 2 as
 metadata using the existing native parameter state, hidden from the stock panel. Unknown
 revisions retain their value and silence the modal body rather than running another revision.
 This temporary metadata parameter is not a sound control; export adapters must preserve it in
@@ -84,6 +96,11 @@ contract or provide a migration and retained renderer. The sample reference is `
 independent of the model revision. Opening a project decodes its local source and restores
 controls; it never refits. Portable plug-in assets are not implemented by this source-reference
 contract, which currently belongs to the stock project's model layer.
+Revision-2 profile bytes have their own bounded `instrument_modal_profile` extension; changing
+or moving a sample reference cannot overwrite them. Graph identity includes their content, and
+project save/reopen restores the accepted modes without a recording, fitting run or cache.
+Missing, invalid or incompatible profiles silence the modal layer, while sample playback stays
+independent. The canonical format and atomic adoption command are in the profile specification.
 
 ## Bounds and quality gates
 
@@ -102,7 +119,10 @@ thresholds. The initial development reference machine is a Ryzen 5 5600X; this i
 context, not a claim of a measured real-time polyphony budget. The provisional acceptance target
 is at most 20% of one core on average at 48 kHz / 64 frames with all 16 voices, including the
 dense-retrigger workload, and a 99th-percentile block shorter than one block deadline. Modal
-voice state is bounded below 2 KiB per voice; the whole inline runtime target is 256 KiB, excluding
+voice state is bounded below 15 KiB per voice (a revision-4 voice carries 128 fitted resonators
+with their stereo weights, its held layer and its noise tail beside the 16 of revisions 1 and 2;
+the sixteen voices are one heap allocation made when the Instrument is built); the whole runtime
+target is 256 KiB, excluding
 shared source PCM and the SDK's prepared stretch buffers. Report those exclusions with the
 measurement rather than calling them free. `cargo run --release -p suhina-device-instrument
 --example benchmark` measures Modal, Sample and Hybrid at 64/256 frames, with pitch movement

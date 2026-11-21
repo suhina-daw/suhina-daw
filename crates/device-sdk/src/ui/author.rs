@@ -230,6 +230,8 @@ impl CustomControl {
                         TextFormat::Choice
                     } else if parameter.unit == "Hz" {
                         TextFormat::Frequency
+                    } else if parameter.unit == "key" {
+                        TextFormat::Key
                     } else {
                         TextFormat::Number
                     };
