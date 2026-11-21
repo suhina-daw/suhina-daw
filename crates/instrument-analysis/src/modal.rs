@@ -477,6 +477,16 @@ pub fn fit(
             }
         }
     }
+    // A later pass can refine onto a peak an earlier one fitted: one mode per peak (within a
+    // detection bin), the more energetic.
+    accepted.sort_by(|a, b| a.hz.total_cmp(&b.hz));
+    accepted.dedup_by(|later, kept| {
+        let same = (later.hz - kept.hz).abs() < bin_hz;
+        if same && later.energy() > kept.energy() {
+            std::mem::swap(later, kept);
+        }
+        same
+    });
     // Schema-1 profile: the 16 largest slow magnitudes of validated modes, as before.
     let mut largest: Vec<&Fitted> = accepted.iter().filter(|f| !f.evidence.loose).collect();
     largest.sort_by(|a, b| b.slow.total_cmp(&a.slow).then_with(|| a.hz.total_cmp(&b.hz)));

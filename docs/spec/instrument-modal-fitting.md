@@ -97,7 +97,9 @@ local maxima within 60 dB of the recording's strongest that stand 6 dB above the
 their neighbours 3..8 bins away **in the residual** (as a string's predicted partials must; the
 recording's 20 dB let two of 134 through on a piano chord), strongest first, not within the candidate
 separation of a candidate, until 384 candidates in all. Each is refined on the residual and
-measured and fitted on the recording like any candidate.
+measured and fitted on the recording like any candidate. Since a later pass can refine onto a peak an earlier one fitted,
+two modes within one detection bin are one: the more energetic stays (before, such a pair made
+the ratios not increase and the whole fit fail).
 
 **Fast partials (algorithm version 4).** The envelope windows suit partials that ring for
 seconds, but the upper partials of a struck or plucked note (a synthesizer note whose filter
