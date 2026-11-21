@@ -639,4 +639,32 @@ fn recording_engine_lifecycle() {
     let (low, high) = (value("loop_start").unwrap(), value("loop_end").unwrap());
     assert!(low >= 0.12 && high > low + 0.1 && high <= 1.0, "{low} {high}");
     assert!(device.instrument_modal_profile().is_some(), "the fitted model stays for Source Modal");
+    assert!(accepted.get("attack").is_none(), "a note from the recording's start keeps its Attack: {accepted}");
+
+    // G3 for half a second, then C4 held: the note plays from C4, the middle of a sounding
+    // tone, so it comes in over at least 0.1 s.
+    let path = folder.join("authored-step-into-held-tone.wav");
+    let mut phase = 0.0_f64;
+    let tone: Vec<f32> = (0..96_000)
+        .map(|i| {
+            let note = if i < 24_000 { 55.0 } else { 60.0 };
+            phase += std::f64::consts::TAU * 440.0 * 2.0_f64.powf((note - 69.0) / 12.0) / 48000.0;
+            ((1..=6).map(|k| (phase * k as f64).sin() / k as f64).sum::<f64>() * 0.2) as f32
+        })
+        .collect();
+    suhina_test_support::write_wav(&path, 48000, 1, suhina_test_support::WavFormat::Float32, &tone);
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({"id":"instrument"}));
+    run(&mut session, "device.loadSample", json!({"path":path}));
+    run(&mut session, "device.setParam", json!({"param":"root","value":60}));
+    let job = run(&mut session, "instrument.fitSample", json!({}));
+    session.sync_instrument_analysis();
+    let accepted = run(&mut session, "instrument.acceptFit", json!({"job":job["job"]}));
+    assert_eq!(accepted["engine"], "recording", "{accepted}");
+    let start = accepted["start"].as_f64().unwrap();
+    assert!((0.24..0.5).contains(&start), "{accepted}");
+    assert_eq!(accepted["attack"], 0.1, "{accepted}");
+    let device = &session.project().channels[0].devices[0];
+    let attack = device.params.iter().find(|p| p.id == "attack").map(|p| p.value);
+    assert_eq!(attack, Some(0.1));
 }

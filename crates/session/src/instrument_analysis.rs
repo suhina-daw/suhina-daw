@@ -22,6 +22,10 @@ use crate::{CommandError, Session};
 static NEXT_JOB: AtomicU64 = AtomicU64::new(1);
 static WORKERS: AtomicUsize = AtomicUsize::new(0);
 const MAX_WORKERS: usize = 2;
+/// A recording engine's start this far inside the recording is the middle of a tone, which comes
+/// in over `MIDDLE_ATTACK_SECONDS` (`docs/spec/instrument-modal-fitting.md` › Engine).
+const ONSET_MARGIN_SECONDS: f64 = 0.01;
+const MIDDLE_ATTACK_SECONDS: f64 = 0.1;
 
 #[cfg(test)]
 #[path = "instrument_analysis_tests.rs"]
@@ -657,9 +661,11 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
         .then(|| report.hold.clone())
         .flatten()
         .map(|hold| (hold.start as f64 / frames, hold.end as f64 / frames));
-    // The note's own start, when the fit started after another note: the recording plays from it.
-    let note_start = report.range.start as f64 / frames;
+    // The note's own start, when the fit started after another note or a glide into it: the
+    // recording plays from it.
+    let note_start = report.start as f64 / frames;
     let trim_start = job.source.start;
+    let margin = ONSET_MARGIN_SECONDS * f64::from(job.source.pcm.sample_rate);
     let profile = report.profile.ok_or("the sample did not yield a decaying modal profile")?;
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
@@ -692,6 +698,17 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
                     device,
                     &[("source", 1.0), ("playback", 3.0), ("start", start), ("loop_start", low), ("loop_end", high)],
                 );
+                // A start inside the recording (after another note or a glide) is the middle of
+                // a sounding tone, with no attack of its own: it comes in like a bow's or a
+                // breath's onset.
+                if (start - trim_start) * frames > margin {
+                    let attack = device.params.iter().find(|p| p.id == "attack").map_or(0.0, |p| p.value);
+                    if attack < MIDDLE_ATTACK_SECONDS {
+                        overridden |=
+                            crate::instrument_profile::set_values(device, &[("attack", MIDDLE_ATTACK_SECONDS)]);
+                    }
+                    result["attack"] = json!(attack.max(MIDDLE_ATTACK_SECONDS));
+                }
                 result["engine"] = json!("recording");
                 result["hold"] = json!([low, high]);
                 result["start"] = json!(start);

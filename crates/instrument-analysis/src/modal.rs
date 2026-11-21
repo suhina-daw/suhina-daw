@@ -128,6 +128,9 @@ const ANTI_WORK: usize = (ANTI_SECONDS * RATE as f64) as usize / SHORT_FRAME;
 /// long.
 const HOLD_FROM_SECONDS: f64 = 0.25;
 const MIN_HOLD_SECONDS: f64 = 0.2;
+/// After a glide into the note, the held part starts at least this long after the pitch is
+/// reached (it settles).
+const HOLD_SETTLE_SECONDS: f64 = 0.1;
 /// A loose mode of a single note off its series and weaker than this share of the strongest mode
 /// (-20 dB) is left out.
 const STRAY_SHARE: f64 = 0.1;
@@ -261,9 +264,12 @@ pub struct Report {
     /// A chord split into one recording per note (version 4); empty for fewer than two notes.
     pub notes: Vec<ModelRecording>,
     /// Which engine plays this sound best: its resonances, or the recording itself held in
-    /// grains (a held tone), with the held part in source frames.
+    /// segments (a held tone), with the held part in source frames.
     pub engine: Engine,
     pub hold: Option<Range<usize>>,
+    /// Where the recording engine plays the note from (source frames): the fitted range's start,
+    /// or past a glide into the note, where its own pitch is reached.
+    pub start: usize,
 }
 
 /// The engine a fitted sound plays best on (`docs/spec/instrument-modal-fitting.md` › Engine).
@@ -333,6 +339,7 @@ fn fit_range(
     }
     let length = (range.end - range.start).min(sample_rate as usize * MAX_SECONDS);
     let range = range.start..range.start + length;
+    let range_start = range.start;
     let first = range.start.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let last = range.end.checked_mul(channels).ok_or(Error::InvalidRange)?;
     let input = samples.get(first..last).ok_or(Error::InvalidRange)?;
@@ -357,6 +364,7 @@ fn fit_range(
         notes: Vec::new(),
         engine: Engine::Resonance,
         hold: None,
+        start: range_start,
     };
     let mut sums = [0.0_f64; 2];
     let mut squares = [0.0_f64; 2];
@@ -445,6 +453,8 @@ fn fit_range(
         }
         Onset::Start(_) | Onset::None => None,
     };
+    // Where the note holds its own pitch: after a glide into it, none of which a plain note plays.
+    let pitched_from = glide.as_ref().map_or(0.0, Glide::end);
     if let Some(glide) = &glide {
         mono = sustain::flatten_by(&mono, f64::from(RATE), |t| glide.cents_at(t));
         other = other.map(|other| sustain::flatten_by(&other, f64::from(RATE), |t| glide.cents_at(t)));
@@ -703,12 +713,13 @@ fn fit_range(
         if held {
             let recorded = mono.len() as f64 / f64::from(RATE);
             let (from, until) = level.part.unwrap_or((HOLD_FROM_SECONDS, recorded));
-            let from = from.max(HOLD_FROM_SECONDS);
+            let from = from.max(HOLD_FROM_SECONDS).max(pitched_from + HOLD_SETTLE_SECONDS);
             let until = until.min(recorded);
             let frame = |seconds: f64| report.range.start + (seconds * f64::from(sample_rate)) as usize;
             if until - from >= MIN_HOLD_SECONDS {
                 report.engine = Engine::Recording;
                 report.hold = Some(frame(from)..frame(until).min(report.range.end));
+                report.start = frame(pitched_from).min(report.range.end);
             }
         }
         let layer = if held || vibrato.is_some() {
@@ -2197,32 +2208,35 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     // away from it. When they already sound (another note over the held one, a hammer-on above
     // it), it is no glide. Four partials from the lowest that a semitone moves out of the
     // window's main lobe (2.5 bins), at the frames at least a semitone from the note, against the
-    // frames after it.
+    // frames after it, each on its own: at least half of them quiet. A partial the note before
+    // shares (a fifth's or a fourth's step: G3's eighth is C4's sixth) sounds all along, and in
+    // a sum it hid the others.
     let note_hz = 440.0 * 2.0_f64.powf((settled - 69.0) / 12.0);
     let bin_hz = f64::from(RATE) / notes::NOTE_FRAME as f64;
     let lowest = ((2.5 * bin_hz) / ((2.0_f64.powf(1.0 / 12.0) - 1.0) * note_hz)).ceil().max(1.0) as usize;
     let window = hann(notes::NOTE_FRAME);
     let power = |centers: &mut dyn Iterator<Item = f64>| {
-        let (mut sum, mut count) = (0.0, 0usize);
+        let (mut sums, mut count) = ([0.0; GLIDE_CHECK_PARTIALS], 0usize);
         for center in centers {
             let at = (center * f64::from(RATE)) as usize;
             let Some(frame) = at.checked_sub(notes::NOTE_FRAME / 2).and_then(|s| mono.get(s..s + notes::NOTE_FRAME))
             else {
                 continue;
             };
-            sum += (lowest..lowest + GLIDE_CHECK_PARTIALS)
-                .map(|k| sustain::projection(frame, &window, note_hz * k as f64).0.powi(2))
-                .sum::<f64>();
+            for (k, sum) in sums.iter_mut().enumerate() {
+                *sum += sustain::projection(frame, &window, note_hz * (lowest + k) as f64).0.powi(2);
+            }
             count += 1;
         }
-        if count == 0 { None } else { Some(sum / count as f64) }
+        (count > 0).then(|| sums.map(|sum| sum / count as f64))
     };
     let away = power(&mut voiced.iter().filter(|p| p.0 < end && (p.1 - settled).abs() >= GLIDE_SEMITONES).map(|p| p.0));
     let held = power(&mut voiced.iter().filter(|p| p.0 > end).map(|p| p.0));
     let (Some(away), Some(held)) = (away, held) else {
         return Ok((Onset::None, wander, pitched));
     };
-    if away > held * GLIDE_QUIET {
+    let quiet = away.iter().zip(&held).filter(|(a, h)| **a <= **h * GLIDE_QUIET).count();
+    if quiet * 2 < GLIDE_CHECK_PARTIALS {
         return Ok((Onset::None, wander, pitched));
     }
     // A step of a semitone or more between voiced frames, or a pause, before the note settles:

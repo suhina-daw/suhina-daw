@@ -258,9 +258,12 @@ revision-4 set ([modal profiles](instrument-modal-profile.md#fitted-model-sets-r
   cents from the note, which must leave at least the last quarter of the voiced frames held,
   and within 0.02..4 s. A glide moves into its note, so the note's own partials are quiet while
   the pitch is still away: over the frames at least a semitone from the note, four of the note's
-  partials (from the lowest that a semitone moves 2.5 bins, out of the window's main lobe) must
-  hold at most a tenth of the power they hold after the glide; otherwise another note sounded
-  over the held one (a pedal steel's D4 over its C2) and there is no glide. The glide's sixteen
+  partials (from the lowest that a semitone moves 2.5 bins, out of the window's main lobe) are
+  compared one by one, and at least two of them must hold at most a tenth of the power they hold
+  after the glide; otherwise another note sounded over the held one (a pedal steel's D4 over its
+  C2) and there is no glide. One by one, since the note before can share a partial with the note
+  (G3's eighth is C4's sixth, in any step of a fifth or a fourth): summed, that one partial hid
+  the others and a step from G3 to C4 counted as one note, its held part holding G3 too. The glide's sixteen
   points lie evenly from 0 s to its end, the smoothed pitch interpolated in cents from the note,
   the last at 0. Only a continuous movement is a glide: a step of a semitone or more between
   consecutive voiced frames, or a pause of more than 0.07 s between them, before the note
@@ -475,12 +478,19 @@ plays the sound best (algorithm version 4):
   Sustain playback ([sampler](sampler.md) › Sustain playback). The held part runs from the held
   rule's first window (at least 0.25 s, after the attack) to its last (before the release), on the
   whole prepared recording, at least 0.2 s long; the report gives it in source frames (`hold`).
+  After a glide into the note it starts at least 0.1 s after the pitch is reached, and the note
+  plays from there (`start`): a plain note plays no glide (a legato one does, on the model), and
+  a held part with the glide in it bent the pitch at every seam.
 - **Resonance** otherwise: the fitted model.
 
 `instrument.acceptFit` adopts the fitted model as before and, for a Recording fit (not a chord's
 notes), also sets the Instrument's Source to Sample, its Sample playback to Sustain, Loop
 start and Loop end to the held part and Start to the note's own start (when the fit started
-after another note), all in the same undo step; the result names `engine`, `hold` and `start`.
+after another note, or past a glide into it), all in the same undo step; the result names
+`engine`, `hold` and `start`. A Start more than 10 ms inside the recording is the middle of a
+sounding tone with no attack of its own (a cello's note reached by a slide began at full level,
+as if cut), so Attack is raised to at least 0.1 s, a bow's or a breath's onset, and the result
+names `attack`.
 The fitted model stays: Source Modal plays it, so either engine can be heard on the same sample
 with one switch. The Sample page says which engine the fit chose. Measured: a cello's two notes,
 a whistle and a trombone chose Recording; pianos and guitars Resonance.

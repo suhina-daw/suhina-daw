@@ -387,6 +387,18 @@ fn a_held_tone_chooses_the_recording_engine() {
     let hold = report.hold.clone().unwrap();
     assert!(hold.start as f64 >= 0.25 * f64::from(RATE) - 1.0, "{hold:?}");
     assert!((hold.end - hold.start) as f64 >= 0.2 * f64::from(RATE) && hold.end <= pcm.len(), "{hold:?}");
+    assert_eq!(report.start, 0, "a note from its own start plays from there");
+    // Gliding from A2 up to C3 in 0.3 s, then held: the note plays from where it reaches its
+    // pitch, and the held part starts at least 0.1 s after that, none of the glide in it.
+    let slide = |t: f64| if t < 0.3 { 45.0 + 3.0 * t / 0.3 } else { 48.0 };
+    let pcm = voices(1.8, &[(&slide, &|_| 1.0)]);
+    let report = fit(&pcm, RATE, 1, 0..pcm.len(), 48, |_, _| true).unwrap();
+    assert_eq!(report.engine, Engine::Recording, "{report:?}");
+    let glide = report.recording.as_ref().and_then(|r| r.glide).expect("the glide");
+    let reached = (glide.end() * f64::from(RATE)) as usize;
+    assert_eq!(report.start, reached, "{glide:?}");
+    let hold = report.hold.clone().unwrap();
+    assert!(hold.start as f64 >= reached as f64 + 0.1 * f64::from(RATE) - 1.0, "{hold:?} {glide:?}");
     let strike = struck(RATE, 2.0, &[(440.0, 1.5, 0.5), (1320.0, 0.8, 0.2)]);
     let report = fit(&strike, RATE, 1, 0..strike.len(), 69, |_, _| true).unwrap();
     assert_eq!((report.engine, report.hold), (Engine::Resonance, None));
