@@ -686,7 +686,15 @@ crash gets back what was set in its editor (ADR 0006 › 5); saving the project
 (`project.save`) reads each one's state then and writes it into the project, so a reopened
 project, or a plug-in started again from scratch, gets the same settings. Those reads also
 tell when a setting was changed in the editor since the project was saved, which makes the
-project unsaved without an undo step ([ADR 0010](../decisions/0010-project-files.md), decision 7). Crashes and hangs are noticed within 250 ms and shown on the
+project unsaved without an undo step ([ADR 0010](../decisions/0010-project-files.md), decision 7). Some plug-ins
+apply a state a moment after they are given it, answering the load (the host replies with the
+state read straight after setting it) and the reads for a while after with the state they had
+before. The state is read just before each load: a plug-in that answers the load with exactly
+that has not applied the new state yet, and while it still reports it, the state it was given
+stands as its state, for backups, saves, restarts and ARA rebinds; the first read of anything else
+is its state from then on. A plug-in that answers with something new took the state in a form of
+its own (a VST2 bank read by its VST3 successor), and that form is its state
+([#1674](https://github.com/suhina-daw/suhina-daw/issues/1674)). Crashes and hangs are noticed within 250 ms and shown on the
 device; `device.restart` starts it again (one that could not start at all is started from
 scratch with the project's state).
 

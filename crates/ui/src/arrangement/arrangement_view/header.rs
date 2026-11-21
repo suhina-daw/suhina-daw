@@ -183,6 +183,12 @@ pub(super) fn track_header(
     if body.clicked() {
         state.targeted = Some(lane.track);
         let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
+        // A clip selected on another track would keep the detail area on that track, which is
+        // what it shows first: one plain click makes this track the one worked on, as a
+        // double-click does, without a group's double-click folding it (#1339).
+        if !shift && !command && state.selected_clip().is_some_and(|(track, _)| track != lane.track) {
+            state.clear_selected_clip();
+        }
         state.pick_track(lane.track, shift, command, order.tracks);
         // The track, not a clip, is what Delete acts on now (#690); a clip on it stays selected,
         // and the detail area shows the track's devices (#950).
