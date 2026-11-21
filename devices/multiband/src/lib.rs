@@ -158,7 +158,7 @@ static PARAMS: [ParamInfo; param::COUNT] = [
 
 pub static INFO: DeviceInfo = DeviceInfo::new("multiband", "Multiband", Role::Effect, &PARAMS);
 
-/// `u` through a quadratic knee `width` decibels wide centred on zero: 0 under it, `u` over it.
+/// `u` through a quadratic knee `width` decibels wide centered on zero: 0 under it, `u` over it.
 #[inline]
 pub fn knee(u: f64, width: f64) -> f64 {
     if width > 1e-6 && u.abs() <= width / 2.0 {

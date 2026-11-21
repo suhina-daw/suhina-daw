@@ -563,7 +563,7 @@ impl NodeKind {
 /// Generated human reference; shared with the JSON catalog and checked against the spec.
 pub fn node_reference_markdown() -> String {
     use std::fmt::Write;
-    let mut text = String::from("| JSON kind / Rust variant | Inputs (default, unit) | Behaviour |\n|---|---|---|\n");
+    let mut text = String::from("| JSON kind / Rust variant | Inputs (default, unit) | Behavior |\n|---|---|---|\n");
     for node in NODE_CATALOG {
         let ports = node
             .inputs

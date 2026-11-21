@@ -30,7 +30,7 @@ use crate::kit::waveform;
 use crate::kit::widgets::{self, Action, Drag, VOLUME_RANGE, volume_position};
 
 mod clip;
-pub(crate) use clip::muted_clip_grey;
+pub(crate) use clip::muted_clip_gray;
 mod header;
 mod header_layout;
 mod lane_menu;
@@ -1638,7 +1638,7 @@ fn show_lanes(
         if lane.overrides {
             lanes_painter.rect_filled(lane_rect, 0.0, window_surface().gamma_multiply(0.45));
         }
-        // A take lane is soloed: the track's own clips are not heard, so they grey (#989).
+        // A take lane is soloed: the track's own clips are not heard, so they gray (#989).
         if state.take_solo.is_some_and(|(t, _)| t == lane.track) {
             lanes_painter.rect_filled(lane_rect, 0.0, window_surface().gamma_multiply(0.6));
         }

@@ -913,7 +913,7 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
         let mut on = state.formats.iter().any(|f| f == format);
         let check =
             Rect::from_min_size(Pos2::new(item.left() + 6.0, item.top()), Vec2::new(item.width() - 6.0, item.height()));
-        // Laid out from the left of its line, as the sidebar's other items are, not centred in it.
+        // Laid out from the left of its line, as the sidebar's other items are, not centered in it.
         let layout = egui::Layout::left_to_right(egui::Align::Center);
         let response = ui
             .scope_builder(egui::UiBuilder::new().max_rect(check).layout(layout), |ui| {

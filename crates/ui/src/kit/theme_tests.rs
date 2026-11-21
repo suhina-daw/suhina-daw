@@ -497,7 +497,7 @@ fn palette_and_shades_keep_readable_inks_on_composited_track_fills() {
             }
         });
     }
-    // Even a custom theme with translucent mid-grey inks has a readable fallback.
+    // Even a custom theme with translucent mid-gray inks has a readable fallback.
     use_colors(
         &ctx,
         &[

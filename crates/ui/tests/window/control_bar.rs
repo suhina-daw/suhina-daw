@@ -119,7 +119,7 @@ fn the_view_switch_is_the_last_control_at_the_right_with_the_cpu_and_ram_left_of
 #[test]
 fn a_narrow_window_leaves_out_what_would_reach_the_position_readout() {
     // At the smallest window the app allows, the blocks that show keep their order and stay
-    // right of the transport in the centre (play, stop and the 64 px position).
+    // right of the transport in the center (play, stop and the 64 px position).
     let mut renderer = suhina_engine::Renderer::stopped(
         &demo_project(),
         &suhina_engine::AudioPool::new(),

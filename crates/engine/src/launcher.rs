@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The clip launcher: one column of slots per track, at most one playing clip per column, and
-//! launches that wait for the next quantisation boundary. Behaviour: `docs/spec/clip-launching.md`.
+//! launches that wait for the next quantisation boundary. Behavior: `docs/spec/clip-launching.md`.
 //!
 //! Every launch clip is prepared when the [`Renderer`] is built; launching only changes indices
 //! and counters, so [`Renderer::handle`] and the per-frame work never allocate. Other threads

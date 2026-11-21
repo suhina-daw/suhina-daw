@@ -230,6 +230,8 @@ impl App {
             (i.viewport().focused.unwrap_or(false), i.viewport().minimized.unwrap_or(false))
         });
         builder = builder.with_window_level(map_window_level(main_focused, self.map_window.focused));
+        let own_frame = self.own_window_frame();
+        builder = crate::kit::own_window::builder(builder, own_frame);
         let revision = self.revision;
         let had_drag = self.browser.drag.is_some();
         let mut settings = self.settings.clone();
@@ -239,17 +241,20 @@ impl App {
         let frame = ctx.show_viewport_immediate(id, builder, |ui, class| {
             let embedded = class == egui::ViewportClass::EmbeddedWindow;
             // Embedded (a toolkit without windows of its own, as in tests) the map gets a fixed size.
+            // In a window of its own, the map is under the system's title bar, on the window's
+            // base: `window`'s background, as under the main window.
             let rect = if embedded {
-                Rect::from_min_size(ui.available_rect_before_wrap().min, MAP_WINDOW_SIZE.into())
+                let rect = Rect::from_min_size(ui.available_rect_before_wrap().min, MAP_WINDOW_SIZE.into());
+                ui.painter().rect_filled(
+                    rect,
+                    0.0,
+                    crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
+                );
+                rect
             } else {
-                ui.max_rect()
+                crate::kit::own_window::base(ui, own_frame).under_title_bar()
             };
             ui.allocate_rect(rect, egui::Sense::hover());
-            ui.painter().rect_filled(
-                rect,
-                0.0,
-                crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")),
-            );
             let changed = panel.show(ui, rect, browser, projects, &mut settings, revision);
             // The window has its own keyboard: its keys run the same actions as the main window's,
             // unless a field in it is being typed in. Embedded, the main window reads them.

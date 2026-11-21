@@ -10,7 +10,7 @@
 //! back once while going in and once while coming out ([`HALF_TAPS`] output frames each side),
 //! which it reports to the engine's latency compensation.
 
-/// Taps of the windowed-sinc kernel. Even, so the middle sits between the two centre taps.
+/// Taps of the windowed-sinc kernel. Even, so the middle sits between the two center taps.
 const TAPS: usize = 48;
 /// Half the taps: how far ahead of an output's time the kernel reaches, in input frames.
 /// This is the delay the conversion adds, in frames of the resampler's output rate.
@@ -94,19 +94,19 @@ impl Resampler {
             self.history[TAPS - 1] = if x.is_finite() { x } else { 0.0 };
             self.fed += 1;
             // The kernel reaches `HALF_TAPS` frames behind and `HALF_TAPS` ahead of its
-            // centre, and the history holds `TAPS` frames, so the output whose centre sits at
+            // center, and the history holds `TAPS` frames, so the output whose center sits at
             // `fed − HALF_TAPS − 1` reads exactly what is stored: produce it now, before the
-            // next frame pushes it out. Outputs ahead of that centre wait here for the rest of
+            // next frame pushes it out. Outputs ahead of that center wait here for the rest of
             // the feed.
-            let bound = self.fed as f64 - (HALF_TAPS + 1) as f64; // centre < bound
+            let bound = self.fed as f64 - (HALF_TAPS + 1) as f64; // center < bound
             while written < output.len() {
                 let t = self.produced * self.from / self.to;
-                let centre = (t + 0.5).floor();
-                if centre >= bound {
+                let center = (t + 0.5).floor();
+                if center >= bound {
                     break;
                 }
                 if let Some(slot) = output.get_mut(written) {
-                    *slot = self.output_at(t, centre);
+                    *slot = self.output_at(t, center);
                 }
                 self.produced += 1.0;
                 written += 1;
@@ -126,16 +126,16 @@ impl Resampler {
         self.process(&[0.0; HALF_TAPS + 1], output)
     }
 
-    /// Rebuilds the signal at input-time `t` (`centre = (t + 0.5).floor()`); frames before the
+    /// Rebuilds the signal at input-time `t` (`center = (t + 0.5).floor()`); frames before the
     /// stream's start are silence.
     #[inline]
-    fn output_at(&self, t: f64, centre: f64) -> f64 {
-        // The kernel sits `d` input frames off the frame at `centre`; the table phase nearest
+    fn output_at(&self, t: f64, center: f64) -> f64 {
+        // The kernel sits `d` input frames off the frame at `center`; the table phase nearest
         // that does the fractional part.
-        let d = centre - t;
+        let d = center - t;
         let phase = (((d + 0.5) * PHASES as f64).round() as usize).min(PHASES - 1);
         let row = &self.table[phase * TAPS..(phase + 1) * TAPS];
-        let first = centre as i64 - (HALF_TAPS as i64 - 1);
+        let first = center as i64 - (HALF_TAPS as i64 - 1);
         let base = self.fed as i64 - TAPS as i64;
         let mut sum = 0.0;
         for (tap, h) in row.iter().enumerate() {

@@ -52,7 +52,7 @@ pub fn over(top: &RgbaImage, under: &RgbaImage) -> RgbaImage {
     out
 }
 
-/// `image` scaled to cover `w` × `h` and cropped to its centre, as a desktop picture fills it. The
+/// `image` scaled to cover `w` × `h` and cropped to its center, as a desktop picture fills it. The
 /// part that shows is cut out first, so the work is the window's size however thin the picture
 /// is, and it is laid over black so that its transparent pixels show nothing of their colour.
 fn cover(image: &RgbaImage, w: u32, h: u32) -> Option<RgbaImage> {
@@ -60,7 +60,7 @@ fn cover(image: &RgbaImage, w: u32, h: u32) -> Option<RgbaImage> {
     if iw == 0 || ih == 0 || w == 0 || h == 0 {
         return None;
     }
-    // The largest centred part of the image with the window's proportions.
+    // The largest centered part of the image with the window's proportions.
     let (cw, ch) = if u64::from(iw) * u64::from(h) >= u64::from(ih) * u64::from(w) {
         (((u64::from(ih) * u64::from(w)) / u64::from(h)).clamp(1, u64::from(iw)) as u32, ih)
     } else {
@@ -94,7 +94,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_half_transparent_white_over_black_is_mid_grey_and_unpremultiplies_to_white() {
+    fn a_half_transparent_white_over_black_is_mid_gray_and_unpremultiplies_to_white() {
         let top = RgbaImage::from_pixel(1, 1, Rgba([128, 128, 128, 128]));
         let under = RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 255]));
         assert_eq!(over(&top, &under).get_pixel(0, 0).0, [128, 128, 128, 255]);
@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn a_thin_backdrop_covers_the_window_from_its_centre() {
+    fn a_thin_backdrop_covers_the_window_from_its_center() {
         let thin =
             RgbaImage::from_fn(
                 1,

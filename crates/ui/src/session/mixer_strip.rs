@@ -940,7 +940,7 @@ fn volume_drag(
     }
 }
 
-/// The dB a vertical fader's cap stands for with its centre at `y`.
+/// The dB a vertical fader's cap stands for with its center at `y`.
 fn fader_db_at(y: f32, fader: Rect) -> f64 {
     let (bottom, top) = (fader.bottom() - cap_size().y / 2.0, fader.top() + cap_size().y / 2.0);
     let position = f64::from((bottom - y) / (bottom - top).max(1.0)).clamp(0.0, 1.0);
@@ -1120,7 +1120,7 @@ fn paint_fader(
     if fader.height() < cap_size.y {
         return;
     }
-    // The cap's centre travels from half a cap above the bottom to half a cap under the top.
+    // The cap's center travels from half a cap above the bottom to half a cap under the top.
     let travel = egui::Rangef::new(fader.bottom() - cap_size.y / 2.0, fader.top() + cap_size.y / 2.0);
     let at = |position: f32| travel.min + (travel.max - travel.min) * position;
     let x = fader.center().x;
@@ -1144,9 +1144,9 @@ fn paint_fader(
     // The scale on the side of the fader the sheet lays it out on: its labels against the fader,
     // its ticks by the rail, moved as far as the scale is from its place beside the fader.
     let scale = scale.unwrap_or(Rect::NOTHING);
-    let centred = scale.center().x < fader.center().x;
+    let centered = scale.center().x < fader.center().x;
     let native_scale = Rect::from_min_size(
-        egui::pos2(if centred { fader.left() - SCALE_WIDTH - 2.0 } else { fader.right() }, fader.top()),
+        egui::pos2(if centered { fader.left() - SCALE_WIDTH - 2.0 } else { fader.right() }, fader.top()),
         egui::vec2(SCALE_WIDTH, fader.height()),
     );
     let mut last_label_y = f32::NEG_INFINITY;
@@ -1158,7 +1158,7 @@ fn paint_fader(
         if y - last_label_y >= 10.0 {
             let label = if db == -70.0 { "−∞".to_owned() } else { format!("{db:.0}") };
             painter.text(
-                Pos2::new(scale.right() - if centred { 0.0 } else { 1.0 }, y),
+                Pos2::new(scale.right() - if centered { 0.0 } else { 1.0 }, y),
                 Align2::RIGHT_CENTER,
                 label,
                 theme::mono_font(8.0),
@@ -1237,16 +1237,16 @@ fn paint_horizontal_fader(
         );
     }
     drop(scale_style);
-    let centre = egui::pos2(at(widgets::volume_position(db)), fader.center().y);
-    let cap = Rect::from_center_size(centre, Vec2::new(thickness, length));
+    let center = egui::pos2(at(widgets::volume_position(db)), fader.center().y);
+    let cap = Rect::from_center_size(center, Vec2::new(thickness, length));
     let cap_style = crate::kit::element::FADER_CAP.response(response).enter();
-    cap_style.paint_background(painter, Rect::from_center_size(centre, Vec2::new(length, thickness)), 2.0);
+    cap_style.paint_background(painter, Rect::from_center_size(center, Vec2::new(length, thickness)), 2.0);
     let cap_ink = crate::kit::mixer_controls::cap_ink(&cap_style);
     if !crate::kit::skin::paint(painter, cap, "fader.cap", state, cap_ink, std::f32::consts::FRAC_PI_2) {
-        let cap = Rect::from_center_size(centre, Vec2::new(length, thickness));
+        let cap = Rect::from_center_size(center, Vec2::new(length, thickness));
         let fill = cap_style.hover_fade(hover, crate::kit::element::Look::background);
         painter.rect_filled(cap, 2.0, fill);
-        painter.vline(centre.x, cap.shrink(2.0).y_range(), theme::hairline(crate::kit::element::value_ink()));
+        painter.vline(center.x, cap.shrink(2.0).y_range(), theme::hairline(crate::kit::element::value_ink()));
     }
 }
 

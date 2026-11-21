@@ -775,6 +775,12 @@ impl Rack {
         std::mem::take(&mut self.ara_learned)
     }
 
+    /// Whether a host found the plug-in `spec` to edit clips over ARA in this session, the
+    /// catalog maybe not saying so yet.
+    pub(crate) fn found_to_edit_clips(&self, spec: &str) -> bool {
+        self.ara_plugins.contains(spec)
+    }
+
     pub fn env(&self) -> Option<&PluginEnv> {
         self.env.as_deref()
     }

@@ -100,7 +100,7 @@ READ_WHEN_WORDS = 40
 # Documents outside docs/ that the index lists by hand; they carry no front matter.
 ROOT_DOCS = (
     ("AGENTS.md", "Rules for agents and contributors, what to run before finishing, where to read more"),
-    ("CONTRIBUTING.md", "Clean-room rules, licences, AI-assisted contributions"),
+    ("CONTRIBUTING.md", "Clean-room rules, licenses, AI-assisted contributions"),
     ("ROADMAP.md", "Milestones, what works now, what comes next"),
     ("README.md", "What Suhina is, how to try and build it"),
 )

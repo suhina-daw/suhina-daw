@@ -124,7 +124,7 @@ fn channel_selection_and_inversion() {
 }
 
 #[test]
-fn bass_mono_centres_the_lows_and_keeps_the_highs() {
+fn bass_mono_centers_the_lows_and_keeps_the_highs() {
     let settings = [(param::BASS_MONO, 1.0), (param::BASS_MONO_FREQUENCY, 200.0)];
     // 40 Hz only on the left comes out at half level on both sides.
     let mut s = sines(40.0, 0.0, 48_000);
@@ -191,7 +191,7 @@ fn bass_mono_listen_plays_only_the_lows() {
     run(&mut utility(&listen), &mut s);
     let (l, r) = peaks(&s);
     assert!((l - 1.0).abs() < 0.01 && r < 0.001, "{l} {r}");
-    // ...and is centred with it.
+    // ...and is centered with it.
     let mut s = sines(40.0, 0.0, 48_000);
     run(&mut utility(&[listen.as_slice(), &[(param::BASS_MONO, 1.0)]].concat()), &mut s);
     let (l, r) = peaks(&s);

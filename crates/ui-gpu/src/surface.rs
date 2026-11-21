@@ -53,9 +53,9 @@ fn vs_main(@builtin(vertex_index) index: u32, fill: Fill) -> Out {
 
 @fragment
 fn fs_main(in: Out) -> @location(0) vec4<f32> {
-    let centre = (in.rect.xy + in.rect.zw) * 0.5;
+    let center = (in.rect.xy + in.rect.zw) * 0.5;
     let half = (in.rect.zw - in.rect.xy) * 0.5;
-    let p = in.position.xy - centre;
+    let p = in.position.xy - center;
     // The radius of the corner this pixel is nearest: nw, ne, sw, se.
     var r = select(in.radii.x, in.radii.y, p.x > 0.0);
     if p.y > 0.0 {

@@ -491,6 +491,21 @@ pub fn pair_ara(plugins: &mut [PluginInfo], ara_classes: &[String]) {
     }
 }
 
+/// Whether the audio class `name` of a VST3 module may edit clips over ARA, as far as the
+/// module's class list tells, for a component that answers `IPlugInEntryPoint` when it loads.
+/// `ARAVST3.h` has a module that supports ARA declare an [`ARA_FACTORY_CLASS`], paired with the
+/// audio class of the same name, so a module that declares none has no ARA plug-in, whatever its
+/// components answer: a shell module holding many plug-ins may answer for every one of them
+/// (#1673). When the factory names pair some of the module's `audio_classes`, only those may;
+/// when they pair none (the factory named differently), any may, as [`pair_ara`] cannot tell.
+pub fn may_edit_clips(name: &str, audio_classes: &[String], ara_classes: &[String]) -> bool {
+    if ara_classes.is_empty() {
+        return false;
+    }
+    let paired = |class: &str| ara_classes.iter().any(|ara| ara == class);
+    if audio_classes.iter().any(|class| paired(class)) { paired(name) } else { true }
+}
+
 /// Fills in [`PluginInfo::replaces`] from a VST3 compatibility list: an array of
 /// `{ "New": <class id>, "Old": [<class id>, …] }`, the form both `moduleinfo.json` and
 /// `IPluginCompatibility` use. Ids that are not 32 hex digits are skipped.
@@ -890,6 +905,23 @@ mod tests {
         let mut unpaired = [named("Tune"), named("Pitch")];
         pair_ara(&mut unpaired, &["A".into(), "B".into()]);
         assert_eq!(unpaired.map(|p| p.ara), [false, false]);
+    }
+
+    #[test]
+    fn a_component_edits_clips_only_beside_an_ara_factory_that_can_pair_with_it() {
+        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // A shell module of many plug-ins with no ARA factory: none of them, whatever their
+        // components answer (#1673).
+        let shell = names(&["Delay Stereo", "Delay Mono", "Compressor"]);
+        assert!(!may_edit_clips("Delay Stereo", &shell, &[]));
+        // A factory named after one class: that class only.
+        let mixed = names(&["Tune", "Delay Stereo"]);
+        assert!(may_edit_clips("Tune", &mixed, &names(&["Tune"])));
+        assert!(!may_edit_clips("Delay Stereo", &mixed, &names(&["Tune"])));
+        // A factory named after none of the classes: any may, as the scan cannot tell.
+        assert!(may_edit_clips("Delay Stereo", &mixed, &names(&["Tune (ARA)"])));
+        // One class and one factory pair whatever their names, as the scan pairs them.
+        assert!(may_edit_clips("Tune", &names(&["Tune"]), &names(&["Tune ARA"])));
     }
 
     #[test]

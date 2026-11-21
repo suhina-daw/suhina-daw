@@ -283,7 +283,7 @@ impl Device for Utility {
                 let low = (low_l + low_r) / 2.0;
                 l += ((high_l + low) as f32 - l) * bass_mix;
                 r += ((high_r + low) as f32 - r) * bass_mix;
-                // The low band alone, centred as far as bass mono is on.
+                // The low band alone, centered as far as bass mono is on.
                 let mix = f64::from(bass_mix);
                 let (only_l, only_r) = (low_l + (low - low_l) * mix, low_r + (low - low_r) * mix);
                 l += (only_l as f32 - l) * listen_mix;

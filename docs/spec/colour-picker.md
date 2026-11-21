@@ -3,7 +3,7 @@ description: Track colour selection, the floating colour window, recent colours,
 read_when: track colour, colour picker, recent colours, related shades, F2, colour wheel
 type: spec
 status: planned
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - crates/ui/src/interaction/colour_picker.rs
   - crates/session/src/colours.rs
@@ -13,6 +13,7 @@ covers:
   - crates/session/tests/track_colours.rs
   - crates/ui/tests/window/colours.rs
   - crates/ui/tests/window/colours_native.rs
+  - crates/ui/src/kit/controls.rs
 ---
 
 # Track colours
@@ -36,9 +37,17 @@ the selection fill, tint or muted grey. Selection outlines and all selection/tra
 intact; clips and lane selection shading keep their ordinary look. Closing the tool restores
 the configured header appearance without changing the selection or saved appearance setting.
 The native client area must paint the active theme's background, and idle rendering must
-settle without alternating content, geometry or scale.
+settle without alternating content, geometry or scale. In its own window the picker is that
+window's root (`dialog[name="color-picker"]` over `window`'s background, under the system's
+title bar on macOS); where windows cannot open (the tests), it is a dialog over the main window,
+with its title row and **Close** button.
 Native position observations are saved for reopening; they never become continuous move
 requests. Only opening and an explicit size-change adjustment may position the window.
+The window is as tall as its contents, measured as they are drawn, and never taller than the
+screen less 48 px (its contents then scroll). Opening **Fine adjustment** or choosing **Wheel**
+grows the window first and draws the new controls in the frame after, so no frame shows them cut
+off; closing it or choosing **Field** draws the shorter layout at once and shrinks the window
+after.
 
 The compact order is **Palette**, **Related shades**, **Recent colours**, the current
 colour and editable/copyable hex value, collapsed **Fine adjustment**, and **Random** /
@@ -133,7 +142,8 @@ replace feedback from people with colour-vision deficiencies or native-window te
 
 The theme renderer includes compact, expanded-field and expanded-wheel colour-picker scenes.
 They participate in every built-in theme's paint and clipped-text checks. The rendered examples
-below show the actual controls in an embedded window, not the operating system's title bar.
+below show the actual controls in the dialog drawn where windows cannot open, not the operating
+system's title bar.
 
 | Theme | Compact | Field | Wheel |
 |---|---|---|---|

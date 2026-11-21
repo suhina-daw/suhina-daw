@@ -2145,7 +2145,8 @@ fn opting_out_of_the_base_sheet_leaves_the_bare_look() {
 }
 
 /// The user-agent sheet's floor is readable: with `"base": "none"` and nothing of the theme's,
-/// the window has plain text on an opaque background; with the base sheet, the window takes
+/// the window has plain text on an opaque background, and the menus, pop-ups, tooltips and
+/// dialogs over it the same background; with the base sheet, the window takes
 /// Suhina Studio's colours as before.
 #[test]
 fn opting_out_of_the_base_sheet_leaves_readable_text_on_an_opaque_window() {
@@ -2157,6 +2158,10 @@ fn opting_out_of_the_base_sheet_leaves_readable_text_on_an_opaque_window() {
     };
     let bare = window(false);
     assert_eq!(bare.background.a(), 255, "an opaque window: {:?}", bare.background);
+    for over in ["menu", "popup", "tooltip", "dialog"] {
+        let floating = scoped(&["window".into(), over.into()]).unwrap();
+        assert_eq!(floating.background, bare.background, "a {over} over the window takes its background");
+    }
     let luminance = |c: Color32| {
         let [r, g, b, _] = c.to_srgba_unmultiplied().map(|v| f32::from(v) / 255.0);
         0.2126 * r + 0.7152 * g + 0.0722 * b
@@ -2359,4 +2364,40 @@ fn an_out_of_frame_lookup_while_the_engine_is_busy_gives_none() {
     skin::configure(&skin::Skin::default());
     assert!(busy.is_none());
     assert_eq!(free, Some(9.0));
+}
+
+/// A theme on the user-agent sheet alone (`"base": "none"`) frames its pop-ups (context menus,
+/// drop-downs) and tooltips in the user-agent's opaque background, over egui's own fill (the
+/// window's frame, `widget[kind="window"]`, which that sheet leaves clear), so they never show
+/// through.
+#[test]
+fn without_the_base_sheet_pop_ups_and_tooltips_are_opaque() {
+    use crate::kit::element::{POPUP, TOOLTIP};
+    use crate::kit::floating::{Frame, frame};
+    let ctx = egui::Context::default();
+    skin::configure(&skin::Skin { css: Some(Arc::from("")), base: false, ..Default::default() });
+    ctx.run_ui(Default::default(), |ui| begin_frame(ui)).textures_delta.clear();
+    let floor = scoped(&["window".into()]).unwrap().background;
+    assert_eq!(floor.a(), 255);
+    let egui_frame = Frame {
+        rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(100.0, 60.0)),
+        radius: egui::CornerRadius::ZERO,
+        // egui's frame, in its window fill: what the window's frame gives, clear here.
+        fill: ctx.global_style().visuals.window_fill,
+        stroke: egui::Stroke::NONE,
+        shadow: Vec::new(),
+    };
+    for name in [POPUP, TOOLTIP] {
+        let painted = frame(&ctx, name, &egui_frame, 1.0).expect("the sheet's frame");
+        let fills: Vec<Color32> = painted
+            .under
+            .iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(rect) => Some(rect.fill),
+                _ => None,
+            })
+            .collect();
+        assert!(fills.contains(&floor), "{} in {fills:?}", name.name());
+    }
+    skin::configure(&skin::Skin::default());
 }

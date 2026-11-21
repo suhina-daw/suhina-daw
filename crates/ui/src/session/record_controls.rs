@@ -247,7 +247,7 @@ pub fn metronome_level(
     );
 }
 
-/// A small metronome: its body and its arm, centred in `rect`.
+/// A small metronome: its body and its arm, centered in `rect`.
 pub fn metronome_glyph(painter: &Painter, rect: Rect, color: egui::Color32) {
     let c = rect.center();
     let body =

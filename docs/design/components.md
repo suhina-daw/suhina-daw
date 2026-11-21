@@ -3,7 +3,7 @@ description: Measurements, states and tokens of every UI component, from the min
 read_when: widget sizes, marker row, clip slot states, value field, slider, knob, toggle, meter, track header levels, device panel, piano roll layout, audition button, velocity lane top edge, ghost menu, ghost notes look, Scale menu, scale rows, key column mark, folded rows
 type: spec
 status: draft
-last_verified: 2026-11-20
+last_verified: 2026-11-21
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/session/session_view.rs
@@ -180,8 +180,13 @@ and closes the menu. A choice matching every target's current colour makes no ed
 
 The **+ More colours** row shows the configured shortcut (F2 by default) and opens a separate
 non-modal colour window. It is 340 points wide, initially centred, movable and kept open while
-the DAW is used. The surface, text, field border and focus indicators use the `colour-picker`,
-`colour-field` and `colour-swatch` elements. Swatches are 18 points tall, up to 30 wide;
+the DAW is used. It is a dialog, `dialog[name="color-picker"]`: its surface, text, border and
+padding are the dialog's, its field and swatches `colour-field` and `colour-swatch`; its other
+controls are the kit's flow controls
+(`kit::controls`), the same elements as Settings and the dialogs: Copy, Random and Default are
+`button`s, Field/Wheel `button[kind="option"]` parts, Steps and Soft colours tick boxes
+(`button[kind="check"]`), the Fine adjustment row a `button[kind="entry"]`, Hue and Value
+`slider`s, the headings `label[kind="caption"]` and the lines `separator[kind="row"]`. Swatches are 18 points tall, up to 30 wide;
 the twelve-column palette fits the available width without widening the window:
 Palette, Related shades, Recent colours, current swatch/hex/copy, collapsed Fine adjustment,
 then Random and Default. There is no per-track list; Recent colours is bounded to eight.
@@ -448,7 +453,7 @@ wheel over it, as far as its last row and no further.
 | Launcher and mixer › Mixer | Mixer control style | Field (default): the volume bar and the pan centre bar; Knob: a knob with its value beside it, in the Arrangement headers and the Launcher mixer ([spec](../spec/arrangement-editing.md) › Volume, pan, mute and solo) |
 | Clip editor › Piano roll | Full-height piano roll covers | Edited track (default), Whole window ([clip editor spec](../spec/ui-clip-editor.md)) |
 | Clip editor › Piano roll | Piano roll toolbar size | Normal, Large (default), Larger; the toolbar's box, gaps and icon strokes scale with it ([clip editor spec](../spec/ui-clip-editor.md) › Layout) |
-| Keys › Mouse and key behaviour | Click on empty grid, Right click on a note, Shift+right drag, Alt+right button, Duplicate key, Double-click on empty grid, Double-click on a note | The workflow settings, each set on its own; changing one makes the workflow **Custom**; kept in `keymap.json` ([shortcuts](../shortcuts.md) › Presets) |
+| Keys › Mouse and key behavior | Click on empty grid, Right click on a note, Shift+right drag, Alt+right button, Duplicate key, Double-click on empty grid, Double-click on a note | The workflow settings, each set on its own; changing one makes the workflow **Custom**; kept in `keymap.json` ([shortcuts](../shortcuts.md) › Presets) |
 | Arrangement › Time and play | Play from | Marker (default): Play and Space start from the play start marker; Selected clip: from the start of the clip selected in the Arrangement view, the marker moving there ([spec](../spec/arrangement-editing.md) › Play position) |
 | Arrangement › Time and play | Playhead after Stop | Marker (default): back to the play start marker; Stay: the marker moves to where it stopped ([spec](../spec/arrangement-editing.md) › Play position) |
 | Devices › Device panels | Device chain layout | Row (default), Stack |

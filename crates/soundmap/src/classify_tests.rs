@@ -10,7 +10,7 @@ fn noise(state: &mut u32) -> f32 {
     *state as f32 / u32::MAX as f32 - 0.5
 }
 
-/// `per` rows around each of three centres far apart.
+/// `per` rows around each of three centers far apart.
 fn three(per: usize) -> Vec<Features> {
     let mut state = 5u32;
     let mut rows = Vec::new();

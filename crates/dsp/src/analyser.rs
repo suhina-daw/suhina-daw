@@ -20,7 +20,7 @@ pub struct Analyser<const N: usize> {
 }
 
 impl<const N: usize> Analyser<N> {
-    /// Bands centred evenly in log frequency over `low`..`high` hertz at `sample_rate`, levels
+    /// Bands centered evenly in log frequency over `low`..`high` hertz at `sample_rate`, levels
     /// rising with a time constant of `rise` seconds and falling with `fall`. Bands over 45 % of
     /// the sample rate stay silent. Out-of-range inputs fall back to 20 Hz – 20 kHz.
     pub fn new(sample_rate: f64, low: f64, high: f64, (rise, fall): (f64, f64)) -> Self {
@@ -30,9 +30,9 @@ impl<const N: usize> Analyser<N> {
         let octaves = (high / low).log2() / N.max(1) as f64;
         let q = Coefficients::q_for_octaves(octaves);
         let filters = std::array::from_fn(|i| {
-            let centre = low * (high / low).powf((i as f64 + 0.5) / N.max(1) as f64);
-            if centre < 0.45 * sample_rate {
-                Biquad::new(Coefficients::bandpass(sample_rate, centre, q))
+            let center = low * (high / low).powf((i as f64 + 0.5) / N.max(1) as f64);
+            if center < 0.45 * sample_rate {
+                Biquad::new(Coefficients::bandpass(sample_rate, center, q))
             } else {
                 Biquad::new(Coefficients { b0: 0.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 })
             }
@@ -40,8 +40,8 @@ impl<const N: usize> Analyser<N> {
         Self { filters, power: [0.0; N], follower: AttackRelease::new(rise, fall, sample_rate) }
     }
 
-    /// The centre of band `index` of `N` over `low`..`high` hertz, as [`new`](Self::new) places it.
-    pub fn centre(index: usize, low: f64, high: f64) -> f64 {
+    /// The center of band `index` of `N` over `low`..`high` hertz, as [`new`](Self::new) places it.
+    pub fn center(index: usize, low: f64, high: f64) -> f64 {
         low * (high / low).powf((index as f64 + 0.5) / N.max(1) as f64)
     }
 
@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn bands_over_45_percent_of_the_rate_stay_silent() {
         let mut analyser = Analyser::<24>::new(8_000.0, 20.0, 20_000.0, (0.05, 0.05));
-        let hz = Analyser::<24>::centre(12, 20.0, 20_000.0);
+        let hz = Analyser::<24>::center(12, 20.0, 20_000.0);
         for n in 0..8_000 {
             analyser.process((std::f64::consts::TAU * hz * n as f64 / 8_000.0).sin());
         }
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn a_sine_lights_its_own_band_most() {
         let mut analyser = Analyser::<24>::new(SR, 20.0, 20_000.0, (0.05, 0.05));
-        let hz = Analyser::<24>::centre(12, 20.0, 20_000.0);
+        let hz = Analyser::<24>::center(12, 20.0, 20_000.0);
         for n in 0..24_000 {
             analyser.process((std::f64::consts::TAU * hz * n as f64 / SR).sin());
         }

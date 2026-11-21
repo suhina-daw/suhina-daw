@@ -405,19 +405,19 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
     // A drag here has no pointer to name a row for.
     let pointer = state.hover_key().filter(|_| state.strip_drag.is_none());
     for key in (first..=last).filter(|k| k.is_multiple_of(12) && layout.rows.shows(*k) && pointer != Some(*k)) {
-        let centre = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
-        painter.text(centre, Align2::CENTER_CENTER, key_name(key), font.clone(), text);
+        let center = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
+        painter.text(center, Align2::CENTER_CENTER, key_name(key), font.clone(), text);
     }
     if let Some(key) = pointer.filter(|k| layout.rows.shows(*k)) {
-        let centre = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
-        let chip = Rect::from_center_size(centre, POINTER_NAME);
+        let center = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
+        let chip = Rect::from_center_size(center, POINTER_NAME);
         // `piano-scale-strip[kind="pointer"]`: its `background-color` and `color`, so the chip
         // stands out on a strip a theme colours.
         let own = crate::kit::element::PIANO_SCALE_STRIP.attribute("kind", "pointer").look();
         painter.rect_filled(chip, 1.0, own.background());
         let name = key_name(key);
         let ink = own.color();
-        painter.text(centre, Align2::CENTER_CENTER, &name, font, ink);
+        painter.text(center, Align2::CENTER_CENTER, &name, font, ink);
         let response = ui.interact(chip.intersect(strip), Id::unique("piano-roll-pointer-key"), Sense::hover());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Row under the pointer: {name}"))

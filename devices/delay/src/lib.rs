@@ -15,7 +15,7 @@
 //! The delay time is a number of sixteenth notes at the tempo, made longer or shorter by the
 //! offset (sync), or a time in seconds. Repitch glides the time to a new value, so the pitch
 //! bends as on a tape delay; Fade crossfades from the old time to the new one; Jump changes it at
-//! once, in whole frames. The LFO swings the time by up to a quarter of it and the band's centre
+//! once, in whole frames. The LFO swings the time by up to a quarter of it and the band's center
 //! by up to two octaves either way.
 
 use suhina_device_api::{
@@ -40,7 +40,7 @@ pub const REPITCH_SECONDS: f64 = 0.02;
 pub const FADE_SECONDS: f64 = 0.05;
 /// How far the LFO at 100 % swings the delay time, as a fraction of it.
 pub const LFO_TIME_SWING: f64 = 0.25;
-/// How far the LFO at 100 % swings the band's centre, in octaves either way.
+/// How far the LFO at 100 % swings the band's center, in octaves either way.
 pub const LFO_FILTER_OCTAVES: f64 = 2.0;
 /// Time constant that softens the edges of the square and sample-and-hold LFO shapes.
 pub const LFO_EDGE_SECONDS: f64 = 0.002;
@@ -79,7 +79,7 @@ pub mod param {
     pub const TRANSITION: usize = 12;
     /// Band-pass in the feedback loop on or off.
     pub const FILTER: usize = 13;
-    /// Centre of the band-pass in hertz.
+    /// Center of the band-pass in hertz.
     pub const FILTER_FREQUENCY: usize = 14;
     /// Width of the band-pass in octaves.
     pub const FILTER_WIDTH: usize = 15;
@@ -99,7 +99,7 @@ pub mod param {
     pub const LFO_MORPH: usize = 22;
     /// How far the LFO swings the delay time.
     pub const LFO_TO_TIME: usize = 23;
-    /// How far the LFO swings the band's centre.
+    /// How far the LFO swings the band's center.
     pub const LFO_TO_FILTER: usize = 24;
     /// Share of the wet signal in the output.
     pub const MIX: usize = 25;
@@ -453,8 +453,8 @@ pub struct Delay {
     mix: Smoother,
     /// How much the lines hold what they have (0 off, 1 frozen).
     freeze: Smoother,
-    /// log2 of the band's centre, and its width in octaves.
-    centre: Smoother,
+    /// log2 of the band's center, and its width in octaves.
+    center: Smoother,
     /// The band's width in octaves.
     width: Smoother,
     /// The LFO's depths on the time and the band.
@@ -509,7 +509,7 @@ impl Delay {
             feedback: still,
             mix: still,
             freeze: still,
-            centre: still,
+            center: still,
             width: still,
             to_time: still,
             to_filter: still,
@@ -558,7 +558,7 @@ impl Delay {
             &mut self.feedback,
             &mut self.mix,
             &mut self.freeze,
-            &mut self.centre,
+            &mut self.center,
             &mut self.width,
             &mut self.to_time,
             &mut self.to_filter,
@@ -639,16 +639,16 @@ impl Delay {
         Lfo { shape, split: ((1.0 + self.value(param::LFO_MORPH)) / 2.0).clamp(0.02, 0.98) }
     }
 
-    /// Band-pass coefficients for the current (smoothed) centre and width, moved by `lfo`
+    /// Band-pass coefficients for the current (smoothed) center and width, moved by `lfo`
     /// (-1..1).
     fn tune_filters(&mut self, lfo: f64) {
         let sr = self.sample_rate;
         let swing = lfo * f64::from(self.to_filter.current()) * LFO_FILTER_OCTAVES;
-        let centre = f64::from(self.centre.current()) + swing;
+        let center = f64::from(self.center.current()) + swing;
         let half = f64::from(self.width.current()) / 2.0;
         let top = FILTER_RANGE.1.min(sr * 0.49);
-        let low = 2.0f64.powf(centre - half).clamp(FILTER_RANGE.0, top);
-        let high = 2.0f64.powf(centre + half).clamp(FILTER_RANGE.0, top);
+        let low = 2.0f64.powf(center - half).clamp(FILTER_RANGE.0, top);
+        let high = 2.0f64.powf(center + half).clamp(FILTER_RANGE.0, top);
         let (hp, lp) = (Coefficients::highpass(sr, low, BUTTERWORTH_Q), Coefficients::lowpass(sr, high, BUTTERWORTH_Q));
         for side in &mut self.sides {
             side.high_pass.set(hp);
@@ -719,9 +719,9 @@ impl Device for Delay {
             let lfo = self.lfo_edge.process(raw);
             let (filter, feedback, mix, freeze) =
                 (self.filter.next_value(), self.feedback.next_value(), self.mix.next_value(), self.freeze.next_value());
-            let band_moves = !(self.centre.is_settled() && self.width.is_settled() && self.to_filter.is_settled())
+            let band_moves = !(self.center.is_settled() && self.width.is_settled() && self.to_filter.is_settled())
                 || self.to_filter.current() > 0.0;
-            self.centre.next_value();
+            self.center.next_value();
             self.width.next_value();
             let to_time = f64::from(self.to_time.next_value());
             self.to_filter.next_value();

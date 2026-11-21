@@ -118,14 +118,14 @@ pub(super) fn audio_input(
 /// Width of the meter lying in a return or main row, left of its volume.
 pub(super) const LYING_METER: f32 = 48.0;
 
-/// Where a return or main row shows its meter: lying down, ending at `right`, centred on `y`.
+/// Where a return or main row shows its meter: lying down, ending at `right`, centered on `y`.
 pub(super) fn lying_meter(right: f32, y: f32) -> Rect {
     Rect::from_min_max(Pos2::new(right - LYING_METER, y - meter::WIDTH / 2.0), Pos2::new(right, y + meter::WIDTH / 2.0))
 }
 
 /// A header's colour band in `band`, where its layout puts it: the track's colour down its left
 /// edge, the full height of the header, at full strength while the track is off too, as the one
-/// place its colour stays beside the grey header (#1393). A click opens the palette.
+/// place its colour stays beside the gray header (#1393). A click opens the palette.
 pub(super) fn colour_band(
     ui: &Ui,
     painter: &egui::Painter,
@@ -183,6 +183,12 @@ pub(super) fn track_header(
     if body.clicked() {
         state.targeted = Some(lane.track);
         let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
+        // A clip selected on another track would keep the detail area on that track, which is
+        // what it shows first: one plain click makes this track the one worked on, as a
+        // double-click does, without a group's double-click folding it (#1339).
+        if !shift && !command && state.selected_clip().is_some_and(|(track, _)| track != lane.track) {
+            state.clear_selected_clip();
+        }
         state.pick_track(lane.track, shift, command, order.tracks);
         // The track, not a clip, is what Delete acts on now (#690); a clip on it stays selected,
         // and the detail area shows the track's devices (#950).
@@ -301,13 +307,13 @@ pub(super) fn track_header(
         })
         .unwrap_or(egui::Color32::TRANSPARENT);
     let strength = crate::kit::style_class::theme_header_tint().unwrap_or(state.header_colour_strength);
-    // A muted track's header is the `track-header[muted]` grey, as its clips are, not a dimmer
-    // shade of its colour (#1393); its colour stays in the band down its edge. The grey is the
+    // A muted track's header is the `track-header[muted]` gray, as its clips are, not a dimmer
+    // shade of its colour (#1393); its colour stays in the band down its edge. The gray is the
     // computed background, so `--track-headerMutedBackground` reaches it.
     let header_fill = if preview {
         rgb(lane.color)
     } else if lane.mute {
-        own.computed_background_or(muted_header_grey(selected))
+        own.computed_background_or(muted_header_gray(selected))
     } else if let Some(fill) = selection_fill {
         fill
     } else {
@@ -759,7 +765,7 @@ pub(super) fn track_header(
 
 /// The background the base sheet gives `arrangement track-header[muted]` (`[muted][selected]` while
 /// selected), worked out once: the fallback where no sheet styles the window.
-pub(super) fn muted_header_grey(selected: bool) -> Color32 {
-    static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
-    super::clip::muted_grey(&GREYS, "track-header", selected)
+pub(super) fn muted_header_gray(selected: bool) -> Color32 {
+    static GRAYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
+    super::clip::muted_gray(&GRAYS, "track-header", selected)
 }

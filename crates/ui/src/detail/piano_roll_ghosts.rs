@@ -70,7 +70,7 @@ pub struct GhostNote {
     pub start: f64,
     pub length: f64,
     pub key: u8,
-    /// Its track's colour, or the muted clips' grey when its clip is turned off or its track is
+    /// Its track's colour, or the muted clips' gray when its clip is turned off or its track is
     /// muted ([`ghost_colour`]), drawn at [`GHOST_ALPHA`].
     pub color: Color32,
     /// Its track's name, as an index into [`Ghosts::sources`].
@@ -321,8 +321,8 @@ fn ghost_colour(project: &Project, position: usize, clip: &Clip) -> Color32 {
     let track_muted = track.and_then(|t| t.channel).and_then(|id| project.channel(id)).is_some_and(|c| c.mute);
     if track_muted || !clip.enabled {
         use crate::kit::element::{ARRANGEMENT, CLIP, Muted};
-        let grey = crate::arrangement::arrangement_view::muted_clip_grey(false);
-        return CLIP.attr(Muted, true).probe_in(ARRANGEMENT).computed_background_or(grey);
+        let gray = crate::arrangement::arrangement_view::muted_clip_gray(false);
+        return CLIP.attr(Muted, true).probe_in(ARRANGEMENT).computed_background_or(gray);
     }
     let rgb = track.map(|track| track_colour(track, position)).unwrap_or(suhina_session::colours::MIDI);
     Color32::from_rgb(rgb.0, rgb.1, rgb.2)

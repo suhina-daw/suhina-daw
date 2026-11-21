@@ -52,8 +52,8 @@ pub fn unpack_pack(sounds: &Path) -> usize {
             eprintln!("pack unpack: {target:?} did not write; the pack stays in the executable");
         }
     }
-    // The pack's provenance and licence records go beside the files: the README that says
-    // where every file came from and under what licence, and the licence texts the collected
+    // The pack's provenance and license records go beside the files: the README that says
+    // where every file came from and under what license, and the license texts the collected
     // IRs were published under — a redistribution keeps them beside the files
     // ([ADR 0036] › 6). A record the user carries is never overwritten, like a pack file's.
     for (library_folder, pack_folder, name, bytes) in suhina_device_registry::pack_records() {

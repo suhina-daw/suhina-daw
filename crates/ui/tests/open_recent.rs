@@ -81,7 +81,7 @@ fn open_recent_lists_the_recent_projects_and_opens_one_as_the_setting_says() {
 }
 
 #[test]
-fn open_recent_is_greyed_out_while_the_list_is_empty() {
+fn open_recent_is_grayed_out_while_the_list_is_empty() {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
     let mut harness = window(app);

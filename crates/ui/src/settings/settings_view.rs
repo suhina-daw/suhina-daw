@@ -398,6 +398,9 @@ pub struct PageState {
     pub page: Page,
     /// Settings lives in a separate native viewport until Dock is chosen.
     pub window: bool,
+    /// What the system draws of that window: its title bar, where Settings' content runs under
+    /// it (macOS, as in the main window), and its corners.
+    pub frame: crate::kit::own_window::Frame,
     pub capture: Option<String>,
     /// The variant editor, a child view of Themes, is open.
     pub theme_editor: bool,
@@ -1075,13 +1078,19 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     if !state.window && crate::kit::floating::asks_to_blur(style_class.style()) {
         crate::kit::liquid::backdrop(&painter, area, 0.0);
     }
-    let panel_base = crate::kit::liquid::panel_base(ui.ctx());
-    painter.rect_filled(area, 0.0, panel_base);
-    if !state.window {
+    // In a window of its own, Settings is the window's root: its background over the whole
+    // window, under the system's title bar too; the system draws its edge.
+    // Docked, its box over the window, the page inside its border and padding (#1336).
+    let area = if state.window {
+        let (title_bar, corners) = crate::kit::own_window::shown(ui, state.frame);
+        let content = style_class.paint_root(&painter, area, corners);
+        Rect::from_min_max(Pos2::new(content.left(), content.top() + title_bar), content.max)
+    } else {
+        let panel_base = crate::kit::liquid::panel_base(ui.ctx());
+        painter.rect_filled(area, 0.0, panel_base);
         crate::kit::liquid::paint(&painter, area, &style_class, panel_base, crate::kit::liquid::Surface::Panel);
-    }
-    // Its border, and the page in its content box, inside its border and padding (#1336).
-    let area = style_class.paint_border(&painter, area);
+        style_class.paint_border(&painter, area)
+    };
     input_style(ui);
 
     let width = SIDEBAR + SIDEBAR_GAP + PAGE_WIDTH;
@@ -1544,13 +1553,13 @@ fn theme_page(
     (request, close)
 }
 
-/// Why something of a built-in theme cannot be changed, for a greyed item's hover.
+/// Why something of a built-in theme cannot be changed, for a grayed item's hover.
 const BUILT_IN_REASON: &str = "Built-in themes can't be changed; make a new theme from it";
 const SHIPPED_REASON: &str =
     "This variant comes with a built-in theme and can't be changed; duplicate it to make your own";
 const DEFAULT_REASON: &str = "The default variant is the theme's own values; it can't be deleted";
 
-/// A menu item or button that is greyed with `reason` on hover when it does not apply.
+/// A menu item or button that is grayed with `reason` on hover when it does not apply.
 fn item(ui: &mut Ui, label: &str, reason: Option<&str>) -> bool {
     let response = ui.add_enabled(reason.is_none(), egui::Button::new(label));
     match reason {
@@ -2043,7 +2052,7 @@ fn theme_card(
             }
         }
         if active {
-            // + adds a variant: greyed when the theme has no settings a variant could hold.
+            // + adds a variant: grayed when the theme has no settings a variant could hold.
             let area = place(variants.len());
             let enabled = !themes.declared.is_empty();
             let plus = ui.interact(area, Id::unique(("theme-new-variant", base)), Sense::click());
@@ -2060,7 +2069,7 @@ fn theme_card(
             }
             if ui.is_rect_visible(area) {
                 // Drawn as the theme's buttons are: their fill, edge and text, lighter under the
-                // pointer and pressed, faded when greyed.
+                // pointer and pressed, faded when grayed.
                 let visuals = if enabled { *ui.style().interact(&plus) } else { ui.visuals().widgets.inactive };
                 let fade = |color: egui::Color32| if enabled { color } else { ui.visuals().disable(color) };
                 let corner = 6.0_f32.min(area.height() / 2.0);
@@ -2595,7 +2604,7 @@ pub(crate) fn plugin_folders(
             plugins.new_format = format;
         }
         // A `button[kind="option"]`, `[checked]` for the format chosen.
-        let (_, color) = option_face(ui, painter, cell, &response, chosen, "option");
+        let (_, color) = widgets::option_face(ui, painter, cell, &response, chosen, "option");
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
@@ -3301,7 +3310,7 @@ fn preset_segmented(
         let response =
             widgets::button_area(ui, segment, Id::unique(("keymap-preset", *text)), format!("Preset: {text}"));
         // A `button[kind="preset"]`, `[checked]` for the chosen preset.
-        let (_, color) = option_face(ui, painter, segment, &response, chosen, "preset");
+        let (_, color) = widgets::option_face(ui, painter, segment, &response, chosen, "preset");
         widgets::text_in(painter, segment, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !chosen {
             picked = Some(*value);
@@ -3563,44 +3572,8 @@ fn segmented_parts<T: Copy + PartialEq>(
     options: &[(&str, T)],
     current: T,
 ) -> Option<T> {
-    let mut picked = None;
-    let mut x = rect.left();
-    for (index, ((text, value), part)) in options.iter().zip(widths).enumerate() {
-        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(*part, rect.height()));
-        x += part + 1.0;
-        let response = widgets::button_area(ui, cell, Id::unique(("setting", name, index)), format!("{name}: {text}"));
-        if response.clicked() && *value != current {
-            picked = Some(*value);
-        }
-        // A part is a `button[kind="option"]`, `[checked]` when chosen.
-        let (_, color) = option_face(ui, painter, cell, &response, *value == current, "option");
-        widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
-    }
-    picked
-}
-
-/// One part of a row of choices, a `button` of `kind` (`option`, `preset`), `[checked]` while it
-/// is the one chosen: its face painted in `rect` and its fill and ink, which fade with the choice
-/// and the pointer.
-fn option_face(
-    ui: &Ui,
-    painter: &egui::Painter,
-    rect: Rect,
-    response: &egui::Response,
-    chosen: bool,
-    kind: &'static str,
-) -> (egui::Color32, egui::Color32) {
-    let lit = widgets::lit_toggle_kind(
-        ui,
-        response,
-        crate::kit::element::BUTTON.builder(),
-        &[crate::kit::element::Checked],
-        chosen,
-        kind,
-    );
-    let (fill, color) = lit.colors();
-    lit.el.paint_over(painter, rect, crate::kit::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
-    (fill, color)
+    let id = |index: usize| Id::unique(("setting", name, index));
+    widgets::option_parts(ui, painter, rect, widths, id, name, options, current)
 }
 
 /// The colour picker's button for `colour` at the control's place in `row`, labelled `name`, its

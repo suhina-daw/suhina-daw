@@ -369,7 +369,7 @@ fn colour_property(name: &str) -> bool {
 }
 
 /// The user-agent sheet's only colours are the window's plain text and background, and the same
-/// opaque background for the menus, pop-ups and dialogs over it (#1448): a theme that opts out of
+/// opaque background for the menus, pop-ups, tooltips and dialogs over it (#1448): a theme that opts out of
 /// the base sheet stands on a bare floor it can read. All are fixed, opaque values. The theme swatch's square takes its colour from its element,
 /// not from the sheet.
 #[test]
@@ -412,7 +412,7 @@ fn the_user_agent_sheet_colours_only_the_window_and_what_floats_over_it() {
         }
         rest = &rest[close + 1..];
     }
-    assert_eq!(coloured, ["window", "window,\npopup,\nmenu,\ndialog"]);
+    assert_eq!(coloured, ["window", "window,\npopup,\nmenu,\ntooltip,\ndialog"]);
 }
 
 /// No colour in the base sheet is fixed (#1448): every colour it gives reads a variable, so a
@@ -459,11 +459,11 @@ fn the_base_sheet_colours_everything_from_variables() {
     }
 }
 
-/// A muted clip and a muted track's header are grey in the base sheet, whatever their colour, in
-/// the Arrangement only, so a deactivated Launcher clip keeps its own look (#1393); each grey is a
+/// A muted clip and a muted track's header are gray in the base sheet, whatever their colour, in
+/// the Arrangement only, so a deactivated Launcher clip keeps its own look (#1393); each gray is a
 /// core variable with its earlier value, and the user-agent sheet holds none of them.
 #[test]
-fn the_base_sheet_greys_muted_clips_and_headers() {
+fn the_base_sheet_grays_muted_clips_and_headers() {
     for (rule, variable, value) in [
         (
             "arrangement clip[muted] { background-color: var(--clip-mutedBackground); }",

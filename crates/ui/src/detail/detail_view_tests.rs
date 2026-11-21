@@ -227,7 +227,7 @@ fn panels_follow_a_dragged_line_at_the_playhead() {
         let Detail::Devices(chain) = detail else { return None };
         chain.devices.last().and_then(|d| d.values.iter().find(|(p, _)| p == "balance")).map(|v| v.1)
     };
-    // The first point dragged from full right down to the centre: at beat 2 the line is half way
+    // The first point dragged from full right down to the center: at beat 2 the line is half way
     // from it to the second point, -0.5, where it played 0 before.
     let points = vec![AutomationPoint::new(0.0, 0.0), AutomationPoint::new(4.0, -1.0)];
     let key = LaneKey { device: Some(index), param: "balance".into() };
@@ -1658,7 +1658,7 @@ fn a_slots_clip_has_no_set_buttons() {
     assert!(harness.query_by_label("Start marker: 1.2.1").is_some());
 }
 
-/// The fields keep a gap between them: the column is no longer one grey box over its rows
+/// The fields keep a gap between them: the column is no longer one gray box over its rows
 /// (#1190). Start and End sit side by side, Warp over Mode.
 #[test]
 fn the_panels_fields_do_not_touch() {
@@ -1794,9 +1794,9 @@ fn the_transpose_stays_within_48_semitones() {
     assert!(sent.is_none() || sent == Some(json!(48.0)), "{sent:?}");
 }
 
-/// With the playhead outside the clip the Set buttons stay, greyed: a click sets nothing.
+/// With the playhead outside the clip the Set buttons stay, grayed: a click sets nothing.
 #[test]
-fn set_buttons_stay_greyed_while_the_playhead_is_outside_the_clip() {
+fn set_buttons_stay_grayed_while_the_playhead_is_outside_the_clip() {
     use egui_kittest::kittest::Queryable;
     let (detail, _) = audio_detail(AudioPanel { set_buttons: true, ..AudioPanel::default() }, 0.0, 0.0);
     let mut harness = panel_harness(detail);

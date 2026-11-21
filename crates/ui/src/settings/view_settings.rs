@@ -224,13 +224,13 @@ pub struct ViewSettings {
     /// The window shows its own menu bar. The macOS app turns it off when the settings file does not
     /// say (`main.rs`), since the bar at the top of the screen has the same menus there.
     pub menu_bar: bool,
-    /// Centre the always-visible application name in the application bar.
+    /// Center the always-visible application name in the application bar.
     pub app_name_centered: bool,
     /// Show the active project's name in the application bar.
     pub bar_project_name: bool,
     /// Show project tempo and meter in the application bar.
     pub bar_project_timing: bool,
-    /// Centre project information; otherwise place it at the left.
+    /// Center project information; otherwise place it at the left.
     pub bar_project_centered: bool,
     /// Opacity of neutral surfaces above the private background image, 0..=100.
     pub background_tint: u8,

@@ -3,7 +3,7 @@ description: What happens when a project's audio files cannot be found: the bar 
 read_when: missing files, missing samples, file not found, relink, locate, find files, moved samples, project.missingFiles, project.relinkFiles, library.findFiles
 type: spec
 status: draft
-last_verified: 2026-11-19
+last_verified: 2026-11-20
 covers:
   - crates/library/src/find.rs
   - crates/session/src/relink.rs
@@ -66,7 +66,7 @@ folder is never written over (the unpack stops there with an error, keeping what
 ## The panel
 
 A dialog over the window, as wide as the window allows (at most 1180 px) and as high as it
-needs (at most the window), drawn from the theme like every dialog: its box from `dialog`, its
+needs (at most the window), drawn from the theme like every dialog: its box from `dialog[name="missing-files"]`, its
 title bar from `dialog-title`, its rows from `list-row[kind="missing-file"]`, its words from
 `label`. Escape or **Close** closes it; nothing changes until **Apply**.
 

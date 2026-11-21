@@ -64,7 +64,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             TRACK,
             GROUP,
             BRANCH,
-            param("pan", ParamType::Number, "-1 hard left, 0 centre, 1 hard right"),
+            param("pan", ParamType::Number, "-1 hard left, 0 center, 1 hard right"),
             GESTURE,
         ],
         kind: CommandKind::EDIT,
