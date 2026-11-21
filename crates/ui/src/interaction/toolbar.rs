@@ -153,7 +153,7 @@ impl IconButton {
         })
     }
 
-    /// The shape in a 14 px box around `rect`'s centre, scaled with the toolbar (Toolbar size):
+    /// The shape in a 14 px box around `rect`'s center, scaled with the toolbar (Toolbar size):
     /// the button's artwork in `color`, or, for the × and where the artwork does not raster, our
     /// own strokes, `scale` multiplying the shape and its strokes together.
     pub fn draw(self, painter: &egui::Painter, rect: Rect, color: Color32, scale: f32) {

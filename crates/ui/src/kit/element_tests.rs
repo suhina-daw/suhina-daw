@@ -1061,20 +1061,20 @@ fn color_unlike_ignores_what_the_plain_item_has() {
     assert_eq!(picked_ink(""), token);
 }
 
-/// The base sheet's muted grey is the Arrangement's: a muted Arrangement clip and track header are
-/// grey, and a deactivated Launcher clip, outside the Arrangement, keeps the look of its own
+/// The base sheet's muted gray is the Arrangement's: a muted Arrangement clip and track header are
+/// gray, and a deactivated Launcher clip, outside the Arrangement, keeps the look of its own
 /// `session clip[muted]` rule (#1393 review). A base
 /// sheet rule is never authored, so a drawn element's `background_or` keeps its fallback whatever
 /// the rule says: the Arrangement reads the computed background (`computed_background_or`), and
-/// `base_background` is its grey only where no sheet styles the window.
+/// `base_background` is its gray only where no sheet styles the window.
 #[test]
-fn the_muted_grey_reaches_the_arrangement_not_the_launcher() {
+fn the_muted_gray_reaches_the_arrangement_not_the_launcher() {
     use super::super::native_css::base_background;
-    let grey = Some(egui::Color32::from_rgb(0xA9, 0xA6, 0xA0));
+    let gray = Some(egui::Color32::from_rgb(0xA9, 0xA6, 0xA0));
     let muted = [("muted", "")];
-    assert_eq!(base_background(Some("arrangement"), "clip", &muted), grey, "arrangement clip[muted]");
-    assert_eq!(base_background(Some("arrangement"), "track-header", &muted), grey, "arrangement track-header[muted]");
-    assert_ne!(base_background(Some("session"), "clip", &muted), grey, "a Launcher clip keeps its own look");
+    assert_eq!(base_background(Some("arrangement"), "clip", &muted), gray, "arrangement clip[muted]");
+    assert_eq!(base_background(Some("arrangement"), "track-header", &muted), gray, "arrangement track-header[muted]");
+    assert_ne!(base_background(Some("session"), "clip", &muted), gray, "a Launcher clip keeps its own look");
     assert_eq!(base_background(None, "clip", &muted), None, "a clip outside the Arrangement");
 }
 

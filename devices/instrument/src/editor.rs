@@ -110,14 +110,14 @@ pub(super) fn canvas() -> DeviceUi {
     ui.only_revision(1);
     ui.dial(
         "strike",
-        "Strike colour",
+        "Strike color",
         [646.0, 170.0, 150.0, 140.0],
         "Creative excitation weighting of accepted modes, not a measured impact position; next strike only",
     );
     ui.only_revision(2);
     ui.dial(
         "strike",
-        "Strike colour",
+        "Strike color",
         [646.0, 170.0, 150.0, 140.0],
         "Creative excitation weighting of fitted modes, not a measured impact position; next strike only",
     );

@@ -31,7 +31,7 @@ folded into the audible band.
 The original remains revision 1. [Accepted modal profiles](instrument-modal-profile.md) use
 revision 2: a bounded stored list of ratios, magnitudes and T60 values replaces the heuristic
 modal data. Default model controls preserve that profile; Decay, Brightness, Structure and
-creative Strike colour transform it on the next strike. This runtime accepts data and does not
+creative Strike color transform it on the next strike. This runtime accepts data and does not
 fit, calibrate or infer a physical instrument from a recording.
 Release damps a released key; the sustain pedal holds it. Attack, Decay and Sustain are an
 amplitude envelope shared by the Sample layer and fitted (revision-4) models; the original

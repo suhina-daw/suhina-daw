@@ -311,17 +311,17 @@ pub(super) fn fit(state: &mut PianoRollState, grid: Rect, clip: &PianoClip, rows
     state.beat_width = clamp_beat_width(width / clip.length.max(1.0) as f32, &PIANO_ROLL_BEAT_WIDTHS);
     state.scroll.x = 0.0;
     state.scrolled_by_hand = false;
-    centre_notes(state, grid.height(), clip, rows);
+    center_notes(state, grid.height(), clip, rows);
 }
 
 /// Scrolls the key rows so the middle of the clip's lowest and highest note (C3 for an empty
 /// clip) is in the middle of a grid `height` tall, counting the rows `rows` shows.
-pub(super) fn centre_notes(state: &mut PianoRollState, height: f32, clip: &PianoClip, rows: &KeyRows) {
+pub(super) fn center_notes(state: &mut PianoRollState, height: f32, clip: &PianoClip, rows: &KeyRows) {
     let (low, high) = clip.notes.iter().fold((u8::MAX, 0u8), |(lo, hi), n| (lo.min(n.key), hi.max(n.key)));
     let middle = if low <= high { rows.middle_row(low, high) } else { rows.middle_row(60, 60) };
     let height = height.max(1.0);
     state.scroll.y = middle * state.key_height + state.key_height / 2.0 - height / 2.0;
-    state.centred_for = height;
+    state.centered_for = height;
 }
 
 /// The wheel scrolls, with Ctrl it zooms time and with Ctrl+Shift or Alt key height, around

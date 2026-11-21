@@ -23,7 +23,7 @@
   --meter-hot: #D4AB26;
   --meter-normal: #35B52E;
   --pan-background: white;
-  --pan-centre: color-mix(in oklab, color-mix(in oklab, var(--paper), white 57.9%), black 29.3%);
+  --pan-center: color-mix(in oklab, color-mix(in oklab, var(--paper), white 57.9%), black 29.3%);
   --panel-background: color-mix(in srgb, var(--paper), transparent var(--panel-clear)%);
   --panel-hoverBackground: #E4E0CB;
   --recording: #D13D29;

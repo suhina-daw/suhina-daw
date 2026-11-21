@@ -10,12 +10,12 @@ use std::f64::consts::TAU;
 const FRAME: usize = 2048;
 const HOP: usize = 1024;
 const MAX_SECONDS: usize = 8;
-const BAND_CENTRES: [f64; 9] = [63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
+const BAND_CENTERS: [f64; 9] = [63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
 
 /// One octave band's difference after level matching, in dB (fitted minus original).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BandDistance {
-    pub centre_hz: f64,
+    pub center_hz: f64,
     pub difference_db: f64,
 }
 
@@ -46,8 +46,8 @@ pub fn compare(original: &[f32], fitted: &[f32], sample_rate: u32) -> Option<Com
     let spectrum_b = average_power(fitted, a / b);
     let bin_hz = f64::from(sample_rate) / FRAME as f64;
     let nyquist = f64::from(sample_rate) / 2.0;
-    let band_power = |spectrum: &[f64], centre: f64| -> f64 {
-        let (low, high) = (centre / 2.0_f64.sqrt(), centre * 2.0_f64.sqrt());
+    let band_power = |spectrum: &[f64], center: f64| -> f64 {
+        let (low, high) = (center / 2.0_f64.sqrt(), center * 2.0_f64.sqrt());
         spectrum
             .iter()
             .enumerate()
@@ -55,7 +55,7 @@ pub fn compare(original: &[f32], fitted: &[f32], sample_rate: u32) -> Option<Com
             .map(|(_, p)| p)
             .sum()
     };
-    let powers: Vec<(f64, f64, f64)> = BAND_CENTRES
+    let powers: Vec<(f64, f64, f64)> = BAND_CENTERS
         .iter()
         .copied()
         .filter(|c| c * 2.0_f64.sqrt() <= nyquist)
@@ -65,8 +65,8 @@ pub fn compare(original: &[f32], fitted: &[f32], sample_rate: u32) -> Option<Com
     let bands: Vec<BandDistance> = powers
         .iter()
         .filter(|(_, original, _)| *original > loudest * 1e-6 && *original > 0.0)
-        .map(|(centre, original, fitted)| BandDistance {
-            centre_hz: *centre,
+        .map(|(center, original, fitted)| BandDistance {
+            center_hz: *center,
             difference_db: 10.0 * (fitted.max(1e-30) / original).log10(),
         })
         .collect();
@@ -126,7 +126,7 @@ mod tests {
         assert!(half.mean_distance_db < 1e-6, "level matching removes the level: {half:?}");
         let darker = tone(&[(220.0, 0.5), (660.0, 0.2)], 1.0);
         let dull = compare(&original, &darker, 48000).unwrap();
-        let high = dull.bands.iter().find(|b| b.centre_hz == 4000.0).unwrap();
+        let high = dull.bands.iter().find(|b| b.center_hz == 4000.0).unwrap();
         assert!(high.difference_db < -20.0, "{dull:?}");
         assert!(dull.mean_distance_db > half.mean_distance_db);
     }

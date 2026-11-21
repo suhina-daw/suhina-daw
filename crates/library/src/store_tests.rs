@@ -577,7 +577,7 @@ fn a_tag_reaches_the_deepest_folder_and_the_cap_counts_folder_levels() {
         parent = Some(store.add_tag_folder(Some(&format!("Level {depth}")), parent).unwrap());
     }
     let lowest = parent.unwrap();
-    // The defaults: Red..Grey with ids 1..7. A carried tag dropped in the deepest folder
+    // The defaults: Red..Gray with ids 1..7. A carried tag dropped in the deepest folder
     // lands: a tag is a leaf, it adds no folder level to count.
     store.move_tag_node(2, Some(lowest), 0).unwrap();
     assert_eq!(entry_depth(&store.tags, 2), MAX_TAG_DEPTH + 1, "the tag sits inside the fourth level's folder");
@@ -645,13 +645,13 @@ fn the_deepest_folders_tags_round_trip_and_a_fifth_level_is_left_out() {
 #[test]
 fn the_flattened_tags_lead_with_each_levels_folders() {
     let mut store = Store::default();
-    // The defaults, Red..Grey by id, then a folder appended last, Red filed in it.
+    // The defaults, Red..Gray by id, then a folder appended last, Red filed in it.
     let drum = store.add_tag_folder(Some("Drums"), None).unwrap();
     store.move_tag_node(1, Some(drum), 0).unwrap();
     let in_order: Vec<&str> = tags_iter(&store.tags).map(|t| t.name.as_str()).collect();
     assert_eq!(
         in_order,
-        ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Grey"],
+        ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray"],
         "the folder leads its level, the tags follow"
     );
     // A tag of a deeper folder leads its own level too.
@@ -660,7 +660,7 @@ fn the_flattened_tags_lead_with_each_levels_folders() {
     let in_order: Vec<&str> = tags_iter(&store.tags).map(|t| t.name.as_str()).collect();
     assert_eq!(
         in_order,
-        ["Orange", "Red", "Yellow", "Green", "Blue", "Purple", "Grey"],
+        ["Orange", "Red", "Yellow", "Green", "Blue", "Purple", "Gray"],
         "a subfolder's tag leads its parent level"
     );
 }

@@ -523,7 +523,7 @@ fn view_json(view: &AnalysisView) -> Value {
     let report = view.report.as_ref().map(|r| json!({
         "version":r.version, "firstFrame":r.range.start, "endFrame":r.range.end,
         "sourceAssumption":if r.key.is_some() { "tonalMaterial" } else { "singleIsolatedPitchedNote" }, "polyphonyAssessed":false,
-        "outcome":match r.outcome { Outcome::Stable=>"stable", Outcome::Silent=>"silent", Outcome::TooShort=>"tooShort", Outcome::NoStablePitch=>"noStablePitch", Outcome::TonalCentre=>"tonalCentre" },
+        "outcome":match r.outcome { Outcome::Stable=>"stable", Outcome::Silent=>"silent", Outcome::TooShort=>"tooShort", Outcome::NoStablePitch=>"noStablePitch", Outcome::TonalCenter=>"tonalCenter" },
         "activeWindows":r.active_windows,"voicedWindows":r.voiced_windows,
         "proposal":r.proposal.map(|p| json!({"root":p.root,"midi":p.midi,"hz":p.hz,"cents":p.cents,"periodicity":p.periodicity,"spreadCents":p.spread_cents})),
         "key":r.key.map(|k| {
@@ -591,7 +591,7 @@ pub(crate) fn accept(session: &mut Session, params: &Value) -> Result<Value, Com
     if job.phase != AnalysisPhase::Ready {
         return Err("only a completed, current analysis proposal can be accepted".into());
     }
-    // A single stable note, or else the tonal centre of melodic or chordal material.
+    // A single stable note, or else the tonal center of melodic or chordal material.
     let proposed = job
         .report
         .as_ref()
@@ -699,7 +699,7 @@ pub(crate) fn audition_fit(session: &mut Session, params: &Value) -> Result<Valu
     Ok(json!({
         "which": which, "played": played, "seconds": seconds,
         "levelDifferenceDb": comparison.level_difference_db, "meanDistanceDb": comparison.mean_distance_db,
-        "bands": comparison.bands.iter().map(|b| json!({"centreHz": b.centre_hz, "differenceDb": b.difference_db})).collect::<Vec<_>>()
+        "bands": comparison.bands.iter().map(|b| json!({"centerHz": b.center_hz, "differenceDb": b.difference_db})).collect::<Vec<_>>()
     }))
 }
 

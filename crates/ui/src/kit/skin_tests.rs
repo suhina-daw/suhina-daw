@@ -346,9 +346,9 @@ fn default_artwork_takes_its_colour_from_current_color() {
         .find(|image| image.size == [22, 22])
         .expect("the knob's body is rastered");
     output.textures_delta.clear();
-    let centre = image.pixels[image.width() * (image.height() / 2) + image.width() / 2];
-    let [r, g, b, _] = centre.to_srgba_unmultiplied();
-    assert!(r > 200 && g < 60 && b < 60, "{centre:?}");
+    let center = image.pixels[image.width() * (image.height() / 2) + image.width() / 2];
+    let [r, g, b, _] = center.to_srgba_unmultiplied();
+    assert!(r > 200 && g < 60 && b < 60, "{center:?}");
 }
 
 /// The default artwork a theme lacks, which Add default artwork copies; a role it has keeps its own.

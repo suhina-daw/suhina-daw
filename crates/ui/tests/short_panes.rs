@@ -297,7 +297,7 @@ fn at_the_least_height_the_notes_are_in_view() {
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows at the default height");
     pull_to(&mut h, bottom - 130.0);
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows at the least height");
-    // Taller again, the notes are still centred.
+    // Taller again, the notes are still centered.
     pull_to(&mut h, bottom - 420.0);
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows when taller");
 }

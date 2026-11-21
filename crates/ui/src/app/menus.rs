@@ -256,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn without_a_project_saving_is_greyed_out_and_opening_is_not() {
+    fn without_a_project_saving_is_grayed_out_and_opening_is_not() {
         let menus = crate::App::new().menus();
         let titles: Vec<_> = menus.iter().map(|menu| menu.title).collect();
         assert_eq!(titles, ["File", "Edit", "View", "Projects", "Options", "Help"]);

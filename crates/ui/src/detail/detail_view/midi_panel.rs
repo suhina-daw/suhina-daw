@@ -447,7 +447,7 @@ fn notes_tab(
     let enabled = tools.count() > 0;
     let mut y = left.top();
     let fits = |y: f32, height: f32| y + height <= body.bottom() + 0.5;
-    // Transpose: its semitones (0 until chosen), and Apply at the right of its name, greyed out
+    // Transpose: its semitones (0 until chosen), and Apply at the right of its name, grayed out
     // while they are 0, as there is nothing to move.
     if fits(y, NAME + s.field) {
         let name = Rect::from_min_size(Pos2::new(left.left(), y), Vec2::new(left.width(), NAME));

@@ -38,7 +38,7 @@ identifies Instrument and its experimental model, with Source always available. 
   is (una corda for fitted models, the same as controller 67 held down). Release is the damper for fitted models and the fade otherwise.
 - **Model:** Body decay, Brightness, Structure, Strike position and Modes per voice. These
   describe the actual struck-modal model, and apply to the next strike. Revision 2 labels the
-  excitation control Strike colour: a creative weighting of accepted modes, not a measured
+  excitation control Strike color: a creative weighting of accepted modes, not a measured
   physical impact position. Profile adoption resets the four model controls and enables all
   profile modes; the underlying stable parameter IDs remain the same. Revision 4 (fitted models)
   adds a Fitted model group: Source morph, Velocity to brightness, Damper noise, Pedal
@@ -75,7 +75,7 @@ the same local state without modifying the DSP or exported parameter list.
 ## Appearance and validation
 
 Controls, labels, focus and selection use native SDK widgets, theme palette tokens and
-Suhina typography. With a light theme (a variant whose sheet declares a light colour scheme),
+Suhina typography. With a light theme (a variant whose sheet declares a light color scheme),
 both canvases draw the maintainer's warm ivory artwork behind every control: a cream surface
 with soft relief waves and the Suhina logo at the bottom right
 (`devices/instrument/panel/`, with its provenance). The expanded editor is 880 × 560, its last

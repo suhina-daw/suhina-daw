@@ -52,7 +52,7 @@ pub(crate) fn resize_edge(
     }
 }
 
-/// Draws `text` in `cell`, vertically centred, cut with an ellipsis where it is wider. While
+/// Draws `text` in `cell`, vertically centered, cut with an ellipsis where it is wider. While
 /// the pointer is over the cell, `whole` (or the text itself, where it was cut) shows in a
 /// tooltip. Returns whether the text was cut.
 #[allow(clippy::too_many_arguments)]

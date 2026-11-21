@@ -312,9 +312,9 @@ pub fn show(
         return;
     }
     // A newly shown clip fits the width with its notes in the middle; until the rows are scrolled
-    // by hand, a change in height centres the notes again, so they are in view at any height.
+    // by hand, a change in height centers the notes again, so they are in view at any height.
     let rows = scale_view::rows(clip, state.fold_for(clip));
-    // Another set of rows (Fold, Scale, or another scale while the rows fold to it) centres the
+    // Another set of rows (Fold, Scale, or another scale while the rows fold to it) centers the
     // notes in them, so they stay in view: the scroll of the last rows means nothing in the new
     // ones. A scale the clip gets as Scale is clicked comes a frame later, once its command has
     // run. Unfolded, the rows stay as they are whatever the scale.
@@ -326,9 +326,9 @@ pub fn show(
         fit(state, grid_rect, clip, &rows);
     } else if rows_changed {
         state.scrolled_by_hand = false;
-        centre_notes(state, grid_rect.height(), clip, &rows);
-    } else if !state.scrolled_by_hand && (grid_rect.height() - state.centred_for).abs() > 0.5 {
-        centre_notes(state, grid_rect.height(), clip, &rows);
+        center_notes(state, grid_rect.height(), clip, &rows);
+    } else if !state.scrolled_by_hand && (grid_rect.height() - state.centered_for).abs() > 0.5 {
+        center_notes(state, grid_rect.height(), clip, &rows);
     }
 
     let inputs = Inputs {

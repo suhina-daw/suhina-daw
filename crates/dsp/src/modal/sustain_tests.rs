@@ -237,9 +237,9 @@ fn one_noise_band_has_the_level_its_density_asks_for() {
     let output: Vec<f64> = (0..96000).map(|_| f64::from(performer.next(&mut bank))).collect();
     let tail = &output[4800..];
     let variance = tail.iter().map(|x| x * x).sum::<f64>() / tail.len() as f64;
-    let centre = noise_center_hz(band);
+    let center = noise_center_hz(band);
     // Unit noise through a unity-peak band-pass: (2 / fs) * (pi / 2) * (f0 / Q).
-    let expected = (noise_gain(RATE) * 2e-3).powi(2) * PI * centre / (NOISE_Q * RATE);
+    let expected = (noise_gain(RATE) * 2e-3).powi(2) * PI * center / (NOISE_Q * RATE);
     let error_db = 10.0 * (variance / expected).log10();
     assert!(error_db.abs() < 0.5, "{error_db} dB");
     // The same seed repeats exactly.

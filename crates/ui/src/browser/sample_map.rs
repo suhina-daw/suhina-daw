@@ -126,7 +126,7 @@ pub struct MapView {
     pub window: bool,
     zoom: f32,
     /// The map position at the middle of the view.
-    centre: [f32; 2],
+    center: [f32; 2],
     hovered: Option<(usize, f64)>,
     previewed: Option<usize>,
     /// The point the primary button went down on: a drag carries it, not the point under the
@@ -210,11 +210,11 @@ impl std::fmt::Debug for Cache {
 struct DensityKey {
     points: Option<PointsKey>,
     zoom: f32,
-    centre: [f32; 2],
+    center: [f32; 2],
     legend: Vec<Kind>,
     similar: Option<(usize, Vec<usize>)>,
     spread: usize,
-    /// The grey of the dimmed points, baked into the raster, so a theme change redraws it.
+    /// The gray of the dimmed points, baked into the raster, so a theme change redraws it.
     hint: Color32,
     /// Each kind's colour, baked into the raster likewise.
     kind_colours: [Color32; Kind::ALL.len()],
@@ -258,7 +258,7 @@ impl Default for MapView {
             large: false,
             window: false,
             zoom: 1.0,
-            centre: [0.5, 0.5],
+            center: [0.5, 0.5],
             hovered: None,
             previewed: None,
             pressed: None,
@@ -313,7 +313,7 @@ impl MapView {
     /// the next one's are laid out in their place): the point-index states — the shown
     /// similar ones and who they are for, a hover, a preview, the pressed point — are
     /// indices into a points list that no longer is, and they read as unrelated samples of
-    /// the new layout ([#1254] review). The sizes, layout, zoom and centre are kept.
+    /// the new layout ([#1254] review). The sizes, layout, zoom and center are kept.
     pub fn forget_points(&mut self) {
         self.similar = None;
         self.hovered = None;
@@ -366,29 +366,29 @@ impl MapView {
     /// Fits all points in view.
     pub fn fit(&mut self) {
         self.zoom = 1.0;
-        self.centre = [0.5, 0.5];
+        self.center = [0.5, 0.5];
     }
 
     fn transform(&self, rect: Rect) -> Transform {
-        Transform { rect, scale: rect.width().min(rect.height()) * 0.92 * self.zoom, centre: self.centre }
+        Transform { rect, scale: rect.width().min(rect.height()) * 0.92 * self.zoom, center: self.center }
     }
 
     fn zoom_at(&mut self, rect: Rect, pointer: Pos2, factor: f32) {
         let before = self.transform(rect).to_map(pointer);
         self.zoom = (self.zoom * factor).clamp(MIN_ZOOM, MAX_ZOOM);
         let after = self.transform(rect).to_map(pointer);
-        self.centre = [self.centre[0] + before[0] - after[0], self.centre[1] + before[1] - after[1]];
-        self.clamp_centre();
+        self.center = [self.center[0] + before[0] - after[0], self.center[1] + before[1] - after[1]];
+        self.clamp_center();
     }
 
     fn pan(&mut self, rect: Rect, delta: Vec2) {
         let scale = self.transform(rect).scale.max(1e-6);
-        self.centre = [self.centre[0] - delta.x / scale, self.centre[1] - delta.y / scale];
-        self.clamp_centre();
+        self.center = [self.center[0] - delta.x / scale, self.center[1] - delta.y / scale];
+        self.clamp_center();
     }
 
-    fn clamp_centre(&mut self) {
-        for c in &mut self.centre {
+    fn clamp_center(&mut self) {
+        for c in &mut self.center {
             *c = c.clamp(0.0, 1.0);
         }
     }
@@ -399,17 +399,17 @@ impl MapView {
 struct Transform {
     rect: Rect,
     scale: f32,
-    centre: [f32; 2],
+    center: [f32; 2],
 }
 
 impl Transform {
     fn to_screen(self, p: [f32; 2]) -> Pos2 {
-        self.rect.center() + Vec2::new((p[0] - self.centre[0]) * self.scale, (p[1] - self.centre[1]) * self.scale)
+        self.rect.center() + Vec2::new((p[0] - self.center[0]) * self.scale, (p[1] - self.center[1]) * self.scale)
     }
 
     fn to_map(self, p: Pos2) -> [f32; 2] {
         let d = p - self.rect.center();
-        [self.centre[0] + d.x / self.scale.max(1e-6), self.centre[1] + d.y / self.scale.max(1e-6)]
+        [self.center[0] + d.x / self.scale.max(1e-6), self.center[1] + d.y / self.scale.max(1e-6)]
     }
 }
 
@@ -425,7 +425,7 @@ fn aspect_of(rect: Rect) -> f32 {
     if aspect.is_finite() && aspect > 0.0 { aspect } else { 1.0 }
 }
 
-/// Where each point is drawn: its cloud position, or the centre of its grid cell. The grid
+/// Where each point is drawn: its cloud position, or the center of its grid cell. The grid
 /// fills a box of the view's `aspect` around the map's middle (the view shows 1 across its
 /// shorter side), with square cells.
 fn positions(points: &[MapPoint], layout: Layout, grid: Option<&Grid>, aspect: f32) -> Vec<[f32; 2]> {
@@ -702,7 +702,7 @@ fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
     }
     if ui.button("−").on_hover_text("Zoom out").clicked() {
         view.zoom = (view.zoom / 1.5).max(MIN_ZOOM);
-        view.clamp_centre();
+        view.clamp_center();
     }
     if ui.button("Fit").on_hover_text("Fit all points in view").clicked() {
         view.fit();
@@ -1085,7 +1085,7 @@ fn draw_points(
         let key = DensityKey {
             points: view.cache.key,
             zoom: view.zoom,
-            centre: view.centre,
+            center: view.center,
             legend: kinds,
             similar: view.similar.clone(),
             spread: density_spread(view.dot_size),
@@ -1100,7 +1100,7 @@ fn draw_points(
         match density_plan(drawn, &key, area, view.resized.1, now) {
             DensityPlan::Build => {
                 let colour = |i: usize| points.get(i).filter(|p| !dimmed(i, p)).map(|p| kind_colour(p.kind));
-                // The dimmed points' grey is `label[kind="hint"]`'s.
+                // The dimmed points' gray is `label[kind="hint"]`'s.
                 let image = crowd::density(screen, colour, area, key.spread, key.hint);
                 let texture = painter.ctx().load_texture("sample-map-density", image, egui::TextureOptions::LINEAR);
                 view.cache.density = Some(Density { key, area, transform, texture });
@@ -1307,14 +1307,14 @@ mod many {
             .map(|i| {
                 let k = i % Kind::ALL.len();
                 let kind = Kind::ALL[k];
-                let centre = [0.15 + (k % 5) as f32 * 0.18, 0.15 + (k / 5) as f32 * 0.22];
+                let center = [0.15 + (k % 5) as f32 * 0.18, 0.15 + (k / 5) as f32 * 0.22];
                 MapPoint {
                     name: format!("{} {i}", kind.label()),
                     detail: String::new(),
                     // Roughly Gaussian clouds (the sum of three uniform draws), as t-SNE makes them.
                     position: [
-                        (centre[0] + (noise() + noise() + noise() - 1.5) * 0.06).clamp(0.0, 1.0),
-                        (centre[1] + (noise() + noise() + noise() - 1.5) * 0.07).clamp(0.0, 1.0),
+                        (center[0] + (noise() + noise() + noise() - 1.5) * 0.06).clamp(0.0, 1.0),
+                        (center[1] + (noise() + noise() + noise() - 1.5) * 0.07).clamp(0.0, 1.0),
                     ],
                     kind,
                     guessed: false,
@@ -1341,7 +1341,7 @@ mod many {
             let mut input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
             input.events.push(egui::Event::PointerMoved(Pos2::new(300.0 + frame as f32 * 7.0, 400.0)));
             if pan {
-                view.centre = [0.5 + frame as f32 * 0.001, 0.5];
+                view.center = [0.5 + frame as f32 * 0.001, 0.5];
             }
             let started = std::time::Instant::now();
             let mut output = ctx.run_ui(input, |ui| {
@@ -1497,7 +1497,7 @@ mod look {
     use super::*;
 
     /// Renders a map of generated clusters to `target/sample-map.png` to look at (not a test of
-    /// behaviour; run with `--ignored`).
+    /// behavior; run with `--ignored`).
     #[test]
     #[ignore]
     fn render_a_map() {
@@ -1509,7 +1509,7 @@ mod look {
             state ^= state << 5;
             state as f32 / u32::MAX as f32 - 0.5
         };
-        let centres = [
+        let centers = [
             (Kind::Kick, [0.2, 0.6]),
             (Kind::Bass, [0.3, 0.8]),
             (Kind::Snare, [0.5, 0.4]),
@@ -1520,14 +1520,14 @@ mod look {
             (Kind::Other, [0.4, 0.15]),
         ];
         let mut points = Vec::new();
-        for (k, (kind, centre)) in centres.iter().enumerate() {
+        for (k, (kind, center)) in centers.iter().enumerate() {
             for i in 0..150 {
                 let mut p = MapPoint {
                     name: format!("{} {i}", kind.label()),
                     detail: String::new(),
                     position: [
-                        centre[0] + (noise() + noise() + noise()) * 0.07,
-                        centre[1] + (noise() + noise() + noise()) * 0.07,
+                        center[0] + (noise() + noise() + noise()) * 0.07,
+                        center[1] + (noise() + noise() + noise()) * 0.07,
                     ],
                     kind: *kind,
                     guessed: i % 7 == 0,

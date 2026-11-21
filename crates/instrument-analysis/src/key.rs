@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The tonal centre of material with several notes: a spectral pitch-class profile correlated
+//! The tonal center of material with several notes: a spectral pitch-class profile correlated
 //! with the published Krumhansl-Kessler key profiles. Preparation only; see
 //! instrument-analysis.md › Loops and melodic material.
 
@@ -26,8 +26,8 @@ const HARMONIC_TOLERANCE: f64 = 0.25;
 const LOWEST_FLOOR: f64 = 0.1;
 /// A loop's root is its tonic nearest this key (middle C, shown as C3), so the keys around the
 /// middle of the keyboard transpose it by at most six semitones.
-pub const ROOT_CENTRE: f64 = 60.0;
-/// Below this Pearson correlation the material has no clear tonal centre.
+pub const ROOT_CENTER: f64 = 60.0;
+/// Below this Pearson correlation the material has no clear tonal center.
 pub const MIN_KEY_CORRELATION: f32 = 0.6;
 
 /// Krumhansl and Kessler (1982), major and minor key profiles from the tonic upwards.
@@ -164,7 +164,7 @@ impl PitchClasses {
         Some(count)
     }
 
-    /// The key estimate, or None for too little material or no clear tonal centre.
+    /// The key estimate, or None for too little material or no clear tonal center.
     pub(crate) fn key(&self) -> Option<KeyProposal> {
         if self.shortest_channel < MIN_KEY_FRAMES || self.shortest_channel == usize::MAX || self.peaks.is_empty() {
             return None;
@@ -205,7 +205,7 @@ impl PitchClasses {
         lowest.sort_by(f64::total_cmp);
         let median = *lowest.get((lowest.len().checked_sub(1)?) / 2)?;
         Some(KeyProposal {
-            root: nearest_root(key.tonic, ROOT_CENTRE)?,
+            root: nearest_root(key.tonic, ROOT_CENTER)?,
             key,
             runner_up,
             tuning_cents: (tuning * 100.0) as f32,

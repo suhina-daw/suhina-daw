@@ -202,7 +202,7 @@ fn melodic_and_chordal_loops_propose_the_tonic_of_their_key() {
     ];
     for (name, samples, tonic, mode, root) in cases {
         let report = analyze(&samples, RATE, 1, 0..samples.len(), |_, _| true).unwrap();
-        assert_eq!(report.outcome, Outcome::TonalCentre, "{name}: {report:?}");
+        assert_eq!(report.outcome, Outcome::TonalCenter, "{name}: {report:?}");
         assert_eq!(report.proposal, None, "{name}: no single note");
         let key = report.key.unwrap();
         assert_eq!((key.key.tonic, key.key.mode, key.root), (tonic, mode, root), "{name}: {key:?}");
@@ -249,12 +249,12 @@ fn unpitched_loops_and_single_notes_get_no_key() {
 #[test]
 fn vibrato_keeps_its_note_but_a_semitone_trill_does_not() {
     // A bowed low C (MIDI 36) with 5.5 Hz vibrato of +-35 cents and six harmonics.
-    let vibrato = |depth_cents: f64, centre: f64, rate_hz: f64| -> Vec<f32> {
+    let vibrato = |depth_cents: f64, center: f64, rate_hz: f64| -> Vec<f32> {
         let mut phase = 0.0f64;
         (0..RATE as usize * 2)
             .map(|i| {
                 let t = i as f64 / f64::from(RATE);
-                let midi = centre + depth_cents / 100.0 * (std::f64::consts::TAU * rate_hz * t).sin();
+                let midi = center + depth_cents / 100.0 * (std::f64::consts::TAU * rate_hz * t).sin();
                 phase += 440.0 * 2.0f64.powf((midi - 69.0) / 12.0) / f64::from(RATE);
                 ((1..=6).map(f64::from).map(|k| (std::f64::consts::TAU * phase * k).sin() / k).sum::<f64>() * 0.3)
                     as f32

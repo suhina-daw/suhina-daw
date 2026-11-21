@@ -1553,13 +1553,13 @@ fn theme_page(
     (request, close)
 }
 
-/// Why something of a built-in theme cannot be changed, for a greyed item's hover.
+/// Why something of a built-in theme cannot be changed, for a grayed item's hover.
 const BUILT_IN_REASON: &str = "Built-in themes can't be changed; make a new theme from it";
 const SHIPPED_REASON: &str =
     "This variant comes with a built-in theme and can't be changed; duplicate it to make your own";
 const DEFAULT_REASON: &str = "The default variant is the theme's own values; it can't be deleted";
 
-/// A menu item or button that is greyed with `reason` on hover when it does not apply.
+/// A menu item or button that is grayed with `reason` on hover when it does not apply.
 fn item(ui: &mut Ui, label: &str, reason: Option<&str>) -> bool {
     let response = ui.add_enabled(reason.is_none(), egui::Button::new(label));
     match reason {
@@ -2052,7 +2052,7 @@ fn theme_card(
             }
         }
         if active {
-            // + adds a variant: greyed when the theme has no settings a variant could hold.
+            // + adds a variant: grayed when the theme has no settings a variant could hold.
             let area = place(variants.len());
             let enabled = !themes.declared.is_empty();
             let plus = ui.interact(area, Id::unique(("theme-new-variant", base)), Sense::click());
@@ -2069,7 +2069,7 @@ fn theme_card(
             }
             if ui.is_rect_visible(area) {
                 // Drawn as the theme's buttons are: their fill, edge and text, lighter under the
-                // pointer and pressed, faded when greyed.
+                // pointer and pressed, faded when grayed.
                 let visuals = if enabled { *ui.style().interact(&plus) } else { ui.visuals().widgets.inactive };
                 let fade = |color: egui::Color32| if enabled { color } else { ui.visuals().disable(color) };
                 let corner = 6.0_f32.min(area.height() / 2.0);

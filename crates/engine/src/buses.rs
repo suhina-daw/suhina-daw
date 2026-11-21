@@ -181,7 +181,7 @@ pub(crate) fn build(
         let frames_per_beat = crate::tempo::frames_per_beat(project.transport.tempo_bpm, f64::from(sample_rate));
         chain.mix = automation::channel_of(project, chain.track)
             .and_then(|channel| MixLanes::new(channel, frames_per_beat, true, f64::from(sample_rate)));
-        // A track's pan applies live (its gains centred, the pan as factors a knob's turn moves),
+        // A track's pan applies live (its gains centered, the pan as factors a knob's turn moves),
         // unless a lane carries it, also beside a volume or mute lane (#763 › 4).
         // A bus applies its own pan once, after summing its inputs.
         let live_pan = automation::channel_of(project, chain.track)
@@ -194,7 +194,7 @@ pub(crate) fn build(
         // folded into its audible output. In particular a zero-level output is not a mute.
         chain.set_key_post(cue_gains(project, chain.track, live_pan.is_none()).unwrap_or((0.0, 0.0)));
         chain.target = target.map(|(index, _)| index);
-        // A live pan reaches the cue as it does the main output: its gains are centred too.
+        // A live pan reaches the cue as it does the main output: its gains are centered too.
         chain.set_cue(if cued(project, chain.track) {
             cue_gains(project, chain.track, live_pan.is_none())
         } else {
@@ -278,7 +278,7 @@ pub(crate) fn build(
             .flatten()
             .map(|&(target, track, ((gains, level), pan), post_fader)| {
                 let delay = input.get(target).copied().unwrap_or(0).saturating_sub(arrived);
-                // A post-fader send's gains are centred: the chain's live pan applies to them as
+                // A post-fader send's gains are centered: the chain's live pan applies to them as
                 // it plays; without one, the pan goes into them now.
                 let gains = if post_fader && chain.built_pan.is_none() {
                     let (left, right) = crate::chain::pan_factors(pan);

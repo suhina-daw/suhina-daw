@@ -98,7 +98,7 @@ pub fn quadratic_clip(v: f64, knee: f64) -> f64 {
     (a - over * over / (4.0 * room)).copysign(v)
 }
 
-/// An arctangent normalised to 1 at `v` = 1: `atan(g·v) / atan(g)`, slope `g / atan(g)` at the
+/// An arctangent normalized to 1 at `v` = 1: `atan(g·v) / atan(g)`, slope `g / atan(g)` at the
 /// origin, still rising slowly past 1 towards `π/2 / atan(g)`.
 #[inline]
 pub fn arctan_curve(v: f64, gain: f64) -> f64 {

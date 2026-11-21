@@ -15,7 +15,7 @@ test module over `LIMIT` lines lives in a file of its own beside the source:
     #[path = "foo_tests.rs"]
     mod tests;
 
-and `foo_tests.rs` holds the module's body under the licence header, formatted by `rustfmt`
+and `foo_tests.rs` holds the module's body under the license header, formatted by `rustfmt`
 (which re-indents the code and leaves string literals as they are). The tests themselves do
 not change. `move` does exactly that for the first inline test module over
 the limit in each file it is given (`lib.rs` and `main.rs` give `lib_tests.rs` and

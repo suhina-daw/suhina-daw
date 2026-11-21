@@ -254,7 +254,7 @@ Both are compared before playing, and the fitted render is played at the origina
 the comparison is of timbre, not loudness (a level-matched A/B). The command reports, and the
 Sample page shows, the level difference before matching and a **spectral distance**: average power
 spectra (2048-sample Hann windows, hop 1024, at most eight seconds) summed into octave bands
-centred on 63 Hz..16 kHz below Nyquist; for each band within 60 dB of the original's loudest,
+centered on 63 Hz..16 kHz below Nyquist; for each band within 60 dB of the original's loudest,
 the absolute difference in dB after level matching; and their mean. Smaller is closer. These are
 measurements of the same recording, not a realism or listening score. Without an audio output the
 command still reports the comparison and says it played nothing. Auditioning changes neither the

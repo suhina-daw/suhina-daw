@@ -702,7 +702,7 @@ fn launched_audio_loops_from_its_start_marker() {
     let p = project(vec![content], vec![vec![with(c)]]);
     let launch = [(0.0, LaunchCommand::LaunchClip { column: 0, slot: 0 })];
     let out = render_launches(&p, &audio, SR, &launch, 1.0, suhina_device_registry::factory()).unwrap();
-    // A centred track at unity gain: the left sample is the ramp value.
+    // A centered track at unity gain: the left sample is the ramp value.
     let left = |frame: usize| out[2 * frame];
     assert!((left(BEAT / 4) - 0.375).abs() < 0.01, "{}", left(BEAT / 4));
     // After half a beat the loop wraps to its start.

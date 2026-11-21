@@ -56,7 +56,7 @@ impl Track {
 }
 
 impl Channel {
-    /// A regular channel at unity gain, centred, not muted, soloed or cued, into the main output,
+    /// A regular channel at unity gain, centered, not muted, soloed or cued, into the main output,
     /// with no sends, devices or automation.
     pub fn new(id: ChannelId, name: impl Into<String>) -> Self {
         Self {

@@ -55,7 +55,7 @@ pub enum Outcome {
     TooShort,
     NoStablePitch,
     /// Several notes without one stable pitch, with a clear key: `Report::key` proposes its tonic.
-    TonalCentre,
+    TonalCenter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -78,7 +78,7 @@ pub struct Report {
     pub range: Range<usize>,
     pub outcome: Outcome,
     pub proposal: Option<Proposal>,
-    /// Only when no single-note proposal exists: the material's tonal centre.
+    /// Only when no single-note proposal exists: the material's tonal center.
     pub key: Option<KeyProposal>,
     pub active_windows: usize,
     pub voiced_windows: usize,
@@ -268,7 +268,7 @@ pub fn analyze(
         report.outcome = Outcome::Stable;
         report.proposal = Some(proposal);
     } else if let Some(key) = classes.key() {
-        report.outcome = Outcome::TonalCentre;
+        report.outcome = Outcome::TonalCenter;
         report.key = Some(key);
     }
     Ok(report)

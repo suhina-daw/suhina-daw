@@ -6,7 +6,7 @@
 //! A device describes itself with a static [`DeviceInfo`]: a stable id, a name and its
 //! parameters ([`ParamInfo`]). The host prepares it off the audio thread, then calls
 //! [`Device::process`] block by block on the audio thread. Parameter values are plain numbers in
-//! the parameter's own unit (decibels, hertz, a fraction for percentages), never normalised, so
+//! the parameter's own unit (decibels, hertz, a fraction for percentages), never normalized, so
 //! a stored value keeps its meaning if a range changes; [`ParamInfo`] converts to and from the
 //! 0..1 range a knob or an automation lane uses.
 //!
@@ -76,7 +76,7 @@ pub enum Unit {
     Seconds,
     /// A fraction shown as a percentage: 1.0 is 100 %.
     Percent,
-    /// -1.0 is fully left, 0.0 centre, 1.0 fully right.
+    /// -1.0 is fully left, 0.0 center, 1.0 fully right.
     Balance,
     /// A bandwidth in octaves.
     Octaves,
@@ -956,7 +956,7 @@ mod tests {
     }
 
     #[test]
-    fn normalises_linear_and_logarithmic_ranges() {
+    fn normalizes_linear_and_logarithmic_ranges() {
         assert_eq!(GAIN.to_normalized(0.0), 0.5);
         assert_eq!(GAIN.from_normalized(1.0), 12.0);
         // 20 Hz to 20 kHz is three decades, so the middle of the knob is 632 Hz.

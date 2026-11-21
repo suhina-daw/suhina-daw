@@ -24,7 +24,7 @@
   --meter-hot: #D9D52E;
   --meter-normal: #66DF19;
   --pan-background: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--tint) 2.5%), black 16.3%);
-  --pan-centre: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--ink) 29.7%), var(--highlight) 26.6%);
+  --pan-center: color-mix(in oklab, color-mix(in oklab, var(--surface), var(--ink) 29.7%), var(--highlight) 26.6%);
   --panel-background: var(--surface);
   --panel-hoverBackground: color-mix(in oklab, color-mix(in oklab, var(--ground), var(--stone) 25.4%), var(--highlight) 20.3%);
   --recording: #D65139;

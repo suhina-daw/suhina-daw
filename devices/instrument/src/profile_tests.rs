@@ -140,7 +140,7 @@ fn editor_labels_profile_revision_and_its_creative_strike_control_truthfully() {
         assert_eq!(visible("Experimental modal profile · revision 2"), revision == 2.0);
         assert_eq!(visible("Strike position"), revision == 1.0);
         assert_eq!(visible("Experimental fitted model · revision 4"), revision == 4.0);
-        assert_eq!(visible("Strike colour"), revision == 2.0 || revision == 4.0);
+        assert_eq!(visible("Strike color"), revision == 2.0 || revision == 4.0);
     }
     assert!(layout.panel(&INFO).is_ok());
 }

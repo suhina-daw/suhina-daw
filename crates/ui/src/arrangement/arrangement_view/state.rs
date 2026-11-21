@@ -89,7 +89,7 @@ pub(crate) struct FadeDrag {
 }
 
 /// A fade's curve handle being dragged: the clip, which fade, the curve so far, and how far
-/// below the handle's centre the pointer took hold of it.
+/// below the handle's center the pointer took hold of it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct CurveDrag {
     pub(super) key: (TrackId, ClipId),
@@ -182,7 +182,7 @@ pub struct ArrangementViewState {
     /// Where the take lanes' headers were drawn last frame.
     pub(super) take_headers: Vec<Rect>,
     /// The take lane heard in place of its track (track, take number), as the session says
-    /// (`take.solo`): its S lit and the track's lane greyed.
+    /// (`take.solo`): its S lit and the track's lane grayed.
     pub take_solo: Option<(TrackId, usize)>,
     /// Moved clips stack on others instead of replacing them: audio clips, MIDI clips.
     pub stack_audio: bool,

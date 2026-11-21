@@ -127,7 +127,7 @@ pub const GROUP_IDS: &[&str] = &[
     "toolbar-start",
     "toolbar-end",
     "app-bar-start",
-    "app-bar-centre",
+    "app-bar-center",
     "app-bar-end",
     "mixer-body",
     "mixer-output",
@@ -559,8 +559,8 @@ pub const ELEMENTS: &[Element] = &[
         .artwork(&[own("volume.track"), own("volume.fill"), own("volume.handle")]),
     element("value-fill", Part, "The lit part of a level bar."),
     element("value-handle", Part, "The handle where a level bar's fill ends."),
-    element("pan", Control, "A pan control; drawn as a field, its centre's ticks are `pan-centre` and the bar from the centre its `value-fill`; drawn as a bar, its track is `pan[kind=\"bar\"]`.")
-        .parts(&["pan-centre", "value-fill"])
+    element("pan", Control, "A pan control; drawn as a field, its center's ticks are `pan-center` and the bar from the center its `value-fill`; drawn as a bar, its track is `pan[kind=\"bar\"]`.")
+        .parts(&["pan-center", "value-fill"])
         .attributes(&["kind"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
         .settings(VALUE_SETTINGS)
@@ -571,7 +571,7 @@ pub const ELEMENTS: &[Element] = &[
             own("pan.knob.body"),
             own("pan.knob.pointer"),
         ]),
-    element("pan-centre", Drawn, "The ticks at a pan field's centre."),
+    element("pan-center", Drawn, "The ticks at a pan field's center."),
     element("fader", Control, "A mixer strip's fader.")
         .parts(&["fader-cap", "fader-rail", "fader-scale"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })

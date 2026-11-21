@@ -3,7 +3,7 @@
 
 //! File › Export…: renders the mix to the audio file the user chose — the basic dialog of
 //! [`docs/spec/export.md`](../../docs/spec/export.md) › In the app: the file (typed or
-//! browsed), the format, the sample rate, the depth, normalise, dither and overwrite. The
+//! browsed), the format, the sample rate, the depth, normalize, dither and overwrite. The
 //! export itself is the shared `project.export` command, so the dialog only gathers its
 //! params; the source and range of the render matrix are the slices after this one.
 
@@ -410,7 +410,7 @@ fn draw_export(
         state.mp3_rate = chosen_mp3;
     }
 
-    // Normalise, dither and overwrite on one row; dither greys out where the depth takes none.
+    // Normalize, dither and overwrite on one row; dither grays out where the depth takes none.
     let checks = Rect::from_min_size(Pos2::new(panel.left(), y), Vec2::new(panel.width(), LINE));
     let at = |left: f32, width: f32| {
         Rect::from_min_size(Pos2::new(checks.left() + left, checks.top() + 1.0), Vec2::new(width, LINE - 2.0))
@@ -421,7 +421,7 @@ fn draw_export(
         ui.put(at(100.0, 84.0), egui::Checkbox::new(&mut state.dither, "Dither"))
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Dither".to_string()));
     } else {
-        // Greyed where it does not apply: 32f needs none, and ogg takes no depth.
+        // Grayed where it does not apply: 32f needs none, and ogg takes no depth.
         let mut off = false;
         ui.scope(|scope| {
             scope.disable();

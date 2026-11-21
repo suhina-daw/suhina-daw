@@ -29,7 +29,7 @@ const MAX_DRIVE_DB: f64 = 40.0;
 /// How much lower the curve's negative half limits.
 const ASYMMETRY: f64 = 0.3;
 /// Offset added before the curve, as a bias does in a circuit. Moving the zero crossing off
-/// the curve's centre makes the two halves of the wave unequal in length, which keeps even
+/// the curve's center makes the two halves of the wave unequal in length, which keeps even
 /// harmonics coming even when the curve is driven flat; asymmetric limits alone would only
 /// shift the level.
 const BIAS: f64 = 0.3;
@@ -173,10 +173,10 @@ impl Overdrive {
     /// Sets the band and tone filters from the parameters.
     fn tune(&mut self) {
         let sr = self.sample_rate;
-        let (centre, width) = (self.value(param::BAND_FREQUENCY), self.value(param::BAND_WIDTH));
+        let (center, width) = (self.value(param::BAND_FREQUENCY), self.value(param::BAND_WIDTH));
         let half = 2.0f64.powf(width / 2.0);
-        let low_cut = Coefficients::highpass(sr, centre / half, BUTTERWORTH_Q);
-        let high_cut = Coefficients::lowpass(sr, centre * half, BUTTERWORTH_Q);
+        let low_cut = Coefficients::highpass(sr, center / half, BUTTERWORTH_Q);
+        let high_cut = Coefficients::lowpass(sr, center * half, BUTTERWORTH_Q);
         let (bottom, top) = TONE_RANGE;
         let tone = Coefficients::lowpass(sr, bottom * (top / bottom).powf(self.value(param::TONE)), BUTTERWORTH_Q);
         for path in &mut self.paths {

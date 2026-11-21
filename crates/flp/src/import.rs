@@ -32,7 +32,7 @@ fn color(value: u32) -> suhina_model::Rgb {
     suhina_model::Rgb(value as u8, (value >> 8) as u8, (value >> 16) as u8)
 }
 
-/// The grey FL gives a channel, a mixer insert or a playlist row nobody coloured. It is FL's look,
+/// The gray FL gives a channel, a mixer insert or a playlist row nobody coloured. It is FL's look,
 /// not a choice the user made, so it comes in as no colour, and the track then gets the colour
 /// a new Suhina track of its kind gets (`crate::appearance::default_colours`).
 pub(crate) fn is_fl_default(c: suhina_model::Rgb) -> bool {
@@ -41,7 +41,7 @@ pub(crate) fn is_fl_default(c: suhina_model::Rgb) -> bool {
 }
 
 /// A custom colour `value`, when `enabled` (FL's flag event, from FL 2025 on) says so or there is
-/// no flag (earlier versions keep the colour without one), and it is not FL's default grey.
+/// no flag (earlier versions keep the colour without one), and it is not FL's default gray.
 fn custom_color(enabled: Option<u32>, value: Option<u32>) -> Option<suhina_model::Rgb> {
     if enabled == Some(0) {
         return None;

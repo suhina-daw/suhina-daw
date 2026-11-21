@@ -42,15 +42,15 @@ pitch is therefore measured and removed first.
 
 1. The recording needs at least 1.0 s after trimming. The **held region** starts at 0.15 s.
 2. **Partials to track.** The mean power spectrum of 2048-sample Hann windows, hop 1024, over the
-   held region (at most 64 windows) gives its local maxima between 60 and 2000 Hz; each centre is
+   held region (at most 64 windows) gives its local maxima between 60 and 2000 Hz; each center is
    refined by parabolic interpolation of the log power. The strongest is the first tracked
    partial; the strongest whose frequency differs from it by more than 15 % is the second, kept
    only when its power is at least 1 % of the first's.
 3. **Instantaneous frequency.** Each tracked partial is projected (the complex projection of
-   modal fitting) on 1024-sample Hann frames every 256 samples at its centre frequency `f`. The
+   modal fitting) on 1024-sample Hann frames every 256 samples at its center frequency `f`. The
    phase advance between consecutive frames, minus the advance `2 pi f 256 / 22050` a steady
    partial makes, wrapped to (-pi, pi], gives the frame's frequency
-   `f + delta 22050 / (2 pi 256)`, timed midway between the two frame centres; its deviation in
+   `f + delta 22050 / (2 pi 256)`, timed midway between the two frame centers; its deviation in
    cents is `1200 log2(f_frame / f)`. A frame whose amplitude is below 10 % of the partial's
    median is a gap and is filled linearly from its neighbours; more than 10 % gaps means no
    vibrato.
@@ -65,7 +65,7 @@ pitch is therefore measured and removed first.
 5. **Rate.** After removing the least-squares line, the normalized autocorrelation of `v` is
    searched over lags for 3 to 10 Hz. A local maximum of at least 0.4 is the vibrato period,
    refined by parabolic interpolation (Herrera and Bonada; Rossignol et al.).
-6. **Depth and onset.** Over each window of exactly one period centred on a frame, the
+6. **Depth and onset.** Over each window of exactly one period centered on a frame, the
    projection of `v` on a sine and cosine at the rate gives the local depth `D` (the peak
    deviation in cents). The full depth is the median of `D` over the last 60 % of the frames,
    divided by the tracking's response to that rate: the 1024-frame Hann window's
@@ -81,7 +81,7 @@ pitch is therefore measured and removed first.
    none). The lag where its autocorrelation falls to 0.5 gives its bandwidth
    `ln 2 / (2 pi lag)`, 0.5..10 Hz. Drift is kept only for a held recording (below).
 8. **Flattening.** When vibrato is found, the signal is resampled along the true curve, `v`
-   divided by the tracking's response: with `rho(t) = 2^(v(t) / response / 1200)`, interpolated linearly between frame centres and held at the ends,
+   divided by the tracking's response: with `rho(t) = 2^(v(t) / response / 1200)`, interpolated linearly between frame centers and held at the ends,
    warped time is `phi(t) = integral of rho`, and output sample `m` is the input at the `t` where
    `phi(t) = m / 22050`, read with a 16-tap Hann-windowed sinc. Every partial of the flattened
    signal stays at one frequency while its level keeps its modulation; modal fitting, the
@@ -98,7 +98,7 @@ For a held recording the fine envelope of every mode is measured on the flattene
 1024-sample Hann windows every 256 samples. The **held level** of a mode is the median of its
 envelope from 0.3 s to the release start (or the end).
 
-- **Onset and rise** (per sustained mode). `t10` and `t90` are the first frame centres where the
+- **Onset and rise** (per sustained mode). `t10` and `t90` are the first frame centers where the
   envelope reaches 10 % and 90 % of the held level. The rendered level
   `1 - exp(-(t - onset) ln 10 / rise)` passes both: with `tau = (t90 - t10) / ln 9`,
   `onset = t10 - tau ln(10 / 9)` and `rise = t90 - onset`. A mode that reaches 90 % within 0.04 s
@@ -128,7 +128,7 @@ envelope from 0.3 s to the release start (or the end).
   sidelobes are 92 dB down, so partial leakage does not read as noise), hop 2048, give the mean
   power per bin over `M` windows (at least one). Bins within 4.5 bins of a fitted mode or its
   partner, and of any local maximum 12 dB above the median of its 32 neighbours, are masked. Each
-  band is a 2/3-octave band centred at `80 * 2^(2b/3)` Hz for `b = 0..10` (80 Hz to 8.1 kHz). Its
+  band is a 2/3-octave band centered at `80 * 2^(2b/3)` Hz for `b = 0..10` (80 Hz to 8.1 kHz). Its
   power is the median of its unmasked bins (at least three, else the band is silent), divided by
   `1 - 1 / (3M)` (the median of an M-window mean is that much below its mean). The one-sided
   density `S = 2 P / (22050 sum(w^2))` is stored as the amplitude density `sqrt(S)` divided by
@@ -212,11 +212,11 @@ fixed storage, no allocation):
   `10^(clamp(s u + q (u^2 - e^2 vibrato_cents^2 / 2), -12, 12) / 20)`, where `u` is the vibrato
   deviation, times the tremolo `1 + tremolo_depth sin(2 pi tremolo_hz t)`.
 - **Noise.** Eleven seeded white-noise generators feed band-pass state-variable filters at the
-  band centres with Q 2.145 (a 2/3-octave half-power width). The bands tile log frequency, where
+  band centers with Q 2.145 (a 2/3-octave half-power width). The bands tile log frequency, where
   a unity-peak band-pass's squared response integrates to `I = 2a acos(a) / sqrt(1 - a^2)` with
   `a = 1 / (2Q)`; a band's gain is its density times `sqrt(sample_rate ln 2 / (3 I))`, about
   `0.6007 sqrt(sample_rate)`, so the overlapping bands sum to the measured density (within
-  0.6 dB between 300 Hz and 3 kHz, falling about 4 dB beyond the outer band centres). Bands at
+  0.6 dB between 300 Hz and 3 kHz, falling about 4 dB beyond the outer band centers). Bands at
   or above 0.45 of the sample rate are silent. The layer follows
   its onset envelope and, while the recording's attack fades out (its second half), a raised
   cosine from 0 to 1, since the attack already carries the noise of the start.

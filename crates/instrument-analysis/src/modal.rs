@@ -851,7 +851,7 @@ impl Prepare<'_> {
 }
 
 /// `hz` in `count` consecutive windows of `window`'s size from the start: the windows where it
-/// is above the floor as (window index, centre time, ln amplitude), and every window's phase.
+/// is above the floor as (window index, center time, ln amplitude), and every window's phase.
 type Measured = (Vec<(usize, f64, f64)>, Vec<f64>);
 fn measure<F: FnMut(usize, usize) -> bool>(
     mono: &[f64],
@@ -877,10 +877,10 @@ fn measure<F: FnMut(usize, usize) -> bool>(
 }
 
 /// How much a window over a decay with `slope` (per second) under- or overstates the level at
-/// its centre.
+/// its center.
 fn window_bias(window: &[f64], slope: f64) -> f64 {
-    let centre = window.len() as f64 / 2.0;
-    window.iter().enumerate().map(|(i, w)| w * (slope * (i as f64 - centre) / f64::from(RATE)).exp()).sum::<f64>()
+    let center = window.len() as f64 / 2.0;
+    window.iter().enumerate().map(|(i, w)| w * (slope * (i as f64 - center) / f64::from(RATE)).exp()).sum::<f64>()
         / window.iter().sum::<f64>()
 }
 
