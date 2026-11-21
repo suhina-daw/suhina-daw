@@ -951,7 +951,7 @@ impl Entered {
     }
 }
 
-/// `rect` less `insets` (top, right, bottom, left); an empty rectangle at its centre where they
+/// `rect` less `insets` (top, right, bottom, left); an empty rectangle at its center where they
 /// leave no room.
 fn shrink(rect: Rect, insets: [f32; 4]) -> Rect {
     let inner = super::native_css::row::inset(rect, insets);
@@ -1158,7 +1158,7 @@ names! {
     VALUE_FILL = "value-fill";
     VALUE_HANDLE = "value-handle";
     PAN = "pan";
-    PAN_CENTRE = "pan-centre";
+    PAN_CENTER = "pan-center";
     FADER = "fader";
     FADER_CAP = "fader-cap";
     FADER_RAIL = "fader-rail";

@@ -1234,9 +1234,9 @@ fn new_variant_is_off_for_a_theme_without_quick_controls() {
 }
 
 /// A card's and a swatch's right-click menus offer what the card shows, with what a built-in theme
-/// can't do greyed out.
+/// can't do grayed out.
 #[test]
-fn right_click_menus_grey_out_what_a_built_in_theme_cannot_do() {
+fn right_click_menus_gray_out_what_a_built_in_theme_cannot_do() {
     let mut harness = short_window();
     ink_and_dim(&mut harness);
     wheel_to(&mut harness, "Theme: Nord", 40);

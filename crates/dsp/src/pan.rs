@@ -3,11 +3,11 @@
 
 //! The equal-power pan law every pan control in Suhina uses.
 
-/// The left and right gains of `pan` (-1.0 fully left, 0.0 centre, 1.0 fully right) by the
-/// equal-power law: the cosine and sine of `(pan + 1) · π/4`, so both are `√½` at the centre and
+/// The left and right gains of `pan` (-1.0 fully left, 0.0 center, 1.0 fully right) by the
+/// equal-power law: the cosine and sine of `(pan + 1) · π/4`, so both are `√½` at the center and
 /// their squares always add up to 1. A pan outside the range counts as its end, and one that is
-/// not a finite number as the centre. Callers scale the result to their own centre (by `√2` for
-/// unity at the centre).
+/// not a finite number as the center. Callers scale the result to their own center (by `√2` for
+/// unity at the center).
 pub fn gains(pan: f64) -> (f64, f64) {
     let pan = if pan.is_finite() { pan.clamp(-1.0, 1.0) } else { 0.0 };
     let angle = (pan + 1.0) * std::f64::consts::FRAC_PI_4;

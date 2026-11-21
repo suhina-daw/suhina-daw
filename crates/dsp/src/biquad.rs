@@ -10,7 +10,7 @@ use crate::{flush, usable_frequency, usable_sample_rate};
 /// Q of a second-order Butterworth section: maximally flat, -3 dB at the corner frequency.
 pub const BUTTERWORTH_Q: f64 = std::f64::consts::FRAC_1_SQRT_2;
 
-/// Normalised biquad coefficients (`a0` divided out).
+/// Normalized biquad coefficients (`a0` divided out).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Coefficients {
     pub b0: f64,
@@ -51,7 +51,7 @@ fn shelf_amplitude(gain_db: f64) -> f64 {
 impl Coefficients {
     pub const IDENTITY: Self = Self { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0 };
 
-    fn normalised(b0: f64, b1: f64, b2: f64, a0: f64, a1: f64, a2: f64) -> Self {
+    fn normalized(b0: f64, b1: f64, b2: f64, a0: f64, a1: f64, a2: f64) -> Self {
         let c = Self { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
         if [c.b0, c.b1, c.b2, c.a1, c.a2].iter().all(|v| v.is_finite()) { c } else { Self::IDENTITY }
     }
@@ -60,20 +60,20 @@ impl Coefficients {
     pub fn lowpass(sample_rate: f64, frequency: f64, q: f64) -> Self {
         let Terms { cos, alpha } = Terms::new(sample_rate, frequency, q);
         let b = (1.0 - cos) / 2.0;
-        Self::normalised(b, 1.0 - cos, b, 1.0 + alpha, -2.0 * cos, 1.0 - alpha)
+        Self::normalized(b, 1.0 - cos, b, 1.0 + alpha, -2.0 * cos, 1.0 - alpha)
     }
 
     /// 12 dB/octave high-pass with its corner at `frequency`.
     pub fn highpass(sample_rate: f64, frequency: f64, q: f64) -> Self {
         let Terms { cos, alpha } = Terms::new(sample_rate, frequency, q);
         let b = (1.0 + cos) / 2.0;
-        Self::normalised(b, -(1.0 + cos), b, 1.0 + alpha, -2.0 * cos, 1.0 - alpha)
+        Self::normalized(b, -(1.0 + cos), b, 1.0 + alpha, -2.0 * cos, 1.0 - alpha)
     }
 
     /// Band-pass around `frequency` with 0 dB at its peak.
     pub fn bandpass(sample_rate: f64, frequency: f64, q: f64) -> Self {
         let Terms { cos, alpha } = Terms::new(sample_rate, frequency, q);
-        Self::normalised(alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * cos, 1.0 - alpha)
+        Self::normalized(alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * cos, 1.0 - alpha)
     }
 
     /// Q of a band-pass or bell `octaves` wide (between its -3 dB points).
@@ -87,7 +87,7 @@ impl Coefficients {
     pub fn peak(sample_rate: f64, frequency: f64, q: f64, gain_db: f64) -> Self {
         let Terms { cos, alpha } = Terms::new(sample_rate, frequency, q);
         let a = shelf_amplitude(gain_db);
-        Self::normalised(1.0 + alpha * a, -2.0 * cos, 1.0 - alpha * a, 1.0 + alpha / a, -2.0 * cos, 1.0 - alpha / a)
+        Self::normalized(1.0 + alpha * a, -2.0 * cos, 1.0 - alpha * a, 1.0 + alpha / a, -2.0 * cos, 1.0 - alpha / a)
     }
 
     /// Shelf boosting or cutting `gain_db` below `frequency`.
@@ -95,7 +95,7 @@ impl Coefficients {
         let Terms { cos, alpha } = Terms::new(sample_rate, frequency, q);
         let a = shelf_amplitude(gain_db);
         let k = 2.0 * a.sqrt() * alpha;
-        Self::normalised(
+        Self::normalized(
             a * ((a + 1.0) - (a - 1.0) * cos + k),
             2.0 * a * ((a - 1.0) - (a + 1.0) * cos),
             a * ((a + 1.0) - (a - 1.0) * cos - k),
@@ -110,7 +110,7 @@ impl Coefficients {
         let Terms { cos, alpha } = Terms::new(sample_rate, frequency, q);
         let a = shelf_amplitude(gain_db);
         let k = 2.0 * a.sqrt() * alpha;
-        Self::normalised(
+        Self::normalized(
             a * ((a + 1.0) + (a - 1.0) * cos + k),
             -2.0 * a * ((a - 1.0) + (a + 1.0) * cos),
             a * ((a + 1.0) + (a - 1.0) * cos - k),

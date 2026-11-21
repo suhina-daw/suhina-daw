@@ -312,10 +312,10 @@ fn the_arrow_keys_step_the_scale_root_and_mode_once_clicked() {
     assert_ne!(after.mode, ScaleMode::Major, "Down: the next mode");
 }
 
-/// Switching the scale on from the toolbar centres the notes in the rows it shows, wherever the
+/// Switching the scale on from the toolbar centers the notes in the rows it shows, wherever the
 /// rows were scrolled: the view never lands on rows without notes.
 #[test]
-fn the_toolbar_scale_centres_the_notes_in_its_rows() {
+fn the_toolbar_scale_centers_the_notes_in_its_rows() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     let (notes, _) = edited(&h);

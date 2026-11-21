@@ -20,7 +20,7 @@
   --meter-hot: #DC9A21;
   --meter-normal: #00B050;
   --pan-background: white;
-  --pan-centre: color-mix(in oklab, color-mix(in oklab, var(--tint), white 62%), black 11%);
+  --pan-center: color-mix(in oklab, color-mix(in oklab, var(--tint), white 62%), black 11%);
   --panel-background: color-mix(in oklab, var(--tint), white 94%);
   --panel-hoverBackground: color-mix(in oklab, var(--tint), white 69%);
   --recording: #C33C36;

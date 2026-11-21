@@ -75,7 +75,7 @@ fn played(volume: f64) -> (Session, Renderer) {
 fn levels_reads_the_main_output_and_every_track_in_db() {
     let (mut session, _renderer) = played(1.0);
     let levels = run(&mut session, "mixer.levels", json!({})).unwrap();
-    // One centred note at unity: a quarter of full scale, -12 dB, its RMS 3 dB lower.
+    // One centered note at unity: a quarter of full scale, -12 dB, its RMS 3 dB lower.
     assert_eq!(levels["main"]["peak_db"], json!([-12.0, -12.0]));
     assert_eq!(levels["main"]["rms_db"], json!([-15.1, -15.1]));
     assert_eq!(levels["main"]["clipped"], json!(false));

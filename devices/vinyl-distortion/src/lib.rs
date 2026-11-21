@@ -257,7 +257,7 @@ impl VinylDistortion {
         if self.random() < chance {
             let size = 0.3 + 0.7 * self.random();
             let sign = if self.random() < 0.5 { -1.0 } else { 1.0 };
-            // Clicks sit near the centre, a little to one side or the other.
+            // Clicks sit near the center, a little to one side or the other.
             let pan = (self.random() - 0.5) * 0.6;
             self.click[0] += sign * size * (1.0 - pan);
             self.click[1] += sign * size * (1.0 + pan);

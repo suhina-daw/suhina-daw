@@ -160,7 +160,7 @@ fn a_theme_lays_the_parts_out_and_hides_them() {
         340.0,
     );
     let (fader, meter) = (moved.fader.unwrap(), moved.meter.unwrap());
-    // The meter goes first in the centred row, before the scale and the fader.
+    // The meter goes first in the centered row, before the scale and the fader.
     assert!(meter.left() < original.scale.unwrap().left(), "the meter before the fader");
     assert!(fader.left() >= meter.right() + 4.0);
     assert!(moved.band.is_none());
@@ -305,7 +305,7 @@ fn wide_meters_fit_track_return_and_main_strips() {
                 assert!(meter.left() >= fader.right() + 4.0);
                 assert!(meter.right() <= rect.right() - PAD);
                 assert_eq!(meter.width(), METER_WIDTH);
-                // Every strip centres its fader, a track's as Main's (#1487 B19).
+                // Every strip centers its fader, a track's as Main's (#1487 B19).
                 assert!((fader.center().x - rect.center().x).abs() < 0.01, "{width}: {fader:?}");
             }
         }

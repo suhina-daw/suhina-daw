@@ -86,11 +86,11 @@ def track(args):
         raise SystemExit("no frames")
     strips, pointers = [], []
     for path in files:
-        grey = np.asarray(Image.open(path).convert("L"), dtype=np.int16)
-        strips.append(grey[y0:y1, x0:x1].mean(axis=0))
+        gray = np.asarray(Image.open(path).convert("L"), dtype=np.int16)
+        strips.append(gray[y0:y1, x0:x1].mean(axis=0))
         if args.pointer:
             p0, p1 = (int(v) for v in numbers(args.pointer, 2))
-            pointers.append(grey[p0:p1, x0:x1])
+            pointers.append(gray[p0:p1, x0:x1])
     strips = np.array(strips)
     background = np.median(strips, axis=0)
     pointer_background = np.median(np.array(pointers), axis=0) if pointers else None

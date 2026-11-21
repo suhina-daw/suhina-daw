@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The piano roll's workflow settings: every behaviour that differs between the keymap presets
+//! The piano roll's workflow settings: every behavior that differs between the keymap presets
 //! (Select-first, Draw-first, Mouse-first) as a setting of its own, so a Custom mode can mix them
 //! one by one (› Workflow modes in `docs/spec/ui-clip-editor.md`). The keymap keeps them, beside
 //! the keys, in `keymap.json`.
@@ -10,7 +10,7 @@ use serde_json::{Map, Value, json};
 
 use crate::settings::keymap::{Keymap, MouseSettings, MouseSwitch, Preset};
 
-/// One behaviour of the piano roll that the workflow modes set.
+/// One behavior of the piano roll that the workflow modes set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Setting {
     /// What a click on an empty spot of the grid does in the Select tool.
@@ -164,7 +164,7 @@ pub enum RightClick {
     Deletes,
 }
 
-/// The piano roll's behaviours, one value per [`Setting`]. The default is Select-first's.
+/// The piano roll's behaviors, one value per [`Setting`]. The default is Select-first's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Workflow {
     /// In the Select tool, a click on an empty spot draws a note (on) or clears the selection.

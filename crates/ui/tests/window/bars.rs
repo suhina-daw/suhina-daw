@@ -168,7 +168,7 @@ fn a_tab_taller_than_the_midi_tools_row_takes_input_only_inside_it() {
         with_clip("midi-tools editor-tab { height: 80px; }").query_by_label("Transform tab").map(|node| node.rect()),
     );
     suhina_ui::kit::native_css::set_user_sheet(None);
-    // The tab's box is 80 points tall, centred on the row; its target stops at the row.
+    // The tab's box is 80 points tall, centered on the row; its target stops at the row.
     assert_eq!(tall, Some(plain));
 }
 
@@ -247,7 +247,7 @@ fn a_project_tab_s_name_lies_in_its_content_box() {
 fn a_midi_tools_tab_is_painted_and_its_word_lies_in_its_content_box() {
     let (_, red) = paints_red("#tab-notes { padding-left: 40px; background-color: #ff0000; }", 1400.0, "Notes tab");
     assert!(red, "the tab's background is painted");
-    let centre = |css: &str| {
+    let center = |css: &str| {
         let h = with_clip(css);
         let node = h.query_by_label("Notes tab").map(|node| node.rect())?;
         let word = h.output().shapes.iter().find_map(|shape| match &shape.shape {
@@ -257,7 +257,7 @@ fn a_midi_tools_tab_is_painted_and_its_word_lies_in_its_content_box() {
         suhina_ui::kit::native_css::set_user_sheet(None);
         Some(word - node.center().x)
     };
-    let (plain, padded) = (centre("").unwrap(), centre("#tab-notes { padding-left: 40px; }").unwrap());
+    let (plain, padded) = (center("").unwrap(), center("#tab-notes { padding-left: 40px; }").unwrap());
     assert!((padded - plain - 20.0).abs() < 0.5, "{plain} {padded}");
 }
 

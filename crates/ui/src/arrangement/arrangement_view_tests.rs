@@ -1056,47 +1056,47 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
 }
 
 #[test]
-fn a_muted_clip_is_the_base_sheet_grey_whatever_its_colour() {
-    // #1393: dimming the colour left a muted clip looking like any other clip on a grey track.
+fn a_muted_clip_is_the_base_sheet_gray_whatever_its_colour() {
+    // #1393: dimming the colour left a muted clip looking like any other clip on a gray track.
     let surface = crate::kit::theme::studio("panel-background");
-    let grey = clip::muted_clip_grey(false);
-    assert_eq!(grey, Color32::from_rgb(0xA9, 0xA6, 0xA0), "the base sheet's clip[muted]");
-    assert_eq!(clip::muted_clip_grey(true), Color32::from_rgb(0xBD, 0xBA, 0xB4), "clip[muted][selected]");
-    for colour in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), grey] {
-        assert_eq!(clip::clip_body(surface, colour, 82, true, false), grey, "{colour:?}");
+    let gray = clip::muted_clip_gray(false);
+    assert_eq!(gray, Color32::from_rgb(0xA9, 0xA6, 0xA0), "the base sheet's clip[muted]");
+    assert_eq!(clip::muted_clip_gray(true), Color32::from_rgb(0xBD, 0xBA, 0xB4), "clip[muted][selected]");
+    for colour in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), gray] {
+        assert_eq!(clip::clip_body(surface, colour, 82, true, false), gray, "{colour:?}");
         let selected = clip::clip_body(surface, colour, 82, true, true);
         assert!(
-            selected.to_srgba_unmultiplied()[0] > grey.to_srgba_unmultiplied()[0],
+            selected.to_srgba_unmultiplied()[0] > gray.to_srgba_unmultiplied()[0],
             "selection lifts a muted clip's brightness"
         );
     }
-    // A clip that plays keeps its hue, and a grey one is not the muted grey.
+    // A clip that plays keeps its hue, and a gray one is not the muted gray.
     let orange = clip::clip_body(surface, Color32::from_rgb(0xFF, 0x9A, 0x3C), 82, false, false);
     let [red, _, blue, _] = orange.to_srgba_unmultiplied();
     assert!(red > blue + 60, "{orange:?}");
-    assert_ne!(clip::clip_body(surface, Color32::from_rgb(0x4A, 0x4A, 0x4A), 82, false, false), grey);
+    assert_ne!(clip::clip_body(surface, Color32::from_rgb(0x4A, 0x4A, 0x4A), 82, false, false), gray);
 }
 
 #[test]
 fn a_clip_on_a_muted_track_keeps_its_colour_in_its_name_bar() {
     let surface = crate::kit::theme::studio("panel-background");
     let orange = Color32::from_rgb(0xFF, 0x9A, 0x3C);
-    let grey = clip::muted_clip_grey(false);
+    let gray = clip::muted_clip_gray(false);
     // On a muted track: the bar is the colour a clip that plays has.
-    let on_track = clip::name_bar_fill(grey, surface, orange, 82, true, false);
+    let on_track = clip::name_bar_fill(gray, surface, orange, 82, true, false);
     assert_eq!(on_track, clip::clip_body(surface, orange, 82, false, false));
-    // Turned off itself: the bar is grey, a hair off the body.
-    let off = clip::name_bar_fill(grey, surface, orange, 82, false, false);
+    // Turned off itself: the bar is gray, a hair off the body.
+    let off = clip::name_bar_fill(gray, surface, orange, 82, false, false);
     assert_ne!(off, on_track);
     let [red, _, blue, _] = off.to_srgba_unmultiplied();
-    let grey_red = grey.to_srgba_unmultiplied()[0];
-    assert!(red.abs_diff(grey_red) < 16 && red.abs_diff(blue) < 16, "{off:?}");
+    let gray_red = gray.to_srgba_unmultiplied()[0];
+    assert!(red.abs_diff(gray_red) < 16 && red.abs_diff(blue) < 16, "{off:?}");
 }
 
 #[test]
-fn a_muted_track_header_is_the_base_sheet_grey() {
-    assert_eq!(header::muted_header_grey(false), Color32::from_rgb(0xA9, 0xA6, 0xA0), "track-header[muted]");
-    assert_eq!(header::muted_header_grey(true), Color32::from_rgb(0xB5, 0xB2, 0xAC), "track-header[muted][selected]");
+fn a_muted_track_header_is_the_base_sheet_gray() {
+    assert_eq!(header::muted_header_gray(false), Color32::from_rgb(0xA9, 0xA6, 0xA0), "track-header[muted]");
+    assert_eq!(header::muted_header_gray(true), Color32::from_rgb(0xB5, 0xB2, 0xAC), "track-header[muted][selected]");
 }
 
 #[test]
@@ -1109,29 +1109,29 @@ fn a_clip_on_a_muted_track_is_drawn_muted_too() {
 #[test]
 fn a_clip_too_low_for_a_name_bar_still_has_its_mute_mark() {
     // #1399 review: the mark was drawn only inside the name bar, so a clip on a low lane turned
-    // off was the same as one on a muted track, or one whose colour is grey.
+    // off was the same as one on a muted track, or one whose colour is gray.
     let low = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 24.0));
     assert!(clip::clip_name_bar(low).is_none(), "24 points is below the name bar's least height");
-    let centre = clip::mute_mark_centre(low, None, 107.0).expect("a 24-point clip has room for the mark");
-    assert!(low.contains(centre), "{centre:?}");
+    let center = clip::mute_mark_center(low, None, 107.0).expect("a 24-point clip has room for the mark");
+    assert!(low.contains(center), "{center:?}");
     // The body shows the name there (#1381): the mark goes before it, on its line, and the name
     // starts after the mark, never under it.
-    assert_eq!(centre.y, low.center().y, "on the name's line: {centre:?}");
-    let name = clip::after_mute_mark(107.0, Some(centre));
-    assert!(name > centre.x + 4.5, "the name starts after the mark: {name} vs {centre:?}");
+    assert_eq!(center.y, low.center().y, "on the name's line: {center:?}");
+    let name = clip::after_mute_mark(107.0, Some(center));
+    assert!(name > center.x + 4.5, "the name starts after the mark: {name} vs {center:?}");
     assert_eq!(clip::after_mute_mark(107.0, None), 107.0, "a clip turned on keeps its name's place");
 
     // With a name bar, it stays before the name, in the middle of the bar.
     let tall = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 60.0));
     let bar = clip::clip_name_bar(tall).expect("a 60-point clip has a name bar");
-    let centre = clip::mute_mark_centre(tall, Some(bar), 107.0).expect("mark in the bar");
-    assert_eq!(centre.y, bar.center().y);
+    let center = clip::mute_mark_center(tall, Some(bar), 107.0).expect("mark in the bar");
+    assert_eq!(center.y, bar.center().y);
 
     // A clip too small for it has none, rather than a mark spilling out of it.
     let sliver = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 10.0));
-    assert_eq!(clip::mute_mark_centre(sliver, None, 107.0), None);
+    assert_eq!(clip::mute_mark_center(sliver, None, 107.0), None);
     let narrow = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(12.0, 24.0));
-    assert_eq!(clip::mute_mark_centre(narrow, None, 107.0), None);
+    assert_eq!(clip::mute_mark_center(narrow, None, 107.0), None);
 }
 
 /// The name bar's look in one frame with `css` as the theme's sheet.
@@ -1155,18 +1155,18 @@ fn name_bar_look_with(css: &str, bar_fill: Color32) -> clip::NameBarLook {
 fn the_mute_mark_takes_the_ink_of_the_name_bar_as_drawn() {
     // #1399 review: the mark's ink came from the clip's own bar colour, so on a theme's dark bar
     // it was dark on dark while the name was readable.
-    let grey = clip::muted_clip_grey(false);
-    let dark = name_bar_look_with("clip-name { background-color: #000000; }", grey);
+    let gray = clip::muted_clip_gray(false);
+    let dark = name_bar_look_with("clip-name { background-color: #000000; }", gray);
     assert_eq!(dark.fill, Color32::BLACK);
     assert_eq!(dark.ink, clip::ink_on(Color32::BLACK), "light ink on the theme's black bar");
-    assert_ne!(dark.ink, clip::ink_on(grey));
+    assert_ne!(dark.ink, clip::ink_on(gray));
 
-    let coloured = name_bar_look_with("clip-name { background-color: #000000; color: #FFCC00; }", grey);
+    let coloured = name_bar_look_with("clip-name { background-color: #000000; color: #FFCC00; }", gray);
     assert_eq!(coloured.ink, Color32::from_rgb(0xFF, 0xCC, 0x00), "the theme's own name colour");
 
     // Unstyled, the bar is the clip's own colour and the ink reads on it, as before.
-    let plain = name_bar_look_with("", grey);
-    assert_eq!((plain.fill, plain.ink), (grey, clip::ink_on(grey)));
+    let plain = name_bar_look_with("", gray);
+    assert_eq!((plain.fill, plain.ink), (gray, clip::ink_on(gray)));
 }
 
 /// The shapes `paint_clip` draws for `clip` in `rect` under `css`, `selected` or not, as the
@@ -1300,6 +1300,6 @@ fn the_take_marks_bars_are_evenly_spaced() {
         ys.sort_by(f32::total_cmp);
         assert_eq!(ys.len(), 3, "bottom {bottom}: {ys:?}");
         assert_eq!(ys[1] - ys[0], ys[2] - ys[1], "bottom {bottom}: {ys:?}");
-        assert_eq!(ys[0].fract(), 0.5, "on a pixel's centre: {ys:?}");
+        assert_eq!(ys[0].fract(), 0.5, "on a pixel's center: {ys:?}");
     }
 }

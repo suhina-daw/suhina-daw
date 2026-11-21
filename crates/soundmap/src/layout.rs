@@ -146,7 +146,7 @@ pub fn layout_with_progress(standardised: &Standardised, seed: u64, progress: &P
         first_two(&projected)
     };
     progress.set(EPOCHS);
-    normalise(positions)
+    normalize(positions)
 }
 
 fn first_two(rows: &[Vec<f32>]) -> Vec<[f32; 2]> {
@@ -191,8 +191,8 @@ fn tsne(rows: &[Vec<f32>], seed: u64, progress: &Progress) -> Option<Vec<[f32; 2
     Some(result.as_chunks::<2>().0.to_vec())
 }
 
-/// Scales positions to fit 0–1 in both axes, keeping their aspect ratio, centred.
-fn normalise(points: Vec<[f32; 2]>) -> Vec<[f32; 2]> {
+/// Scales positions to fit 0–1 in both axes, keeping their aspect ratio, centered.
+fn normalize(points: Vec<[f32; 2]>) -> Vec<[f32; 2]> {
     let (mut min, mut max) = ([f32::MAX; 2], [f32::MIN; 2]);
     for p in &points {
         for axis in 0..2 {
@@ -208,7 +208,7 @@ fn normalise(points: Vec<[f32; 2]>) -> Vec<[f32; 2]> {
     points.iter().map(|p| [(p[0] - min[0] + offset[0]) / span, (p[1] - min[1] + offset[1]) / span]).collect()
 }
 
-/// Projects rows (already centred) onto their first `keep` principal components.
+/// Projects rows (already centered) onto their first `keep` principal components.
 fn pca(rows: &[Features], keep: usize) -> Vec<Vec<f32>> {
     let d = FEATURE_COUNT;
     let n = rows.len().max(1) as f64;
@@ -305,8 +305,8 @@ mod tests {
             for _ in 0..per {
                 let mut row = [0.0f32; FEATURE_COUNT];
                 for (i, v) in row.iter_mut().enumerate() {
-                    let centre = if (i + cluster * 5) % 3 == 0 { 10.0 } else { 0.0 };
-                    *v = centre + noise();
+                    let center = if (i + cluster * 5) % 3 == 0 { 10.0 } else { 0.0 };
+                    *v = center + noise();
                 }
                 rows.push(row);
                 labels.push(cluster);
@@ -316,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn standardising_centres_and_scales() {
+    fn standardising_centers_and_scales() {
         let rows: Vec<Features> = (0..10).map(|i| [i as f32; FEATURE_COUNT]).collect();
         let s = Standardised::new(&rows);
         for f in 0..FEATURE_COUNT {

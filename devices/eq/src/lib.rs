@@ -26,9 +26,9 @@ pub const FADE_SECONDS: f64 = 0.01;
 /// While a band's frequency, gain or Q moves, its filters are retuned every this many frames.
 const RETUNE_FRAMES: u32 = 16;
 /// Adaptive Q multiplies a bell's Q by this to the power of its gain in decibels less
-/// [`ADAPTIVE_Q_CENTRE_DB`].
+/// [`ADAPTIVE_Q_CENTER_DB`].
 const ADAPTIVE_Q_BASE: f64 = 1.12;
-const ADAPTIVE_Q_CENTRE_DB: f64 = 6.0;
+const ADAPTIVE_Q_CENTER_DB: f64 = 6.0;
 /// The Qs of the four sections of an 8th-order Butterworth filter, lowest first.
 const BUTTERWORTH_8: [f64; 4] = [0.509_795_6, 0.601_344_9, 0.899_976_2, 2.562_915_4];
 /// How much a 48 dB cut's section Qs grow with its Q: by `1 + SLOPE · ln(Q / Q₀)`.
@@ -343,7 +343,7 @@ impl Kind {
                 1
             }
             Self::Bell => {
-                let q = if adaptive { q * ADAPTIVE_Q_BASE.powf(gain.abs() - ADAPTIVE_Q_CENTRE_DB) } else { q };
+                let q = if adaptive { q * ADAPTIVE_Q_BASE.powf(gain.abs() - ADAPTIVE_Q_CENTER_DB) } else { q };
                 out[0] = SvfCoefficients::bell(sr, frequency, q, gain);
                 1
             }
@@ -358,7 +358,7 @@ fn shelf_q(q: f64) -> f64 {
 }
 
 /// The filter sections the band with these values runs, for a panel drawing the response
-/// curve (docs/spec/eq.md › Behaviour): the type's index in [`TYPE_NAMES`] order, the
+/// curve (docs/spec/eq.md › Behavior): the type's index in [`TYPE_NAMES`] order, the
 /// frequency in Hz, the gain in decibels before Scale, the Q, the Scale factor (1 is 100 %)
 /// and whether Adaptive Q is on. The first `count` of the sections are the band's filters;
 /// the rest are identity. The panel multiplies the sections' magnitudes to draw the band's

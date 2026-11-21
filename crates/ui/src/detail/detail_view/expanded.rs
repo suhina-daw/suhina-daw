@@ -80,7 +80,7 @@ pub fn give_host_values(
 }
 
 /// Draws `device`'s expanded panel over `area` (the main area), on top of the views: a title row
-/// with its name and a close button, then its canvas, centred and scrolled when the area is
+/// with its name and a close button, then its canvas, centered and scrolled when the area is
 /// smaller. A canvas marked `strip` opens instead as a strip at the bottom of `area`, over the
 /// device row, scaled to the strip's width and as tall as that makes it.
 /// Its controls change the same parameters as the compact panel, through `device.setParam`.
@@ -187,7 +187,7 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                     egui::ScrollArea::both().auto_shrink([false, false]).id_salt("device-expanded-scroll").show(
                         ui,
                         |ui| {
-                            // Centred while it fits, from the top left when it scrolls.
+                            // Centered while it fits, from the top left when it scrolls.
                             let room = ui.available_size();
                             let offset =
                                 Vec2::new(((room.x - size.x) / 2.0).max(0.0), ((room.y - size.y) / 2.0).max(0.0));

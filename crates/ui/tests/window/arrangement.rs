@@ -905,7 +905,7 @@ fn container_headers_have_wide_fold_targets_and_double_click_toggles_them() {
             }
             let target = harness.get_by_label("Fold Container").rect();
             assert!(target.width() >= 20.0, "{target:?}");
-            // The button's margin works, not just the tiny painted triangle in the centre.
+            // The button's margin works, not just the tiny painted triangle in the center.
             let edge = egui::pos2(target.left() + 1.0, target.center().y);
             harness.hover_at(edge);
             harness.run();

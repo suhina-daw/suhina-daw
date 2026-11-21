@@ -29,7 +29,7 @@
   --grid-minor: color-mix(in oklab, var(--ground), var(--ink) 5%);
   --slot-empty: color-mix(in oklab, var(--surface), var(--ink) 20%);
   --pan-background: color-mix(in oklab, var(--ground), var(--surface) 30%);
-  --pan-centre: color-mix(in oklab, var(--ink), var(--surface) 50%);
+  --pan-center: color-mix(in oklab, var(--ink), var(--surface) 50%);
   --accent: var(--tint);
   --automation-pin: var(--tint);
   --selection: var(--highlight);

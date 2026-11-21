@@ -97,7 +97,7 @@ fn build(rect: Rect, hsv: Hsv, wheel: bool, steps: bool, soft: bool) -> Mesh {
         for column in 0..columns {
             let index = mesh.vertices.len() as u32;
             for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                // Quantised values sit at the centres of their nearest-value cells. Edge
+                // Quantised values sit at the centers of their nearest-value cells. Edge
                 // cells are half-width, so the displayed colour is also the clicked colour.
                 let x = if steps && wheel {
                     (column as f32 + dx as f32 - 0.5) / 24.0
@@ -156,8 +156,8 @@ mod tests {
         let hsv = Hsv { h: 0.137, s: 0.6, v: 0.8 };
         let mesh = build(rect, hsv, false, true, false);
         for cell in mesh.vertices.as_chunks::<4>().0 {
-            let centre = (cell[0].pos.to_vec2() + cell[3].pos.to_vec2()) * 0.5;
-            let pointer = Hsv { h: hsv.h, s: centre.x / rect.width(), v: 1.0 - centre.y / rect.height() };
+            let center = (cell[0].pos.to_vec2() + cell[3].pos.to_vec2()) * 0.5;
+            let pointer = Hsv { h: hsv.h, s: center.x / rect.width(), v: 1.0 - center.y / rect.height() };
             let [r, g, b] = super::super::constrain(pointer, true, false).to_srgb();
             assert!(cell.iter().all(|v| v.color == Color32::from_rgb(r, g, b)));
         }

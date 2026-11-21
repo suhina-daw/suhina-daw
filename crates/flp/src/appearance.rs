@@ -38,7 +38,7 @@ pub(crate) fn rows(flp: &Flp, selected: u32) -> Result<BTreeMap<u32, Row>, FlpEr
                     .ok_or_else(|| error(e.offset, "invalid playlist row"))?;
                 let rgb = dword(d, 4, e.offset)?;
                 stored_color = Some(Rgb(rgb as u8, (rgb >> 8) as u8, (rgb >> 16) as u8));
-                // A row's colour is its own unless it is FL's grey; event 43, where FL writes it,
+                // A row's colour is its own unless it is FL's gray; event 43, where FL writes it,
                 // says whether it is enabled.
                 rows.insert(
                     row,
@@ -173,7 +173,7 @@ pub(crate) fn apply(import: &mut Import, rows: &BTreeMap<u32, Row>) {
     }
 }
 
-/// Every track still without a colour (FL's grey, or none given) gets Suhina's own: an audio
+/// Every track still without a colour (FL's gray, or none given) gets Suhina's own: an audio
 /// track the colour a new audio track gets, any other the new MIDI track's; a folder or a group
 /// the colour of its first track that has one, so a family reads as one.
 pub(crate) fn default_colours(p: &mut suhina_model::Project) {

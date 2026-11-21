@@ -157,7 +157,7 @@ fn row(name: &str) -> String {
     format!("Browser {name}")
 }
 
-/// The screen height of a row's centre, to compare two rows' order.
+/// The screen height of a row's center, to compare two rows' order.
 fn row_y(harness: &Harness<'static, App>, name: &str) -> f32 {
     harness.get_by_label(&row(name)).rect().center().y
 }
@@ -2884,9 +2884,9 @@ fn the_tags_section_leads_with_its_folders() {
     harness.run();
     let folders = harness.get_by_label("Folder Present (0 tags)").rect();
     let red = harness.get_by_label("Place Tag Red").rect();
-    let grey = harness.get_by_label("Place Tag Grey").rect();
+    let gray = harness.get_by_label("Place Tag Gray").rect();
     assert!(folders.top() < red.top(), "the section's own folder rows come first ({:?} vs {:?})", folders, red);
-    assert!(red.bottom() < grey.top(), "the tags keep their order below the folders");
+    assert!(red.bottom() < gray.top(), "the tags keep their order below the folders");
     // A folder's own children: folders of the level lead, then the level's tags. The
     // folder's own row says what it holds ([#1254] review: the open row keeps its count).
     harness.state_mut().projects_mut().execute("library.moveTag", &json!({ "id": "#1", "folder": "#8" })).unwrap();
@@ -3082,23 +3082,23 @@ fn a_drag_of_an_unpicked_tag_files_only_the_carried() {
     let mut harness = window(&settings, &folder);
     harness.state_mut().projects_mut().execute("library.addTagFolder", &json!({ "name": "Drums" })).unwrap();
     harness.run();
-    // Red and Purple are picked; Grey is carried into the folder.
+    // Red and Purple are picked; Gray is carried into the folder.
     harness.get_by_label("Place Tag Red").click_modifiers(Modifiers::SHIFT);
     harness.run();
     harness.get_by_label("Place Tag Purple").click_modifiers(Modifiers::SHIFT);
     harness.run();
-    let at = harness.get_by_label("Place Tag Grey").rect().center();
+    let at = harness.get_by_label("Place Tag Gray").rect().center();
     let to = harness.get_by_label("Folder Drums (0 tags)").rect().center();
     drag(&mut harness, at, to);
     harness.run();
     let tree = harness.state_mut().projects_mut().file_library_mut().tags();
     let inside = tree.iter().any(|e| match e {
         suhina_library::TagEntry::Folder { folder, tags } if folder.name == "Drums" => {
-            suhina_library::store::tags_iter(tags).map(|t| t.name.clone()).collect::<Vec<_>>() == ["Grey"]
+            suhina_library::store::tags_iter(tags).map(|t| t.name.clone()).collect::<Vec<_>>() == ["Gray"]
         }
         _ => false,
     });
-    assert!(inside, "only Grey filed in");
+    assert!(inside, "only Gray filed in");
     // Red and Purple stayed where they were, and the pick with them.
     assert!(
         suhina_library::store::tag_by_id(&tree, 1).is_some() && suhina_library::store::tag_by_id(&tree, 6).is_some()
@@ -3377,7 +3377,7 @@ fn a_tag_dropped_on_a_folders_top_half_lands_above_the_tags() {
     // folder stays first of the level.
     assert_eq!(
         top(&mut harness),
-        ["Beta", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Grey", "Box", "Alpha"],
+        ["Beta", "Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray", "Box", "Alpha"],
         "Beta above the tags, the folder still first",
     );
     let _ = std::fs::remove_dir_all(&settings);

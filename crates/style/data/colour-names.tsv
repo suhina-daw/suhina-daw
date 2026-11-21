@@ -32,7 +32,7 @@ Banana Yellow	#fafe4b
 Barbie Pink	#fe46a5
 Barney	#ac1db8
 Barney Purple	#a00498
-Battleship Grey	#6b7c85
+Battleship Gray	#6b7c85
 Beige	#e6daa6
 Berry	#990f4b
 Black	#000000
@@ -40,21 +40,21 @@ Blood	#770001
 Blood Orange	#fe4b03
 Blood Red	#980002
 Blue	#0343df
+Blue Gray	#607c8e
 Blue Green	#137e6d
-Blue Grey	#607c8e
 Blue Purple	#5729ce
 Blue Violet	#5d06e9
 Blue With A Hint Of Purple	#533cc6
+Blue/Gray	#758da3
 Blue/Green	#0f9b8e
-Blue/Grey	#758da3
 Blue/Purple	#5a06ef
 Blueberry	#464196
+Bluey Gray	#89a0b0
 Bluey Green	#2bb179
-Bluey Grey	#89a0b0
 Bluey Purple	#6241c7
 Bluish	#2976bb
+Bluish Gray	#748b97
 Bluish Green	#10a674
-Bluish Grey	#748b97
 Bluish Purple	#703be7
 Blurple	#5539cc
 Blush	#f29e8e
@@ -91,14 +91,14 @@ Bright Yellow Green	#9dff00
 British Racing Green	#05480d
 Bronze	#a87900
 Brown	#653700
+Brown Gray	#8d8468
 Brown Green	#706c11
-Brown Grey	#8d8468
 Brown Orange	#b96902
 Brown Red	#922b05
 Brown Yellow	#b29705
 Brownish	#9c6d57
+Brownish Gray	#86775f
 Brownish Green	#6a6e09
-Brownish Grey	#86775f
 Brownish Orange	#cb7723
 Brownish Pink	#c27e79
 Brownish Purple	#76424e
@@ -141,7 +141,7 @@ Cerise	#de0c62
 Cerulean	#0485d1
 Cerulean Blue	#056eee
 Charcoal	#343837
-Charcoal Grey	#3c4142
+Charcoal Gray	#3c4142
 Chartreuse	#c1f80a
 Cherry	#cf0234
 Cherry Red	#f7022a
@@ -159,8 +159,8 @@ Cobalt Blue	#030aa7
 Cocoa	#875f42
 Coffee	#a6814c
 Cool Blue	#4984b8
+Cool Gray	#95a3a6
 Cool Green	#33b864
-Cool Grey	#95a3a6
 Copper	#b66325
 Coral	#fc5a50
 Coral Pink	#ff6163
@@ -177,8 +177,8 @@ Dark Aqua	#05696b
 Dark Aquamarine	#017371
 Dark Beige	#ac9362
 Dark Blue	#00035b
+Dark Blue Gray	#1f3b4d
 Dark Blue Green	#005249
-Dark Blue Grey	#1f3b4d
 Dark Brown	#341c02
 Dark Coral	#cf524e
 Dark Cream	#fff39a
@@ -187,10 +187,10 @@ Dark Forest Green	#002d04
 Dark Fuchsia	#9d0759
 Dark Gold	#b59410
 Dark Grass Green	#388004
+Dark Gray	#363737
+Dark Gray Blue	#29465b
 Dark Green	#033500
 Dark Green Blue	#1f6357
-Dark Grey	#363737
-Dark Grey Blue	#29465b
 Dark Hot Pink	#d90166
 Dark Indigo	#1f0954
 Dark Khaki	#9b8f55
@@ -344,11 +344,27 @@ Grapefruit	#fd5956
 Grass	#5cac2d
 Grass Green	#3f9b0b
 Grassy Green	#419c03
+Gray	#929591
+Gray Blue	#6b8ba4
+Gray Brown	#7f7053
+Gray Green	#789b73
+Gray Pink	#c3909b
+Gray Purple	#826d8c
+Gray Teal	#5e9b8a
+Gray/Blue	#647d8e
+Gray/Green	#86a17d
+Grayish	#a8a495
+Grayish Blue	#5e819d
+Grayish Brown	#7a6a4f
+Grayish Green	#82a67d
+Grayish Pink	#c88d94
+Grayish Purple	#887191
+Grayish Teal	#719f91
 Green	#15b01a
 Green Apple	#5edc1f
 Green Blue	#06b48b
 Green Brown	#544e03
-Green Grey	#77926f
+Green Gray	#77926f
 Green Teal	#0cb577
 Green Yellow	#c9ff27
 Green/Blue	#01c08d
@@ -358,31 +374,15 @@ Greenish Beige	#c9d179
 Greenish Blue	#0b8b87
 Greenish Brown	#696112
 Greenish Cyan	#2afeb7
-Greenish Grey	#96ae8d
+Greenish Gray	#96ae8d
 Greenish Tan	#bccb7a
 Greenish Teal	#32bf84
 Greenish Turquoise	#00fbb0
 Greenish Yellow	#cdfd02
 Greeny Blue	#42b395
 Greeny Brown	#696006
-Greeny Grey	#7ea07a
+Greeny Gray	#7ea07a
 Greeny Yellow	#c6f808
-Grey	#929591
-Grey Blue	#6b8ba4
-Grey Brown	#7f7053
-Grey Green	#789b73
-Grey Pink	#c3909b
-Grey Purple	#826d8c
-Grey Teal	#5e9b8a
-Grey/Blue	#647d8e
-Grey/Green	#86a17d
-Greyish	#a8a495
-Greyish Blue	#5e819d
-Greyish Brown	#7a6a4f
-Greyish Green	#82a67d
-Greyish Pink	#c88d94
-Greyish Purple	#887191
-Greyish Teal	#719f91
 Gunmetal	#536267
 Hazel	#8e7618
 Heather	#a484ac
@@ -429,8 +429,8 @@ Light Aqua	#8cffdb
 Light Aquamarine	#7bfdc7
 Light Beige	#fffeb6
 Light Blue	#95d0fc
+Light Blue Gray	#b7c9e2
 Light Blue Green	#7efbb3
-Light Blue Grey	#b7c9e2
 Light Bluish Green	#76fda8
 Light Bright Green	#53fe5c
 Light Brown	#ad8150
@@ -440,12 +440,12 @@ Light Eggplant	#894585
 Light Forest Green	#4f9153
 Light Gold	#fddc5c
 Light Grass Green	#9af764
+Light Gray	#d8dcd6
+Light Gray Blue	#9dbcd4
+Light Gray Green	#b7e1a1
 Light Green	#96f97b
 Light Green Blue	#56fca2
 Light Greenish Blue	#63f7b4
-Light Grey	#d8dcd6
-Light Grey Blue	#9dbcd4
-Light Grey Green	#b7e1a1
 Light Indigo	#6d5acf
 Light Khaki	#e6f2a2
 Light Lavender	#dfc5fe
@@ -513,8 +513,8 @@ Maroon	#650021
 Mauve	#ae7181
 Medium Blue	#2c6fbb
 Medium Brown	#7f5112
+Medium Gray	#7d7f7c
 Medium Green	#39ad48
-Medium Grey	#7d7f7c
 Medium Pink	#f36196
 Medium Purple	#9e43a2
 Melon	#ff7855
@@ -595,8 +595,8 @@ Pale Blue	#d0fefe
 Pale Brown	#b1916e
 Pale Cyan	#b7fffa
 Pale Gold	#fdde6c
+Pale Gray	#fdfdfe
 Pale Green	#c7fdb5
-Pale Grey	#fdfdfe
 Pale Lavender	#eecffe
 Pale Light Green	#b1fc99
 Pale Lilac	#e4cbff
@@ -646,7 +646,7 @@ Pink Red	#f5054f
 Pink/Purple	#ef1de7
 Pinkish	#d46a7e
 Pinkish Brown	#b17261
-Pinkish Grey	#c8aca9
+Pinkish Gray	#c8aca9
 Pinkish Orange	#ff724c
 Pinkish Purple	#d648d7
 Pinkish Red	#f10c45
@@ -669,7 +669,7 @@ Pure Blue	#0203e2
 Purple	#7e1e9c
 Purple Blue	#632de9
 Purple Brown	#673a3f
-Purple Grey	#866f85
+Purple Gray	#866f85
 Purple Pink	#e03fd8
 Purple Red	#990147
 Purple/Blue	#5d21d0
@@ -679,12 +679,12 @@ Purpleish Blue	#6140ef
 Purpleish Pink	#df4ec8
 Purpley	#8756e4
 Purpley Blue	#5f34e7
-Purpley Grey	#947e94
+Purpley Gray	#947e94
 Purpley Pink	#c83cb9
 Purplish	#94568c
 Purplish Blue	#601ef9
 Purplish Brown	#6b4247
-Purplish Grey	#7a687f
+Purplish Gray	#7a687f
 Purplish Pink	#ce5dae
 Purplish Red	#b0054b
 Purply	#983fb2
@@ -705,7 +705,7 @@ Red Violet	#9e0168
 Red Wine	#8c0034
 Reddish	#c44240
 Reddish Brown	#7f2b0a
-Reddish Grey	#997570
+Reddish Gray	#997570
 Reddish Orange	#f8481c
 Reddish Pink	#fe2c54
 Reddish Purple	#910951
@@ -767,8 +767,8 @@ Sky	#82cafc
 Sky Blue	#75bbfd
 Slate	#516572
 Slate Blue	#5b7c99
+Slate Gray	#59656d
 Slate Green	#658d6d
-Slate Grey	#59656d
 Slime Green	#99cc04
 Soft Blue	#6488ea
 Soft Green	#6fc276
@@ -780,7 +780,7 @@ Spruce	#0a5f38
 Squash	#f2ab15
 Steel	#738595
 Steel Blue	#5a7d9a
-Steel Grey	#6f828a
+Steel Gray	#6f828a
 Stone	#ada587
 Stormy Blue	#507b9c
 Straw	#fcf679
@@ -850,7 +850,7 @@ Vivid Green	#2fef10
 Vivid Purple	#9900fa
 Warm Blue	#4b57db
 Warm Brown	#964e02
-Warm Grey	#978a84
+Warm Gray	#978a84
 Warm Pink	#fb5581
 Warm Purple	#952e8f
 Washed Out Green	#bcf5a6

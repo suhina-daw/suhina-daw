@@ -35,7 +35,7 @@ dialogs, with Suhina's logo at the top (the name with the wave, as on the splash
 | Version | the workspace version: `0.0.1` for a release, `0.0.1-nightly.20261013+a15ad35` for a nightly, the night and the commit ([releasing](../releasing.md#nightly)) |
 | Build | the build string: `20261016+a15ad35`, the checked-out commit's date (UTC) and its hash to seven characters, the form a nightly's version ends in; `unknown` where there is no git, and a release's CI sets the environment instead |
 | Platform | the operating system and architecture the build is for: `linux x86_64` |
-| Licence | GPL-3.0-or-later, free software |
+| License | GPL-3.0-or-later, free software |
 
 **Copy version** puts one line on the clipboard, `Suhina 0.0.1 build 20261016+a15ad35 (linux
 x86_64)`, and the status bar says what was copied; the dialog stays open. Close, Escape and

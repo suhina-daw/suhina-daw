@@ -30,7 +30,7 @@ fn render_the_piano_roll() {
     harness.run();
     harness.get_by_label("Clip Beat B on Drums at bar 17").click();
     harness.run();
-    // A note selected, so no clipboard button is greyed out.
+    // A note selected, so no clipboard button is grayed out.
     let note = harness
         .query_all_by_label_contains("Note ")
         .next()

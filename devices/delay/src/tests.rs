@@ -111,7 +111,7 @@ fn synced_times_follow_the_tempo_and_the_offset() {
 
 #[test]
 fn the_band_pass_is_in_the_loop() {
-    // Width 1 around 1 kHz: about -1.9 dB at the centre, and once more on every repeat.
+    // Width 1 around 1 kHz: about -1.9 dB at the center, and once more on every repeat.
     let mut d = delay(&[(param::FILTER, 1.0), (param::FILTER_WIDTH, 1.0), (param::FEEDBACK, 0.5)]);
     let out = side(&run(&mut d, &sine(1_000.0, 48_000), 48_000, ProcessContext::default()), false);
     let level = |from: usize| {
@@ -122,7 +122,7 @@ fn the_band_pass_is_in_the_loop() {
     let expected = 0.5 * 0.80 / (1.0 - 0.5 * 0.80);
     let steady = level(40_000);
     assert!((steady - expected).abs() < 0.03, "{steady} against {expected}");
-    // Filter gain at the centre: corners at 707 Hz and 1414 Hz, two Butterworth slopes.
+    // Filter gain at the center: corners at 707 Hz and 1414 Hz, two Butterworth slopes.
     let (hp, lp) =
         (Coefficients::highpass(SR, 707.1, BUTTERWORTH_Q), Coefficients::lowpass(SR, 1_414.2, BUTTERWORTH_Q));
     let g = hp.magnitude(SR, 1_000.0) * lp.magnitude(SR, 1_000.0);

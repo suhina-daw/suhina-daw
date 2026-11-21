@@ -52,7 +52,7 @@ pub fn text(ui: &mut Ui, text: &str) -> Response {
 /// as they need. The response, for a tooltip.
 pub fn words(ui: &mut Ui, text: &str, ink: Color32) -> Response {
     let width = widgets::text_width(ui, text, font());
-    // Beside controls, as tall as they are, its words centred on theirs; on a line of its own, a line.
+    // Beside controls, as tall as they are, its words centered on theirs; on a line of its own, a line.
     let height = if ui.layout().is_horizontal() { HEIGHT } else { LINE };
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text));

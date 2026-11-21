@@ -197,7 +197,7 @@ fn standard_flex_row_with_auto_margin_padding_and_display_none() {
     // The auto margin takes the free space: transport and mapping sit at the right edge.
     assert_eq!(rects[3].unwrap().x + 100.0, 800.0 - 6.0);
     assert_eq!(rects[2].unwrap().x + 100.0 + 6.0, rects[3].unwrap().x);
-    assert_eq!(rects[2].unwrap().y, 290.0, "centred across the row");
+    assert_eq!(rects[2].unwrap().y, 290.0, "centered across the row");
     let narrow = layout(css, elements, 400.0);
     assert!(narrow[3].is_none(), "display:none in a media query hides it");
 }

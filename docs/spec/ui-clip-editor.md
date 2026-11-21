@@ -1439,7 +1439,7 @@ divider, **Allow stacked notes**. The settings and their choices:
 | **Double-click on a note** (Select tool) | Deletes it, Does nothing | Deletes | Deletes | Deletes |
 
 - Choosing a preset fills in every setting with its column. Changing one setting, in the menu or
-  in Settings › Keys › Mouse and key behaviour (one row per setting), makes the mode **Custom**, with the
+  in Settings › Keys › Mouse and key behavior (one row per setting), makes the mode **Custom**, with the
   other settings kept as they were. Choosing **Custom** itself changes no setting, so a preset's
   column can be the start of a mix. A Custom mix that happens to equal a preset's column stays
   Custom until the preset is chosen.

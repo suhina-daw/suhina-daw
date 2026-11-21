@@ -1722,10 +1722,10 @@ impl Tokens {
     }
 }
 
-/// The top of a row of text in `font` whose capitals sit centred in `rect`: the centre of the cap
+/// The top of a row of text in `font` whose capitals sit centered in `rect`: the center of the cap
 /// height (a capital's ink, from the font itself), not of the row, whose line gap and descent
 /// would put the text low (#1487 B12).
-fn cap_centred_top(painter: &egui::Painter, font: &egui::FontId, rect: Rect) -> f32 {
+fn cap_centered_top(painter: &egui::Painter, font: &egui::FontId, rect: Rect) -> f32 {
     let probe = painter.layout_no_wrap("H".into(), font.clone(), Color32::WHITE);
     let Some((row, glyph)) = probe.rows.first().and_then(|row| row.row.glyphs.first().map(|glyph| (row, glyph))) else {
         return rect.center().y - probe.size().y / 2.;
@@ -1786,7 +1786,7 @@ fn paint_scaled(
     loaded: &Loaded,
     tokens: &Tokens,
     scale: Vec2,
-    centre: Option<Rect>,
+    center: Option<Rect>,
 ) {
     let color = |c: [u8; 4]| tokens.color(c);
     let weight = scale.x.min(scale.y);
@@ -1887,7 +1887,7 @@ fn paint_scaled(
                     } else {
                         clip.right() - position.x
                     };
-                    let available_height = clip.bottom() - centre.map_or(position.y, |r| r.top());
+                    let available_height = clip.bottom() - center.map_or(position.y, |r| r.top());
                     let scale = (available_width / galley.size().x.max(1.))
                         .min(available_height / galley.size().y.max(1.))
                         .clamp(0., 1.);
@@ -1896,8 +1896,8 @@ fn paint_scaled(
                         galley = painter.layout_no_wrap(label, font.clone(), ink);
                     }
                 }
-                if let Some(centre) = centre {
-                    position.y = cap_centred_top(painter, &font, centre);
+                if let Some(center) = center {
+                    position.y = cap_centered_top(painter, &font, center);
                 }
                 let offset = if *align == TextAlign::Center { Vec2::new(galley.size().x / 2., 0.) } else { Vec2::ZERO };
                 crate::kit::widgets::paint_text(painter, position - offset, galley, ink);
@@ -2086,7 +2086,7 @@ fn paint_control(
     }
     let ink = scope.color_or(colours().text_value);
     // A button's or a number's text: the SDK places it by a guess at the font's height, so the
-    // host centres its capitals in the control, as the font really is (#1487 B12).
+    // host centers its capitals in the control, as the font really is (#1487 B12).
     let label_box = matches!(control.widget, Some(Widget::Button { .. } | Widget::Number { .. })).then_some(bounds);
     let mut body = None;
     let mut knob_effects = false;

@@ -40,7 +40,7 @@ fn the_strip_the_return_column_and_the_empty_space_have_menus_that_insert_tracks
 
     // The strip's background has the track's menu; it inserts a return track.
     let strip = harness.get_by_label("Drums channel strip").rect();
-    // The centre can contain a control; use the background padding beside the controls.
+    // The center can contain a control; use the background padding beside the controls.
     let at = egui::pos2(strip.right() - 2.0, strip.center().y);
     harness.hover_at(at);
     harness.run();

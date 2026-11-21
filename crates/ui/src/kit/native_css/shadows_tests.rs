@@ -34,7 +34,7 @@ fn short_meter_raster_tracks_physical_extent_with_bounded_supersampling() {
 }
 
 #[test]
-fn stretched_centres_preserve_shadow_edges_and_caster_exclusion() {
+fn stretched_centers_preserve_shadow_edges_and_caster_exclusion() {
     let coordinate = |value: f32, source: [f32; 4], target: [f32; 4], count: usize| {
         source
             .windows(2)
@@ -168,7 +168,7 @@ fn artwork_casts_its_glow_in_its_own_shape() {
     let glow =
         Shadow { offset: Vec2::ZERO, blur: 8.0, spread: 0.0, color: Color32::from_rgb(0, 200, 255), inset: false };
     let copies = glow.cast_by_artwork(&artwork, 1.0);
-    assert_eq!(copies.len(), 9, "the centre and eight taps around the blur");
+    assert_eq!(copies.len(), 9, "the center and eight taps around the blur");
     // Every copy is the artwork's own shape, tinted, and spread around it.
     assert!(copies.iter().all(|copy| copy.vertices.len() == artwork.vertices.len()));
     assert!(

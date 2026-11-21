@@ -258,8 +258,8 @@ fn the_readouts_show_the_compressing_band_and_rest_after_a_reset() {
     assert!(r[2 * MID + 1] < -5.0, "mid gain change {}", r[2 * MID + 1]);
     assert!(r[readout::OUTPUT_LEFT] > -30.0 && r[readout::OUTPUT_LEFT] <= 0.5, "meter {}", r[readout::OUTPUT_LEFT]);
     let loudest = (0..SPECTRUM_BANDS).max_by(|&a, &b| r[readout::SPECTRUM + a].total_cmp(&r[readout::SPECTRUM + b]));
-    let centre = loudest.map(|i| Analyser::<SPECTRUM_BANDS>::centre(i, SPECTRUM_LOW, SPECTRUM_HIGH));
-    assert!(centre.is_some_and(|hz| (700.0..1_400.0).contains(&hz)), "loudest band at {centre:?} Hz");
+    let center = loudest.map(|i| Analyser::<SPECTRUM_BANDS>::center(i, SPECTRUM_LOW, SPECTRUM_HIGH));
+    assert!(center.is_some_and(|hz| (700.0..1_400.0).contains(&hz)), "loudest band at {center:?} Hz");
     d.reset();
     let idle = d.readouts().unwrap_or([0.0; suhina_device_api::MAX_READOUTS]);
     assert_eq!(idle[2 * MID + 1], 0.0);

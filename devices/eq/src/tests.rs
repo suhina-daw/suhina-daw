@@ -81,7 +81,7 @@ suhina_device_api::conformance_test!(Eq::with_rate);
 #[test]
 fn every_type_has_the_measured_response() {
     // At 1 kHz, Q 0.71, +12 dB where the type has gain: the measured table (dB) at 250 Hz,
-    // 500 Hz, 707 Hz, 1 kHz, 1.41 kHz, 2 kHz and 4 kHz. The notch's centre is left out (a bin).
+    // 500 Hz, 707 Hz, 1 kHz, 1.41 kHz, 2 kHz and 4 kHz. The notch's center is left out (a bin).
     let hz = [250.0, 500.0, 707.0, 1_000.0, 1_414.0, 2_000.0, 4_000.0];
     let measured: [(usize, [f64; 7]); 8] = [
         (0, [-96.4, -48.3, -24.2, -3.01, -0.02, 0.0, 0.0]),
@@ -232,7 +232,7 @@ fn left_right_and_mid_side_use_both_curves() {
     lr.push((param::MODE, 1.0));
     let (l, r) = run(&lr, 0.1, 0.1);
     assert!((l - 0.1).abs() < 1e-4 && (r / 0.1 - 3.981).abs() < 0.01, "{l} {r}");
-    // In Mid/Side curve B is the side: a centred sound has none and passes unchanged; a sound
+    // In Mid/Side curve B is the side: a centered sound has none and passes unchanged; a sound
     // on one side only is half side, so a 1 kHz boost there spreads it.
     let mut ms = s.clone();
     ms.push((param::MODE, 2.0));

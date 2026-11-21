@@ -121,7 +121,7 @@ fn a_worker_export_keeps_the_commands_parameter_validation() {
     let mut session = crate::support::toned(one_track());
     let data = session.export_data();
     let path = temp_file("unknown-parameter", "wav");
-    let params = json!({"path": path.display().to_string(), "normalise": true});
+    let params = json!({"path": path.display().to_string(), "bogus": true});
     let direct = session.execute("project.export", &params).unwrap_err();
     let worker = suhina_session::export_from(&data, &params).unwrap_err();
     assert_eq!(worker.message(), direct.message());
