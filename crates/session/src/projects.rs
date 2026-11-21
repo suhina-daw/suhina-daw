@@ -1138,6 +1138,13 @@ impl Projects {
         self.plugin_host.editor_embed = embed;
     }
 
+    /// The ports a program holds now, by extension id, for a restart's handshake: what the
+    /// old process held, which the router keeps until its next look opens the same ports
+    /// for the new one.
+    pub(crate) fn program_ports(&self, id: &str) -> (Vec<String>, Vec<String>) {
+        self.devices.midi.held(id)
+    }
+
     /// Keeps the active project's plug-ins in line with it (ADR 0006): starts new ones in the
     /// background, takes in the ones that have started, notices crashes. Call it often from the
     /// thread that owns the projects (the window calls it every frame); commands call it too.

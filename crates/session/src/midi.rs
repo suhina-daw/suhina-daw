@@ -198,6 +198,16 @@ pub(crate) struct Scanned {
 }
 
 impl MidiInputs {
+    /// The ports a program holds now, by extension id: the raw inputs opened for it and the
+    /// outputs opened for its send-backs. What a restart's new process hears at its
+    /// handshake, before the router's next look opens the same ports for it again.
+    pub(crate) fn held(&self, id: &str) -> (Vec<String>, Vec<String>) {
+        (
+            self.raw.iter().filter(|(_, held_id, _, _)| held_id == id).map(|(name, ..)| name.clone()).collect(),
+            self.outs.iter().filter(|(_, held_id, _, _)| held_id == id).map(|(name, ..)| name.clone()).collect(),
+        )
+    }
+
     /// The system's ports for this look: the input ports there are now, with the system's id
     /// for each, then the output ports the same way. `Err` is why the ports could not be
     /// listed, said once — a system without MIDI (no sequencer) is asked again far less

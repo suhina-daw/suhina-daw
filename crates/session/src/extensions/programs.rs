@@ -287,7 +287,13 @@ pub fn runner_path() -> PathBuf {
 /// thread of its own. The handshake is the thread's; the handle hears `Running` when it is
 /// through, and everything after. A program starts with no ports open; the MIDI router sends
 /// the real ones with [`Handle::set_ports`] when it opens them.
-pub fn start(id: &str, runner: &str, folder: &Path, script: &str) -> Result<Handle, CommandError> {
+pub fn start(
+    id: &str,
+    runner: &str,
+    folder: &Path,
+    script: &str,
+    initial_ports: (Vec<String>, Vec<String>),
+) -> Result<Handle, CommandError> {
     if runner != "lua" {
         return Err(format!("the runner {runner:?} is not one Suhina ships").into());
     }
@@ -308,14 +314,16 @@ pub fn start(id: &str, runner: &str, folder: &Path, script: &str) -> Result<Hand
     let token = next_token();
     let thread = std::thread::Builder::new()
         .name("suhina-surface".into())
-        .spawn(move || run(&id, &runner, &script_path, from, &thread_events, &thread_pid))
+        .spawn(move || run(&id, &runner, &script_path, from, &thread_events, &thread_pid, initial_ports))
         .map_err(|e| crate::CommandError::new(format!("the program's thread cannot be started: {e}")))?;
     Ok(Handle { to, events, thread: Some(thread), pid, token })
 }
 
 /// The thread: start the process, watch it, restart it when it dies or hangs, until stopped.
-/// The ports the session last sent are kept across the restarts: the new process hears them
-/// at its handshake, so a crash costs no port message.
+/// `ports` begins with `initial_ports` — what the session knew the program's device held when
+/// the program was started, so its first process hears it at its handshake — and what the
+/// session sends later is kept across the restarts: the new process hears it at its
+/// handshake, so a crash costs no port message.
 fn run(
     id: &str,
     runner: &Path,
@@ -323,9 +331,10 @@ fn run(
     from: Receiver<ToProgram>,
     events: &Shared,
     pid: &std::sync::atomic::AtomicU32,
+    initial_ports: (Vec<String>, Vec<String>),
 ) {
     let mut crashes: Vec<Instant> = Vec::new();
-    let mut ports: (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    let mut ports: (Vec<String>, Vec<String>) = initial_ports;
     loop {
         // Too many crashes too close together: the restarts stop and the user decides.
         crashes.retain(|at| at.elapsed() < CRASH_WINDOW);
@@ -473,6 +482,15 @@ fn watch(
         .nonblocking(ListenerNonblockingMode::Accept)
         .create_sync()
         .map_err(|e| format!("the control socket cannot be made: {e}"))?;
+    // The session's orders that arrive before the process does wait here for the running
+    // loop, with the replies answered early in the startup loop below.
+    let mut deferred: Vec<ToProgram> = Vec::new();
+    // A stop that arrived before there is a process: nothing to end.
+    match from.try_recv() {
+        Ok(ToProgram::Stop) | Err(TryRecvError::Disconnected) => return Ok(()),
+        Ok(order) => deferred.push(order),
+        Err(TryRecvError::Empty) => {}
+    }
     let child = suhina_plugins::host_command(runner)
         .args(["--control", &address, &script.display().to_string()])
         .stdin(std::process::Stdio::null())
@@ -483,6 +501,17 @@ fn watch(
     let mut child = Child { child };
     let deadline = Instant::now() + START_TIMEOUT;
     let stream = loop {
+        // A stop while the child is still connecting: there is no link to send a quit on,
+        // so the process is ended and reaped — the watch is over the `Ok` way, not a
+        // crash — and the caller's join is not held through the connection's timeout.
+        match from.try_recv() {
+            Ok(ToProgram::Stop) | Err(TryRecvError::Disconnected) => {
+                child.stop();
+                return Ok(());
+            }
+            Ok(order) => deferred.push(order),
+            Err(TryRecvError::Empty) => {}
+        }
         match listener.accept() {
             Ok(stream) => break stream,
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
@@ -503,13 +532,14 @@ fn watch(
     // The handshake: hello each way, then the ports the session last sent — empty at a fresh
     // start, the running set at a restart — then the script's load. The socket stays
     // nonblocking: the read returns None until the runner speaks, and the loop polls. Orders
-    // that arrive while the script loads are kept for the running loop, not dropped: a Ports
-    // message sent while the script loads is the program's ports.
+    // that arrive while the script loads are kept for the running loop, not dropped, except
+    // the session's replies to requests the chunk made while loading: those go out now (the
+    // chunk cannot finish without them). A Ports message sent while the script loads is
+    // still the program's ports.
     link.send(&Message::Hello { version: PROTOCOL }).map_err(|reason| child.end(reason))?;
     link.send(&Message::Ports { inputs: ports.0.clone(), outputs: ports.1.clone() })
         .map_err(|reason| child.end(reason))?;
     let mut script_errored = false;
-    let mut deferred: Vec<ToProgram> = Vec::new();
     loop {
         match link.read().map_err(|reason| child.end(reason))? {
             Some(line) => match Message::decode(&line) {
@@ -553,7 +583,24 @@ fn watch(
                 child.stop();
                 return Ok(());
             }
-            Ok(order) => deferred.push(order),
+            Ok(order) => {
+                // A reply the session made to a request the chunk forwarded while it loads —
+                // a `suhina.read`'s or `suhina.command`'s answer, the first state of a
+                // `suhina.subscribe` — goes out now: the chunk cannot finish and send
+                // `Ready` until it hears it, and a reply held for the running loop wedges
+                // the startup until its deadline. Unsolicited input (the ports, the port
+                // messages) still waits for the ready script.
+                if matches!(
+                    order,
+                    ToProgram::CommandAnswer { .. } | ToProgram::ReadAnswer { .. } | ToProgram::StateUpdate { .. }
+                ) {
+                    if let Err(reason) = apply(order, &mut link, &mut child, ports) {
+                        return Err(child.end(format!("the runner stopped taking the host's messages: {reason}")));
+                    }
+                } else {
+                    deferred.push(order);
+                }
+            }
             Err(TryRecvError::Empty) => {}
         }
         if Instant::now() >= deadline {
@@ -778,5 +825,85 @@ impl Link {
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
             Err(e) => Err(format!("cannot read: {e}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A stop that arrives before the process exists starts nothing: the watch is over
+    /// cleanly, no child was spawned, and no crash is reported.
+    #[test]
+    fn a_stop_before_the_process_exists_starts_nothing() {
+        let (to, from) = channel();
+        to.send(ToProgram::Stop).expect("the stop is sent");
+        let events: Shared = Arc::new(Queue::default());
+        let pid = std::sync::atomic::AtomicU32::new(0);
+        let mut ports = (Vec::new(), Vec::new());
+        let watch_result =
+            watch(Path::new("/nonexistent/runner"), Path::new("script.lua"), &from, &events, &pid, &mut ports);
+        assert_eq!(watch_result, Ok(()));
+        assert_eq!(pid.load(std::sync::atomic::Ordering::Relaxed), 0, "no process was started");
+        let queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(!queue.iter().any(|event| matches!(event, Event::Crashed(_))), "{queue:?}");
+    }
+
+    /// A stop while the runner is alive but has not connected ends the start without a
+    /// crash: the caller's join is not held through the connection's timeout, the process is
+    /// ended and reaped, and the watch is over the `Ok` way.
+    #[cfg(unix)]
+    #[test]
+    fn a_stop_while_the_runner_connects_ends_the_start_without_a_crash() {
+        let dir = std::env::temp_dir().join(format!(
+            "suhina-watch-stop-{}-{}",
+            std::process::id(),
+            std::time::Instant::now().elapsed().as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("the folder is made");
+        // The fake runner says it is alive by opening the fifo — the test's blocking open is
+        // the explicit signal that the child is past its spawn — then sleeps, never
+        // connecting to the control socket.
+        let fifo = dir.join("started.fifo");
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().map(|s| s.success()).unwrap_or(false));
+        let runner = dir.join("sleeper.sh");
+        std::fs::write(&runner, format!("#!/bin/sh\necho started > '{}'\nsleep 5\n", fifo.display()))
+            .expect("the runner is written");
+        let mut permissions = std::fs::metadata(&runner).expect("the runner is there").permissions();
+        use std::os::unix::fs::PermissionsExt;
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&runner, permissions).expect("the runner is executable");
+        let script = dir.join("script.lua");
+        std::fs::write(&script, "-- unused\n").expect("the script is written");
+
+        let (to, from) = channel();
+        let events: Shared = Arc::new(Queue::default());
+        let pid = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let result: std::sync::mpsc::Receiver<Result<(), String>> = {
+            let (done, done_rx) = channel();
+            let thread_events = Arc::clone(&events);
+            let thread_pid = Arc::clone(&pid);
+            let runner = runner.clone();
+            let script = script.clone();
+            std::thread::spawn(move || {
+                let mut ports = (Vec::new(), Vec::new());
+                let _ = done.send(watch(&runner, &script, &from, &thread_events, &thread_pid, &mut ports));
+            });
+            done_rx
+        };
+        // The child announced itself: it is alive in the accept loop's window, not connected.
+        let announced = std::fs::File::open(&fifo).expect("the runner announced itself");
+        let mut announced = announced;
+        use std::io::Read;
+        let mut line = String::new();
+        announced.read_to_string(&mut line).expect("the announcement is read");
+        assert!(pid.load(std::sync::atomic::Ordering::Relaxed) != 0, "the child was spawned");
+
+        to.send(ToProgram::Stop).expect("the stop is sent");
+        let watch_result = result.recv().expect("the watch thread ended");
+        assert_eq!(watch_result, Ok(()), "the stop is not a crash");
+        let queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(!queue.iter().any(|event| matches!(event, Event::Crashed(_))), "{queue:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

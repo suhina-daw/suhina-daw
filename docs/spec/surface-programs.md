@@ -39,8 +39,12 @@ suhina-lua-runner --control <address> <script.lua>
 
 The runner connects; each side sends `hello` as its first message and refuses a peer whose
 version is not one it can speak (see *Versions*), by sending `error` and closing. Suhina's
-first message after the handshake is `ports` — possibly empty — and the runner applies it
-before the script runs, so a chunk that sends in its first lines sees its ports. After that,
+first message after the handshake is `ports` — the ports the program claims among the ones
+present, empty when none are — and the runner applies it before the script runs, so a chunk
+that sends in its first lines sees its ports. A chunk
+that reads or commands while it loads gets its answer before it can finish: Suhina sends
+the session's reply to a startup request as soon as it has it, for the chunk cannot
+complete — and say `ready` — without it. After that,
 either side may send any message at any time; a line longer than the line cap ends the
 connection.
 

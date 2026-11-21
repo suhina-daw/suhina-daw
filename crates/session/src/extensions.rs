@@ -322,6 +322,17 @@ fn default_root() -> Option<PathBuf> {
     suhina_plugins::library::settings_folder().map(|settings| settings.join("extensions"))
 }
 
+/// A surface program the scan would start now, with what its first process hears at its
+/// handshake: the ports its patterns claim among the ones present, minus what the running
+/// programs took first.
+struct Candidate {
+    id: String,
+    folder: PathBuf,
+    runner: String,
+    script: String,
+    ports: (Vec<String>, Vec<String>),
+}
+
 /// The extensions Suhina knows: the folders of the store, each read once, plus the programs
 /// running. The root is `SUHINA_EXTENSIONS` when it names one; otherwise the caller's settings
 /// folder's `extensions/` ([`Self::set_root`]), and until then the system's settings folder's.
@@ -674,51 +685,75 @@ impl Extensions {
     /// caller knows the claims moved; a start that fails is said once on the extension and
     /// not retried by the scan until the store re-reads.
     pub(crate) fn start_for_ports(&mut self, inputs: &[String], outputs: &[String]) -> Vec<String> {
-        // The candidates first: starting a program moves `self`, so the match runs on what
-        // the store holds now, and each start is applied by id after.
-        let candidates: Vec<(String, String, String, String, Vec<String>)> = self
-            .known
-            .iter()
-            .filter(|extension| {
-                extension.state == State::Available
-                    && extension.manifest.is_some()
-                    && !self.auto_blocked.contains(&extension.id)
-            })
-            .filter_map(|extension| {
-                let manifest = extension.manifest.as_ref()?;
-                let patterns = manifest.ports.as_ref()?;
-                let runner = manifest.runner.as_ref()?;
-                let script = manifest.script()?.to_string();
-                Some((
-                    extension.id.clone(),
-                    extension.folder.display().to_string(),
-                    runner.clone(),
-                    script,
-                    patterns.clone(),
-                ))
-            })
-            .collect();
-        let mut started = Vec::new();
-        for (id, folder, runner, script, patterns) in candidates {
-            let answers = |name: &String| patterns.iter().any(|pat| port_matches(pat, name));
-            if !inputs.iter().any(answers) && !outputs.iter().any(answers) {
+        // One pass in the store's order, the way the router's first take goes: a running
+        // program's patterns take their ports first, and what is left that matches a
+        // candidate's patterns is the snapshot its first process hears at its handshake —
+        // a controller's script starts already knowing its ports' names, so a chunk that
+        // sends sees its outputs; with no port present the snapshot is empty and no start
+        // happens. The starts are applied by id after, since starting one moves `self`.
+        let mut taken: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut candidates: Vec<Candidate> = Vec::new();
+        for extension in &self.known {
+            // A running program's patterns take their ports first, the way the router's
+            // first take goes; a crashed or refused one holds none (the router released
+            // them), so it takes nothing here either.
+            if extension.state == State::Running && !extension.script_stopped {
+                if let Some(patterns) = extension.manifest.as_ref().and_then(|manifest| manifest.ports.as_ref()) {
+                    let held: Vec<String> = inputs
+                        .iter()
+                        .chain(outputs.iter())
+                        .filter(|name| !taken.contains(*name) && patterns.iter().any(|pat| port_matches(pat, name)))
+                        .cloned()
+                        .collect();
+                    taken.extend(held);
+                }
                 continue;
             }
-            let folder = PathBuf::from(&folder);
-            match programs::start(&id, &runner, &folder, &script) {
+            if extension.state != State::Available || self.auto_blocked.contains(&extension.id) {
+                continue;
+            }
+            let Some(manifest) = extension.manifest.as_ref() else { continue };
+            let Some(patterns) = manifest.ports.as_ref() else { continue };
+            let free = |name: &&String| !taken.contains(*name) && patterns.iter().any(|pat| port_matches(pat, name));
+            let claim_inputs: Vec<String> = inputs.iter().filter(free).cloned().collect();
+            let claim_outputs: Vec<String> = outputs.iter().filter(free).cloned().collect();
+            taken.extend(claim_inputs.iter().cloned());
+            taken.extend(claim_outputs.iter().cloned());
+            let Some(runner) = manifest.runner.as_ref() else { continue };
+            let Some(script) = manifest.script().map(str::to_string) else { continue };
+            candidates.push(Candidate {
+                id: extension.id.clone(),
+                folder: extension.folder.clone(),
+                runner: runner.clone(),
+                script,
+                ports: (claim_inputs, claim_outputs),
+            });
+        }
+        let mut started = Vec::new();
+        for candidate in candidates {
+            if candidate.ports.0.is_empty() && candidate.ports.1.is_empty() {
+                continue;
+            }
+            match programs::start(
+                &candidate.id,
+                &candidate.runner,
+                &candidate.folder,
+                &candidate.script,
+                candidate.ports,
+            ) {
                 Ok(handle) => {
-                    if let Some(known) = self.known.iter_mut().find(|known| known.id == id) {
+                    if let Some(known) = self.known.iter_mut().find(|known| known.id == candidate.id) {
                         known.program = Some(handle);
                         known.state = State::Running;
                         known.last_error = None;
                     }
-                    started.push(id);
+                    started.push(candidate.id);
                 }
                 Err(reason) => {
-                    if let Some(known) = self.known.iter_mut().find(|known| known.id == id) {
+                    if let Some(known) = self.known.iter_mut().find(|known| known.id == candidate.id) {
                         known.last_error = Some(reason.to_string());
                     }
-                    self.auto_blocked.insert(id);
+                    self.auto_blocked.insert(candidate.id);
                 }
             }
         }
@@ -895,7 +930,11 @@ fn restart(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
     let Some(script) = manifest.script() else {
         return Err(format!("{id:?}'s manifest names no program file").into());
     };
-    let handle = programs::start(id, runner, &folder, script)?;
+    // The old process's ports are what the new one hears at its handshake: its device is
+    // where it was a moment ago, and the router opens the same ports for the new handle at
+    // its next look.
+    let ports = projects.program_ports(id);
+    let handle = programs::start(id, runner, &folder, script, ports)?;
     let extension = projects.extensions.known_mut(id)?;
     extension.manifest = Some(manifest);
     extension.value = Some(value);

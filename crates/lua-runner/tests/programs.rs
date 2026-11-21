@@ -66,6 +66,18 @@ suhina.on_state(function(token, value)
 end)
 suhina.subscribe("project.launcher")
 "#;
+/// Reads while it loads — in the chunk, before `ready` — and sends what it read: the load
+/// only finishes when the session's answer has come, and the pad says the read was a real
+/// one (the tracks' count as the value byte).
+const SCRIPT_READ_AT_LOAD: &str = r#"
+local value, err = suhina.read("project.launcher")
+if err ~= nil then
+    suhina.send("APC out", suhina.midi.cc(1, 9, 9))
+    return
+end
+local columns = value and #value.tracks or 0
+suhina.send("APC out", suhina.midi.cc(1, 1, columns))
+"#;
 
 impl Fixture {
     /// Makes `id` with `script` as its whole script, and a `Projects` whose extensions store
@@ -263,6 +275,21 @@ fn a_program_whose_device_leaves_keeps_running() {
     fixture.midi.inputs.lock().unwrap().retain(|(p, _)| p != "APC in");
     fixture.projects.execute("midi.inputs", &json!({})).expect("listed");
     assert!(fixture.midi.was_closed("APC in"), "the port closed with the device");
+    let listed = fixture.projects.execute("extensions.list", &json!({})).expect("listed");
+    let entry = find(&listed, &fixture.id).expect("listed");
+    assert_eq!(entry["state"], "running", "{entry}");
+}
+
+/// A chunk that reads while it loads finishes: the session's answer to a startup request
+/// reaches the chunk before `ready` — it cannot complete without it — so the load ends, and
+/// the send the chunk made with what it read is written out before the program is running.
+#[test]
+fn a_chunk_that_reads_while_it_loads_gets_its_answer() {
+    let mut fixture = Fixture::claiming("readchunk", SCRIPT_READ_AT_LOAD);
+    // The auto-start began at construction; the looks the pump makes service the chunk's
+    // read, the answer goes out the moment the session has it, and the chunk finishes with
+    // it — its pad says the read was real: the blank project's four tracks as the value byte.
+    fixture.pump_until(|f| written_contains(f, [0xB1, 1, 4]), "the chunk's send-back with what it read");
     let listed = fixture.projects.execute("extensions.list", &json!({})).expect("listed");
     let entry = find(&listed, &fixture.id).expect("listed");
     assert_eq!(entry["state"], "running", "{entry}");
