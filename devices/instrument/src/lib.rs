@@ -23,6 +23,7 @@ use suhina_dsp::{
             Controls, MAX_VOICE_SINES, MODEL_MAGIC, MODEL_REVISION as SET_MODEL_REVISION, ModelSet, Voice as SetVoice,
         },
         profile::{ModalProfile, PROFILE_MODEL_REVISION},
+        sustain::Performer,
     },
 };
 
@@ -205,6 +206,8 @@ struct Voice {
     /// Revision 4: (recording, read position, step) of the attack still playing.
     attack: Option<(usize, f64, f64)>,
     attack_gain: f32,
+    /// Revision 4: the held layer (vibrato, per-partial onsets, noise) playing on the fitted body.
+    layer: Performer,
     /// Revision 4: the amplitude envelope's attack, decay and sustain; its release is the damper.
     envelope: LinearEnvelope,
     fitted_voice: bool,
@@ -233,6 +236,7 @@ impl Default for Voice {
             profile: None,
             attack: None,
             attack_gain: 1.0,
+            layer: Performer::default(),
             envelope: LinearEnvelope::default(),
             fitted_voice: false,
             damped: false,
@@ -491,6 +495,9 @@ impl Instrument {
         voice.profile = None;
         voice.attack = self.set_voice.attack.map(|(recording, step)| (recording, 0.0, step));
         voice.attack_gain = self.set_voice.attack_gain as f32;
+        // Seeded by the note's serial and key, so a render repeats exactly.
+        let seed = (self.serial as u32).wrapping_mul(0x0100_0193) ^ u32::from(key);
+        voice.layer.start(&self.set_voice.held, self.sample_rate, self.bend_semitones, seed);
         voice.envelope.start();
         voice.fitted_voice = true;
         voice.damped = false;
@@ -534,6 +541,7 @@ impl Instrument {
         if same.is_none() {
             voice.start_steal_fade(self.sample_rate);
             voice.body = Body::Bar(StruckBar::default());
+            voice.layer = Performer::default();
             voice.pan = bar_pan(key, self.params.get(param::STEREO_WIDTH));
         }
         if let Body::Bar(bar) = &mut voice.body {
@@ -607,6 +615,7 @@ impl Instrument {
             bank.strike(self.sample_rate, &modes);
             bank.transpose(self.sample_rate, self.bend_semitones);
             voice.body = Body::Struck(bank);
+            voice.layer = Performer::default();
             voice.pan = (1.0, 1.0);
             voice.profile = None;
             voice.attack = None;
@@ -647,7 +656,7 @@ struct Damper {
 impl Voice {
     /// Whether any modal layer of this voice still sounds.
     fn sounding(&self) -> bool {
-        self.body.is_active() || self.attack.is_some() || self.damper.is_some()
+        self.body.is_active() || self.attack.is_some() || self.damper.is_some() || self.layer.sounding()
     }
 
     /// A revision-4 damper lands once: every sine's T60 is capped at `release`, and its noise
@@ -657,8 +666,11 @@ impl Voice {
             return;
         }
         self.damped = true;
+        // A held recording's measured release, scaled by Release against its default, caps the
+        // sines instead; its noise layer fades with the same T60.
+        let cap = self.layer.release(release);
         if let Body::Fitted(bank) = &mut self.body {
-            bank.cap_decay(sample_rate, release);
+            bank.cap_decay(sample_rate, cap);
         }
         let level = (f64::from(self.amplitude) * self.envelope.value() * noise * 0.05).abs() as f32;
         let total = (0.04 * sample_rate) as u32;
@@ -828,10 +840,15 @@ impl Device for Instrument {
                     voice.body.reset();
                     voice.attack = None;
                     voice.damper = None;
+                    voice.layer = Performer::default();
                 }
                 let shape =
                     if voice.fitted_voice { voice.envelope.next(&envelope, self.sample_rate) as f32 } else { 1.0 };
-                let mut output = voice.body.next_sample();
+                // Without a held layer the performer plays the fitted body unchanged.
+                let mut output = match &mut voice.body {
+                    Body::Fitted(bank) => voice.layer.next(bank),
+                    body => body.next_sample(),
+                };
                 let mut attack_done = false;
                 if let Some((recording, position, step)) = voice.attack.as_mut() {
                     let attack = set.map_or(&[][..], |set| set.attack(*recording));
@@ -948,7 +965,12 @@ impl Device for Instrument {
                 self.bend_semitones = f64::from(value.clamp(-1.0, 1.0)) * 2.0;
                 for voice in &mut self.voices {
                     if voice.body.is_active() {
-                        voice.body.transpose(self.sample_rate, self.bend_semitones);
+                        match &mut voice.body {
+                            Body::Fitted(bank) if voice.layer.is_active() => {
+                                voice.layer.bend(bank, self.bend_semitones)
+                            }
+                            body => body.transpose(self.sample_rate, self.bend_semitones),
+                        }
                     }
                 }
             }

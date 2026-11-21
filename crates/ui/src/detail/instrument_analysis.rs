@@ -144,6 +144,21 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                         if let Some(recording) = report.recording.as_ref().filter(|r| !r.attack.is_empty()) {
                             summary.push_str(&format!(" · attack {:.0} ms", recording.attack.len() as f64 * 1000.0 / f64::from(recording.attack_rate.max(1))));
                         }
+                        // The held layer of a bowed, blown or sung recording.
+                        if let Some(held) = report.recording.as_ref().and_then(|r| r.sustain) {
+                            if held.vibrato_hz > 0.0 {
+                                summary.push_str(&format!(" · vibrato {:.1} Hz ±{:.0} cents", held.vibrato_hz, held.vibrato_cents));
+                            }
+                            if held.tremolo_hz > 0.0 {
+                                summary.push_str(&format!(" · tremolo {:.1} Hz", held.tremolo_hz));
+                            }
+                            if held.noise.iter().any(|v| *v > 0.0) {
+                                summary.push_str(" · held noise");
+                            }
+                            if held.release_seconds > 0.0 {
+                                summary.push_str(&format!(" · release {:.2} s", held.release_seconds));
+                            }
+                        }
                         summary.push_str(&format!(" · root {} · envelope error ≤ {:.2} dB", key_name(profile.reference_key()), error));
                         ui.label(summary)
                                 .on_hover_text(format!("Largest mode RMS error on held-out time windows in this recording. This is not a realism score or independent note/velocity validation. Channel {}; frames {}..{}; measured {:.2} seconds. Phases and the attack are measured from this recording; room response is not separated.",report.channel+1,report.range.start,report.range.end,report.analyzed_seconds));

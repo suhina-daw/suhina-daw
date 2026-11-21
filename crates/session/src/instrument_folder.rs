@@ -238,6 +238,7 @@ mod tests {
             modes: vec![ModelMode::plain(1.0, 0.5, 1.0)],
             attack_rate: 0,
             attack: Vec::new(),
+            sustain: None,
         }
     }
 

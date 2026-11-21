@@ -11,6 +11,7 @@ use suhina_dsp::{Resampler, pitch::Yin};
 pub mod compare;
 mod key;
 pub mod modal;
+mod sustain;
 
 pub use key::{KeyCandidate, KeyMode, KeyProposal, MIN_KEY_CORRELATION};
 

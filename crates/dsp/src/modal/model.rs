@@ -6,9 +6,14 @@
 //! `docs/spec/instrument-modal-profile.md` › Fitted model sets.
 
 use super::Mode;
+use super::sustain::{
+    ENVELOPE_POINTS, Held, MAX_CORRECTION_DB, NOISE_BANDS, SUSTAIN_FIELDS, Sustain, envelope, envelope_at,
+};
 use std::f64::consts::PI;
 
 pub const MODEL_SCHEMA_VERSION: u16 = 2;
+/// Schema of a set whose recordings carry held layers: schema 2 plus a trailer.
+pub const MODEL_SCHEMA_HELD: u16 = 3;
 pub const MODEL_REVISION: u16 = 4;
 pub const MAX_RECORDINGS: usize = 32;
 /// Sources a set can tell apart for morphing (ten pianos are ten sources).
@@ -70,6 +75,9 @@ pub struct ModelRecording {
     /// Attack sample rate; 0 with an empty attack.
     pub attack_rate: u32,
     pub attack: Vec<f32>,
+    /// Vibrato, onsets, noise, release and the body envelope of a held (bowed, blown, sung)
+    /// recording; none for a struck one. See `instrument-sustained-models.md`.
+    pub sustain: Option<Sustain>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,6 +163,9 @@ impl ModelRecording {
         if !attack_ok {
             return fail("an attack needs a rate of 1000..48000 Hz, at most 0.25 s and finite samples");
         }
+        if let Some(sustain) = &self.sustain {
+            sustain.validate(self.modes.len()).map_err(ModelError)?;
+        }
         Ok(())
     }
 }
@@ -208,6 +219,8 @@ pub struct Voice {
     pub attack: Option<(usize, f64)>,
     /// What the attack is multiplied by: harder strikes than the recording knock more.
     pub attack_gain: f64,
+    /// The fused held layer, per sine; inactive for struck recordings.
+    pub held: Held,
 }
 
 impl Default for Voice {
@@ -219,6 +232,7 @@ impl Default for Voice {
             level: 0.0,
             attack: None,
             attack_gain: 1.0,
+            held: Held::NONE,
         }
     }
 }
@@ -236,6 +250,8 @@ pub struct ModelSet {
     /// Morph rank of each source present, or `None`; and how many sources are present.
     source_ranks: [Option<usize>; MAX_SOURCES],
     sources: usize,
+    /// Each recording's spectral envelope (dB on the 1/8-octave ratio grid).
+    envelopes: Vec<[f32; ENVELOPE_POINTS]>,
 }
 
 impl ModelSet {
@@ -243,7 +259,11 @@ impl ModelSet {
         if recordings.is_empty() || recordings.len() > MAX_RECORDINGS {
             return Err(ModelError("a model set needs 1..32 recordings"));
         }
-        for recording in &recordings {
+        for recording in &mut recordings {
+            // A layer of zeros is no layer, so the encoding stays canonical.
+            if recording.sustain.is_some_and(|s| s.is_empty()) {
+                recording.sustain = None;
+            }
             recording.validate()?;
         }
         recordings
@@ -270,7 +290,11 @@ impl ModelSet {
                 sources += 1;
             }
         }
-        Ok(Self { recordings, matches, decay_laws, source_ranks, sources })
+        let envelopes = recordings
+            .iter()
+            .map(|r| envelope(&r.modes.iter().map(|m| (m.ratio, m.magnitude)).collect::<Vec<_>>()))
+            .collect();
+        Ok(Self { recordings, matches, decay_laws, source_ranks, sources, envelopes })
     }
 
     /// This set with one more recording, validated as a whole.
@@ -289,7 +313,8 @@ impl ModelSet {
     pub fn recording_count(bytes: &[u8]) -> Option<usize> {
         let header = bytes.get(..16)?;
         (header.get(..8) == Some(MODEL_MAGIC.as_slice())
-            && header.get(8..10) == Some(MODEL_SCHEMA_VERSION.to_le_bytes().as_slice())
+            && (header.get(8..10) == Some(MODEL_SCHEMA_VERSION.to_le_bytes().as_slice())
+                || header.get(8..10) == Some(MODEL_SCHEMA_HELD.to_le_bytes().as_slice()))
             && header.get(10..12) == Some(MODEL_REVISION.to_le_bytes().as_slice()))
         .then(|| usize::from(header.get(12).copied().unwrap_or(0)))
         .filter(|count| (1..=MAX_RECORDINGS).contains(count))
@@ -301,8 +326,10 @@ impl ModelSet {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(16 + self.recordings.len() * (RECORDING_HEADER + 2048));
+        let held = self.recordings.iter().any(|r| r.sustain.is_some());
+        let schema = if held { MODEL_SCHEMA_HELD } else { MODEL_SCHEMA_VERSION };
         bytes.extend_from_slice(MODEL_MAGIC);
-        bytes.extend_from_slice(&MODEL_SCHEMA_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&schema.to_le_bytes());
         bytes.extend_from_slice(&MODEL_REVISION.to_le_bytes());
         bytes.extend_from_slice(&[self.recordings.len() as u8, 0, 0, 0]);
         for recording in &self.recordings {
@@ -330,16 +357,31 @@ impl ModelSet {
                 bytes.extend_from_slice(&sample.to_le_bytes());
             }
         }
+        // Schema 3: every recording's held layer, flagged, after all recordings.
+        if held {
+            for recording in &self.recordings {
+                match &recording.sustain {
+                    Some(sustain) => {
+                        bytes.extend_from_slice(&[1, 0, 0, 0]);
+                        for value in sustain.fields() {
+                            bytes.extend_from_slice(&value.to_le_bytes());
+                        }
+                    }
+                    None => bytes.extend_from_slice(&[0, 0, 0, 0]),
+                }
+            }
+        }
         bytes
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, ModelError> {
         let header = ModelError("unsupported or malformed fitted model set");
         let mut reader = Reader { bytes, at: 0 };
-        if reader.take(8)? != MODEL_MAGIC.as_slice()
-            || reader.u16()? != MODEL_SCHEMA_VERSION
-            || reader.u16()? != MODEL_REVISION
-        {
+        if reader.take(8)? != MODEL_MAGIC.as_slice() {
+            return Err(header);
+        }
+        let schema = reader.u16()?;
+        if !matches!(schema, MODEL_SCHEMA_VERSION | MODEL_SCHEMA_HELD) || reader.u16()? != MODEL_REVISION {
             return Err(header);
         }
         let count = usize::from(reader.u8()?);
@@ -381,7 +423,30 @@ impl ModelSet {
             for _ in 0..attack_len {
                 attack.push(f32::from_le_bytes(reader.array()?));
             }
-            recordings.push(ModelRecording { key, source, velocity, level, modes: parsed, attack_rate, attack });
+            recordings.push(ModelRecording {
+                key,
+                source,
+                velocity,
+                level,
+                modes: parsed,
+                attack_rate,
+                attack,
+                sustain: None,
+            });
+        }
+        if schema == MODEL_SCHEMA_HELD {
+            for recording in &mut recordings {
+                let flag = reader.take(4)?;
+                if flag == [1, 0, 0, 0] {
+                    let mut fields = [0.0_f32; SUSTAIN_FIELDS];
+                    for field in &mut fields {
+                        *field = f32::from_le_bytes(reader.array()?);
+                    }
+                    recording.sustain = Some(Sustain::from_fields(&fields));
+                } else if flag != [0, 0, 0, 0] {
+                    return Err(header);
+                }
+            }
         }
         if reader.at != bytes.len() {
             return Err(header);
@@ -447,10 +512,15 @@ impl ModelSet {
         }
         let dispersion = |s: f64, r: f64| ((1.0 + s * r * r) / (1.0 + s)).sqrt();
         let excitation = |n: usize, strike: f64| 0.25 + 0.75 * (PI * n as f64 * strike).sin().abs();
-        let mut candidates = [(SILENT, 0.0_f64, 0.0_f64); CANDIDATE_SINES];
+        // Body envelope: a held recording's spectral envelope stays in Hz.
+        let body_fixed = anchor_recording.sustain.map_or(0.0, |s| f64::from(s.body_fixed));
+        let transpose = 2.0_f64.powf((f64::from(key) - f64::from(anchor_recording.key)) / 12.0);
+        let body = self.envelopes.get(anchor);
+        let mut candidates = [Candidate::SILENT; CANDIDATE_SINES];
         let mut count = 0;
         for (index, anchor_mode) in anchor_recording.modes.iter().enumerate() {
             let mut fused = Fused::default();
+            let mut held = HeldMode::default();
             for &(recording, weight) in participants.clone() {
                 let matched = if recording == anchor {
                     Some(index)
@@ -469,12 +539,23 @@ impl ModelSet {
                     .zip(self.decay_laws.get(recording))
                     .map_or(1.0, |(r, law)| 2.0_f64.powf((f64::from(key) - f64::from(r.key)) / 12.0 * law));
                 fused.add(mode, weight / total, decay_scale);
+                if let (Some(j), Some(_)) = (matched, mode) {
+                    held.add(self.recordings.get(recording).and_then(|r| r.sustain.as_ref()), j, weight / total);
+                }
             }
             let Some(mode) = fused.mode(anchor_mode.phase) else { continue };
+            let held = held.mode();
+            let correction = match body {
+                Some(table) if body_fixed > 0.0 => (body_fixed
+                    * (envelope_at(table, mode.ratio * transpose) - envelope_at(table, mode.ratio)))
+                .clamp(-MAX_CORRECTION_DB, MAX_CORRECTION_DB),
+                _ => 0.0,
+            };
             let ratio = mode.ratio * dispersion(controls.structure, mode.ratio) / dispersion(0.002, mode.ratio);
             let decay_scale = controls.decay / 2.0;
             let magnitude = mode.magnitude * mode.ratio.powf(tilt) * excitation(index + 1, controls.strike)
-                / excitation(index + 1, 0.25);
+                / excitation(index + 1, 0.25)
+                * 10.0_f64.powf(correction / 20.0);
             let frequency = fundamental * ratio;
             let slow = magnitude * (1.0 - mode.fast_share);
             // The soft pedal strikes fewer strings: no beating partner.
@@ -493,25 +574,142 @@ impl ModelSet {
                     && frequency_hz < sample_rate * 0.45
                     && let Some(slot) = candidates.get_mut(count)
                 {
-                    *slot = (Mode { frequency_hz, decay_seconds, amplitude }, phase, amplitude * decay_seconds.sqrt());
+                    *slot = Candidate {
+                        mode: Mode { frequency_hz, decay_seconds, amplitude },
+                        phase,
+                        score: amplitude * decay_seconds.sqrt(),
+                        held,
+                    };
                     count += 1;
                 }
             }
         }
         // Keep the strongest sines, by amplitude times the square root of T60 (in place).
         let used = candidates.get_mut(..count).unwrap_or_default();
-        used.sort_unstable_by(|a, b| b.2.total_cmp(&a.2));
+        used.sort_unstable_by(|a, b| b.score.total_cmp(&a.score));
         out.count = count.min(controls.sines.min(MAX_VOICE_SINES));
-        for ((mode, phase), (candidate, candidate_phase, _)) in
-            out.modes.iter_mut().zip(out.phases.iter_mut()).zip(used.iter()).take(out.count)
-        {
-            *mode = *candidate;
-            *phase = *candidate_phase;
+        for (index, candidate) in used.iter().take(out.count).enumerate() {
+            if let (Some(mode), Some(phase)) = (out.modes.get_mut(index), out.phases.get_mut(index)) {
+                *mode = candidate.mode;
+                *phase = candidate.phase;
+            }
+            let [onset, rise, slope, curve] = candidate.held;
+            let h = &mut out.held;
+            for (array, value) in
+                [(&mut h.onset, onset), (&mut h.rise, rise), (&mut h.am_slope, slope), (&mut h.am_curve, curve)]
+            {
+                if let Some(slot) = array.get_mut(index) {
+                    *slot = value;
+                }
+            }
         }
+        self.fuse_held(participants, total, anchor_recording, &mut out.held);
         if !anchor_recording.attack.is_empty() && sample_rate > 0.0 {
             let transpose = 2.0_f64.powf((f64::from(key) - f64::from(anchor_recording.key)) / 12.0);
             out.attack = Some((anchor, f64::from(anchor_recording.attack_rate) / sample_rate * transpose));
         }
+    }
+}
+
+impl ModelSet {
+    /// The note-wide part of the held layer: weighted means over the participants (a recording
+    /// without a layer counts zero), rates and the drift bandwidth as weighted geometric means
+    /// over those that have them, the release when those hold at least half the weight.
+    fn fuse_held<'a>(
+        &self,
+        participants: impl Iterator<Item = &'a (usize, f64)>,
+        total: f64,
+        anchor: &ModelRecording,
+        out: &mut Held,
+    ) {
+        let mut mean = [0.0_f64; 7 + NOISE_BANDS];
+        let mut geometric = [(0.0_f64, 0.0_f64); 4];
+        let mut any = false;
+        for &(index, weight) in participants {
+            let w = weight / total;
+            let Some(sustain) = self.recordings.get(index).and_then(|r| r.sustain.as_ref()) else { continue };
+            any = true;
+            let values = [
+                sustain.vibrato_cents,
+                sustain.vibrato_delay,
+                sustain.vibrato_fade,
+                sustain.tremolo_depth,
+                sustain.drift_cents,
+                sustain.noise_onset,
+                sustain.noise_rise,
+            ];
+            for (slot, value) in mean.iter_mut().zip(values.iter().chain(&sustain.noise)) {
+                *slot += w * f64::from(*value);
+            }
+            let rates = [sustain.vibrato_hz, sustain.tremolo_hz, sustain.drift_hz, sustain.release_seconds];
+            for ((sum, weight_sum), rate) in geometric.iter_mut().zip(rates) {
+                if rate > 0.0 {
+                    *sum += w * f64::from(rate).ln();
+                    *weight_sum += w;
+                }
+            }
+        }
+        if !any {
+            return;
+        }
+        let rate = |(sum, weight): (f64, f64)| if weight > 0.0 { (sum / weight).exp() } else { 0.0 };
+        let [vibrato_hz, tremolo_hz, drift_hz, release] = geometric;
+        let [cents, delay, fade, tremolo, drift, noise_onset, noise_rise, noise @ ..] = mean;
+        out.vibrato_hz = rate(vibrato_hz);
+        // Depths are weighted over every participant, so they fade with the weight of the
+        // recordings that have them; delay and fade over those recordings only.
+        let vibrato_weight = vibrato_hz.1;
+        out.vibrato_cents = if out.vibrato_hz > 0.0 { cents } else { 0.0 };
+        out.vibrato_delay = if vibrato_weight > 0.0 { delay / vibrato_weight } else { 0.0 };
+        out.vibrato_fade = if vibrato_weight > 0.0 { fade / vibrato_weight } else { 0.0 };
+        out.tremolo_hz = rate(tremolo_hz);
+        out.tremolo_depth = if out.tremolo_hz > 0.0 { tremolo } else { 0.0 };
+        out.drift_hz = rate(drift_hz);
+        out.drift_cents = if out.drift_hz > 0.0 { drift } else { 0.0 };
+        out.release_seconds = if release.1 >= 0.5 { rate(release) } else { 0.0 };
+        out.noise_onset = noise_onset;
+        out.noise_rise = noise_rise;
+        out.noise = noise;
+        out.attack_seconds = anchor.sustain.map_or(0.0, |s| f64::from(s.attack_seconds));
+    }
+}
+
+/// One sine a note may play, with its mode's held values (onset, rise, slope, curvature).
+#[derive(Clone, Copy)]
+struct Candidate {
+    mode: Mode,
+    phase: f64,
+    score: f64,
+    held: [f32; 4],
+}
+
+impl Candidate {
+    const SILENT: Self = Self { mode: SILENT, phase: 0.0, score: 0.0, held: [0.0; 4] };
+}
+
+/// Weighted per-mode held values over the matched modes; a recording without a layer counts
+/// zero.
+#[derive(Default)]
+struct HeldMode {
+    weight: f64,
+    sums: [f64; 4],
+}
+
+impl HeldMode {
+    fn add(&mut self, sustain: Option<&Sustain>, mode: usize, weight: f64) {
+        self.weight += weight;
+        let Some(s) = sustain else { return };
+        let at = |a: &[f32; MAX_MODEL_MODES]| f64::from(a.get(mode).copied().unwrap_or(0.0));
+        for (sum, value) in self.sums.iter_mut().zip([at(&s.onset), at(&s.rise), at(&s.am_slope), at(&s.am_curve)]) {
+            *sum += weight * value;
+        }
+    }
+
+    fn mode(&self) -> [f32; 4] {
+        if self.weight <= 0.0 {
+            return [0.0; 4];
+        }
+        self.sums.map(|sum| (sum / self.weight) as f32)
     }
 }
 

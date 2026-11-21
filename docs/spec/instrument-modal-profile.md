@@ -223,11 +223,18 @@ The fitted attack is the recorded hammer; these settings shape what a single rec
 show. Sympathetic coupling between particular strings, the damper's recorded sound and
 half-pedalling remain open in #1624.
 
-**Budget.** A revision-4 voice holds 128 resonators, an attack read position and its envelope
-in place of the 16 resonators of revisions 1 and 2 or a bar body: under 8 KiB per voice, under
-128 KiB for 16 voices, within the runtime's 256 KiB inline target. The set itself (at most 1 MiB)
-is shared and prepared off the audio thread. Note-on fuses at most 32 recordings of 64 modes
-without allocating.
+**Held layers.** A recording may carry a held layer (vibrato, per-mode onsets and
+vibrato-coupled levels, band noise, a measured release and a body envelope that stays in Hz).
+A set with one encodes as schema 3: schema 2 followed by a flagged layer per recording; a set
+without encodes byte for byte as schema 2. A measured release sets the damper's T60 cap (scaled
+by Release against its default 0.25 s). The layer, its fusion and how a voice plays it are in
+[held tones](instrument-sustained-models.md).
+
+**Budget.** A revision-4 voice holds 128 resonators, an attack read position, its envelope and
+its held layer's state (per-sine levels, ramps and couplings, eleven noise filters) beside the 16
+resonators of revisions 1 and 2 or a bar body: under 12 KiB per voice, under 192 KiB for 16 voices, within the
+runtime's 256 KiB inline target. The set itself (at most 1 MiB) is shared and prepared off the
+audio thread. Note-on fuses at most 32 recordings of 64 modes without allocating.
 
 **Commands.** `instrument.acceptFit` adopts a set with the fitted recording as its only member
 (revision 4, Source Modal, full modes, neutral model controls, Attack 0, Sustain 1, Source morph

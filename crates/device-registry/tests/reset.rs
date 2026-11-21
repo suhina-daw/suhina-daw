@@ -73,9 +73,38 @@ fn the_counter_counts_this_threads_allocations() {
 
 #[test]
 fn instrument_render_events_and_reset_allocate_and_free_nothing() {
-    for profile in [false, true] {
+    for model in 0..3 {
         let mut instrument = with_test_sample(create("instrument", 48000.0).unwrap());
-        if profile {
+        if model == 2 {
+            // A fitted set with a held layer: vibrato, drift, onsets, noise and a release.
+            use suhina_dsp::modal::{
+                model::{ModelMode, ModelRecording, ModelSet},
+                sustain::Sustain,
+            };
+            let mut layer = Sustain {
+                vibrato_hz: 5.5,
+                vibrato_cents: 30.0,
+                drift_cents: 2.0,
+                drift_hz: 2.0,
+                release_seconds: 0.4,
+                body_fixed: 1.0,
+                ..Sustain::default()
+            };
+            layer.noise = [1e-4; suhina_dsp::modal::sustain::NOISE_BANDS];
+            layer.rise[0] = 0.1;
+            let recording = ModelRecording {
+                key: 60,
+                source: 0,
+                velocity: 0.8,
+                level: 0.5,
+                modes: vec![ModelMode::plain(1.0, 0.5, 60.0), ModelMode::plain(2.0, 0.3, 60.0)],
+                attack_rate: 0,
+                attack: Vec::new(),
+                sustain: Some(layer),
+            };
+            instrument.load_model_state(&ModelSet::new(vec![recording]).unwrap().encode()).unwrap();
+        }
+        if model == 1 {
             use suhina_dsp::modal::profile::{ModalProfile, ProfileMode};
             let modes: Vec<_> = (1..=16)
                 .map(|index| ProfileMode {
