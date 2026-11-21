@@ -2419,7 +2419,13 @@ pub(crate) fn show(
     let stretch = if (stretch - Vec2::splat(1.0)).length() < 0.001 { Vec2::splat(1.0) } else { stretch };
     // Shared by a device's compact and expanded canvases, but never part of its sound state.
     let page_id = crate::detail::detail_view::list_fold_id(ui, track, at).with("device-local-page");
-    let page = ui.ctx().data(|data| data.get_temp::<u16>(page_id)).unwrap_or(0).min(suhina_device_sdk::ui::MAX_PAGE);
+    // The page picked this run, or else the one the project keeps for the device.
+    let saved = parameters
+        .iter()
+        .rfind(|p| p.id == crate::detail::detail_view::SAVED_PAGE_ID)
+        .map_or(0, |p| p.value.clamp(0.0, f64::from(suhina_device_sdk::ui::MAX_PAGE)) as u16);
+    let page =
+        ui.ctx().data(|data| data.get_temp::<u16>(page_id)).unwrap_or(saved).min(suhina_device_sdk::ui::MAX_PAGE);
     let page_value = GraphParameter::host_value(suhina_device_sdk::ui::PAGE_ID, f32::from(page));
     let mut values = Values { time: ui.input(|i| i.time), ..Values::new(parameters) };
     values.by_id.insert(suhina_device_sdk::ui::PAGE_ID, &page_value);
@@ -2697,7 +2703,13 @@ pub(crate) fn show(
                 response.scroll_to_me(None);
             }
             if response.clicked() || keyboard {
-                ui.ctx().data_mut(|data| data.insert_temp(page_id, page.min(suhina_device_sdk::ui::MAX_PAGE)));
+                let page = page.min(suhina_device_sdk::ui::MAX_PAGE);
+                ui.ctx().data_mut(|data| data.insert_temp(page_id, page));
+                // Kept with the project, outside the undo history, so the panel opens here again.
+                actions.push(Action::new(
+                    "device.showPage",
+                    json!({ "track": track.0, "device": at.value(), "page": page }),
+                ));
                 if matches!(control.gesture, UiGesture::Expand(_)) {
                     crate::detail::detail_view::open_expanded(ui.ctx(), track, at.clone());
                 }

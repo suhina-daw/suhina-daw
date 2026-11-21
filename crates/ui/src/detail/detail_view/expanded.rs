@@ -52,18 +52,24 @@ pub fn expanded_device(ctx: &egui::Context, detail: &Detail) -> Option<(TrackId,
     found.map(|device| (track, device.clone()))
 }
 
+/// The page a device's panel was left on in the project, as the host hands it to the canvas
+/// (`device.showPage`); the canvas shows it until a page button picks another this run.
+pub(crate) const SAVED_PAGE_ID: &str = "#saved-page";
+
 /// Gives every canvas among `devices`, inside their groups too, what the host hands it:
-/// `#expanded` (1 for the device at `open`) and the device's live values from `readouts`. Returns whether any device had live values.
+/// `#expanded` (1 for the device at `open`), the page the project keeps for it from `pages`, and
+/// the device's live values from `readouts`. Returns whether any device had live values.
 pub fn give_host_values(
     devices: &mut [DeviceBox],
     open: Option<&DeviceAt>,
+    pages: &dyn Fn(suhina_engine::model::DeviceId) -> u16,
     readouts: &mut dyn FnMut(&DeviceAt) -> Option<[f32; suhina_device_api::MAX_READOUTS]>,
 ) -> bool {
     let mut live = false;
     for device in devices {
         if let Some(group) = device.group.as_mut() {
             for branch in &mut group.branches {
-                live |= give_host_values(&mut branch.devices, open, readouts);
+                live |= give_host_values(&mut branch.devices, open, pages, readouts);
             }
         }
         let Some(graph) = device.graph.as_mut() else { continue };
@@ -71,6 +77,10 @@ pub fn give_host_values(
         graph
             .parameters
             .push(GraphParameter::host_value(suhina_device_sdk::ui::EXPANDED_ID, if is_open { 1.0 } else { 0.0 }));
+        let page = pages(device.id);
+        if page > 0 {
+            graph.parameters.push(GraphParameter::host_value(SAVED_PAGE_ID, f32::from(page)));
+        }
         if let Some(values) = readouts(&device.at) {
             graph.parameters.extend(values.iter().enumerate().filter_map(|(i, &v)| GraphParameter::readout(i, v)));
             live = true;
@@ -79,9 +89,9 @@ pub fn give_host_values(
     live
 }
 
-/// Draws `device`'s expanded panel over `area` (the main area), on top of the views: a title row
-/// with its name and a close button, then its canvas, centered and scrolled when the area is
-/// smaller. A canvas marked `strip` opens instead as a strip at the bottom of `area`, over the
+/// Draws `device`'s expanded panel over `area` (the main area), on top of the views: a window of
+/// the canvas's size with a title row (its name and a close button) that moves it, then its
+/// canvas, scrolled when the area is smaller than the window. The views around it stay in use. A canvas marked `strip` opens instead as a strip at the bottom of `area`, over the
 /// device row, scaled to the strip's width and as tall as that makes it.
 /// Its controls change the same parameters as the compact panel, through `device.setParam`.
 /// The close button and Escape close it.
@@ -105,11 +115,18 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
     let height_id = Id::unique(("device-expanded-height", track.0, &device.at));
     let fitted = ROW + PAD + size.y * ((area.width() - PAD * 2.0) / size.x).clamp(0.5, 2.5) + PAD * 2.0;
     let wanted = ui.ctx().data(|d| d.get_temp::<f32>(height_id)).unwrap_or(fitted);
+    // Any other canvas floats over the views as a window of its own size (the header and the
+    // padding around the canvas), smaller where the main area is, so the views around it stay in
+    // use. It starts centered and stays where its header is dragged to, kept per device while the
+    // app runs, always inside the main area.
+    let place_id = Id::unique(("device-expanded-place", track.0, &device.at));
     let slice = if canvas.strip {
         let height = wanted.clamp(80.0_f32.min(area.height()), area.height().max(1.0));
         Rect::from_min_max(Pos2::new(area.left(), area.bottom() - height), area.max)
     } else {
-        area
+        let window = (size + Vec2::new(PAD * 2.0, ROW + PAD * 3.0)).min(area.size());
+        let offset = ui.ctx().data(|d| d.get_temp::<Vec2>(place_id)).unwrap_or((area.size() - window) / 2.0);
+        floating_window(area, window, offset)
     };
     crate::kit::floating::area(ui.ctx(), Id::unique("device-expanded-area"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
@@ -124,12 +141,31 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             let painter = ui.painter_at(rect);
             let fill = device_style.background_or(crate::detail::detail_fill("panel"));
             painter.rect_filled(rect, 0.0, fill);
+            if !canvas.strip {
+                // A floating window's edge, so it reads apart from the views under it.
+                let edge = crate::detail::fill_of("border");
+                painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
+            }
             let header = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW + PAD));
             // `device-header`: its background, and its `color` for the name and the ×.
             let header_el = crate::kit::element::DEVICE_HEADER.enter();
             painter.rect_filled(header, 0.0, header_el.background());
             let ink = header_el.color();
             drop(header_el);
+            if !canvas.strip {
+                // The window's header moves it; a double click puts it back in the middle.
+                let grip = header.with_max_x(header.right() - 32.0);
+                let drag = ui
+                    .interact(grip, Id::unique("device-expanded-move"), Sense::click_and_drag())
+                    .on_hover_cursor(egui::CursorIcon::Grab)
+                    .on_hover_text("Drag to move the panel; double click centers it");
+                if drag.double_clicked() {
+                    ui.ctx().data_mut(|d| d.remove::<Vec2>(place_id));
+                } else if drag.dragged() {
+                    let moved = floating_window(area, slice.size(), slice.min - area.min + drag.drag_delta());
+                    ui.ctx().data_mut(|d| d.insert_temp(place_id, moved.min - area.min));
+                }
+            }
             if canvas.strip {
                 // The header is the strip's handle: dragged up it grows, down it shrinks; a double
                 // click fits it to its canvas again.
@@ -213,6 +249,15 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             crate::detail::device_canvas::show(ui, body, canvas, &state, &graph.parameters, track, &device.at, actions);
             crate::detail::device_canvas::collect_editor_keyboard(ui.ctx(), false);
         });
+}
+
+/// A floating window `size` big at `offset` from `area`'s top left, moved back inside `area`.
+pub(super) fn floating_window(area: Rect, size: Vec2, offset: Vec2) -> Rect {
+    let size = size.min(area.size()).max(Vec2::ZERO);
+    let room = (area.size() - size).max(Vec2::ZERO);
+    let offset = Vec2::new(offset.x.clamp(0.0, room.x), offset.y.clamp(0.0, room.y));
+    let offset = if offset.is_finite() { offset } else { room / 2.0 };
+    Rect::from_min_size(area.min + offset, size)
 }
 
 /// A graph's node list, then its canvas and parameter list side by side in `body`: a `.sd`

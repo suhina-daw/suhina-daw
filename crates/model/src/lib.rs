@@ -120,11 +120,48 @@ pub struct Project {
     /// the lanes that have points; a layout of a channel that is gone stays, unused, so an undo
     /// brings it back.
     pub lane_layouts: Vec<LaneLayout>,
+    /// The page each device's panel shows (`#page`, docs/spec/sdk-custom-ui.md › Compact and
+    /// expanded panels), for the devices that left the first one, so a panel opens where it was
+    /// left. View state: saved with the project, never part of the sound or an undo step.
+    pub panel_pages: Vec<PanelPage>,
     /// The next id a clip, an arrangement lane or a scene gets: the three kinds share this
     /// counter, and a value is never handed out twice, deleted objects' included
     /// ([ADR 0025](../../docs/decisions/0025-object-identity.md)). Allocate with
     /// [`Project::new_clip_id`] and its neighbours; 0 means nothing was handed out yet.
     pub next_id: u32,
+}
+
+/// A device's panel page: the device by its id and the page it shows, 1 to [`MAX_PANEL_PAGE`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PanelPage {
+    pub device: DeviceId,
+    pub page: u16,
+}
+
+/// The highest panel page a device may show (pages run from 0).
+pub const MAX_PANEL_PAGE: u16 = 15;
+/// Most panel pages a project keeps.
+pub const MAX_PANEL_PAGES: usize = 65_536;
+
+impl Project {
+    /// The page the panel of `device` shows: 0 unless it was left on another.
+    pub fn panel_page(&self, device: DeviceId) -> u16 {
+        self.panel_pages.iter().find(|p| p.device == device).map_or(0, |p| p.page)
+    }
+
+    /// Keeps `page` (clamped to [`MAX_PANEL_PAGE`]) as the page `device`'s panel shows; the first
+    /// page is kept by keeping nothing. Returns whether it changed.
+    pub fn set_panel_page(&mut self, device: DeviceId, page: u16) -> bool {
+        let page = page.min(MAX_PANEL_PAGE);
+        if self.panel_page(device) == page {
+            return false;
+        }
+        self.panel_pages.retain(|p| p.device != device);
+        if page > 0 && self.panel_pages.len() < MAX_PANEL_PAGES {
+            self.panel_pages.push(PanelPage { device, page });
+        }
+        true
+    }
 }
 
 /// The song's tempo and time signature: `tempo_bpm` and `time_signature` hold from the start,

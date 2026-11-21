@@ -7,6 +7,8 @@
 mod editor;
 #[path = "editor_bodies.rs"]
 mod editor_bodies;
+#[path = "editor_pages.rs"]
+mod editor_pages;
 
 use suhina_device_sdk::{
     builtin::Layout,
@@ -16,11 +18,13 @@ use suhina_device_sdk::{
     },
 };
 
-/// The backgrounds (`devices/instrument/panel/README.md`): the compact panel's strip, with the
-/// logo at its bottom right, and the expanded editor's surface.
-const PANEL_LIGHT: &[u8] = include_bytes!("../panel/panel-light.jpg");
+/// The background (`devices/instrument/panel/README.md`): the expanded editor's surface, of
+/// which the compact panel shows a strip ([`COMPACT_CROP`]).
 const EDITOR_LIGHT: &[u8] = include_bytes!("../panel/editor-surface.jpg");
-/// The editor's logo at its top center, and its dials' machined faces, large and small.
+/// The part of the editor's surface behind the compact panel, as shares of the image's axes
+/// (left, top, right, bottom): 620 × 168 of its 880 × 560 points, a little below its middle.
+const COMPACT_CROP: [f32; 4] = [130.0 / 880.0, 196.0 / 560.0, 750.0 / 880.0, 364.0 / 560.0];
+/// The logo, and the dials' machined faces, large and small.
 const LOGO: &[u8] = include_bytes!("../panel/logo.png");
 const KNOB_LARGE: &[u8] = include_bytes!("../panel/knob-large.png");
 const KNOB_SMALL: &[u8] = include_bytes!("../panel/knob-small.png");
@@ -45,10 +49,21 @@ device-control { color: #34261d; accent-color: #b8742f; }";
 /// Espresso ink and the dark brass of values, for drawings that must not follow the theme.
 pub(super) const INK: [u8; 4] = [52, 38, 29, 255];
 pub(super) const VALUE: [u8; 4] = [138, 84, 34, 255];
+/// Fainter espresso text, for captions and the lines on a control.
+pub(super) const MUTED: [u8; 4] = [107, 85, 67, 255];
+/// The brass of the markers dragged on the pages.
+pub(super) const BRASS: [u8; 4] = [168, 100, 31, 255];
+/// A hairline across a page.
+pub(super) const HAIRLINE: [u8; 4] = [52, 38, 29, 56];
+/// How much of the artwork a dimmed control's veil lets through: the control keeps about 45 %
+/// of its strength.
+const VEIL_ALPHA: u8 = 140;
 
 pub(super) struct Canvas {
     ui: DeviceUi,
     page: Option<u16>,
+    /// The share of the artwork image behind the canvas, once it has the artwork.
+    artwork_uv: Option<[f32; 4]>,
 }
 
 impl Canvas {
@@ -63,6 +78,7 @@ impl Canvas {
                 ..DeviceUi::default()
             },
             page: None,
+            artwork_uv: None,
         }
     }
 
@@ -70,15 +86,26 @@ impl Canvas {
     /// theme: `bytes` as the asset `artwork-light`, and the sheet that colors the controls for
     /// it. An image the SDK refuses leaves the canvas without it rather than failing the panel.
     pub(super) fn artwork(&mut self, bytes: &[u8]) {
+        self.artwork_cropped(bytes, [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    /// [`Self::artwork`] showing only `uv` of the image (left, top, right, bottom, as shares of
+    /// its axes), stretched over the canvas.
+    pub(super) fn artwork_cropped(&mut self, bytes: &[u8], uv: [f32; 4]) {
         let Ok(asset) = ImageAsset::from_bytes("artwork-light", bytes) else { return };
         self.ui.assets.push(asset);
         let [width, height] = self.ui.size;
+        let mut image = Draw::image("artwork-light", [0.0, 0.0, width, height]);
+        if let Draw::Image { uv: crop, .. } = &mut image {
+            *crop = uv;
+        }
+        self.artwork_uv = Some(uv);
         self.ui.controls.push(CustomControl {
             id: "artwork-light".into(),
             name: "Instrument artwork".into(),
             tooltip: String::new(),
             bounds: [0.0, 0.0, width, height],
-            widget: Some(Widget::Graphic { drawing: vec![Draw::image("artwork-light", [0.0, 0.0, width, height])] }),
+            widget: Some(Widget::Graphic { drawing: vec![image] }),
             gesture: UiGesture::Drag,
             x: None,
             y: None,
@@ -188,13 +215,19 @@ impl Canvas {
     pub(super) fn dial(&mut self, id: &str, name: &str, bounds: [f32; 4], tooltip: &str) {
         let format = match id {
             "gain" => TextFormat::Decibels,
+            "root" => TextFormat::Key,
             "body_decay" | "release" | "attack" | "decay" => TextFormat::Seconds,
             "structure" => TextFormat::Number,
             _ => TextFormat::Percent,
         };
+        let decimals = match id {
+            "structure" => 4,
+            "root" => 0,
+            _ => 2,
+        };
         self.add(
             name,
-            Widget::Dial { label: name.into(), decimals: if id == "structure" { 4 } else { 2 }, format, image: None },
+            Widget::Dial { label: name.into(), decimals, format, image: None },
             bounds,
             Some(id),
             UiGesture::Drag,
@@ -207,43 +240,60 @@ impl Canvas {
         }
     }
 
-    pub(super) fn number(&mut self, id: &str, name: &str, x: f32, y: f32, w: f32) {
-        self.label(name, [x, y, w, 18.0]);
-        let integer = matches!(id, "root" | "key_low" | "key_high");
+    /// The last control's caption, when it is a dial, apart from its accessible name.
+    pub(super) fn caption(&mut self, label: &str) {
+        if let Some(control) = self.ui.controls.last_mut()
+            && let Some(Widget::Dial { label: caption, .. }) = control.widget.as_mut()
+        {
+            *caption = label.into();
+        }
+    }
+
+    /// A value written as text, centered in `bounds`, that vertical drags change.
+    pub(super) fn readout(&mut self, id: &str, name: &str, bounds: [f32; 4], format: TextFormat, decimals: usize) {
         self.add(
             name,
             Widget::Number {
-                decimals: if integer { 0 } else { 2 },
-                format: if integer { TextFormat::Key } else { TextFormat::Percent },
+                decimals,
+                format,
                 color: VALUE,
-                center: false,
-                bordered: true,
+                center: true,
+                bordered: false,
                 prefix: String::new(),
                 suffix: String::new(),
             },
-            [x, y + 22.0, w, 28.0],
+            bounds,
             Some(id),
             UiGesture::Drag,
             "Drag vertically; Shift for precision; double click resets",
         );
     }
 
-    pub(super) fn navigate(&mut self, name: &str, bounds: [f32; 4], page: u16, expand: bool) {
+    /// A page button of the editor, named "*name* page".
+    pub(super) fn navigate(&mut self, name: &str, bounds: [f32; 4], page: u16) {
         self.add(
-            name,
+            &format!("{name} page"),
             Widget::Button { label: name.into(), off_label: None, indicator: false },
             bounds,
             Some(PAGE_ID),
-            if expand { UiGesture::Expand(page) } else { UiGesture::Set(page) },
-            if expand {
-                "Open the expanded instrument editor"
-            } else {
-                "Show this editor page; sound and undo history stay unchanged"
-            },
+            UiGesture::Set(page),
+            "Show this editor page; sound and undo history stay unchanged",
         );
-        if !expand && let Some(control) = self.ui.controls.last_mut() {
-            control.name = format!("{name} page");
-        }
+    }
+
+    /// The compact panel's way into the editor while the editor's page is `page`: it opens the
+    /// editor on that page, so the editor keeps the page it showed last. There is one for each
+    /// page, each shown only while its page is the current one: one button, seen from outside.
+    pub(super) fn open_editor(&mut self, page: u16, bounds: [f32; 4]) {
+        self.add(
+            "Open editor",
+            Widget::Button { label: "EDITOR ›".into(), off_label: None, indicator: false },
+            bounds,
+            Some(PAGE_ID),
+            UiGesture::Expand(page),
+            "Open the expanded instrument editor on the page it showed last",
+        );
+        self.show_when(page_is(page));
     }
 
     pub(super) fn waveform(&mut self, bounds: [f32; 4]) {
@@ -313,6 +363,65 @@ impl Canvas {
             UiGesture::Drag,
             "",
         );
+    }
+
+    /// A drawing over the whole canvas that takes no input, its drawings in canvas points.
+    pub(super) fn graphic(&mut self, name: &str, drawing: Vec<Draw>) {
+        let [width, height] = self.ui.size;
+        self.add(name, Widget::Graphic { drawing }, [0.0, 0.0, width, height], None, UiGesture::Drag, "");
+    }
+
+    /// Dims the canvas's `rects` while `condition` holds (and their page shows): the artwork
+    /// drawn over them at [`VEIL_ALPHA`], so the controls under them read faded, as controls
+    /// that have no effect in the current Source do. The veil takes no input, so they still take
+    /// edits, and their values can be prepared before Source changes. Without the artwork there
+    /// is no veil.
+    pub(super) fn dim(&mut self, name: &str, rects: &[[f32; 4]], condition: &UiValue) {
+        let Some([u0, v0, u1, v1]) = self.artwork_uv else { return };
+        let [width, height] = self.ui.size;
+        let u = |x: f32| u0 + (u1 - u0) * x / width;
+        let v = |y: f32| v0 + (v1 - v0) * y / height;
+        let drawing = rects
+            .iter()
+            .map(|&[x, y, w, h]| {
+                let mut image = Draw::image("artwork-light", [x, y, w, h]);
+                if let Draw::Image { uv, tint, .. } = &mut image {
+                    *uv = [u(x), v(y), u(x + w), v(y + h)];
+                    *tint = [255, 255, 255, VEIL_ALPHA];
+                }
+                image
+            })
+            .collect();
+        self.graphic(name, drawing);
+        self.when(1, condition);
+    }
+
+    /// A marker dragged directly ([`Widget::Handle`]): with both `x` and `y` a dot at both
+    /// values, with one a line across `bounds`, or a dot in its middle with `dot`. `x` names its
+    /// parameter and whether it maps logarithmically; `offset` moves `bounds` sideways.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn handle(
+        &mut self,
+        name: &str,
+        bounds: [f32; 4],
+        x: Option<(&str, bool)>,
+        y: Option<&str>,
+        offset: Option<UiValue>,
+        dot: bool,
+        tooltip: &str,
+    ) {
+        self.ui.controls.push(CustomControl {
+            id: format!("control_{}", self.ui.controls.len()),
+            name: name.into(),
+            tooltip: tooltip.into(),
+            bounds,
+            widget: Some(Widget::Handle { color: BRASS, span: None, offset, dot, relative: false, hollow: false }),
+            gesture: UiGesture::Position,
+            x: x.map(|(id, logarithmic)| UiBinding { logarithmic, ..UiBinding::new(id) }),
+            y: y.map(UiBinding::new),
+            drawing: vec![],
+            visible_when: self.page.map(page_is),
+        });
     }
 
     /// A button setting `id` to `value`, named `name` (its accessible name) and showing `label`.
@@ -388,6 +497,33 @@ pub(super) fn both(a: UiValue, b: UiValue) -> UiValue {
     UiValue::Expression(Box::new(UiExpression::Multiply { a, b }))
 }
 
+/// The opposite of a condition that is 0 or 1.
+pub(super) fn not(condition: UiValue) -> UiValue {
+    UiValue::from(1.0) + condition * UiValue::from(-1.0)
+}
+
+/// The sample layer's controls (Root, the source's region and loop, Playback, the waveform) have
+/// no effect in Modal, which plays no sample.
+pub(super) fn sample_silent() -> UiValue {
+    value_is("source", 0)
+}
+
+/// The amplitude envelope (Attack, Decay, Sustain) shapes the sample layer and fitted models
+/// (revision 4): it has no effect in Modal with any other revision.
+pub(super) fn envelope_silent() -> UiValue {
+    both(value_is("source", 0), not(revision_is(4)))
+}
+
+/// The modal body's controls have no effect in Sample, which plays no modal body.
+pub(super) fn modal_silent() -> UiValue {
+    value_is("source", 1)
+}
+
+/// The Hybrid blend has no effect outside Hybrid.
+pub(super) fn blend_silent() -> UiValue {
+    not(value_is("source", 2))
+}
+
 fn revision_is(revision: u16) -> UiValue {
     value_is("model_revision", revision)
 }
@@ -396,35 +532,187 @@ fn value_is(id: &str, value: u16) -> UiValue {
     UiValue::Expression(Box::new(UiExpression::Equal { a: UiValue::parameter(id, false), b: f32::from(value).into() }))
 }
 
+/// Letters spread apart, the way the pages' names and captions are set.
+pub(super) fn spaced(text: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in text.to_uppercase().chars().enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        out.push(c);
+    }
+    out
+}
+
+pub(super) fn add(a: UiValue, b: UiValue) -> UiValue {
+    UiValue::Expression(Box::new(UiExpression::Add { a, b }))
+}
+
+pub(super) fn times(a: UiValue, b: f32) -> UiValue {
+    UiValue::Expression(Box::new(UiExpression::Multiply { a, b: b.into() }))
+}
+
+pub(super) fn line(from: [f32; 2], to: [f32; 2], color: [u8; 4], width: f32) -> Draw {
+    Draw::Line { from: [from[0].into(), from[1].into()], to: [to[0].into(), to[1].into()], color, width }
+}
+
+pub(super) fn text(position: [f32; 2], text: &str, size: f32, align: TextAlign, color: [u8; 4]) -> Draw {
+    Draw::Text {
+        position: [position[0].into(), position[1].into()],
+        text: text.into(),
+        size,
+        color,
+        parameter: None,
+        decimals: 0,
+        align,
+        format: TextFormat::Number,
+    }
+}
+
+/// `prefix` and then parameter `id`'s value in `format`, at `position`.
+pub(super) fn value_text(
+    position: [UiValue; 2],
+    prefix: &str,
+    id: &str,
+    format: TextFormat,
+    size: f32,
+    align: TextAlign,
+    color: [u8; 4],
+) -> Draw {
+    Draw::Text {
+        position,
+        text: prefix.into(),
+        size,
+        color,
+        parameter: Some(id.into()),
+        decimals: if format == TextFormat::Percent { 1 } else { 2 },
+        align,
+        format,
+    }
+}
+
+/// The revisions whose compact panel names a body.
+const BODY_REVISIONS: &[u16] = &[1, 3];
+
 /// Two presentations of the same native parameter set, without a second sound-state path.
 pub fn layout() -> Layout {
+    Layout { ui: Some(compact()), expanded: Some(editor::canvas()), ..Layout::default() }
+}
+
+/// The compact panel (620 × 168): the logo and the body at the top left, Source and the way
+/// into the editor at the right; the body's sound (or the sample's waveform, or both in Hybrid)
+/// at the left and six dials at the right; the model's name under them.
+fn compact() -> DeviceUi {
     let mut panel = Canvas::new([620.0, 168.0]);
-    panel.artwork(PANEL_LIGHT);
-    panel.label("STRUCK MODAL · experimental v1", [10.0, 4.0, 248.0, 20.0]);
-    panel.only_revision(1);
-    panel.label("MODAL PROFILE · experimental v2", [10.0, 4.0, 248.0, 20.0]);
-    panel.only_revision(2);
-    panel.label("MODAL BODIES · experimental v3", [10.0, 4.0, 248.0, 20.0]);
-    panel.only_revision(3);
-    panel.label("FITTED MODEL · experimental v4", [10.0, 4.0, 248.0, 20.0]);
-    panel.only_revision(4);
-    panel.menu("source", "Source", [272.0, 4.0, 136.0, 24.0], "Modal, local Sample, or both in Hybrid");
-    panel.navigate("Open editor", [456.0, 4.0, 152.0, 24.0], 0, true);
-    panel.waveform([10.0, 36.0, 244.0, 88.0]);
-    panel.label("Drop a local sample to play it", [10.0, 132.0, 244.0, 20.0]);
-    for (i, (id, name, hint)) in [
-        ("body_decay", "Decay", "Modal: time to decay by 60 dB; next strike"),
-        ("brightness", "Brightness", "Modal: energy in higher resonances; next strike"),
-        ("release", "Release", "Release damping for the modal body and sample gate"),
-        ("blend", "Blend", "Hybrid only: amount of local sample in the mix"),
+    panel.artwork_cropped(EDITOR_LIGHT, COMPACT_CROP);
+    panel.asset("logo", LOGO);
+    panel.asset("knob-small", KNOB_SMALL);
+    panel.add(
+        "Suhina",
+        Widget::Graphic { drawing: vec![Draw::image("logo", [0.0, 0.0, 54.0, 15.0])] },
+        [14.0, 11.0, 54.0, 15.0],
+        None,
+        UiGesture::Drag,
+        "",
+    );
+    panel.menu(
+        "body",
+        "Body",
+        [84.0, 6.0, 124.0, 22.0],
+        "The body Modal plays: the abstract struck body, a struck bar or a plucked tine",
+    );
+    panel.only_revisions(BODY_REVISIONS, 1);
+    panel.text("Source caption", &spaced("Source"), [394.0, 12.0, 60.0, 10.0], 8.0, TextAlign::Left, MUTED);
+    // Source switches by clicking it: the button of the current Source sets the next one.
+    for (value, name) in [(0_u16, "Modal"), (1, "Sample"), (2, "Hybrid")] {
+        panel.choice_labelled(
+            "source",
+            (value + 1) % 3,
+            "Source",
+            name,
+            [458.0, 6.0, 72.0, 22.0],
+            "Source: click for the next of Modal, local Sample and both in Hybrid",
+        );
+        panel.show_when(value_is("source", value));
+    }
+    for page in 0..=editor::LAST_PAGE {
+        panel.open_editor(page, [540.0, 6.0, 66.0, 22.0]);
+    }
+    panel.graphic(
+        "Dividers",
+        vec![line([14.0, 34.5], [606.0, 34.5], HAIRLINE, 1.0), line([258.5, 46.0], [258.5, 152.0], HAIRLINE, 1.0)],
+    );
+
+    // The body's sound with Modal and Hybrid (fainter with Hybrid, under the waveform), the
+    // sample's waveform with Sample and Hybrid.
+    let presence = value_is("source", 0) + times(value_is("source", 2), 0.55);
+    panel.add(
+        "Sound",
+        Widget::Strands {
+            modes: (0..5).map(|n| UiValue::parameter(format!("#r{n}"), false)).collect(),
+            since: UiValue::parameter("#r5", false),
+            velocity: UiValue::parameter("#r6", false),
+            height: UiValue::normalized("stereo_width", false),
+            thickness: UiValue::normalized("mallet_weight", false),
+            speed: UiValue::normalized("mallet_hardness", false),
+            presence,
+            light: [255, 249, 237, 255],
+            mid: [222, 189, 135, 255],
+            shadow: [128, 87, 54, 255],
+            thread: [199, 128, 51, 255],
+        },
+        [14.0, 40.0, 230.0, 116.0],
+        None,
+        UiGesture::Drag,
+        "",
+    );
+    panel.show_when(not(modal_silent()));
+    panel.waveform([14.0, 44.0, 230.0, 100.0]);
+    panel.show_when(not(sample_silent()));
+    panel.graphic(
+        "Sample root",
+        vec![value_text([14.0.into(), 150.0.into()], "ROOT  ", "root", TextFormat::Key, 8.5, TextAlign::Left, MUTED)],
+    );
+    panel.show_when(not(sample_silent()));
+
+    // Six dials: the mallet (the finger's Touch for the tine), the body's Decay and Brightness,
+    // Release, the Hybrid blend and Gain.
+    let step = 340.0 / 6.0;
+    let at = |n: usize| [266.0 + step * (n as f32 + 0.5) - 28.0, 42.0, 56.0, 104.0];
+    for (tine, name, tooltip) in [
+        (false, "Hardness", "How hard the mallet is: harder sounds brighter"),
+        (true, "Touch", "How hard the finger is: harder sounds brighter"),
+    ] {
+        panel.face_dial("mallet_hardness", name, at(0), tooltip, "knob-small");
+        panel.show_when(if tine { value_is("body", 5) } else { not(value_is("body", 5)) });
+    }
+    for (n, (id, name, tooltip)) in [
+        ("body_decay", "Decay", "Modal: how long the body rings; next strike"),
+        ("brightness", "Brightness", "Modal: energy in the higher resonances; next strike"),
+        ("release", "Release", "After note-off, for the modal body and the sample"),
+        ("blend", "Blend", "Hybrid only: from the modal body to the sample"),
         ("gain", "Gain", "Output gain for both sources"),
     ]
     .into_iter()
     .enumerate()
     {
-        panel.dial(id, name, [270.0 + i as f32 * 68.0, 44.0, 64.0, 88.0], hint);
+        panel.face_dial(id, name, at(n + 1), tooltip, "knob-small");
     }
-    // Clear of the artwork's logo at the bottom right.
-    panel.label("Model and sample details in the editor", [270.0, 140.0, 228.0, 18.0]);
-    Layout { ui: Some(panel.finish()), expanded: Some(editor::canvas()), ..Layout::default() }
+    // Faded while they have no effect: the mallet with Sample, with the Struck body (no mallet)
+    // and with a profile or fitted model; the body's dials with Sample; Blend outside Hybrid.
+    let mallet = both(both(not(modal_silent()), any_of("model_revision", BODY_REVISIONS)), not(value_is("body", 0)));
+    panel.dim("Hardness dimmed", &[at(0)], &not(mallet));
+    panel.dim("Modal dimmed", &[at(1), at(2)], &modal_silent());
+    panel.dim("Blend dimmed", &[at(4)], &blend_silent());
+
+    for (revision, name) in [
+        (1, "STRUCK MODAL · EXPERIMENTAL V1"),
+        (2, "MODAL PROFILE · EXPERIMENTAL V2"),
+        (3, "MODAL BODIES · EXPERIMENTAL V3"),
+        (4, "FITTED MODEL · EXPERIMENTAL V4"),
+    ] {
+        panel.text(name, name, [266.0, 152.0, 340.0, 12.0], 8.0, TextAlign::Center, MUTED);
+        panel.only_revision(revision);
+    }
+    panel.finish()
 }

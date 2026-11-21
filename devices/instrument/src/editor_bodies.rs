@@ -6,7 +6,7 @@
 //! values), the large dial at its center, the body's name and one even row of dials, and the
 //! Advanced page's shaping dials and engine choices (docs/spec/instrument-editor.md).
 
-use super::{Canvas, any_of, both, page_is};
+use super::{Canvas, add, any_of, both, line, page_is, spaced, text, times};
 use suhina_device_sdk::ui::{Draw, PAGE_ID, TextAlign, TextFormat, UiExpression, UiGesture, UiValue, Widget};
 
 /// The revisions whose pages these are.
@@ -41,43 +41,6 @@ const BODIES: [(u16, &str, &str); 6] = [
 /// (clockwise from the right).
 const TURN_START: f32 = 2.094_395;
 const TURN_SPAN: f32 = 5.235_988;
-
-/// Letters spread apart, the way the page's names are set.
-fn spaced(text: &str) -> String {
-    let mut out = String::new();
-    for (i, c) in text.to_uppercase().chars().enumerate() {
-        if i > 0 {
-            out.push(' ');
-        }
-        out.push(c);
-    }
-    out
-}
-
-fn add(a: UiValue, b: UiValue) -> UiValue {
-    UiValue::Expression(Box::new(UiExpression::Add { a, b }))
-}
-
-fn times(a: UiValue, b: f32) -> UiValue {
-    UiValue::Expression(Box::new(UiExpression::Multiply { a, b: b.into() }))
-}
-
-fn line(from: [f32; 2], to: [f32; 2], color: [u8; 4], width: f32) -> Draw {
-    Draw::Line { from: [from[0].into(), from[1].into()], to: [to[0].into(), to[1].into()], color, width }
-}
-
-fn text(position: [f32; 2], text: &str, size: f32, align: TextAlign, color: [u8; 4]) -> Draw {
-    Draw::Text {
-        position: [position[0].into(), position[1].into()],
-        text: text.into(),
-        size,
-        color,
-        parameter: None,
-        decimals: 0,
-        align,
-        format: TextFormat::Number,
-    }
-}
 
 /// The large dial for `parameter`: a machined ivory knob on an espresso rim (the canvas's
 /// `knob-large`), a scale of ticks, a brass arc in a groove with a glow, a brass pointer at the

@@ -13,7 +13,9 @@ button[checked] { border-color: #b8742f; }";
 /// The revisions whose Model page shows #1599's struck-body group: a profile or a fitted set.
 const PROFILE_OR_FITTED: &[u16] = &[2, 4];
 /// Fainter espresso text.
-const MUTED: [u8; 4] = [107, 85, 67, 255];
+const MUTED: [u8; 4] = super::MUTED;
+/// The editor's last page: 0 Play, 1 Model, 2 Sample, 3 Advanced, 4 Analysis.
+pub(super) const LAST_PAGE: u16 = 4;
 
 pub(super) fn canvas() -> DeviceUi {
     let mut ui = Canvas::new([880.0, 560.0]);
@@ -49,7 +51,7 @@ pub(super) fn canvas() -> DeviceUi {
     );
     // The pages, at the bottom left, as text.
     for (i, name) in ["Play", "Model", "Sample"].into_iter().enumerate() {
-        ui.navigate(name, [56.0 + i as f32 * 84.0, 518.0, 76.0, 22.0], i as u16, false);
+        ui.navigate(name, [56.0 + i as f32 * 84.0, 518.0, 76.0, 22.0], i as u16);
     }
 
     // Beside the page buttons on every page, as the Source menu is.
@@ -57,53 +59,11 @@ pub(super) fn canvas() -> DeviceUi {
         "soft_pedal",
         "Soft pedal",
         [316.0, 518.0, 96.0, 22.0],
-        "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held down",
+        "Una corda for fitted models: quieter, darker strikes without beating, as with a soft pedal (CC 67) held          down. Keys: C3 = 60; the pitch wheel bends ±2 semitones; the sustain pedal holds keys",
     );
 
-    ui.page(0);
-    ui.group("PERFORMANCE", [24.0, 144.0, 832.0, 192.0]);
-    ui.dial("gain", "Output gain", [40.0, 192.0, 120.0, 116.0], "Gain for both sources");
-    ui.dial(
-        "release",
-        "Release",
-        [174.0, 192.0, 120.0, 116.0],
-        "After note-off: the damper for fitted models (caps every T60), the fade for samples and the original model",
-    );
-    ui.dial("blend", "Hybrid blend", [308.0, 192.0, 120.0, 116.0], "Hybrid only: move from modal body to local sample");
-    ui.dial(
-        "attack",
-        "Attack",
-        [442.0, 192.0, 120.0, 116.0],
-        "Amplitude envelope rise for the sample and fitted models; 0 keeps a fitted recording's own attack",
-    );
-    ui.dial(
-        "decay",
-        "Decay",
-        [576.0, 192.0, 120.0, 116.0],
-        "Amplitude envelope fall to Sustain, for the sample and fitted models",
-    );
-    ui.dial(
-        "sustain",
-        "Sustain",
-        [710.0, 192.0, 120.0, 116.0],
-        "Amplitude envelope held level for the sample and fitted models; 100 % plays a recording as fitted",
-    );
-    ui.group("PLAYABLE RANGE", [24.0, 352.0, 832.0, 112.0]);
-    for (i, (id, label)) in [
-        ("key_low", "Lowest key"),
-        ("key_high", "Highest key"),
-        ("velocity_low", "Lowest velocity"),
-        ("velocity_high", "Highest velocity"),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        ui.number(id, label, 44.0 + i as f32 * 206.0, 390.0, 174.0);
-    }
-    ui.label(
-        "Keys: C3 = 60. Pitch wheel ±2 semitones. Sustain pedal holds keys; CC 67 is the soft pedal.",
-        [24.0, 476.0, 640.0, 24.0],
-    );
+    // The amplitude envelope, the playable keys and velocities, one row of dials.
+    super::editor_pages::play_page(&mut ui);
 
     ui.page(1);
     ui.group("STRUCK BODY", [24.0, 144.0, 832.0, 180.0]);
@@ -184,33 +144,7 @@ pub(super) fn canvas() -> DeviceUi {
     // Struck and the bar and tine bodies (revision 3, and 1 read as 3), and their Advanced page.
     super::editor_bodies::body_page(&mut ui);
 
-    ui.page(2);
-    ui.waveform([24.0, 144.0, 832.0, 140.0]);
-    ui.number("root", "Root key", 24.0, 304.0, 130.0);
-    ui.label("Playback", [182.0, 304.0, 148.0, 18.0]);
-    ui.menu(
-        "playback",
-        "Sample playback",
-        [182.0, 326.0, 148.0, 28.0],
-        "Gate follows the key, One shot runs to the end, Loop repeats the loop region",
-    );
-    for (i, (id, label)) in
-        [("start", "Source start"), ("end", "Source end"), ("loop_start", "Loop start"), ("loop_end", "Loop end")]
-            .into_iter()
-            .enumerate()
-    {
-        ui.number(id, label, 354.0 + i as f32 * 128.0, 304.0, 116.0);
-    }
-    ui.dial("attack", "Attack", [24.0, 386.0, 84.0, 104.0], "Amplitude envelope rise, sample and fitted models");
-    ui.dial("decay", "Decay", [112.0, 386.0, 84.0, 104.0], "Amplitude envelope fall to Sustain");
-    ui.dial("sustain", "Sustain", [200.0, 386.0, 92.0, 104.0], "Amplitude envelope held level");
-    ui.add(
-        "Sample analysis",
-        Widget::SampleAnalysis,
-        [300.0, 386.0, 548.0, 120.0],
-        None,
-        UiGesture::Drag,
-        "Analyze the loaded sample locally, check its root proposal, then accept one undoable change",
-    );
+    // The waveform, its region and loop, one row of dials, Playback, and the Analysis page.
+    super::editor_pages::sample_page(&mut ui);
     ui.finish()
 }

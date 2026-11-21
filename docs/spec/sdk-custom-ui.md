@@ -41,16 +41,21 @@ and no canvas keeps one column that follows that width and scrolls.
 A built-in layout may use `#page` for host-local navigation (0..15, initially zero). Only a
 button with a linear X binding and a `Set` or `Expand` gesture may write it; drawing and
 visibility expressions may read it. The compact and expanded canvases share the selection for
-their project, track and complete device address. It is temporary view state: no DSP parameter,
-automation, project edit or undo entry. `.sd` version 6 does not accept this writable host binding.
+their project, track and complete device address. It is view state: no DSP parameter,
+automation or undo entry. A page button also runs `device.showPage`, which keeps the page with the
+project (its `panel_pages`, [project file](suhina-format.md)) outside the undo history, so the
+panel opens on that page again, after the project is reopened too; undo and redo leave it as it
+is. `.sd` version 6 does not accept this writable host binding.
 The [Instrument editor](instrument-editor.md) uses it for Play, Model and Sample.
 
 A device may also have an expanded panel: one larger fixed-size canvas (`device.expanded` in a
 `.sd` file, `expanded` in a built-in's layout), with the same fields and limits as the compact one.
 A device with one has a button beside the X in its header, labelled **Expand** *name* (and
-**Close** *name*'s **expanded panel** while it is open). The panel opens over the main area with
-the device's name and a close button (**Close expanded panel**) along its top; its canvas is
-centred, and scrolls when the main area is smaller. An expanded canvas with `"strip": true` opens
+**Close** *name*'s **expanded panel** while it is open). The panel opens as a window over the
+main area, the size of its canvas with the device's name and a close button (**Close expanded
+panel**) along its top, so the views around it stay in use. It starts centered; dragging its top
+row moves it within the main area (kept per device while the app runs) and a double click there
+centers it again. Its canvas scrolls when the main area is smaller than the window. An expanded canvas with `"strip": true` opens
 instead as a strip at the bottom of the main area, over the device row, its canvas scaled to the
 strip on each axis, up or down, as a strip has no scroll bar (drawings, controls and pointer input alike; text and line widths by the smaller
 axis). The strip starts as tall as the canvas at the strip's width; dragging its header up or down

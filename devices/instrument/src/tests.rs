@@ -80,26 +80,272 @@ fn single_sample_maps_play_through_the_shared_runtime() {
 
 #[test]
 fn key_parameters_are_shown_as_note_names() {
-    use suhina_device_sdk::ui::{TextFormat, Widget};
+    use suhina_device_sdk::ui::{Draw, TextFormat, Widget};
     for index in [param::ROOT, param::KEY_LOW, param::KEY_HIGH] {
         assert_eq!(PARAMS[index].unit, Unit::Key, "{}", PARAMS[index].id);
     }
     let layout = panel::layout();
-    let editor = layout.expanded.as_ref().unwrap();
-    for id in ["root", "key_low", "key_high"] {
-        let fields: Vec<_> = editor
-            .controls
-            .iter()
-            .filter(|c| c.y.as_ref().or(c.x.as_ref()).is_some_and(|b| b.parameter == id))
-            .collect();
-        assert!(!fields.is_empty(), "{id} has a field");
-        for field in fields {
-            assert!(matches!(field.widget, Some(Widget::Number { format: TextFormat::Key, .. })), "{id}");
+    for canvas in [layout.ui.as_ref().unwrap(), layout.expanded.as_ref().unwrap()] {
+        for id in ["root", "key_low", "key_high"] {
+            for control in canvas.controls.iter().filter(|c| bound(c, id)) {
+                // A field or dial writes the note's name; a marker on the keys writes nothing.
+                assert!(
+                    matches!(
+                        control.widget,
+                        Some(
+                            Widget::Number { format: TextFormat::Key, .. }
+                                | Widget::Dial { format: TextFormat::Key, .. }
+                                | Widget::Handle { .. }
+                        )
+                    ),
+                    "{id}: {}",
+                    control.name
+                );
+            }
+            for control in &canvas.controls {
+                if let Some(Widget::Graphic { drawing }) = &control.widget {
+                    for draw in drawing {
+                        if let Draw::Text { parameter: Some(parameter), format, .. } = draw
+                            && parameter == id
+                        {
+                            assert_eq!(*format, TextFormat::Key, "{id} in {}", control.name);
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-/// Both canvases draw the background artwork first, behind every control, with every theme: no
+/// Whether `control` edits parameter `id`.
+fn bound(control: &suhina_device_sdk::ui::CustomControl, id: &str) -> bool {
+    [control.x.as_ref(), control.y.as_ref()].into_iter().flatten().any(|b| b.parameter == id)
+}
+
+/// Whether `control` shows with these values (every other parameter 0).
+fn shown(control: &suhina_device_sdk::ui::CustomControl, values: &[(&str, f64)]) -> bool {
+    control.visible_when.as_ref().is_none_or(|condition| {
+        condition.evaluate(&|id, _, _| values.iter().find(|(name, _)| *name == id).map_or(0.0, |(_, v)| *v)) > 0.0
+    })
+}
+
+/// The compact panel opens the editor on the page it showed last: one Open editor button for
+/// each page, shown only while that page is the current one, and it expands to that page.
+#[test]
+fn the_open_editor_button_keeps_the_page_the_editor_showed_last() {
+    use suhina_device_sdk::ui::{PAGE_ID, UiGesture};
+    let layout = panel::layout();
+    let compact = layout.ui.as_ref().unwrap();
+    for page in 0..=4_u16 {
+        let open: Vec<_> = compact
+            .controls
+            .iter()
+            .filter(|c| c.name == "Open editor" && shown(c, &[("#page", f64::from(page)), ("model_revision", 3.0)]))
+            .collect();
+        assert_eq!(open.len(), 1, "page {page}");
+        assert_eq!(open[0].gesture, UiGesture::Expand(page), "page {page}");
+        assert_eq!(open[0].x.as_ref().map(|b| b.parameter.as_str()), Some(PAGE_ID));
+    }
+    // Every page the editor can show has its own way back into it.
+    let editor = layout.expanded.as_ref().unwrap();
+    for control in &editor.controls {
+        if let UiGesture::Set(page) = control.gesture
+            && control.x.as_ref().is_some_and(|b| b.parameter == PAGE_ID)
+        {
+            assert!(page <= 4, "{} opens page {page}, which the compact panel cannot reopen", control.name);
+        }
+    }
+}
+
+/// Every sound parameter has a control in the editor, and the Play and Sample pages carry theirs
+/// with any Source: the Play page its envelope, keys and velocities, the Sample page its region,
+/// loop, Playback and envelope, and the way to the sample analysis.
+#[test]
+fn every_parameter_is_reachable_and_play_and_sample_carry_theirs() {
+    use suhina_device_sdk::ui::{PAGE_ID, UiGesture, Widget};
+    let layout = panel::layout();
+    let editor = layout.expanded.as_ref().unwrap();
+    for info in PARAMS.iter().filter(|p| p.id != "model_revision") {
+        assert!(editor.controls.iter().any(|c| bound(c, &info.id)), "{} has no control", info.id);
+    }
+    let on = |page: f64, source: f64, id: &str| {
+        editor
+            .controls
+            .iter()
+            .any(|c| bound(c, id) && shown(c, &[("#page", page), ("source", source), ("model_revision", 3.0)]))
+    };
+    for source in [0.0, 1.0, 2.0] {
+        for id in [
+            "gain",
+            "release",
+            "blend",
+            "attack",
+            "decay",
+            "sustain",
+            "key_low",
+            "key_high",
+            "velocity_low",
+            "velocity_high",
+            "soft_pedal",
+            "source",
+        ] {
+            assert!(on(0.0, source, id), "Play: {id}, source {source}");
+        }
+        for id in
+            ["root", "playback", "start", "end", "loop_start", "loop_end", "attack", "decay", "sustain", "release"]
+        {
+            assert!(on(2.0, source, id), "Sample: {id}, source {source}");
+        }
+    }
+    let playback: Vec<_> = editor.controls.iter().filter(|c| bound(c, "playback")).map(|c| c.gesture).collect();
+    assert_eq!(playback, [UiGesture::Set(0), UiGesture::Set(1), UiGesture::Set(2)], "Gate, One shot, Loop");
+    // ANALYSIS › on the Sample page opens the Analysis page, and it goes back.
+    let analysis = editor.controls.iter().find(|c| c.name == "Analysis page").unwrap();
+    assert!(shown(analysis, &[("#page", 2.0)]) && !shown(analysis, &[("#page", 0.0)]));
+    assert_eq!(analysis.gesture, UiGesture::Set(4));
+    assert_eq!(analysis.x.as_ref().map(|b| b.parameter.as_str()), Some(PAGE_ID));
+    let widget = editor.controls.iter().find(|c| matches!(c.widget, Some(Widget::SampleAnalysis))).unwrap();
+    assert!(shown(widget, &[("#page", 4.0)]) && !shown(widget, &[("#page", 2.0)]));
+    let back = editor.controls.iter().find(|c| c.name == "Sample page back").unwrap();
+    assert!(shown(back, &[("#page", 4.0)]));
+    assert_eq!(back.gesture, UiGesture::Set(2));
+    // The waveform and its drop target belong to the Sample page alone in the editor.
+    let waves: Vec<_> = editor.controls.iter().filter(|c| matches!(c.widget, Some(Widget::SampleWaveform))).collect();
+    assert_eq!(waves.len(), 1);
+    assert!(shown(waves[0], &[("#page", 2.0)]) && !shown(waves[0], &[("#page", 0.0)]));
+}
+
+/// The rectangles a dimming veil draws, when `control` is one.
+fn veil(control: &suhina_device_sdk::ui::CustomControl) -> Vec<[f32; 4]> {
+    use suhina_device_sdk::ui::{Draw, Widget};
+    let Some(Widget::Graphic { drawing }) = &control.widget else { return vec![] };
+    drawing
+        .iter()
+        .filter_map(|draw| match draw {
+            Draw::Image { asset, rect, tint, .. } if asset == "artwork-light" && tint[3] < 255 => {
+                Some(rect.clone().map(|v| v.evaluate(&|_, _, _| 0.0)))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether some veil of `canvas` shown with `values` covers `control`'s bounds.
+fn dimmed(
+    canvas: &suhina_device_sdk::ui::DeviceUi,
+    control: &suhina_device_sdk::ui::CustomControl,
+    values: &[(&str, f64)],
+) -> bool {
+    let [x, y, w, h] = control.bounds;
+    canvas
+        .controls
+        .iter()
+        .filter(|c| shown(c, values))
+        .flat_map(veil)
+        .any(|[vx, vy, vw, vh]| vx <= x + 0.01 && vy <= y + 0.01 && vx + vw >= x + w - 0.01 && vy + vh >= y + h - 0.01)
+}
+
+/// A control with no effect in the current Source is drawn faded (a veil of the artwork over
+/// it), and still takes edits: the veils take no input. Release, Gain and the velocities act on
+/// both layers and never fade; the envelope stays live for fitted models.
+#[test]
+fn controls_without_effect_in_the_current_source_are_dimmed() {
+    use suhina_device_sdk::ui::{DeviceUi, UiGesture, Widget};
+    let layout = panel::layout();
+    let editor = layout.expanded.as_ref().unwrap();
+    let compact = layout.ui.as_ref().unwrap();
+    for canvas in [editor, compact] {
+        for control in canvas.controls.iter().filter(|c| !veil(c).is_empty()) {
+            assert!(control.x.is_none() && control.y.is_none() && control.gesture == UiGesture::Drag);
+            assert!(matches!(control.widget, Some(Widget::Graphic { .. })), "{}", control.name);
+        }
+    }
+    let dial = |canvas: &DeviceUi, page: Option<f64>, id: &str| {
+        canvas
+            .controls
+            .iter()
+            .find(|c| {
+                matches!(c.widget, Some(Widget::Dial { .. }))
+                    && bound(c, id)
+                    && page.is_none_or(|page| shown(c, &[("#page", page), ("model_revision", 3.0), ("body", 1.0)]))
+            })
+            .cloned()
+            .unwrap()
+    };
+    for revision in [3.0, 4.0] {
+        for source in [0.0, 1.0, 2.0] {
+            let at = format!("source {source}, revision {revision}");
+            for page in [0.0, 2.0] {
+                let values = [("#page", page), ("source", source), ("model_revision", revision), ("body", 1.0)];
+                let envelope = source == 0.0 && revision != 4.0;
+                for id in ["attack", "decay", "sustain"] {
+                    assert_eq!(dimmed(editor, &dial(editor, Some(page), id), &values), envelope, "{id} p{page} {at}");
+                }
+                assert!(!dimmed(editor, &dial(editor, Some(page), "release"), &values), "release p{page} {at}");
+            }
+            let play = [("#page", 0.0), ("source", source), ("model_revision", revision)];
+            assert_eq!(dimmed(editor, &dial(editor, Some(0.0), "blend"), &play), source != 2.0, "{at}");
+            assert!(!dimmed(editor, &dial(editor, Some(0.0), "gain"), &play), "{at}");
+            let sample = [("#page", 2.0), ("source", source), ("model_revision", revision)];
+            assert_eq!(dimmed(editor, &dial(editor, Some(2.0), "root"), &sample), source == 0.0, "{at}");
+            for name in ["Source start", "Loop end", "One shot"] {
+                let control = editor.controls.iter().find(|c| c.name == name).unwrap();
+                assert_eq!(dimmed(editor, control, &sample), source == 0.0, "{name} {at}");
+            }
+            for name in ["Lowest velocity", "Highest velocity"] {
+                let control = editor.controls.iter().find(|c| c.name == name).unwrap();
+                assert!(!dimmed(editor, control, &play), "{name} {at}");
+            }
+            for body in [0.0, 1.0, 5.0] {
+                let values = [("source", source), ("model_revision", revision), ("body", body)];
+                let hardness =
+                    compact.controls.iter().find(|c| bound(c, "mallet_hardness") && shown(c, &values)).unwrap();
+                let mallet = source != 1.0 && revision == 3.0 && body != 0.0;
+                assert_eq!(dimmed(compact, hardness, &values), !mallet, "hardness, body {body}, {at}");
+                for id in ["body_decay", "brightness"] {
+                    assert_eq!(dimmed(compact, &dial(compact, None, id), &values), source == 1.0, "{id} {at}");
+                }
+                assert_eq!(dimmed(compact, &dial(compact, None, "blend"), &values), source != 2.0, "{at}");
+                for id in ["release", "gain"] {
+                    assert!(!dimmed(compact, &dial(compact, None, id), &values), "{id} {at}");
+                }
+            }
+        }
+    }
+}
+
+/// The compact panel: the body's sound with Modal, the sample's waveform with Sample, both with
+/// Hybrid; Source switches to the next one by clicking it; the body is named for revisions 1 and
+/// 3, and the Kalimba's mallet is its Touch.
+#[test]
+fn the_compact_panel_follows_the_source_and_switches_it_by_clicking() {
+    use suhina_device_sdk::ui::{UiGesture, Widget};
+    let layout = panel::layout();
+    let compact = layout.ui.as_ref().unwrap();
+    for source in [0_u16, 1, 2] {
+        let values = [("source", f64::from(source)), ("model_revision", 3.0), ("body", 5.0)];
+        let visible = |name: &str| compact.controls.iter().any(|c| c.name == name && shown(c, &values));
+        assert_eq!(visible("Sound"), source != 1, "source {source}");
+        assert_eq!(
+            compact.controls.iter().any(|c| matches!(c.widget, Some(Widget::SampleWaveform)) && shown(c, &values)),
+            source != 0,
+            "source {source}"
+        );
+        let switch: Vec<_> = compact.controls.iter().filter(|c| c.name == "Source" && shown(c, &values)).collect();
+        assert_eq!(switch.len(), 1);
+        assert_eq!(switch[0].gesture, UiGesture::Set((source + 1) % 3), "source {source}");
+        assert!(visible("Touch") && !visible("Hardness"));
+    }
+    for (revision, body) in [(1.0, true), (2.0, false), (3.0, true), (4.0, false)] {
+        let named = compact.controls.iter().any(|c| c.name == "Body" && shown(c, &[("model_revision", revision)]));
+        assert_eq!(named, body, "revision {revision}");
+    }
+    for name in ["Hardness", "Decay", "Brightness", "Release", "Blend", "Gain", "Open editor"] {
+        assert!(compact.controls.iter().any(|c| c.name == name), "{name}");
+    }
+}
+
+// Both canvases draw the background artwork first, behind every control, with every theme: no
 /// sheet hides it, and the sheet colors the controls for it.
 #[test]
 fn both_canvases_carry_the_light_artwork_behind_their_controls_with_every_theme() {

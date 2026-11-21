@@ -49,6 +49,8 @@ fn instrument_analysis_controls_require_explicit_acceptance_and_reject_stale_pro
     h.run_steps(4);
     h.get_by_label("Sample page").click();
     h.run_steps(4);
+    h.get_by_label("Analysis page").click();
+    h.run_steps(4);
     h.get_by_label("Analyze sample").focus();
     h.step();
     h.key_press(egui::Key::Enter);
@@ -56,7 +58,9 @@ fn instrument_analysis_controls_require_explicit_acceptance_and_reject_stale_pro
     h.state_mut().projects.session_mut(None).unwrap().sync_instrument_analysis();
     h.run_steps(4);
     assert!(h.query_by_label("Proposed root key").is_some());
-    assert_eq!(h.state().session().unwrap().project(), &before);
+    // Only the page the panel shows is kept (view state, no undo step); the sound is unchanged.
+    let shown = h.state().session().unwrap().project().clone();
+    assert_eq!(suhina_engine::model::Project { panel_pages: before.panel_pages.clone(), ..shown }, before);
     assert_eq!(h.state().session().unwrap().undo_steps(), depth);
     h.get_by_label("Accept root").focus();
     h.step();
@@ -68,7 +72,10 @@ fn instrument_analysis_controls_require_explicit_acceptance_and_reject_stale_pro
     assert!(h.query_by_label("Accept root").is_none());
     h.state_mut().run(&Action::new("edit.undo", json!({})));
     h.run_steps(4);
-    assert_eq!(h.state().session().unwrap().project(), &before);
+    // Undo takes the root back and leaves the page the panel shows.
+    let undone = h.state().session().unwrap().project().clone();
+    assert_eq!(undone.panel_page(undone.channels[0].devices[0].id), 4, "the Analysis page stays");
+    assert_eq!(suhina_engine::model::Project { panel_pages: before.panel_pages.clone(), ..undone }, before);
     h.get_by_label("Analyze sample").click();
     h.run_steps(2);
     h.state_mut().projects.session_mut(None).unwrap().sync_instrument_analysis();

@@ -298,6 +298,7 @@ fn everything() -> Project {
                 device: Some(DeviceId(5)),
             }],
         }],
+        panel_pages: vec![suhina_model::PanelPage { device: DeviceId(5), page: 3 }],
         next_id: 0,
     };
     // Every lane, clip and scene gets an id, as a project in the app has.
@@ -616,6 +617,27 @@ fn a_muted_note_survives_a_round_trip() {
     // Only the muted note names a mute.
     assert_eq!(text.matches(r#""muted""#).count(), 1, "{text}");
     assert_eq!(from_json(&text), Ok(project));
+}
+
+/// A device's panel page is saved with the project; the first page and a page out of range or
+/// given twice are not.
+#[test]
+fn panel_pages_survive_a_round_trip_and_bad_pages_are_refused() {
+    let mut project = everything();
+    let text = to_json(&project);
+    assert!(text.contains(r#""panel_pages""#), "{text}");
+    assert_eq!(from_json(&text), Ok(project.clone()));
+    assert!(project.set_panel_page(DeviceId(5), 0));
+    assert!(!to_json(&project).contains("panel_pages"), "the first page is kept by keeping nothing");
+    for bad in [
+        r#"[{"device": 5, "page": 0}]"#,
+        r#"[{"device": 5, "page": 16}]"#,
+        r#"[{"device": 5, "page": 1}, {"device": 5, "page": 2}]"#,
+    ] {
+        let mut file: serde_json::Value = serde_json::from_str(&text).unwrap();
+        file["project"]["panel_pages"] = serde_json::from_str(bad).unwrap();
+        assert!(from_json(&file.to_string()).is_err(), "{bad}");
+    }
 }
 
 #[test]
@@ -1611,6 +1633,10 @@ fn a_file_of_every_version_reads() {
             // were `suhina/*` extensions, which these files do not hold.
             expected.tracks.retain(|t| !t.folder);
             expected.channels[0].devices.retain(|d| d.name != "Lost synth");
+        }
+        if version < 16 {
+            // Panel pages came with version 16.
+            expected.panel_pages.clear();
         }
         if version < 13 {
             // A note's velocity range came with version 13 (#1282).

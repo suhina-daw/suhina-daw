@@ -55,16 +55,20 @@ fn instrument_editor_pages_are_keyboard_accessible_view_state() {
     h.step();
     h.key_press(egui::Key::Space);
     h.run_steps(4);
-    assert!(h.query_by_label("Sample playback").is_some());
+    assert!(h.query_by_label("One shot").is_some());
     h.get_by_label("Sample page").click();
     h.run_steps(4);
-    assert!(h.query_by_label("Sample playback").is_some(), "repeated selection keeps the page");
+    assert!(h.query_by_label("One shot").is_some(), "repeated selection keeps the page");
     h.get_by_label("Close expanded panel").click();
     h.run_steps(4);
     h.get_by_label("Expand Instrument (experimental)").click();
     h.run_steps(4);
-    assert!(h.query_by_label("Sample playback").is_some(), "header reopen remembers the view");
-    assert_eq!(h.state().session().unwrap().project(), &before);
+    assert!(h.query_by_label("One shot").is_some(), "header reopen remembers the view");
+    // The page is kept with the project, outside the undo history; nothing else changed.
+    let after = h.state().session().unwrap().project().clone();
+    let device = after.channels[0].devices[0].id;
+    assert_eq!(after.panel_page(device), 2, "the Sample page is kept with the project");
+    assert_eq!(suhina_engine::model::Project { panel_pages: Vec::new(), ..after }, before);
     assert!(!h.state().session().unwrap().can_undo());
     h.key_press(egui::Key::Escape);
     h.run_steps(4);
@@ -101,6 +105,56 @@ fn instrument_editor_sound_edits_share_compact_state_and_one_undo() {
     h.run_steps(4);
     assert_eq!(parameter(&h, "gain"), before);
     assert!(!h.state().session().unwrap().can_undo(), "page changes did not enter history");
+}
+
+/// The page a panel was left on comes back with the project: a session opened on the saved
+/// project opens the editor there.
+#[test]
+fn instrument_editor_opens_on_the_page_the_project_keeps() {
+    let mut h = editor();
+    h.get_by_label("Open editor").click();
+    h.run_steps(4);
+    h.get_by_label("Model page").click();
+    h.run_steps(4);
+    let saved = h.state().session().unwrap().project().clone();
+    h.state_mut().set_session(Session::new(saved), &[]);
+    h.state_mut().view.selected = Some(TrackId(1));
+    h.state_mut().detail_open = true;
+    h.state_mut().detail_showing = detail_view::Showing::Devices;
+    h.run_steps(4);
+    if h.query_by_label("Close expanded panel").is_none() {
+        h.get_by_label("Expand Instrument (experimental)").click();
+        h.run_steps(4);
+    }
+    assert!(h.query_by_label("Strike").is_some(), "the reopened project shows the Model page");
+    assert!(h.query_by_label("Output gain").is_none());
+}
+
+/// The expanded panel floats as a window of its canvas's size, narrower than the main area, and
+/// its top row moves it.
+#[test]
+fn the_expanded_panel_is_a_window_that_its_top_row_moves() {
+    let mut h = editor();
+    h.get_by_label("Open editor").click();
+    h.run_steps(4);
+    let close = h.get_by_label("Close expanded panel").rect();
+    let gain = h.get_by_label("Output gain").rect();
+    assert!(close.right() < 1280.0 - 100.0, "the window is narrower than the main area: {close:?}");
+    // Dragging the top row moves the window and what is in it.
+    let grip = close.left_center() - Vec2::new(120.0, 0.0);
+    h.hover_at(grip);
+    h.step();
+    h.drag_at(grip);
+    h.step();
+    for i in 1..=6 {
+        h.hover_at(grip + Vec2::new(-i as f32 * 10.0, 0.0));
+        h.step();
+    }
+    h.drop_at(grip + Vec2::new(-60.0, 0.0));
+    h.run_steps(4);
+    let moved = h.get_by_label("Output gain").rect();
+    assert!((moved.left() - (gain.left() - 60.0)).abs() < 2.0, "{gain:?} to {moved:?}");
+    assert!(h.query_by_label("Close expanded panel").is_some(), "moving it does not close it");
 }
 
 #[test]
