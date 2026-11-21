@@ -75,6 +75,43 @@ pub trait MidiSystem: Send + Sync {
     }
 }
 
+/// How many writes one output port's worker holds: the driver's queue is the controller's,
+/// and the session never waits on it, so a wedged one's LED stream is droppable past this —
+/// the newest beats the oldest either way, and the order of what is sent is kept.
+const OUTPUT_QUEUE: usize = 64;
+
+/// The writes one output port takes, in order: the session's thread enqueues and never waits
+/// for the driver — a slow or stalled output held the session's look otherwise (a system
+/// exclusive's transmission, a device that is not ready retried without a timeout). A worker
+/// of the port's own does the waiting; it ends when the port goes, after the write it is in.
+struct OutputWorker {
+    to: std::sync::mpsc::SyncSender<Vec<u8>>,
+}
+
+impl OutputWorker {
+    fn start(out: Box<dyn MidiOut>, port: String) -> Self {
+        let (to, from): (std::sync::mpsc::SyncSender<Vec<u8>>, std::sync::mpsc::Receiver<Vec<u8>>) =
+            std::sync::mpsc::sync_channel(OUTPUT_QUEUE);
+        let _ = std::thread::Builder::new().name("suhina-midi-out".into()).spawn(move || {
+            // The channel's writes drain in order; its end (the port was closed or the
+            // program stopped) is the worker's end, after the write it is in — nothing
+            // joins it, so a wedged driver holds no one.
+            while let Ok(bytes) = from.recv() {
+                if let Err(e) = out.send(&bytes) {
+                    suhina_plugins::trace!("midi out {port}: {e}");
+                }
+            }
+        });
+        Self { to }
+    }
+
+    /// Enqueues the write; the worker's queue full is the driver's wedged state, and the
+    /// write is dropped rather than waited on.
+    fn write(&self, bytes: &[u8]) {
+        let _ = self.to.try_send(bytes.to_vec());
+    }
+}
+
 /// Delivers a claimed port's raw messages to its running program: the router's sink, one per
 /// opened port. The driver's thread calls it, and it only sends on the program's order
 /// channel, which the supervisor's loop drains.
@@ -161,7 +198,7 @@ pub(crate) struct MidiInputs {
     /// Input ports opened raw for a running program: (port, extension id, handle token, keep).
     raw: Vec<(String, String, u64, Box<dyn std::any::Any + Send>)>,
     /// Output ports opened for a running program: (port, extension id, handle token, out).
-    outs: Vec<(String, String, u64, Box<dyn MidiOut>)>,
+    outs: Vec<(String, String, u64, OutputWorker)>,
     /// The port sets each program was last told of, so `set_ports` is sent only when they
     /// change or a restart's handle hears them again.
     sent: SentPorts,
@@ -320,7 +357,9 @@ impl MidiInputs {
                 }
                 self.outs.retain(|(p, held_id, _, _)| !(p == name && held_id == id));
                 match system.open_output(name) {
-                    Ok(out) => self.outs.push((name.clone(), id.to_string(), token, out)),
+                    Ok(out) => {
+                        self.outs.push((name.clone(), id.to_string(), token, OutputWorker::start(out, name.clone())))
+                    }
                     Err(e) => notices.extend(self.fail(name, e)),
                 }
             }
@@ -370,11 +409,10 @@ impl MidiInputs {
             return;
         };
         // What the program lights, next to the driver's "midi in": the pair answers why a ring
-        // or a pad shows what it shows (docs/debugging.md).
+        // or a pad shows what it shows (docs/debugging.md). The write is the worker's: the
+        // session's look is not held by the driver.
         suhina_plugins::trace!("midi out {port}: {bytes:02x?}");
-        if let Err(e) = out.send(bytes) {
-            suhina_plugins::trace!("midi out {port}: {e}");
-        }
+        out.write(bytes);
     }
 
     fn fail(&mut self, name: &str, error: String) -> Vec<String> {

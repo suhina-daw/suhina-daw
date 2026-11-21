@@ -8,7 +8,7 @@
 //! session-only test run would spawn whatever a previous workspace build left behind.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable)] // test helpers outside #[test] functions
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use serde_json::{Value, json};
 use suhina_session::extensions::programs;
@@ -413,6 +413,7 @@ fn a_restarted_program_hears_its_first_state_again() {
     // frame count; the looks service the subscribe on the way.
     fixture.pump_until(|f| written_contains(f, [0xB1, 1, 1]), "the first state's marker");
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 1);
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1]]);
     // The process dies and the supervisor starts another one; nothing changes in between.
     let pid = fixture.pid();
@@ -441,6 +442,7 @@ fn a_restarted_by_hand_program_hears_its_first_state_again() {
     // frame count; the looks service the subscribe on the way.
     fixture.pump_until(|f| written_contains(f, [0xB1, 1, 1]), "the first state's marker");
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 1);
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 1, 1]]);
     // The user's restart: the command a button and the CLI run.
     fixture.projects.execute("extensions.restart", &json!({ "id": "handrestart" })).expect("restarted");
@@ -476,6 +478,7 @@ fn a_claimed_port_reaches_the_program_and_its_send_back_goes_out() {
     fixture.midi.play("APC in", 42, &[0x90, 60, 100]);
     fixture.peek(|e| matches!(e, programs::Event::SendBack { port, .. } if port == "APC out"));
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 1);
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x07, 0x64]]);
     assert!(fixture.midi.written_for("Other out").is_empty(), "{:?}", fixture.midi.written_for("Other out"));
 }
@@ -517,6 +520,7 @@ fn a_restarted_program_hears_its_ports_again() {
     fixture.midi.play("APC in", 7, &[0xB0, 7, 1]);
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 1);
     assert_eq!(fixture.midi.written_for("APC out").len(), 1, "{:?}", fixture.midi.written_for("APC out"));
 }
 
@@ -668,6 +672,7 @@ fn a_programs_command_runs_and_its_read_answers() {
     fixture.projects.poll_plugins();
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 1);
     // The controller byte says the command ran; the value byte is the grid it read back: the
     // blank project's four tracks.
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 4]]);
@@ -688,6 +693,7 @@ fn a_refused_command_says_so_in_its_answer() {
     fixture.projects.poll_plugins();
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 1);
     // The controller byte says the command was refused; the script is not at its boundary.
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x00, 0x00]]);
     assert!(fixture.midi.raw_open("APC in"), "the program kept its ports");
@@ -704,11 +710,13 @@ fn a_subscription_pushes_its_first_state_and_the_next_change() {
     fixture.projects.poll_plugins();
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 1);
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 0x01]]);
     // The project changes; the next look pushes again. Both states carried their token first.
     fixture.projects.execute("track.add", &json!({ "kind": "audio" })).expect("the track adds");
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 2);
     assert_eq!(fixture.midi.written_for("APC out"), vec![vec![0xB1, 0x01, 0x01], vec![0xB1, 0x02, 0x01]]);
 }
 
@@ -889,6 +897,7 @@ fn a_returned_port_is_reopened_fresh() {
     fixture.midi.play("APC in", 1, &[0x90, 60, 100]);
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 1);
     assert_eq!(fixture.midi.written_for("APC out").len(), 1);
 }
 
@@ -916,6 +925,7 @@ fn a_port_that_re_enumerates_under_the_scan_is_reopened_fresh() {
     fixture.midi.play("APC in", 1, &[0x90, 60, 100]);
     fixture.peek(|e| matches!(e, programs::Event::SendBack { .. }));
     fixture.projects.poll_plugins();
+    fixture.midi.await_written("APC out", 1);
     assert_eq!(fixture.midi.written_for("APC out").len(), 1);
 }
 
@@ -935,6 +945,9 @@ struct Midi {
     closed: Arc<Mutex<Vec<String>>>,
     /// What programs wrote to the outputs, by port name, in order.
     written: Writes,
+    /// Signalled for every write, so the tests wait on the writes' arrival instead of
+    /// polling the log.
+    signal: Arc<Condvar>,
 }
 
 /// A port held open: dropping it closes the port, taking it out of `open` and logging it.
@@ -965,15 +978,20 @@ impl Drop for RawKeep {
     }
 }
 
-/// An output port a program writes to: the bytes recorded with the port's name.
+/// An output port a program writes to: the bytes recorded with the port's name. The session's
+/// writes are the worker's — the record signals the waiters, so a test's `await_written` is
+/// not a poll.
 struct Out {
     name: String,
     written: Writes,
+    signal: Arc<Condvar>,
 }
 
 impl MidiOut for Out {
     fn send(&self, bytes: &[u8]) -> Result<(), String> {
-        self.written.lock().unwrap().push((self.name.clone(), bytes.to_vec()));
+        let mut written = self.written.lock().unwrap();
+        written.push((self.name.clone(), bytes.to_vec()));
+        self.signal.notify_all();
         Ok(())
     }
 }
@@ -999,7 +1017,11 @@ impl MidiSystem for Midi {
     }
 
     fn open_output(&self, name: &str) -> Result<Box<dyn MidiOut>, String> {
-        Ok(Box::new(Out { name: name.to_string(), written: Arc::clone(&self.written) }))
+        Ok(Box::new(Out {
+            name: name.to_string(),
+            written: Arc::clone(&self.written),
+            signal: Arc::clone(&self.signal),
+        }))
     }
 }
 
@@ -1037,5 +1059,14 @@ impl Midi {
 
     fn written_for(&self, port: &str) -> Vec<Vec<u8>> {
         self.written.lock().unwrap().iter().filter(|(name, _)| name == port).map(|(_, bytes)| bytes.clone()).collect()
+    }
+
+    /// Waits for the output port's write count to reach `count`, on the writes' signal —
+    /// the session's writes are the worker's, so the log is read once the write landed.
+    fn await_written(&self, port: &str, count: usize) {
+        let mut written = self.written.lock().unwrap();
+        while written.iter().filter(|(name, _)| name == port).count() < count {
+            written = self.signal.wait(written).unwrap();
+        }
     }
 }
