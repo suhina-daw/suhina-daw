@@ -631,7 +631,9 @@ impl App {
             let open = detail_view::expanded(ui.ctx()).filter(|(track, _)| *track == chain.track).map(|(_, at)| at);
             let track = chain.track;
             let mut seen = Vec::new();
-            let live = detail_view::give_host_values(&mut chain.devices, open.as_ref(), &mut |at| {
+            let project = self.session().map(suhina_session::Session::project);
+            let pages = |device| project.map_or(0, |p| p.panel_page(device));
+            let live = detail_view::give_host_values(&mut chain.devices, open.as_ref(), &pages, &mut |at| {
                 let values = monitor.and_then(|monitor| monitor.readouts(track, &at.0));
                 if let Some(values) = &values {
                     seen.extend_from_slice(values);

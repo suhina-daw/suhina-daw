@@ -1746,35 +1746,54 @@ pub(crate) fn push_button(ui: &Ui, painter: &Painter, rect: Rect, id: &str, resp
     push_face(painter, rect, &el, hover, label);
 }
 
-/// A [`push_button`] in a layout: as wide as its words with 8 px on each side, 20 px tall, its
-/// accessible label its words. Not `enabled`, it is drawn at half strength and takes no click.
-pub(crate) fn flow_button(ui: &mut Ui, text: &str, enabled: bool) -> Response {
-    let width = text_width(ui, text, theme::ui_font(theme::TEXT_SMALL)) + 16.0;
-    let sense = if enabled { Sense::click() } else { Sense::hover() };
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 20.0), sense);
-    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
-    if ui.is_rect_visible(rect) {
-        let mut painter = ui.painter().clone();
-        if !enabled {
-            painter.multiply_opacity(0.5);
-        }
-        push_button(ui, &painter, rect, "flow-button", &response, text);
-    }
-    response
+/// `text` laid out on one line in `font` with `spacing` points after each letter, in `color`: the
+/// captions and text buttons a canvas sets in spaced capitals over its own artwork.
+pub(crate) fn spaced_galley(ui: &Ui, text: &str, font: FontId, spacing: f32, color: Color32) -> Arc<Galley> {
+    let mut job = LayoutJob::default();
+    job.append(
+        text,
+        0.0,
+        egui::text::TextFormat { font_id: font, extra_letter_spacing: spacing, color, ..Default::default() },
+    );
+    ui.fonts_mut(|fonts| fonts.layout_job(job))
 }
 
-/// A progress bar in a layout: the width left, 16 px tall, `fraction` (0 to 1) of it filled in
-/// the accent colour over a fader rail's recess, `text` on it in the value colour.
-pub(crate) fn progress_bar(ui: &mut Ui, fraction: f32, text: &str) -> Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width().max(40.0), 16.0), Sense::hover());
-    response.widget_info(|| WidgetInfo::labeled(Role::ProgressIndicator, true, text));
+/// A text button in a layout, set in spaced capitals over a canvas's own artwork: `text` in
+/// capitals in `ink`, a little fainter until it is pointed at, with `label` its accessible label.
+/// `underline` draws the line of the chosen or primary one under it; any other shows a faint one
+/// under the pointer and a full one while it has the keyboard's focus. Not `enabled`, it is drawn
+/// at a third of its strength and takes no click.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn caps_button(
+    ui: &mut Ui,
+    label: &str,
+    text: &str,
+    font: FontId,
+    spacing: f32,
+    ink: Color32,
+    underline: Option<Color32>,
+    enabled: bool,
+) -> Response {
+    let galley = spaced_galley(ui, &text.to_uppercase(), font, spacing, ink);
+    // As wide as the laid-out word, so it never runs past the space it takes; the line sits 4
+    // points under it.
+    let size = Vec2::new(galley.size().x.max(1.0), galley.size().y + 6.0);
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(size, sense);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, label));
     if ui.is_rect_visible(rect) {
+        let hovered = if enabled { hover(ui, &response) } else { 0.0 };
+        let color = ink.gamma_multiply(if enabled { 0.8 + 0.2 * hovered } else { 0.35 });
         let painter = ui.painter();
-        painter.rect_filled(rect, 2.0, super::mixer_controls::recess());
-        let filled = Rect::from_min_size(rect.min, Vec2::new(rect.width() * fraction.clamp(0.0, 1.0), rect.height()));
-        painter.rect_filled(filled, 2.0, super::element::accent_ink());
-        let font = theme::ui_font(theme::TEXT_SMALL);
-        text_in(painter, rect, Align2::CENTER_CENTER, text, font, super::element::value_ink());
+        painter.galley_with_override_text_color(rect.min, galley, color);
+        let line = rect.bottom() - 1.0;
+        if let Some(accent) = underline {
+            painter.hline(rect.x_range(), line, Stroke::new(2.0, accent));
+        } else if response.has_focus() {
+            painter.hline(rect.x_range(), line, Stroke::new(1.0, color));
+        } else if hovered > 0.0 {
+            painter.hline(rect.x_range(), line, Stroke::new(1.0, ink.gamma_multiply(0.35 * hovered)));
+        }
     }
     response
 }

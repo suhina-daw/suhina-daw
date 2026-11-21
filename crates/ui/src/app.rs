@@ -4110,7 +4110,12 @@ impl App {
                 && !self.settings_open
                 && !self.dialog_holds_actions()
             {
-                detail_view::show_expanded(ui, inner, track, &device, &mut actions);
+                // It floats over the whole workspace: the browser and the detail area too.
+                let workspace = [Region::Browser, Region::Detail]
+                    .into_iter()
+                    .filter_map(|r| layout.rect(r))
+                    .fold(main, |all, r| all.union(r));
+                detail_view::show_expanded(ui, inner, workspace, track, &device, &mut actions);
             }
             // Collect after the expanded canvas too: its waveform is a first-class drop target.
             self.sample_drops = ui

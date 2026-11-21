@@ -169,6 +169,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "device.showPage",
+        label: "Show a page of a device's panel (its #page: the Instrument's Play, Model, Sample and Advanced); kept with the project, so the panel opens there, and never an undo step",
+        params: &[DEVICE_TRACK, DEVICE, param("page", ParamType::Integer, "the page, from 0 (the first) to 15")],
+        kind: CommandKind::on(Target::Project, Effect::Change),
+        run: device_groups::show_page,
+        policy: Policy::UNHEARD,
+    },
+    CommandSpec {
         id: "device.duplicate",
         label: "Copy a device (a group with everything in it) next to itself; a plug-in's copy starts with its state as it is now",
         params: &[DEVICE_TRACK, DEVICE],

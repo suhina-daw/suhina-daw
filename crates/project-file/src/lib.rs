@@ -34,6 +34,7 @@ use suhina_model::{
     max_clip_gain, valid_bpm,
 };
 use suhina_model::{LaneGroup, LaneLayout, LaneRef, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
+use suhina_model::{MAX_PANEL_PAGE, MAX_PANEL_PAGES, PanelPage};
 
 /// The file extension, without the dot.
 pub const EXTENSION: &str = suhina_model::PROJECT_EXTENSION;
@@ -43,7 +44,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 15;
+pub const VERSION: u64 = 16;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -321,6 +322,12 @@ fn project_value(p: &Project) -> Value {
     // From version 11 (#1322); left out when no channel's lanes were laid out.
     if !p.lane_layouts.is_empty() {
         out.insert("lane_layouts".into(), p.lane_layouts.iter().map(lane_layout_value).collect());
+    }
+    // From version 16; left out while every device's panel shows its first page.
+    if !p.panel_pages.is_empty() {
+        let pages: Vec<Value> =
+            p.panel_pages.iter().map(|page| json!({ "device": page.device.0, "page": page.page })).collect();
+        out.insert("panel_pages".into(), Value::Array(pages));
     }
     // Left out when there is none, so a project without one is written as before.
     if let Some(scale) = p.default_scale {
@@ -1164,6 +1171,7 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         default_scale: read_scale(p, "default_scale", "project")?,
         controller_mappings,
         lane_layouts: read_lane_layouts(p)?,
+        panel_pages: read_panel_pages(p)?,
         next_id: optional_whole(p, "next_id", "project")?.unwrap_or(0),
     };
     // A file written before ids, or an object added by hand without one: the objects without an
@@ -1211,6 +1219,31 @@ fn lane_layout_value(layout: &LaneLayout) -> Value {
 fn read_lane_ref(value: &Value, at: &str) -> Result<LaneRef, ProjectFileError> {
     let o = object(value, at)?;
     Ok(LaneRef { device: optional_whole(o, "device", at)?.map(DeviceId), param: text(o, "param", at)? })
+}
+
+/// The project's `panel_pages` (version 16 on): `{device, page}` each, a page from 1 to 15, a
+/// device once.
+fn read_panel_pages(p: &Obj) -> Result<Vec<PanelPage>, ProjectFileError> {
+    let listed = list(p, "panel_pages", "project")?;
+    if listed.len() > MAX_PANEL_PAGES {
+        return Err("project.panel_pages: too many pages".into());
+    }
+    let mut pages: Vec<PanelPage> = Vec::new();
+    for (i, v) in listed.iter().enumerate() {
+        let at = format!("project.panel_pages[{i}]");
+        let o = object(v, &at)?;
+        let device = DeviceId(whole(o, "device", &at)?);
+        let page: u64 = whole(o, "page", &at)?;
+        let page = u16::try_from(page)
+            .ok()
+            .filter(|page| (1..=MAX_PANEL_PAGE).contains(page))
+            .ok_or_else(|| ProjectFileError(format!("{at}.page: a page from 1 to {MAX_PANEL_PAGE}")))?;
+        if pages.iter().any(|p| p.device == device) {
+            return Err(format!("{at}: device {} has a page twice", device.0).into());
+        }
+        pages.push(PanelPage { device, page });
+    }
+    Ok(pages)
 }
 
 /// The project's `lane_layouts` (version 11 on): each whole, within its limits.

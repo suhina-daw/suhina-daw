@@ -1999,6 +1999,7 @@ impl Session {
         let Some(previous) = self.history.undo.pop() else { return false };
         let undone = std::mem::replace(&mut self.project, previous);
         self.keep_counter(&undone);
+        self.keep_view(&undone);
         self.history.redo.push(undone);
         self.history.changes = self.history.changes.wrapping_add(1);
         true
@@ -2008,6 +2009,7 @@ impl Session {
         let Some(next) = self.history.redo.pop() else { return false };
         let undone = std::mem::replace(&mut self.project, next);
         self.keep_counter(&undone);
+        self.keep_view(&undone);
         self.history.undo.push(undone);
         self.history.changes = self.history.changes.wrapping_add(1);
         true
@@ -2018,6 +2020,12 @@ impl Session {
     /// the undo took away (ADR 0025).
     fn keep_counter(&mut self, left: &Project) {
         self.project.next_id = self.project.next_id.max(left.next_id);
+    }
+
+    /// Keeps the view state of the project an undo or redo stepped away from: the pages the
+    /// devices' panels show are no undo step, so stepping through the history never turns them.
+    fn keep_view(&mut self, left: &Project) {
+        self.project.panel_pages.clone_from(&left.panel_pages);
     }
 }
 

@@ -10,5 +10,8 @@ suhina-device-api.workspace = true
 suhina-device-sdk.workspace = true
 suhina-dsp.workspace = true
 
+[dev-dependencies]
+suhina-test-support.workspace = true
+
 [lints]
 workspace = true

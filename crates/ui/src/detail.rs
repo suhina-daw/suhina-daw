@@ -16,6 +16,7 @@ pub mod piano_roll_ghosts;
 pub mod piano_roll_grid;
 pub mod piano_roll_ruler;
 pub mod piano_roll_scale;
+pub(crate) mod strands;
 
 /// The fill the detail panels and the piano roll paint for themselves, of `kind` (`panel` or
 /// `window`): the region's own background where it gives one, else the `background-color` of

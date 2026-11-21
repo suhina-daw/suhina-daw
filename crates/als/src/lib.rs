@@ -221,6 +221,7 @@ impl Reader {
             // A Live Set brings no mappings with it (`docs/spec/midi-mapping.md`).
             controller_mappings: Vec::new(),
             lane_layouts: Vec::new(),
+            panel_pages: Vec::new(),
             next_id: 0,
         };
         self.untangle_groups(&mut project);

@@ -338,6 +338,13 @@ fn main() -> ExitCode {
             {
                 suhina_ui::kit::liquid::install(&cc.egui_ctx, std::sync::Arc::new(liquid::Liquid::new(gpu)));
             }
+            // A device panel's `Strands` on the GPU; without it the panel draws a lighter version.
+            if let Some(gpu) = cc.wgpu_render_state.clone() {
+                suhina_ui::kit::strands::install(
+                    &cc.egui_ctx,
+                    std::sync::Arc::new(suhina_ui_gpu::strands::Strands::new(gpu)),
+                );
+            }
             let folder = window.themes.folder_text();
             window.app.set_themes(&cc.egui_ctx, theme_list, folder);
             window.app.set_keymap(keymap);

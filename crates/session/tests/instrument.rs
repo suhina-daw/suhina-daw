@@ -88,7 +88,7 @@ fn instrument_import_undo_save_reopen_relink_and_missing_hybrid_are_a_single_lif
     let mut session = Session::new(project());
     session.execute("device.add", &json!({"track":1,"id":"instrument"})).unwrap();
     let before = session.project().clone();
-    assert_eq!(before.channels[0].devices[0].params.iter().find(|p| p.id == "model_revision").unwrap().value, 1.0);
+    assert_eq!(before.channels[0].devices[0].params.iter().find(|p| p.id == "model_revision").unwrap().value, 3.0);
     session.execute("device.loadSample", &json!({"track":1,"device":0,"path":path})).unwrap();
     let imported = session.project().clone();
     assert_eq!(imported.channels[0].devices[0].params.iter().find(|p| p.id == "source").unwrap().value, 1.0);

@@ -378,10 +378,10 @@ fn the_instrument_editor_covers_sound_controls_without_exposing_metadata_or_navi
     }
     assert!(bound.contains(suhina_device_sdk::ui::PAGE_ID));
     assert!(panel.parameters.iter().all(|p| !p.id.starts_with('#')));
-    for (page, name) in ["Play", "Model", "Sample"].into_iter().enumerate() {
-        assert!(expanded.controls.iter().any(
-            |c| c.name == format!("{name} page") && c.gesture == suhina_device_sdk::ui::UiGesture::Set(page as u16)
-        ));
+    // The layers' names show the body layer (page 0) and the sample layer (page 1).
+    for (page, layer) in ["body", "sample"].into_iter().enumerate() {
+        assert!(expanded.controls.iter().any(|c| c.name == format!("Show the {layer} layer")
+            && c.gesture == suhina_device_sdk::ui::UiGesture::Set(page as u16)));
     }
 }
 

@@ -191,8 +191,8 @@ exists. Keys are shown as note names (60 is C3); the correction also accepts a t
 (`A2`, `C#3`, `Db3`) or a MIDI number. Silence, unstable pitch, unsupported input and stale results have distinct explanatory
 messages. An analysis action is a command control, never a fake automatable sound parameter.
 
-The expanded editor's Sample page places these controls through the SDK `SampleAnalysis`
-widget. Compact controls and the expanded editor use the same instrument state. Pages and
+The expanded editor's sample layer places these controls through the SDK `SampleAnalysis`
+widget, beside the root key ([instrument-editor.md](instrument-editor.md) › Expanded editor). Compact controls and the expanded editor use the same instrument state. Pages and
 window state are not instrument parameters. Sample and Hybrid playback remain available while
 analysis runs. Exported editors still need their own host preparation integration.
 
