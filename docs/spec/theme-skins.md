@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-20
+last_verified: 2026-11-21
 covers:
   - crates/ui/src/kit/platform.rs
   - crates/ui/src/kit/session_geometry.rs

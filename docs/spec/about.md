@@ -3,7 +3,7 @@ description: Help › About Suhina, the dialog that says which build this is (lo
 read_when: about, version, build number, which build, nightly version, bug report, help menu, about dialog
 type: spec
 status: draft
-last_verified: 2026-10-28
+last_verified: 2026-11-21
 covers:
   - crates/ui/src/app/project_dialog.rs
   - scripts/macos_app.sh
