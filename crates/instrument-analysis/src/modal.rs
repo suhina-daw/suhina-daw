@@ -2153,11 +2153,11 @@ fn note_onset<F: FnMut(usize, usize) -> bool>(
     }
     // A step of a semitone or more between voiced frames, or a pause, before the note settles:
     // another note before this one, which starts at the last such break.
-    let breaks = voiced.windows(2).enumerate().filter(|(index, pair)| {
+    let mut breaks = voiced.windows(2).enumerate().filter(|(index, pair)| {
         let [(t0, m0), (t1, m1)] = pair else { return false };
         *index < end_index && ((m1 - m0).abs() >= GLIDE_SEMITONES || t1 - t0 > GLIDE_PAUSE_SECONDS)
     });
-    if let Some((index, _)) = breaks.last() {
+    if let Some((index, _)) = breaks.next_back() {
         let start = voiced.get(index + 1).map_or(0.0, |p| p.0) - half / f64::from(RATE);
         return Ok((Onset::Start(start.max(0.0)), wander));
     }
