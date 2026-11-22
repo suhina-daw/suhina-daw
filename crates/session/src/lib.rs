@@ -77,6 +77,7 @@ mod record_writer;
 mod recording;
 mod relink;
 mod scales;
+mod selection;
 mod sends;
 mod soundmap;
 mod swing;
@@ -284,6 +285,10 @@ pub struct Session {
     /// The take lane heard in place of its track's clips (`take.solo`, #989): its track and its
     /// index in `arrangement.takes`. Not saved, not an undo step.
     pub(crate) take_solo: Option<(suhina_model::TrackId, usize)>,
+    /// The selection (`docs/spec/selection.md`, #1679): the selected track and the selected
+    /// device of its chain — what controllers, mappings and agents point at. Not saved, not an
+    /// undo step.
+    pub(crate) selection: selection::Selection,
     /// The audio input a new audio track takes, and an armed one that hears none: the
     /// default track input of Settings › Audio while an input device is chosen, else none
     /// ([`Session::set_default_input`], ADR 0017).
@@ -342,6 +347,7 @@ impl Session {
             backup: backup::SessionBackups::default(),
             live: live_input::LiveInput::default(),
             take_solo: None,
+            selection: selection::Selection::default(),
             default_input: suhina_model::InputChannels::None,
             defaulted: Vec::new(),
             library_base: None,

@@ -530,7 +530,7 @@ pub(crate) fn name_new_devices(
     }
 }
 
-fn device_json(path: &[usize], device: &Device) -> Value {
+pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
     let (kind, id) = match &device.kind {
         DeviceKind::Builtin(id) => ("builtin", Some(id.clone())),
         DeviceKind::Sd => ("sd", None),
@@ -555,9 +555,19 @@ fn device_json(path: &[usize], device: &Device) -> Value {
             .iter()
             .map(|p| {
                 // The engine takes the last value a duplicate parameter id carries (a project
-                // or preset file may name one twice), so the panel shows the same.
+                // or preset file may name one twice), so the panel shows the same. The name,
+                // range and unit ride along, like the `.sd` branch below: a controller's knob
+                // scales onto the unit and its ring draws the position (#1679).
                 let value = device.params.iter().rev().find(|v| v.id == p.id).map_or(p.default, |v| p.clamp(v.value));
-                json!({ "id": p.id, "value": value })
+                json!({
+                    "id": p.id,
+                    "value": value,
+                    "name": p.name,
+                    "group": p.group,
+                    "min": p.min,
+                    "max": p.max,
+                    "unit": suhina_device_sdk::builtin::unit(p.unit),
+                })
             })
             .collect::<Vec<_>>()
     });

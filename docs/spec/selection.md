@@ -5,6 +5,8 @@ type: spec
 status: planned
 last_verified: 2026-11-21
 covers:
+  - crates/session/src/selection.rs
+  - crates/session/src/commands/selection.rs
   - crates/session/src/commands.rs
   - crates/ui/src/app.rs
 ---
@@ -15,10 +17,11 @@ covers:
   and the controllers and mapping design ([ADR 0019](../decisions/0019-midi-controllers-and-mapping.md)),
   whose `selected` track/device targets are "whatever is selected in the window" ([MIDI
   controllers and mapping](midi-mapping.md) › Targets).
-- **Status:** planned ([#1679](https://github.com/suhina-daw/suhina-daw/issues/1679)). The window
-  already selects: both views share one track selection (#208) and a device is picked in the
-  chain; this document makes that selection the session's, so commands, controllers, mappings
-  and agents read and set the same one.
+- **Status:** planned ([#1679](https://github.com/suhina-daw/suhina-daw/issues/1679)). Built so
+  far: the session's own state, the commands and the `project.selection` reading (#1680); the
+  window running the same commands follows. The window already selects: both views share one
+  track selection (#208) and a device is picked in the chain; this document makes that selection
+  the session's, so commands, controllers, mappings and agents read and set the same one.
 
 ## What the selection is
 
@@ -26,9 +29,10 @@ covers:
   chain. One state: a click in the window and a command set the same selection, so they cannot
   disagree.
 - **Not an edit.** The selection records no undo step; undo and redo never move it, and it is not
-  saved with the project. Its effect on the command registry's axes is the session's own — as
-  arming's already is (`track.setArm`): a project-targeted command that changes what the session
-  points at, not the project.
+  saved with the project. Its commands are project-targeted with the registry's `Change` effect:
+  they change something outside the undo history — what the session points at — as the effect's
+  own words say. The main channel is among the selectable tracks, addressed as the device
+  commands address it (`"main"`).
 - **An open project begins with nothing selected**; the window's own habit (selecting as a
   project opens) is the selection being set, not a second state.
 - **The window's multi-picks are its own.** Several tracks or devices picked with Ctrl (Cmd) or
@@ -43,9 +47,9 @@ covers:
 | Command | Parameters | What it does |
 |---|---|---|
 | `track.select` | `track` | Selects that track (id or name). A track that is not the selected one selects its first device (none when its chain is empty); the already-selected track changes nothing. |
-| `track.selectNext`, `track.selectPrevious` | — | The next or previous track in the project's order. At either end nothing happens, and it is not an error — the mapping spec's rule for a relative target with nothing to point at. |
-| `device.select` | `device`, optional `track` | Selects a device on the selected track — or, with `track` named, that track's device, selecting the track too. Naming a device or track that does not exist is refused with its reason, like every other device command. |
-| `device.selectNext`, `device.selectPrevious` | — | The next or previous device of the selected track's top-level chain. With no track selected, an empty chain, or an end reached, nothing happens and it is not an error. |
+| `track.selectNext`, `track.selectPrevious` | — | The next or previous track in the project's order; with nothing selected, the first (next) or last (previous) track. At either end nothing happens, and it is not an error — the mapping spec's rule for a relative target with nothing to point at. |
+| `device.select` | `device`, optional `track` | Selects a device on the selected track — or, with `track` named, that track's device, selecting the track too. Naming a device or track that does not exist is refused with its reason, like every other device command, and so is having no track selected and none named. |
+| `device.selectNext`, `device.selectPrevious` | — | The next or previous device of the branch the selected device sits in — its track's top-level chain for a device not inside a group. With no track or device selected, an empty chain, or an end reached, nothing happens and it is not an error. |
 
 None of them records an undo step; all of them work from the window, the CLI and MCP, and an
 agent attached to the app may run them (the selection is project state, not settings).
@@ -62,11 +66,11 @@ agent attached to the app may run them (the selection is project state, not sett
 
 - `track` — the selected track's id and name, or nothing.
 - `device` — the selected device's entry as [`track.devices`](midi-mapping.md) lists it: its
-  index path, kind, id and name, and its parameters. The parameters are the fuller entry the
-  `.sd` devices' branch of the reading already emits — `id`, `name`, `value`, `min`, `max`,
-  `unit`, `control` — and built-in devices gain those fields too, from the device registry that
-  already holds them; a plug-in's are its stored values, and `device.pluginParams` is the way to
-  its full list.
+  path, kind, id and name, and its parameters. A built-in's parameters carry `name`, `group`,
+  `min`, `max` and `unit` beside `id` and `value` — the registry held them, and the `.sd`
+  devices' branch of the reading already emitted its own — so a knob can scale onto the unit and
+  a ring draw the position; a plug-in's are its stored values, and `device.pluginParams` is the
+  way to its full list.
 - With nothing selected, both are nothing and the parameters are empty.
 
 ## The window follows

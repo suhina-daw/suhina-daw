@@ -53,6 +53,7 @@ mod sampler;
 mod save;
 mod scales;
 mod scenes;
+mod selection;
 mod sends;
 mod soundmap;
 mod stems;
