@@ -41,7 +41,7 @@ pub enum ViewPick {
 
 /// What the key column is painted with: a key style's values, and over them what the theme sets.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct KeyColours {
+pub(super) struct KeyColors {
     white: Color32,
     white_c: Color32,
     white_hover: Color32,
@@ -63,7 +63,7 @@ pub(super) struct KeyColours {
 }
 
 /// `over` laid over `base` at `share` (0 to 1). Both alphas count (source-over on the
-/// premultiplied channels): a translucent key stays translucent, and a faint colour adds only
+/// premultiplied channels): a translucent key stays translucent, and a faint color adds only
 /// what it shows.
 fn mix(base: Color32, over: Color32, share: f32) -> Color32 {
     let share = share.clamp(0.0, 1.0);
@@ -87,18 +87,18 @@ fn key_lights() -> (Color32, Color32) {
 }
 
 /// The values of a built-in key style, lit with `accent` and its names on it in `dark`.
-fn style_colours(style: PianoKeyStyle, (accent, dark): (Color32, Color32)) -> KeyColours {
+fn style_colors(style: PianoKeyStyle, (accent, dark): (Color32, Color32)) -> KeyColors {
     let rgb = Color32::from_rgb;
-    let colours = |white,
-                   white_c,
-                   white_hover,
-                   black,
-                   black_hover,
-                   line,
-                   (text, text_black, text_selected),
-                   scale,
-                   (selected_white, selected_black),
-                   (sheen_left, sheen_right, black_sheen)| KeyColours {
+    let colors = |white,
+                  white_c,
+                  white_hover,
+                  black,
+                  black_hover,
+                  line,
+                  (text, text_black, text_selected),
+                  scale,
+                  (selected_white, selected_black),
+                  (sheen_left, sheen_right, black_sheen)| KeyColors {
         white,
         white_c,
         white_hover,
@@ -119,7 +119,7 @@ fn style_colours(style: PianoKeyStyle, (accent, dark): (Color32, Color32)) -> Ke
         black_sheen,
     };
     match style {
-        PianoKeyStyle::Bone => colours(
+        PianoKeyStyle::Bone => colors(
             rgb(0xC9, 0xC4, 0xBB),
             rgb(0xAB, 0xA6, 0x9C),
             rgb(0xDA, 0xD5, 0xCB),
@@ -131,7 +131,7 @@ fn style_colours(style: PianoKeyStyle, (accent, dark): (Color32, Color32)) -> Ke
             (0.55, 0.40),
             (shine(29, 28, 26, 0.20), shine(255, 255, 255, 0.22), shine(255, 255, 255, 0.16)),
         ),
-        PianoKeyStyle::Stone => colours(
+        PianoKeyStyle::Stone => colors(
             rgb(0x66, 0x63, 0x5C),
             rgb(0x57, 0x54, 0x4E),
             rgb(0x75, 0x72, 0x6A),
@@ -143,7 +143,7 @@ fn style_colours(style: PianoKeyStyle, (accent, dark): (Color32, Color32)) -> Ke
             (0.60, 0.40),
             (shine(29, 28, 26, 0.22), shine(255, 255, 255, 0.12), shine(255, 255, 255, 0.12)),
         ),
-        PianoKeyStyle::Night => colours(
+        PianoKeyStyle::Night => colors(
             rgb(0x34, 0x33, 0x2F),
             rgb(0x45, 0x43, 0x3F),
             rgb(0x4A, 0x48, 0x43),
@@ -158,7 +158,7 @@ fn style_colours(style: PianoKeyStyle, (accent, dark): (Color32, Color32)) -> Ke
     }
 }
 
-/// Whether the theme's sheet sets the keys' colours, so a key style has no say over them.
+/// Whether the theme's sheet sets the keys' colors, so a key style has no say over them.
 pub(super) fn theme_sets_keys() -> bool {
     part_style("piano-key", &[]).background.is_some()
         || part_style("piano-key-black", &[]).background.is_some()
@@ -171,17 +171,17 @@ fn has_gradient(class: &str) -> bool {
     crate::kit::element::named(class).and_then(|part| part.enter().style()).is_some_and(|c| c.has_gradient())
 }
 
-/// A state's colour from the sheet, when it differs from the base rule's: a rule for `piano-key`
+/// A state's color from the sheet, when it differs from the base rule's: a rule for `piano-key`
 /// alone also answers for `piano-key[selected]`, and must not hide the state.
-fn state_colour(class: &str, state: Attr, base: Option<Color32>) -> Option<Color32> {
+fn state_color(class: &str, state: Attr, base: Option<Color32>) -> Option<Color32> {
     part_style(class, &[state]).background.filter(|c| Some(*c) != base)
 }
 
-/// The colours this frame: the key style's, with whatever the sheet sets over them.
-pub(super) fn key_colours(style: PianoKeyStyle) -> KeyColours {
+/// The colors this frame: the key style's, with whatever the sheet sets over them.
+pub(super) fn key_colors(style: PianoKeyStyle) -> KeyColors {
     let lights = key_lights();
     let accent = lights.0;
-    let mut c = style_colours(style, lights);
+    let mut c = style_colors(style, lights);
     let key = part_style("piano-key", &[]);
     let black = part_style("piano-key-black", &[]);
     let set = |target: &mut Color32, value: Option<Color32>| {
@@ -203,10 +203,10 @@ pub(super) fn key_colours(style: PianoKeyStyle) -> KeyColours {
     set(&mut c.white_c, part_style("piano-key-c", &[]).background);
     set(&mut c.white_hover, part_style("piano-key-hover", &[]).background);
     set(&mut c.black_hover, part_style("piano-key-black-hover", &[]).background);
-    set(&mut c.white_selected, state_colour("piano-key", Attr::Selected, key.background));
-    set(&mut c.black_selected, state_colour("piano-key-black", Attr::Selected, black.background));
-    set(&mut c.white_playing, state_colour("piano-key", Attr::Playing, key.background));
-    set(&mut c.black_playing, state_colour("piano-key-black", Attr::Playing, black.background));
+    set(&mut c.white_selected, state_color("piano-key", Attr::Selected, key.background));
+    set(&mut c.black_selected, state_color("piano-key-black", Attr::Selected, black.background));
+    set(&mut c.white_playing, state_color("piano-key", Attr::Playing, key.background));
+    set(&mut c.black_playing, state_color("piano-key-black", Attr::Playing, black.background));
     set(&mut c.line, part_style("piano-key-line", &[]).background);
     set(&mut c.scale, part_style("piano-scale-mark", &[]).background);
     c
@@ -231,7 +231,7 @@ fn sheet_gradient(painter: &egui::Painter, element: crate::kit::element::Name, r
 
 /// What state each key is in this frame.
 struct KeyStates<'a> {
-    colours: &'a KeyColours,
+    colors: &'a KeyColors,
     playing: Option<u8>,
     hover: Option<u8>,
     ranges: Vec<(u8, u8)>,
@@ -244,7 +244,7 @@ impl KeyStates<'_> {
 
     /// The fill of a white key; a key that starts an octave stands out over its whole shape.
     fn white(&self, key: u8) -> Color32 {
-        let c = self.colours;
+        let c = self.colors;
         if self.playing == Some(key) {
             c.white_playing
         } else if self.hover == Some(key) {
@@ -259,7 +259,7 @@ impl KeyStates<'_> {
     }
 
     fn black(&self, key: u8) -> Color32 {
-        let c = self.colours;
+        let c = self.colors;
         if self.playing == Some(key) {
             c.black_playing
         } else if self.hover == Some(key) {
@@ -271,9 +271,9 @@ impl KeyStates<'_> {
         }
     }
 
-    /// The colour of a key's name on its fill.
+    /// The color of a key's name on its fill.
     fn text(&self, key: u8) -> Color32 {
-        let c = self.colours;
+        let c = self.colors;
         if self.playing == Some(key) {
             c.text_playing
         } else if is_black(key) {
@@ -304,10 +304,10 @@ pub(super) fn named(key: u8, names: PianoKeyNames, folded: bool, height: f32) ->
 /// not neighbouring keys, so they are drawn as plain rows.
 pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoClip, state: &PianoRollState) {
     let key_painter = painter.with_clip_rect(layout.keys);
-    let colours = key_colours(state.key_style);
+    let colors = key_colors(state.key_style);
     let selecting = matches!(state.gesture, Some(Gesture::KeySelect { .. }));
     let states = KeyStates {
-        colours: &colours,
+        colors: &colors,
         playing: state.playing_key(),
         hover: if selecting { None } else { state.hover_key() },
         ranges: state.key_live.into_iter().collect(),
@@ -318,7 +318,7 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
     let edge = (layout.keys.width() * BLACK_KEY_SHARE).round() / layout.keys.width().max(1.0);
     let first = layout.key_at(layout.grid.bottom() - 0.5).unwrap_or(0);
     let last = layout.key_at(layout.grid.top() + 0.5).unwrap_or(127);
-    key_painter.rect_filled(layout.keys, 0.0, colours.black);
+    key_painter.rect_filled(layout.keys, 0.0, colors.black);
     for key in (first..=last).filter(|k| layout.rows.shows(*k)) {
         let y = layout.y_of(key);
         let row = Rect::from_min_max(
@@ -328,7 +328,7 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
         let black = is_black(key);
         if folded {
             key_painter.rect_filled(row, 0.0, if black { states.black(key) } else { states.white(key) });
-            key_painter.hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, colours.line));
+            key_painter.hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, colors.line));
         } else if black {
             // The white keys either side run on past the black key's tip, each to the row's middle.
             let middle = row.center().y.round();
@@ -340,14 +340,14 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
             if white_gradient {
                 sheet_gradient(&key_painter, crate::kit::element::PIANO_KEY, tip);
             } else {
-                shade(&key_painter, tip, Color32::TRANSPARENT, colours.sheen_right);
+                shade(&key_painter, tip, Color32::TRANSPARENT, colors.sheen_right);
             }
             let cap = Rect::from_min_max(row.min, Pos2::new(black_right, row.bottom()));
             key_painter.rect_filled(cap, 0.0, states.black(key));
             if black_gradient {
                 sheet_gradient(&key_painter, crate::kit::element::PIANO_KEY_BLACK, cap);
             } else {
-                shade(&key_painter, cap, Color32::TRANSPARENT, colours.black_sheen);
+                shade(&key_painter, cap, Color32::TRANSPARENT, colors.black_sheen);
             }
         } else {
             key_painter.rect_filled(row, 0.0, states.white(key));
@@ -358,22 +358,22 @@ pub(super) fn draw_keys(painter: &egui::Painter, layout: &Layout, clip: &PianoCl
                 shade(
                     &key_painter,
                     Rect::from_min_max(row.min, Pos2::new(split, row.bottom())),
-                    colours.sheen_left,
+                    colors.sheen_left,
                     Color32::TRANSPARENT,
                 );
                 shade(
                     &key_painter,
                     Rect::from_min_max(Pos2::new(split, row.top()), row.max),
                     Color32::TRANSPARENT,
-                    colours.sheen_right,
+                    colors.sheen_right,
                 );
             }
             // White keys meet only between E and F and between B and C.
             if matches!(key % 12, 0 | 5) {
-                key_painter.hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, colours.line));
+                key_painter.hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, colors.line));
             }
         }
-        scale_view::key_mark(&key_painter, clip.scale.filter(|_| state.highlight_scale), key, row, colours.scale);
+        scale_view::key_mark(&key_painter, clip.scale.filter(|_| state.highlight_scale), key, row, colors.scale);
         if named(key, state.key_names, folded, layout.key_height) {
             let right = if black && !folded { black_right - BLACK_NAME_INSET } else { row.right() - NAME_INSET };
             key_painter.text(
@@ -412,7 +412,7 @@ pub(super) fn draw_strip(ui: &Ui, layout: &Layout, state: &PianoRollState) {
         let center = Pos2::new(strip.center().x, layout.y_of(key) + layout.key_height / 2.0);
         let chip = Rect::from_center_size(center, POINTER_NAME);
         // `piano-scale-strip[kind="pointer"]`: its `background-color` and `color`, so the chip
-        // stands out on a strip a theme colours.
+        // stands out on a strip a theme colors.
         let own = crate::kit::element::PIANO_SCALE_STRIP.attribute("kind", "pointer").look();
         painter.rect_filled(chip, 1.0, own.background());
         let name = key_name(key);
@@ -739,7 +739,7 @@ mod tests {
         let clear = Color32::from_rgba_unmultiplied(255, 255, 255, 0);
         let mixed = mix(clear, Color32::from_rgb(0, 0, 200), 0.5);
         assert_eq!(mixed.a(), 128, "{mixed:?}");
-        // A faint colour adds only what it shows: a nearly clear red barely tints white, which
+        // A faint color adds only what it shows: a nearly clear red barely tints white, which
         // stays opaque.
         let faint = mix(Color32::WHITE, Color32::from_rgba_unmultiplied(255, 0, 0, 10), 0.5);
         let [r, g, _, a] = faint.to_srgba_unmultiplied();

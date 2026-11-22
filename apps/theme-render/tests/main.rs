@@ -15,7 +15,7 @@ mod painted;
 mod render;
 mod scenes;
 
-/// The see-through test theme beside this crate (translucent colours everywhere, and round button
+/// The see-through test theme beside this crate (translucent colors everywhere, and round button
 /// and fader artwork), with the warnings from reading it.
 fn see_through_with_warnings() -> Result<(Subject, Vec<String>), String> {
     Subject::folder(&Path::new(env!("CARGO_MANIFEST_DIR")).join("themes/see-through"))

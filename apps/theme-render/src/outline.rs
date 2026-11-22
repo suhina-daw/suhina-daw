@@ -4,7 +4,7 @@
 //! `--outline` (#1582): every element of a scene's last frame drawn over the render as a
 //! rectangle round its padding box, with its name (`button#play`) in its top left corner, so a
 //! theme author sees which element is which. Drawn into the picture after the frame, never by the
-//! window, so the frame inspected is the one rendered. Elements are coloured by depth, drawn layer
+//! window, so the frame inspected is the one rendered. Elements are colored by depth, drawn layer
 //! by layer as the window paints them (a menu's over the view's), and a name is cut to its box's
 //! width.
 
@@ -13,8 +13,8 @@ use egui::LayerId;
 use image::RgbaImage;
 use suhina_ui::kit::native_css::inspector::FrameElement;
 
-/// Colours by depth, distinct on light and dark windows.
-const COLOURS: [[u8; 3]; 6] =
+/// Colors by depth, distinct on light and dark windows.
+const COLORS: [[u8; 3]; 6] =
     [[255, 64, 129], [0, 200, 255], [255, 196, 0], [120, 220, 80], [190, 120, 255], [255, 120, 40]];
 
 /// The names' size in points.
@@ -41,14 +41,14 @@ pub fn draw(image: &RgbaImage, elements: &[FrameElement], layers: &[LayerId], sc
         if !rect.is_positive() {
             continue;
         }
-        let colour = COLOURS.get(depth % COLOURS.len()).copied().unwrap_or([255, 255, 255]);
+        let color = COLORS.get(depth % COLORS.len()).copied().unwrap_or([255, 255, 255]);
         let [x0, y0, x1, y1] = [rect.min.x, rect.min.y, rect.max.x, rect.max.y].map(|v| (v * scale).round() as i64);
-        frame(&mut out, [x0, y0, x1 - 1, y1 - 1], colour);
+        frame(&mut out, [x0, y0, x1 - 1, y1 - 1], color);
         let label = match &element.id {
             Some(id) => format!("{}#{id}", element.name),
             None => element.name.to_owned(),
         };
-        text(&mut out, &font, &label, [x0 + 1, y0 + 1], x1 - x0 - 2, TEXT * scale, colour);
+        text(&mut out, &font, &label, [x0 + 1, y0 + 1], x1 - x0 - 2, TEXT * scale, color);
     }
     Ok(out)
 }
@@ -64,34 +64,34 @@ fn depths(elements: &[FrameElement]) -> Vec<usize> {
     depths
 }
 
-fn put(image: &mut RgbaImage, x: i64, y: i64, colour: [u8; 3], alpha: f32) {
+fn put(image: &mut RgbaImage, x: i64, y: i64, color: [u8; 3], alpha: f32) {
     let (Ok(x), Ok(y)) = (u32::try_from(x), u32::try_from(y)) else { return };
     if x >= image.width() || y >= image.height() {
         return;
     }
     let pixel = image.get_pixel_mut(x, y);
     let a = alpha.clamp(0.0, 1.0);
-    for (channel, value) in pixel.0.iter_mut().zip(colour) {
+    for (channel, value) in pixel.0.iter_mut().zip(color) {
         *channel = (f32::from(*channel) * (1.0 - a) + f32::from(value) * a).round() as u8;
     }
     pixel.0[3] = pixel.0[3].max((a * 255.0) as u8);
 }
 
 /// A one-pixel rectangle through the corners `[x0, y0, x1, y1]`, inclusive.
-fn frame(image: &mut RgbaImage, [x0, y0, x1, y1]: [i64; 4], colour: [u8; 3]) {
+fn frame(image: &mut RgbaImage, [x0, y0, x1, y1]: [i64; 4], color: [u8; 3]) {
     for x in x0..=x1 {
-        put(image, x, y0, colour, 1.0);
-        put(image, x, y1, colour, 1.0);
+        put(image, x, y0, color, 1.0);
+        put(image, x, y1, color, 1.0);
     }
     for y in y0..=y1 {
-        put(image, x0, y, colour, 1.0);
-        put(image, x1, y, colour, 1.0);
+        put(image, x0, y, color, 1.0);
+        put(image, x1, y, color, 1.0);
     }
 }
 
 /// `label` at `at` (its top left), on a dark plate, cut to `width` pixels; nothing when not even
 /// one letter fits.
-fn text(image: &mut RgbaImage, font: &FontRef<'_>, label: &str, at: [i64; 2], width: i64, size: f32, colour: [u8; 3]) {
+fn text(image: &mut RgbaImage, font: &FontRef<'_>, label: &str, at: [i64; 2], width: i64, size: f32, color: [u8; 3]) {
     let scaled = font.as_scaled(PxScale::from(size));
     let ascent = scaled.ascent();
     let height = (scaled.height().ceil() as i64).max(1);
@@ -120,7 +120,7 @@ fn text(image: &mut RgbaImage, font: &FontRef<'_>, label: &str, at: [i64; 2], wi
             outlined.draw(|gx, gy, coverage| {
                 let x = at[0] + bounds.min.x as i64 + i64::from(gx);
                 let y = at[1] + bounds.min.y as i64 + i64::from(gy);
-                put(image, x, y, colour, coverage);
+                put(image, x, y, color, coverage);
             });
         }
     }

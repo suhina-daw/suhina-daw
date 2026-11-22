@@ -44,8 +44,8 @@ lane, the grid and zoom, and the `note.*` commands.
 ## Where it opens
 
 Active notes and velocity stems retain a minimum 3:1 contrast against the editor surface,
-including clips with very dark imported colours. This is a display adjustment only; the
-saved clip colour is unchanged. Note labels choose contrasting ink from the actual fill,
+including clips with very dark imported colors. This is a display adjustment only; the
+saved clip color is unchanged. Note labels choose contrasting ink from the actual fill,
 not from velocity or opacity. Muted, erased and out-of-window notes remain dimmed.
 
 - **Built:** selecting a MIDI clip in the Arrangement view shows the clip's properties column on the
@@ -273,10 +273,10 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
    plus its length; the grid past that is shaded, and so is the grid before the part the clip
    plays (before its start marker, or before its loop's start when that is earlier). Notes in a
    shaded part are drawn at a little under half their opacity, so a note outside the loop reads
-   as not playing; they stay notes like any other (selected, moved and listed as before). Notes are drawn in the track colour, their opacity rising
-   with velocity; a selected note has a light outline and is filled with the accent, or with `text.primary` where the clip's colour is close to the accent; every note shows its name, cut at the block's edge when it
+   as not playing; they stay notes like any other (selected, moved and listed as before). Notes are drawn in the track color, their opacity rising
+   with velocity; a selected note has a light outline and is filled with the accent, or with `text.primary` where the clip's color is close to the accent; every note shows its name, cut at the block's edge when it
    does not fit.
-   **Playhead** (built): while the transport runs, a 1 px line in the accent colour over the
+   **Playhead** (built): while the transport runs, a 1 px line in the accent color over the
    ruler, the grid and the velocity lane shows where playback is in the clip's content, mapped
    through the clip's start, offset and loop (a looping clip shows it going round its loop), in
    step with the Arrangement view's playhead. Outside the clip, or while stopped, there is none.
@@ -287,7 +287,7 @@ From left to right: the clip's panel with its note tools (› Clip column, › N
    or not: a line 2 px wide from the lane's foot up to its velocity, a round head there, and from
    the head a thin line along the note's length, so notes starting together (a chord) are told
    apart by their heights. With notes selected, their stems are lit and the others step back; a
-   muted note's stem takes the muted colour. The key column names 127, 64 and 1 beside the lane,
+   muted note's stem takes the muted color. The key column names 127, 64 and 1 beside the lane,
    and a faint line marks 64 across it. A press grabs the stem nearest the pointer: the nearest
    start, and among notes starting together the head nearest the pointer's height, a selected
    note before the others. **Built
@@ -593,7 +593,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   column plays that note through the track's instrument for as long as the button is held: the note
   goes on at the press and off at the release. Dragging up and down plays the key under the pointer,
   one at a time: the key the pointer was on goes off and the new one goes on. The key that is held
-  is drawn in the accent colour. Nothing is added to the project or to the undo history; a press
+  is drawn in the accent color. Nothing is added to the project or to the undo history; a press
   that plays no note (no audio engine attached) changes nothing else either.
 - The sound is a **transport**-kind command, `preview.noteOn` and `preview.noteOff` (› Commands):
   it goes to the engine the window is attached to (ADR 0011), the same path the browser's preview
@@ -640,7 +640,7 @@ one undo step, so Ctrl+Z (Cmd+Z on macOS) takes back exactly what it did.
   rows lower than 8 points name none.
 - **Key style:** Bone (light, the default), Stone (mid) and Night (dark). A theme's sheet sets
   anything about the keys over the chosen style (`docs/spec/theme-skins.md`); when it sets their
-  colours, the menu shows **Theme** in place of a choice.
+  colors, the menu shows **Theme** in place of a choice.
 - The **scale strip** always names the octaves. The name of the row under the pointer, in the grid
   or on the keys, shows at that row, the row itself a little lighter in the grid. Over the strip the
   pointer is a magnifier and no row is named, and a drag changes the row height (› Zoom and scroll).
@@ -1077,7 +1077,7 @@ velocities every time and matches what was heard
 ### Clip column
 
 - **Built (#1222):** a MIDI clip's column is its **panel**, as an audio clip's is
-  ([clip panel spec](clip-panel.md)): a title row (the clip's colour, a click opens the palette; its
+  ([clip panel spec](clip-panel.md)): a title row (the clip's color, a click opens the palette; its
   name, a double-click renames it; its length in beats; the **Clip / Devices** switch), then the
   **Clip part** the two kinds share: **Start** | **End** with **Set**, the **Loop** switch,
   **Position** | **Length** with **Set**, and **Scale** (root and mode, `clip.setScale`). Under
@@ -1092,7 +1092,7 @@ velocities every time and matches what was heard
   focus (the last picked); the others' notes are drawn faint where they play, as ghost notes are,
   and the view runs on over them. The title's name is then a list of the picked clips, the one
   being edited lit (**Editing**); picking another gives it the focus. A strip over the ruler shows
-  each picked clip as a bar in its track's colour where it lies in time, with its name, and the
+  each picked clip as a bar in its track's color where it lies in time, with its name, and the
   edited one brightest; clips at the same time lie one above the other, in up to four rows; a
   click on a bar, or on a clip's faint note with the Select tool, gives it the focus, as a
   double-click of the right button on a faint note does. The **Focus** switch at the strip's left
@@ -1152,7 +1152,7 @@ clip scales) and is saved with the project; a clip has none until one is set.
   unlit, as there is no scale to fold to. Highlight, on unless turned off, tints the
   rows of the scale and marks its keys as below; off, the rows look as without a scale, while the
   scale still folds rows, fits notes and names the key column's rows. It is kept in Settings.
-- **The rows of the keys in the scale are tinted with the clip's colour** (8 % of it over the
+- **The rows of the keys in the scale are tinted with the clip's color** (8 % of it over the
   dark rows, the root's 14 %), in place of the white-key and black-key rows a clip without a scale
   shows, and the other rows stay dark; each key in the scale
   has a 2 px mark at the right edge of the key column. While the clip has a
@@ -1214,7 +1214,7 @@ button opens its clip in the editor.
   offset plus the beats since its start), so a looping edited clip shows what plays with its
   first time round, not every pass on top of each other. Muted notes are not drawn.
 - **Drawing.** Ghost notes are drawn under the clip's own notes and over the grid's rows, as
-  plain rectangles in their own track's colour at 25 % opacity: no name, no edge, no velocity
+  plain rectangles in their own track's color at 25 % opacity: no name, no edge, no velocity
   stem. The notes of a clip that does not sound (turned off, or on a muted track) are the grey
   the Arrangement draws such a clip in, at the same opacity, and so is its bar among several
   picked clips (#1393). A click, a double-click or a drag on a ghost note does what it does on the empty grid (a
@@ -1226,7 +1226,7 @@ button opens its clip in the editor.
   track), a label that only describes and senses nothing.
 - **Limits.** At most 20 000 ghost notes are mapped for one clip and at most 512 of those in view
   are labelled, so a large project never draws or maps without end.
-- **Later:** ghost notes for an audio clip's editor; a colour or opacity setting.
+- **Later:** ghost notes for an audio clip's editor; a color or opacity setting.
 
 ## Slicing and gluing
 

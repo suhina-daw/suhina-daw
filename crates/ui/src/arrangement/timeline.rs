@@ -12,7 +12,7 @@ use suhina_engine::model::{
     ChannelRole, Clip, ClipContent, ClipId, FadeCurve, LaneData, LoopRange, Meter, Project, Rgb, TimeSignature, TrackId,
 };
 
-use crate::interaction::grid::{ColumnKind, gain_to_db, track_colour};
+use crate::interaction::grid::{ColumnKind, gain_to_db, track_color};
 use crate::interaction::nesting::depth;
 use crate::kit::waveform::Waveforms;
 
@@ -115,7 +115,7 @@ pub struct ClipBox {
     /// How late its right edge can go: where its audio ends, for an audio clip that does not
     /// loop; `None` when it can go on (a MIDI or looping clip).
     pub latest_end: Option<f64>,
-    /// The colour it shows: its own, or its track's.
+    /// The color it shows: its own, or its track's.
     pub color: Rgb,
     /// What the clip is known by from one build to the next (its content, its start and its id),
     /// so a stacked clip keeps its sub-row when another goes. The id tells apart two clips that
@@ -123,7 +123,7 @@ pub struct ClipBox {
     /// content and the start alone they shared one entry and swapped rows on every build.
     pub stack_key: (u32, u64, u32),
     /// The number on its track (from 1) of the take it was comped from, for a part of a comp: it
-    /// is named and coloured after that take (#989).
+    /// is named and colored after that take (#989).
     pub take: Option<usize>,
     /// It plays through its channel's ARA plug-in (#990).
     pub ara: bool,
@@ -289,16 +289,16 @@ pub struct TakeRow {
     pub number: usize,
     pub name: String,
     pub clips: Vec<ClipBox>,
-    /// Its colour: its own, or the palette's in turn ([`take_colour`]).
+    /// Its color: its own, or the palette's in turn ([`take_color`]).
     pub color: Rgb,
     /// The spans of it that are on the track (start, end in beats): drawn lit, the rest dimmed
     /// (#989).
     pub used: Vec<(f64, f64)>,
 }
 
-/// The colour of a track's take `number` (from 1) while it has none of its own: the palette's
-/// colours in turn, three apart so neighbouring takes differ (#953).
-pub fn take_colour(number: usize) -> Rgb {
+/// The color of a track's take `number` (from 1) while it has none of its own: the palette's
+/// colors in turn, three apart so neighbouring takes differ (#953).
+pub fn take_color(number: usize) -> Rgb {
     let swatches = crate::interaction::color_picker::swatches();
     swatches[number.saturating_mul(3) % swatches.len()]
 }
@@ -309,13 +309,13 @@ fn take_name(project: &Project, take: &suhina_engine::model::TakeLane) -> String
     format!("{} {}", project.shown_track_name(take.track), take.name)
 }
 
-/// The number on its track (from 1), name and colour of piece `piece` of take `index` of
-/// `arrangement.takes`: the piece's own colour, else the take's, else the palette's in turn.
+/// The number on its track (from 1), name and color of piece `piece` of take `index` of
+/// `arrangement.takes`: the piece's own color, else the take's, else the palette's in turn.
 fn take_of(project: &Project, index: usize, piece: usize) -> Option<(usize, String, Rgb)> {
     let take = project.arrangement.takes.get(index)?;
     let number = project.arrangement.takes.iter().take(index + 1).filter(|t| t.track == take.track).count();
-    let colour = take.clips.get(piece).and_then(|c| c.color).or(take.color).unwrap_or_else(|| take_colour(number));
-    Some((number, take_name(project, take), colour))
+    let color = take.clips.get(piece).and_then(|c| c.color).or(take.color).unwrap_or_else(|| take_color(number));
+    Some((number, take_name(project, take), color))
 }
 
 /// How many take lanes a track needs before they are shown.
@@ -430,7 +430,7 @@ impl Timeline {
             if kind != ColumnKind::Return {
                 number += 1;
             }
-            let track_color = track_colour(track, position);
+            let lane_color = track_color(track, position);
             let clips = project
                 .arrangement
                 .lanes
@@ -441,8 +441,8 @@ impl Timeline {
                         .iter()
                         .enumerate()
                         .map(|(index, clip)| {
-                            let mut shown = clip_box(project, clip, index, track_color);
-                            // A part of a comp: named and coloured after its take (#989).
+                            let mut shown = clip_box(project, clip, index, lane_color);
+                            // A part of a comp: named and colored after its take (#989).
                             if let Some((number, name, color)) =
                                 project.comp_piece(track.id, clip).and_then(|(i, piece)| take_of(project, i, piece))
                             {
@@ -465,7 +465,7 @@ impl Timeline {
                 } else {
                     suhina_engine::model::names::shown_with_number(&track.name, number)
                 },
-                color: track_colour(track, position),
+                color: track_color(track, position),
                 kind,
                 notes: kind == ColumnKind::Track && track.content.notes,
                 depth: depth(project, track.parent),
@@ -652,7 +652,7 @@ impl Timeline {
 pub struct Folds {
     /// The groups whose tracks are folded away.
     folded: Vec<TrackId>,
-    /// What each of them shows, in the same order: the track whose clips and colour its row
+    /// What each of them shows, in the same order: the track whose clips and color its row
     /// takes. Worked out by [`Folds::reconcile`], never set by a click.
     shown: Vec<(TrackId, TrackId)>,
 }
@@ -801,13 +801,13 @@ fn take_rows(project: &Project) -> Vec<TakeRow> {
                 // The number the take commands know it by, which stays its own when another goes.
                 number: project.take_number(index).unwrap_or(i + 1),
                 name: take_name(project, take),
-                // Each piece in its own colour or the take's, named after the take.
+                // Each piece in its own color or the take's, named after the take.
                 clips: take
                     .clips
                     .iter()
                     .enumerate()
                     .map(|(piece, clip)| {
-                        let own = take.color.unwrap_or_else(|| take_colour(i + 1));
+                        let own = take.color.unwrap_or_else(|| take_color(i + 1));
                         let shown = clip_box(project, clip, piece, clip.color.unwrap_or(own));
                         // A MIDI pass ends where its content does, as an audio pass's recording does:
                         // its edges stop there (`take.trimPiece`).
@@ -821,7 +821,7 @@ fn take_rows(project: &Project) -> Vec<TakeRow> {
                         }
                     })
                     .collect(),
-                color: take.color.unwrap_or_else(|| take_colour(i + 1)),
+                color: take.color.unwrap_or_else(|| take_color(i + 1)),
                 used: project.comp_used(index),
             }
         }));
@@ -839,7 +839,7 @@ fn material_key(content: &ClipContent) -> u64 {
     hasher.finish()
 }
 
-/// How the view draws `clip`, the `index`th of its lane, on a track coloured `track_color`.
+/// How the view draws `clip`, the `index`th of its lane, on a track colored `track_color`.
 fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> ClipBox {
     let content = project.content(clip.content);
     let looped = clip.loop_range.is_some();

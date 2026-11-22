@@ -51,8 +51,8 @@
     border-color: var(--gloss-brass);
   }
   /* A rule for every `button` hides the lit looks of Suhina's base sheet: state them again, in the
-     gloss's own style, from the palette's lit colours and the text that reads on them. A lit
-     button keeps the rule's edge, shadows and, over the lit colour, a gloss. */
+     gloss's own style, from the palette's lit colors and the text that reads on them. A lit
+     button keeps the rule's edge, shadows and, over the lit color, a gloss. */
   button[kind="toggle"][checked] {
     color: var(--text-inverse);
     background-color: var(--control-selectedBackground);

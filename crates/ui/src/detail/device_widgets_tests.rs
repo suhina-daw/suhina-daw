@@ -182,9 +182,9 @@ fn a_file_row_shows_its_name_without_the_extension() {
     assert_eq!(GROUP_JOIN, " / ", "the join the folder scan writes a capture folder's pack name with");
 }
 
-/// A stepper's triangle is the colour of the row's drop-down arrows, not of a button's text.
+/// A stepper's triangle is the color of the row's drop-down arrows, not of a button's text.
 #[test]
-fn a_steppers_triangle_takes_the_dropdown_arrow_colour() {
+fn a_steppers_triangle_takes_the_dropdown_arrow_color() {
     let css = "button { color: #00FF00; } dropdown-arrow { color: #FF00FF; }";
     crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
     let ctx = egui::Context::default();

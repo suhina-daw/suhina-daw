@@ -234,7 +234,7 @@ the checks in [Taking code from open-source projects](#taking-code-from-open-sou
   the VeSTige header above.
 - Copying samples, presets, Packs, Core Library content, impulse responses, wavetables or demo
   projects from proprietary products, or committing them as test data.
-- Copying the visual design of a proprietary product: icons, artwork, interface text, colours,
+- Copying the visual design of a proprietary product: icons, artwork, interface text, colors,
   typefaces or the look of its controls. Familiar workflow and the structure of the window (which
   region is where, what a view shows, how it reacts, its shortcuts and menu structure) are
   allowed; [`docs/design/brief.md`](docs/design/brief.md) lists what stays familiar and what

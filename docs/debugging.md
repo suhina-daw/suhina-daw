@@ -115,7 +115,7 @@ viewport call with fast contents points to native rendering/presentation rather 
 the settings controls. `settings placement` distinguishes native and embedded Settings;
 the outer `dialogs` frame measurement includes the synchronous native presentation wait.
 
-`colour window surface` records the detached colour tool's client rectangle, scale, theme
+`color window surface` records the detached color tool's client rectangle, scale, theme
 fill and native geometry when any changes. It separates a missing/transparent UI fill from
 a native presentation fault and exposes position or scale feedback without pointer logs.
 

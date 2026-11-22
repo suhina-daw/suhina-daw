@@ -72,7 +72,7 @@ Sizes and tokens are in [components](../design/components.md) › Meter.
   the rows the header shows; the return and main rows along the bottom show theirs lying down,
   left of the volume.
 - The scale is the volume control's: −70 dB at the bottom (or left) to +6 dB at the top, in dB.
-  The peak is drawn dimmer, the RMS level over it in the full colour; above −3 dB (the top 12 %)
+  The peak is drawn dimmer, the RMS level over it in the full color; above −3 dB (the top 12 %)
   the bar turns `meter.hot`. The clip indicator is a light at the top (or right end) in
   `recording` while lit; a click anywhere on the meter turns it off. Each meter is named for
   screen readers, "Drums level: −12.0 dB" or "Main level: silent, clipped".
@@ -90,13 +90,13 @@ Sizes and tokens are in [components](../design/components.md) › Meter.
   `meter-horizontal meter-level` and remain anchored to the entire dBFS scale.
   Measured peak/RMS extents clip the gradient with native opacity; segment gaps
   remain empty and optional outset shadows glow around the lit region. Increasing
-  the level reveals higher colours rather than stretching the gradient.
+  the level reveals higher colors rather than stretching the gradient.
 - Theme `skin.meter-intensity` (integer 0–100, default 100) dims the measured
   bars, hold marks, needles, artwork frames and glow together, preserving empty
   native bar rails, the clip light and all measurement geometry. Frame images dim
   as a whole, including any background authored inside them. Canonical CSS
   `meter { meter-intensity: 65; }` sets this value; a theme may offer it as a quick
-  control of its own through `var()`. This is visual opacity, not audio gain or colour
+  control of its own through `var()`. This is visual opacity, not audio gain or color
   saturation. Advanced `meter-level { opacity: .5; }` additionally dims native
   bars, hold marks and needles as well as CSS fills/glow. An explicitly transparent
   fill suppresses native fill fallback.

@@ -452,7 +452,7 @@ fn with_audio() -> Result<App, String> {
         clips: vec![clip],
     });
     let _ = project.assign_ids();
-    project.fill_track_colours();
+    project.fill_track_colors();
     let mut app = crate::fixed_app();
     app.set_browser_open(false);
     app.set_session(suhina_session::Session::new(project), &[]);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! What the built-in themes in `theme_tests!` paint in each scene, against what `painted/<theme>.txt`
-//! records (#1023): what moves the views onto elements, or the colours into the sheet, shows which
+//! records (#1023): what moves the views onto elements, or the colors into the sheet, shows which
 //! themes' looks it changes. Headless: the digest of [`painted::scene`]'s listing, no GPU.
 //!
 //! A drawing that differs from the recording is flagged, not failed: the test prints it and, with
@@ -119,8 +119,8 @@ macro_rules! theme_tests {
 }
 
 // One theme for each way a theme is made, not every built-in one: most built-in themes are the same
-// sheet with other colour values (catppuccin, high contrast, Suhina Light), and a variant is a set
-// of colours over its theme, so drawing them all repeated the same shapes in other colours and
+// sheet with other color values (catppuccin, high contrast, Suhina Light), and a variant is a set
+// of colors over its theme, so drawing them all repeated the same shapes in other colors and
 // flagged one change twenty times. Kept: a dark and a second palette on the plain sheet, a variant
 // (light), the glass material, and the three themes drawn from their own artwork.
 theme_tests! {

@@ -185,7 +185,7 @@ pub(crate) fn mentions_light_dark(source: &str) -> bool {
 }
 
 /// Replaces each `light-dark(<light>, <dark>)` with its first value where `light` (the theme in use
-/// is a light one), else its second: a device panel's colour for either kind of theme. Nested
+/// is a light one), else its second: a device panel's color for either kind of theme. Nested
 /// calls are resolved too; a call without exactly two values is invalid.
 pub(crate) fn light_dark(source: &str, light: bool) -> Result<String, String> {
     let mut output = source.to_owned();
@@ -339,7 +339,7 @@ mod tests {
     fn light_dark_takes_the_value_for_the_scheme_nested_and_inside_other_values() {
         assert_eq!(light_dark("light-dark(#fff, #000)", true).unwrap(), "#fff");
         assert_eq!(light_dark("light-dark(#fff, #000)", false).unwrap(), "#000");
-        // Commas inside a colour function belong to it.
+        // Commas inside a color function belong to it.
         assert_eq!(light_dark("light-dark(rgb(1, 2, 3), rgba(4, 5, 6, 0.5))", false).unwrap(), "rgba(4, 5, 6, 0.5)");
         assert_eq!(
             light_dark("linear-gradient(180deg, light-dark(#eee, #222) 0%, #000 100%)", true).unwrap(),

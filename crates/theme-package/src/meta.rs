@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! `theme.json`, a theme's metadata (`docs/spec/theme-skins.md` › Theme folders): the format
-//! version, name, author, description, the default variant's name, the swatch colour, whether
+//! version, name, author, description, the default variant's name, the swatch color, whether
 //! the default variant is light or dark (`color-scheme`), an optional suggested toolbar
 //! arrangement and, with `"base": "none"`, the opt-out of Suhina's base sheet. The theme's name
 //! comes from here, not from its CSS.
@@ -129,10 +129,10 @@ impl ThemeMeta {
         let default_variant = text("default-variant", MAX_SHORT, &mut warnings);
         let swatch = match root.get("swatch") {
             Some(serde_json::Value::String(swatch)) if !swatch.trim().is_empty() => swatch.trim().to_owned(),
-            _ => return Err(format!("{FILE}: the theme has no swatch colour")),
+            _ => return Err(format!("{FILE}: the theme has no swatch color")),
         };
         if swatch.len() > MAX_SWATCH || swatch.contains([';', '{', '}']) {
-            return Err(format!("{FILE}: the swatch is not a colour value"));
+            return Err(format!("{FILE}: the swatch is not a color value"));
         }
         let toolbar = match root.get("toolbar") {
             Some(value @ serde_json::Value::Object(_)) => Some(value.clone()),
@@ -229,8 +229,8 @@ pub fn variant_sheet(text: &[u8]) -> Result<String, String> {
     Ok(css)
 }
 
-/// The swatch's colour over `defaults` (sheets of the host's own, such as its registered
-/// properties), the theme's sheet `css` and a variant's sheet, in the variant's colour scheme
+/// The swatch's color over `defaults` (sheets of the host's own, such as its registered
+/// properties), the theme's sheet `css` and a variant's sheet, in the variant's color scheme
 /// (`light`): `var()` takes the root values the sheets give, without applying them.
 pub fn swatch_color(
     swatch: &str,
@@ -263,7 +263,7 @@ pub fn swatch_color_at(
     sheets.extend(variant.map(|sheet| AppliedSheet { sheet, layer: Layer::Variant, root: None }));
     suhina_style::cascade::resolve_color(swatch, viewport, &sheets).map_err(|error| {
         if swatch.contains("var(") && error.contains("ParseError") {
-            format!("{swatch} does not resolve to a colour: a var() it uses has no colour value")
+            format!("{swatch} does not resolve to a color: a var() it uses has no color value")
         } else {
             error
         }

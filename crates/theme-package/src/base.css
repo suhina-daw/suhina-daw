@@ -6,8 +6,8 @@
  * `user.css` beats every rule here, whatever its specificity or `@layer`. What it gives an element
  * is not a theme's (`authored`), as the user agent's is not.
  *
- * Every colour here reads a variable (the core ones, registered with Suhina Studio's values), so a
- * theme that sets only variables reaches everything, and a theme's rule for a region colours what
+ * Every color here reads a variable (the core ones, registered with Suhina Studio's values), so a
+ * theme that sets only variables reaches everything, and a theme's rule for a region colors what
  * is inside it through those variables: `mixer { --text-value: gold; }`. A theme opts out of this
  * sheet with `"base": "none"` in its `theme.json` and stands on the user-agent sheet alone.
  *
@@ -22,8 +22,8 @@ application-bar, menu-bar, project-tabs, toolbar, status-bar { border-color: var
 
 /* The parts whose artwork takes their `color` (currentColor): a knob's body, a fader's rail and
    its cap, lit a little by the values' text while the pointer is on it. Each is a rule on the part
-   itself, so a colour a theme gives an element around it (`knob`, `mixer`) is not inherited into
-   the artwork. A knob's pointer has none: it takes the knob's colour. */
+   itself, so a color a theme gives an element around it (`knob`, `mixer`) is not inherited into
+   the artwork. A knob's pointer has none: it takes the knob's color. */
 knob-body { color: var(--control-background); }
 fader-rail { color: color-mix(in srgb, var(--control-background), black 65%); }
 fader-cap { color: color-mix(in srgb, var(--control-background), var(--text-value) 28%); }
@@ -74,13 +74,13 @@ label[kind="value"] { color: var(--text-value); }
 label[kind="error"] { color: var(--recording); }
 separator[kind="row"] { color: var(--border); }
 
-/* A button: its fill, its text, its edge and the colour of the ring it shows while it has the keys. */
+/* A button: its fill, its text, its edge and the color of the ring it shows while it has the keys. */
 button { background-color: var(--control-background); color: var(--text-primary); border-color: var(--border-strong); accent-color: var(--accent); }
 button:hover { background-color: var(--control-hoverBackground); }
 
 /* A toggle (mute, cue, a view's switch): dim words, a step brighter under the pointer; lit, the
-   chosen fill and the text on it. Solo is lit in the accent, arm in the recording colours. The
-   `toggle` element holds the same colours for a view that draws its switch itself. */
+   chosen fill and the text on it. Solo is lit in the accent, arm in the recording colors. The
+   `toggle` element holds the same colors for a view that draws its switch itself. */
 toggle, button[kind="toggle"] { color: var(--text-hint); }
 toggle:hover, button[kind="toggle"]:hover { color: var(--text-secondary); }
 toggle[checked], button[kind="toggle"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
@@ -125,11 +125,11 @@ slider:hover slider-fill { background-color: var(--text-secondary); }
 slider:hover slider-handle { background-color: var(--text-value); }
 slider[checked] slider-fill { background-color: var(--accent); }
 
-/* A fader's cap, under its colour: the fill the shades of its face are worked out from. */
+/* A fader's cap, under its color: the fill the shades of its face are worked out from. */
 fader-cap { background-color: var(--control-background); }
 fader-cap:hover, fader-cap:active { background-color: var(--control-hoverBackground); }
 
-/* A meter: the colours of its level, normal and near the top, and its clip light. */
+/* A meter: the colors of its level, normal and near the top, and its clip light. */
 meter-level { color: var(--meter-normal); }
 meter-level[kind="hot"] { color: var(--meter-hot); }
 meter-clip { background-color: var(--recording); }
@@ -140,7 +140,7 @@ dialog { border-color: var(--border-strong); padding: 8px; }
 dialog[name="missing-files"] { padding: 0; }
 /* A dialog's buttons, 4 points apart. */
 dialog-actions { gap: 4px; }
-/* What floats over the window takes the panel colour over the user-agent sheet's plain one, so a
+/* What floats over the window takes the panel color over the user-agent sheet's plain one, so a
    theme's text stays readable on it. */
 menu, popup, dialog { background-color: var(--panel-background); }
 list-row { color: var(--text-secondary); }
@@ -219,7 +219,7 @@ popup[kind="level"] slider { color: var(--text-value); }
 popup[kind="level"] slider-fill { background-color: var(--control-playingBackground); }
 popup[kind="level"] slider-handle { background-color: var(--text-primary); }
 
-/* The Arrangement: the colours under its grid and under its panels, its ruler, grid lines and the
+/* The Arrangement: the colors under its grid and under its panels, its ruler, grid lines and the
    marks on it, the playhead, the loop, the markers and tools, and what is selected or dragged. */
 arrangement { background-color: var(--window-background); accent-color: var(--accent); }
 arrangement[kind="panel"] { background-color: var(--panel-background); }
@@ -244,7 +244,7 @@ time-selection { color: var(--accent); }
 time-selection[kind="draw"], time-selection[kind="take"] { color: var(--selection); }
 arrangement marquee { color: var(--accent); }
 /* A selected track's lane, and its whole column in the Launcher, in a light tint of the selection
-   colour; the lane the piano roll edits keeps its own highlight. */
+   color; the lane the piano roll edits keeps its own highlight. */
 arrangement track-lane[selected] { background-color: color-mix(in srgb, var(--selection-background) 12%, transparent); }
 track-column[selected] { background-color: color-mix(in srgb, var(--selection-background) 12%, transparent); }
 arrangement track-lane[checked] { background-color: var(--panel-hoverBackground); border-color: var(--accent); }
@@ -254,7 +254,7 @@ arrangement track-header[kind="main"][selected] { background-color: var(--contro
 arrangement track-number { color: var(--text-secondary); }
 arrangement clip[recording] { border-color: var(--recording); color: var(--text-primary); }
 /* A muted clip (turned off, or on a muted track) and a muted track's header are gray whatever
-   their colour, a little lighter while selected, so they never read as a darker shade of what
+   their color, a little lighter while selected, so they never read as a darker shade of what
    plays (#1393). In the Arrangement only: a deactivated Launcher clip keeps its own look. */
 arrangement clip[muted] { background-color: var(--clip-mutedBackground); }
 arrangement clip[muted][selected] { background-color: var(--clip-mutedSelectedBackground); }
@@ -267,8 +267,8 @@ clip-fade-handle:hover { background-color: var(--text-primary); }
 clip-fade[kind="crossfade"] { color: var(--text-primary); }
 
 /* The automation lanes: a group's lane and header, a lane's header picked, the line and points in
-   one colour (Automation colour: Fixed), the line while it is off, its points picked and its pin.
-   The fixed colours come before `[muted]` and `[selected]`, so those still win. */
+   one color (Automation color: Fixed), the line while it is off, its points picked and its pin.
+   The fixed colors come before `[muted]` and `[selected]`, so those still win. */
 automation-lane[kind="group"] { color: var(--accent); }
 automation-header { accent-color: var(--accent); }
 automation-header[kind="group"], automation-header[kind="group"][selected] { background-color: var(--control-background); }
@@ -280,7 +280,7 @@ automation-pin { color: var(--automation-pin); }
 /* Detail panels and browser */
 
 /* The browser: the text it is in (its names), its words by how much they stand out (inside it the
-   dim, secondary and value words take the browser's own colours), the fills it paints for itself
+   dim, secondary and value words take the browser's own colors), the fills it paints for itself
    where the region behind it gives none, and the sample map's card's edge. */
 browser { color: var(--browser-text-primary); }
 browser label[kind="hint"] { color: var(--browser-text-hint); }
@@ -311,7 +311,7 @@ button[kind="preview"] { color: var(--browser-text-primary); }
 button[kind="preview"][checked] { color: var(--accent); }
 button[kind="more"]:hover { background-color: var(--panel-hoverBackground); }
 
-/* The browser's splitter: the border colour, stronger under the pointer. */
+/* The browser's splitter: the border color, stronger under the pointer. */
 browser-fill[kind="splitter"] { background-color: var(--border); }
 browser-fill[kind="splitter"]:hover, browser-fill[kind="splitter"]:active { background-color: var(--border-strong); }
 
@@ -326,7 +326,7 @@ detail-fill[kind="hover"] { background-color: var(--control-hoverBackground); }
 detail-fill[kind="outline"] { border-color: var(--border); }
 
 /* A device panel: its header, the nodes of an expanded graph, a selected panel's outline, the
-   on switch (outlined in the hint colour, filled with the text's when on), the scroll bar of the
+   on switch (outlined in the hint color, filled with the text's when on), the scroll bar of the
    device chain and the lines of an expanded panel and of a group. */
 device-header { background-color: var(--control-background); color: var(--text-primary); }
 device-section { background-color: var(--control-background); color: var(--text-secondary); }
@@ -346,8 +346,8 @@ device-row[kind="branch"][selected] { background-color: var(--control-activeBack
 add-track[kind="branch"]:hover { background-color: var(--control-hoverBackground); }
 
 /* The clip and MIDI panels' fields (a value's text, tinted under the pointer, stronger while it is
-   dragged, its share lit in the playing colour), the line under the place of a number a drag
-   steps, the words of a check box, the head of the MIDI tools' figures and a clip's colour swatch. */
+   dragged, its share lit in the playing color), the line under the place of a number a drag
+   steps, the words of a check box, the head of the MIDI tools' figures and a clip's color swatch. */
 value[kind="field"] { background-color: var(--control-background); color: var(--text-value); }
 value[kind="field"]:hover { background-color: var(--control-hoverBackground); }
 value[kind="field"]:active { background-color: var(--control-activeBackground); }
@@ -381,8 +381,8 @@ editor-tab[kind="tab-notes"], editor-tab[kind="tab-transform"] { color: var(--te
 editor-tab[kind="tab-notes"]:hover, editor-tab[kind="tab-transform"]:hover { color: var(--text-secondary); }
 editor-tab[kind="tab-notes"][checked], editor-tab[kind="tab-transform"][checked] { color: var(--text-primary); }
 
-/* The parameters of a device panel: a slider's parts, a knob's colours where the device gives none,
-   and a parameter's name and value where it gives no text colour. */
+/* The parameters of a device panel: a slider's parts, a knob's colors where the device gives none,
+   and a parameter's name and value where it gives no text color. */
 slider[kind="parameter"] slider-rail { background-color: var(--control-background); color: var(--text-hint); }
 slider[kind="parameter"] slider-fill { background-color: var(--control-selectedBackground); color: var(--accent); }
 slider[kind="parameter"] slider-handle { background-color: var(--text-primary); color: var(--text-primary); }
@@ -390,7 +390,7 @@ device-control[kind="name"] { color: var(--text-secondary); }
 device-control[kind="value"] { color: var(--text-value); }
 device-control[kind="knob"] { background-color: var(--control-background); color: var(--text-hint); accent-color: var(--text-primary); }
 
-/* A device's own drawings: the colours their theme tokens take, by the element's `color`,
+/* A device's own drawings: the colors their theme tokens take, by the element's `color`,
    `background-color`, `border-color` and `accent-color` and its kinds. */
 device-canvas { color: var(--text-primary); background-color: var(--control-background); border-color: var(--border); accent-color: var(--accent); }
 device-canvas[kind="secondary"] { color: var(--text-secondary); }
@@ -454,7 +454,7 @@ button[kind="focus"][checked], button[kind="focus"][checked]:hover { background-
 
 /* The fills the app's bars, Settings, dialogs and menus paint for themselves where the region
    behind them gives none, and the window under everything (faded over a backdrop), its text the
-   document's again over the user-agent sheet's plain colour. */
+   document's again over the user-agent sheet's plain color. */
 window { background-color: var(--window-background); color: var(--text-primary); }
 app-fill[kind="window"] { background-color: var(--window-background); }
 app-fill[kind="panel"] { background-color: var(--panel-background); }
@@ -511,7 +511,7 @@ button[kind="browser"][checked] { color: var(--text-primary); }
 
 /* Settings, the start page and the dialogs: Settings' edge and its pages' list, the start page's
    Recent and Templates tabs, a dialog's title row, the rows of a dialog's list, the Plug-in
-   manager's table and the colour picker, the swatches, the theme picker's cards, the pill that
+   manager's table and the color picker, the swatches, the theme picker's cards, the pill that
    follows a drag, and the buttons that add a track. */
 settings { border-color: var(--border-strong); }
 settings-nav { color: var(--text-secondary); }

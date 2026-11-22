@@ -16,7 +16,7 @@ use suhina_engine::model::{Clip, LaneData, Note, Project, TrackId};
 
 use crate::detail::detail_view::ClipRef;
 use crate::detail::piano_roll::Placement;
-use crate::interaction::grid::track_colour;
+use crate::interaction::grid::track_color;
 use crate::interaction::key_name::key_name;
 use crate::kit::theme;
 
@@ -70,8 +70,8 @@ pub struct GhostNote {
     pub start: f64,
     pub length: f64,
     pub key: u8,
-    /// Its track's colour, or the muted clips' gray when its clip is turned off or its track is
-    /// muted ([`ghost_colour`]), drawn at [`GHOST_ALPHA`].
+    /// Its track's color, or the muted clips' gray when its clip is turned off or its track is
+    /// muted ([`ghost_color`]), drawn at [`GHOST_ALPHA`].
     pub color: Color32,
     /// Its track's name, as an index into [`Ghosts::sources`].
     pub source: usize,
@@ -226,7 +226,7 @@ pub fn ghosts(project: &Project, edited: ClipRef, source: GhostSource) -> Ghosts
         let Some(notes) = notes_of(project, track, clip) else { continue };
         let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
         let name = project.tracks.get(position).map_or_else(String::new, |t| project.shown_track_name(t.id));
-        let color = ghost_colour(project, position, clip);
+        let color = ghost_color(project, position, clip);
         let source = ghosts.sources.iter().position(|s| *s == name).unwrap_or(ghosts.sources.len());
         let before = ghosts.notes.len();
         map_notes(&at, notes, window, &mut ghosts.notes, |start, length, key| GhostNote {
@@ -266,7 +266,7 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
             continue;
         }
         let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
-        let color = ghost_colour(project, position, other);
+        let color = ghost_color(project, position, other);
         let at = placement(clip, other);
         let content = project.content(other.content).map_or("", |c| c.name.as_str());
         ghosts.picked.push(PickedBar {
@@ -289,7 +289,7 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
         let Some(notes) = notes_of(project, track, other) else { continue };
         let Some(position) = project.tracks.iter().position(|t| t.id == track) else { continue };
         let name = project.tracks.get(position).map_or_else(String::new, |t| project.shown_track_name(t.id));
-        let color = ghost_colour(project, position, other);
+        let color = ghost_color(project, position, other);
         let source = ghosts.sources.iter().position(|s| *s == name).unwrap_or(ghosts.sources.len());
         let before = ghosts.notes.len();
         // A clip the source already showed (playing together) is not drawn twice.
@@ -312,11 +312,11 @@ pub fn add_picked(project: &Project, edited: ClipRef, picked: &[ClipRef], ghosts
     }
 }
 
-/// The colour of the ghost notes of `clip` on the track at `position`: the track's colour, or,
+/// The color of the ghost notes of `clip` on the track at `position`: the track's color, or,
 /// for a clip turned off or on a muted track, the background the Arrangement draws such a clip
 /// in (a theme's `clip[muted]` rule, else the base sheet's `--clip-mutedBackground`), so a clip that does not
 /// sound is not taken for one that does (#1393).
-fn ghost_colour(project: &Project, position: usize, clip: &Clip) -> Color32 {
+fn ghost_color(project: &Project, position: usize, clip: &Clip) -> Color32 {
     let track = project.tracks.get(position);
     let track_muted = track.and_then(|t| t.channel).and_then(|id| project.channel(id)).is_some_and(|c| c.mute);
     if track_muted || !clip.enabled {
@@ -324,7 +324,7 @@ fn ghost_colour(project: &Project, position: usize, clip: &Clip) -> Color32 {
         let gray = crate::arrangement::arrangement_view::muted_clip_gray(false);
         return CLIP.attr(Muted, true).probe_in(ARRANGEMENT).computed_background_or(gray);
     }
-    let rgb = track.map(|track| track_colour(track, position)).unwrap_or(suhina_session::colors::MIDI);
+    let rgb = track.map(|track| track_color(track, position)).unwrap_or(suhina_session::colors::MIDI);
     Color32::from_rgb(rgb.0, rgb.1, rgb.2)
 }
 
@@ -515,7 +515,7 @@ fn choices(project: &Project, edited: ClipRef) -> Vec<GhostChoice> {
 }
 
 /// Paints the ghost notes on `painter` (the grid's), each at the rectangle `rect_of` gives it:
-/// a fill in its track's colour at [`GHOST_ALPHA`], no name, no edge and no velocity stem.
+/// a fill in its track's color at [`GHOST_ALPHA`], no name, no edge and no velocity stem.
 /// The clip of the ghost note at `pos`, the one drawn last when several are there.
 pub(crate) fn ghost_at(ghosts: &Ghosts, pos: egui::Pos2, rect_of: impl Fn(&GhostNote) -> Rect) -> Option<ClipRef> {
     ghosts.notes.iter().rev().find(|g| rect_of(g).contains(pos)).map(|g| g.clip)

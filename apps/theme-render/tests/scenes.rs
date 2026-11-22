@@ -3,7 +3,7 @@
 
 //! The scenes find the controls they drive whatever the theme: every bundled theme that lays out,
 //! and the see-through test theme, is drawn in every scene, and every other bundled theme, which
-//! sets only colours, in one. Headless: the renders themselves need a GPU and are in `render.rs`.
+//! sets only colors, in one. Headless: the renders themselves need a GPU and are in `render.rs`.
 
 use std::path::Path;
 
@@ -11,9 +11,9 @@ use super::see_through;
 use suhina_theme_render::{Subject, headless, scenes};
 
 /// The bundled themes whose sheets size or place what they style, or draw it with artwork of their
-/// own: their rules can move or hide a control a scene drives. The others set colours alone, which
+/// own: their rules can move or hide a control a scene drives. The others set colors alone, which
 /// cannot, and driving them through all 50 scenes too took 550 windows and two minutes of a test
-/// run (2026-11-18). `the_other_bundled_themes_set_only_colours` keeps the list true. The list
+/// run (2026-11-18). `the_other_bundled_themes_set_only_colors` keeps the list true. The list
 /// and its tests come from one table, so adding a layout theme also adds its full scene check.
 macro_rules! layout_themes {
     ($($name:ident => $id:literal),+ $(,)?) => {
@@ -61,9 +61,9 @@ const LAYOUT_PROPERTIES: [&str; 12] = [
     "grid",
 ];
 
-/// A theme that sets only colours is chosen and drives the launcher.
+/// A theme that sets only colors is chosen and drives the launcher.
 #[test]
-fn every_theme_that_sets_only_colours_is_driven_through_the_launcher() {
+fn every_theme_that_sets_only_colors_is_driven_through_the_launcher() {
     let themes = Subject::built_ins();
     assert!(themes.len() >= 10, "the built-in themes are found: {}", themes.len());
     let launcher: Vec<_> = scenes::scenes().into_iter().filter(|scene| scene.name == "launcher").collect();
@@ -79,7 +79,7 @@ fn every_theme_that_sets_only_colours_is_driven_through_the_launcher() {
 /// The themes left out of [`LAYOUT_THEMES`] declare no property that sizes or places what they
 /// style, and carry no artwork: a theme that starts to goes in the list.
 #[test]
-fn the_other_bundled_themes_set_only_colours() {
+fn the_other_bundled_themes_set_only_colors() {
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/ui/themes");
     let ids: Vec<String> = Subject::built_ins().into_iter().map(|theme| theme.id).collect();
     for &id in LAYOUT_THEMES {

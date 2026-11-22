@@ -136,10 +136,10 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "track.setColor",
-        label: "Set the colour of one or several tracks as one undo step",
+        label: "Set the color of one or several tracks as one undo step",
         params: &[
             optional("track", ParamType::Track, "the track, by id or name"),
-            optional("tracks", ParamType::Tracks, "the tracks to colour together, instead of track"),
+            optional("tracks", ParamType::Tracks, "the tracks to color together, instead of track"),
             param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for each track's default"),
             GESTURE,
         ],
@@ -149,18 +149,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "track.colorGroup",
-        label: "Give every track inside a group, at any depth, the group's colour, and with clips their clips too, as one undo step",
+        label: "Give every track inside a group, at any depth, the group's color, and with clips their clips too, as one undo step",
         params: &[
             TRACK,
             optional(
                 "color",
                 ParamType::Text,
-                "\"#rrggbb\": the colour the group shows, for a group given none of its own (the default: the group's own)",
+                "\"#rrggbb\": the color the group shows, for a group given none of its own (the default: the group's own)",
             ),
             optional(
                 "clips",
                 ParamType::Bool,
-                "true: the clips of the group and of every track inside it show their track's colour again",
+                "true: the clips of the group and of every track inside it show their track's color again",
             ),
         ],
         kind: CommandKind::EDIT,
@@ -848,12 +848,12 @@ fn rename_track(session: &mut Session, params: &Value) -> Result<Value, CommandE
     Ok(json!({ "name": name }))
 }
 
-/// `track.colorGroup`: the tracks inside the group `track`, at any depth, take its colour.
+/// `track.colorGroup`: the tracks inside the group `track`, at any depth, take its color.
 fn color_group(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let group = track_id(&session.project, params)?;
     let p = &mut session.project;
     let own = p.track(group).map(|t| t.color).ok_or("the track is missing")?;
-    let colour = match Args::new(params).value("color") {
+    let color = match Args::new(params).value("color") {
         None => own,
         Some(_) => crate::clip_color::parse_color(params, "color")?.or(own),
     };
@@ -883,9 +883,9 @@ fn color_group(session: &mut Session, params: &Value) -> Result<Value, CommandEr
         return Err("the track holds no tracks".into());
     }
     for track in p.tracks.iter_mut().filter(|t| inside.contains(&t.id)) {
-        track.color = colour;
+        track.color = color;
     }
-    // Their clips follow the tracks' colour again, the group's own too.
+    // Their clips follow the tracks' color again, the group's own too.
     let mut clips = 0usize;
     if Args::new(params).value("clips").and_then(Value::as_bool) == Some(true) {
         let held = |track: Option<TrackId>| track.is_some_and(|t| t == group || inside.contains(&t));

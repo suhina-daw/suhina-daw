@@ -354,7 +354,7 @@ The lanes are the **top lane** and the **mounted lanes** under it (#1322):
   state.
 - A mounted lane keeps its parameter: its header shows the name, with no dropdown, and a change
   to that parameter is made in its own lane. A filled pin in the theme's
-  `automation.pin` colour (the built-in themes give it their accent) stands left of the name; a click on it ("Unpin this lane", or "Unpin these N lanes" when it is
+  `automation.pin` color (the built-in themes give it their accent) stands left of the name; a click on it ("Unpin this lane", or "Unpin these N lanes" when it is
   one of several picked) unmounts it, with the other picked lanes (the lanes' points stay). The
   buttons have no box: their marks, drawn with lines so they are the same in every font, are dim
   until the pointer is on them.
@@ -375,7 +375,7 @@ by a control moved by hand (#1205).
 
 Mounted lanes are put in an order of one's own and gathered in groups (#1322):
 
-- A click on a mounted lane header's free space picks the lane (tinted in the accent colour);
+- A click on a mounted lane header's free space picks the lane (tinted in the accent color);
   Ctrl+click (Cmd on macOS) adds or takes one away, Shift+click picks every mounted lane from the
   one picked last. A click on a group heading picks the group; Ctrl+click adds or takes one away.
   A click on a lane or a clip lets go of what is picked. Picking is the view's own state.
@@ -465,15 +465,15 @@ closed lanes stay closed. The header:
 - The top lane's pin outline pins its parameter as a lane of its own and its **×** clears it; a
   mounted lane's filled pin unpins it (above).
 
-The envelope is drawn in the track's colour through every point (Settings › Arrangement ›
-Automation › **Automation colour**: *Track colour*, the default), or, with *Fixed* (#1518), every
-envelope's line in one colour and every point in one colour whatever the track's: the theme's
+The envelope is drawn in the track's color through every point (Settings › Arrangement ›
+Automation › **Automation color**: *Track color*, the default), or, with *Fixed* (#1518), every
+envelope's line in one color and every point in one color whatever the track's: the theme's
 `automation-line[kind="fixed"]` and `automation-point[kind="fixed"]` (the base sheet gives both
-the theme's accent), or the **Automation line colour** and **Automation point colour** picked
+the theme's accent), or the **Automation line color** and **Automation point color** picked
 under the setting (**Theme** beside a picker gives the theme's back). In both modes a picked point
-keeps `automation-point[selected]`'s colour and a lane that is off keeps
+keeps `automation-point[selected]`'s color and a lane that is off keeps
 `automation-line[muted]`'s, its points too; the curve handles, the dot that marks where a click
-adds a point and the faint line of a painted range follow the line's colour. The setting is
+adds a point and the faint line of a painted range follow the line's color. The setting is
 saved with the other settings, not in the project. The envelope holds before the first point and
 after the last, along each segment's curve; steps for mute, on/off and choices. Values are placed
 as the parameter's control places them, and a segment is drawn evenly in that placement, as it

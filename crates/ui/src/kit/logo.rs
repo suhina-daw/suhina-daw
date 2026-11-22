@@ -6,8 +6,8 @@
 //!
 //! Only what the file uses is read: its `viewBox`, one `matrix(...)` transform for every path,
 //! and paths of absolute `M`, `L`, `C` and `Z` commands, filled even-odd. A white path is the
-//! name, drawn in the colour asked for (the theme's text colour); any other fill (the wave) keeps
-//! its own colour.
+//! name, drawn in the color asked for (the theme's text color); any other fill (the wave) keeps
+//! its own color.
 
 use egui::{
     Align2, Color32, ColorImage, Context, FontId, Id, Painter, Pos2, Rect, Sense, TextureHandle, TextureOptions, Ui,
@@ -26,7 +26,7 @@ struct Logo {
     /// The viewBox's width and height.
     size: [f32; 2],
     transform: Transform,
-    /// Each path with its own colour, or `None` for the name's colour.
+    /// Each path with its own color, or `None` for the name's color.
     shapes: Vec<(Path, Option<[u8; 3]>)>,
 }
 
@@ -36,7 +36,7 @@ pub fn aspect() -> f32 {
 }
 
 /// The logo as a texture `width` × `height` pixels, the name in `name`; made once per size and
-/// colour and kept in the context. `None` when it cannot be drawn.
+/// color and kept in the context. `None` when it cannot be drawn.
 pub fn texture(ctx: &Context, width: u32, height: u32, name: Color32) -> Option<TextureHandle> {
     if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE {
         return None;
@@ -51,7 +51,7 @@ pub fn texture(ctx: &Context, width: u32, height: u32, name: Color32) -> Option<
     Some(texture)
 }
 
-/// Paints the logo into `rect`, the name in the theme's text colour, all of it `opacity` opaque; the
+/// Paints the logo into `rect`, the name in the theme's text color, all of it `opacity` opaque; the
 /// name as text in `font` when it cannot be drawn. Screen readers read it as "Suhina".
 pub fn paint(ui: &Ui, painter: &Painter, rect: Rect, font: FontId, opacity: f32) {
     let pixels = (rect.size() * ui.ctx().pixels_per_point()).round();
@@ -72,9 +72,9 @@ fn render(svg: &str, width: u32, height: u32, name: Color32) -> Option<ColorImag
     let mut pixmap = Pixmap::new(width, height)?;
     let scale = (width as f32 / logo.size[0]).min(height as f32 / logo.size[1]);
     let transform = Transform::from_scale(scale, scale).pre_concat(logo.transform);
-    for (path, colour) in &logo.shapes {
+    for (path, color) in &logo.shapes {
         let mut paint = Paint { anti_alias: true, ..Paint::default() };
-        match colour {
+        match color {
             Some([r, g, b]) => paint.set_color_rgba8(*r, *g, *b, 255),
             None => {
                 let [r, g, b, a] = name.to_srgba_unmultiplied();
@@ -111,7 +111,7 @@ fn parse(svg: &str) -> Option<Logo> {
             .and_then(|style| style.split(';').find_map(|part| part.trim().strip_prefix("fill:")))
             .or_else(|| attribute(element, "fill"))
             .unwrap_or("white");
-        shapes.push((path, colour(fill)?));
+        shapes.push((path, color(fill)?));
     }
     (!shapes.is_empty()).then_some(Logo { size: [*width, *height], transform, shapes })
 }
@@ -124,8 +124,8 @@ fn attribute<'a>(text: &'a str, name: &str) -> Option<&'a str> {
     rest.get(..rest.find('"')?)
 }
 
-/// `None` inside for white (the name's colour), else the colour; `None` outside when unknown.
-fn colour(fill: &str) -> Option<Option<[u8; 3]>> {
+/// `None` inside for white (the name's color), else the color; `None` outside when unknown.
+fn color(fill: &str) -> Option<Option<[u8; 3]>> {
     let fill = fill.trim();
     if fill.eq_ignore_ascii_case("white") || fill.eq_ignore_ascii_case("#ffffff") {
         return Some(None);
@@ -208,14 +208,14 @@ mod tests {
     fn the_logo_file_is_read_whole() {
         let logo = parse(SVG).unwrap();
         assert_eq!(logo.size, [12525.0, 3663.0]);
-        // Six letters with the dot of the i, and the wave in its own colour.
+        // Six letters with the dot of the i, and the wave in its own color.
         assert_eq!(logo.shapes.len(), 8);
         assert_eq!(logo.shapes.iter().filter(|(_, c)| *c == Some([255, 217, 125])).count(), 1);
         assert!((aspect() - 12525.0 / 3663.0).abs() < 1e-3);
     }
 
     #[test]
-    fn it_draws_the_name_in_the_colour_asked_for_and_the_wave_in_its_own() {
+    fn it_draws_the_name_in_the_color_asked_for_and_the_wave_in_its_own() {
         let image = render(SVG, 400, 117, Color32::from_rgb(10, 20, 30)).unwrap();
         assert_eq!(image.size, [400, 117]);
         let drawn: Vec<Color32> = image.pixels.iter().copied().filter(|p| p.a() == 255).collect();
@@ -236,8 +236,8 @@ mod tests {
             assert!(parse(bad).is_none(), "{bad}");
         }
         assert!(parse("<svg viewBox=\"0 0 10 10\"><path d=\"M0,0L10,0 10,10Z\" fill=\"#ff0000\"/></svg>").is_some());
-        assert_eq!(colour("tomato"), None);
-        assert_eq!(colour("#FFD97D"), Some(Some([255, 217, 125])));
+        assert_eq!(color("tomato"), None);
+        assert_eq!(color("#FFD97D"), Some(Some([255, 217, 125])));
         assert!(render(SVG, 0, 10, Color32::WHITE).is_none());
         assert!(texture(&Context::default(), MAX_SIDE + 1, 10, Color32::WHITE).is_none());
     }

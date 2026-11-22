@@ -119,7 +119,7 @@ fn invalid_or_excessive_layers_are_notices_not_crashes() {
 }
 
 #[test]
-fn background_shorthand_sets_colour_and_images_and_resets_an_omitted_colour() {
+fn background_shorthand_sets_color_and_images_and_resets_an_omitted_color() {
     let style = |css: &str| {
         let sheet = Sheet::parse(css).unwrap_or_else(|e| panic!("{e}"));
         let styles =
@@ -129,7 +129,7 @@ fn background_shorthand_sets_colour_and_images_and_resets_an_omitted_colour() {
     };
     let (notices, knob) = style("knob { background-color: red; background: linear-gradient(red, blue); }");
     assert_eq!(notices, 0);
-    // As in CSS, the shorthand resets the colour it omits: the native fill becomes transparent.
+    // As in CSS, the shorthand resets the color it omits: the native fill becomes transparent.
     assert_eq!(knob.get(Property::BackgroundColor), Value::Color(Color::Rgba([0; 4])));
     assert!(knob.authored(Property::BackgroundColor));
     assert!(matches!(knob.get(Property::BackgroundImage), Value::Gradients(g) if g.len() == 1));
@@ -215,7 +215,7 @@ fn host_properties_and_bad_property_rules_do_not_break_a_sheet() {
 }
 
 #[test]
-fn attr_colours_a_track_and_its_children_through_a_variable() {
+fn attr_colors_a_track_and_its_children_through_a_variable() {
     let sheet = Sheet::parse(
         "track-header { --track: attr(color type(<color>)); \
            background-color: color-mix(in srgb, attr(color type(<color>)), black 50%); \
@@ -230,7 +230,7 @@ fn attr_colours_a_track_and_its_children_through_a_variable() {
         Element::new("window", None),
         Element::new("track-header", Some(0)).with_attribute("color", "#ffff00"),
         Element::new("track-name", Some(1)),
-        Element::new("track-header", Some(0)).with_attribute("color", "not a colour"),
+        Element::new("track-header", Some(0)).with_attribute("color", "not a color"),
         Element::new("track-name", Some(3)),
         Element::new("clip", Some(0)),
         Element::new("sample-point", Some(0)).with_attribute("kind", "kick"),
@@ -244,7 +244,7 @@ fn attr_colours_a_track_and_its_children_through_a_variable() {
     // A child reads its parent's attribute only through the variable the parent set.
     assert_eq!(styles[2].get(Property::BorderColor), rgba([255, 255, 0, 255]));
     assert_eq!(styles[2].variable("--track"), Some("#ffff00"));
-    // An attribute that is not a colour leaves the declarations that read it invalid.
+    // An attribute that is not a color leaves the declarations that read it invalid.
     assert_eq!(styles[3].get(Property::BackgroundColor), Property::BackgroundColor.initial());
     assert_eq!(styles[4].variable("--track"), None);
     assert_eq!(styles[5].get(Property::BorderColor), rgba([0, 255, 0, 255]));
@@ -283,7 +283,7 @@ fn a_registered_variable_dropped_by_substitution_takes_its_initial_value() {
 }
 
 #[test]
-fn a_swatch_colour_resolves_for_each_variant_without_applying_the_sheet() {
+fn a_swatch_color_resolves_for_each_variant_without_applying_the_sheet() {
     let theme = Sheet::parse(
         "@property --accent { syntax: '<color>'; initial-value: #0000ff; } \
          :root { --background: #000000; --ink: currentColor; --tag: attr(color type(<color>), red); } \
@@ -316,7 +316,7 @@ fn a_swatch_colour_resolves_for_each_variant_without_applying_the_sheet() {
 }
 
 #[test]
-fn outline_shorthand_sets_width_style_and_colour_in_any_order() {
+fn outline_shorthand_sets_width_style_and_color_in_any_order() {
     let style = |css: &str| {
         let sheet = Sheet::parse(css).unwrap_or_else(|e| panic!("{e}"));
         let styles =
@@ -397,7 +397,7 @@ fn a_user_agent_rule_on_a_child_is_not_authored_though_its_parent_is() {
         ],
     )
     .unwrap();
-    // The body keeps the user agent's colour, which no sheet wrote; the pointer inherits the knob's.
+    // The body keeps the user agent's color, which no sheet wrote; the pointer inherits the knob's.
     assert_eq!(styles[2].get(Property::Color), Value::Color(Color::Rgba([32, 32, 32, 255])));
     assert!(!styles[2].authored(Property::Color));
     assert_eq!(styles[3].get(Property::Color), Value::Color(Color::Rgba([255, 176, 0, 255])));
@@ -466,7 +466,7 @@ fn a_theme_rule_overrides_a_base_rule_only_in_the_properties_it_sets() {
     assert!(!styles[1].authored(Property::Color));
 }
 
-/// A base rule on an element replaces the colour a theme's rule around it gives, and what it
+/// A base rule on an element replaces the color a theme's rule around it gives, and what it
 /// gives is not authored, as a user-agent rule's is not; a theme rule on the element itself beats
 /// it.
 #[test]
@@ -490,7 +490,7 @@ fn a_base_rule_on_a_child_is_not_authored_though_its_parent_is() {
         ],
     )
     .unwrap();
-    // The base rule reads the variable the mixer's rule sets: a region is coloured through it.
+    // The base rule reads the variable the mixer's rule sets: a region is colored through it.
     assert_eq!(styles[2].get(Property::Color), Value::Color(Color::Rgba([0, 255, 0, 255])));
     assert!(!styles[2].authored(Property::Color));
     assert!(styles[1].authored(Property::Color));
@@ -506,7 +506,7 @@ fn a_property_a_rule_wrote_on_the_element_is_declared_not_inherited() {
     let theme = Sheet::parse("window, knob:last-child { color: #ffb000; }").unwrap();
     let styles =
         compute(&tree, viewport(800.0), &[AppliedSheet { sheet: &theme, layer: Layer::Theme, root: None }]).unwrap();
-    // The first knob inherits the window's colour; the second writes the same one itself.
+    // The first knob inherits the window's color; the second writes the same one itself.
     assert_eq!(styles[1].get(Property::Color), styles[2].get(Property::Color));
     assert!(styles[1].authored(Property::Color) && !styles[1].declared(Property::Color));
     assert!(styles[2].declared(Property::Color));
@@ -748,7 +748,7 @@ fn explain_lists_the_matching_rules_in_cascade_order_and_marks_each_winner() {
 
 #[test]
 fn explain_names_a_winning_declaration_whose_value_did_not_hold() {
-    // An undefined variable drops the winner: the element keeps its inherited colour, and the
+    // An undefined variable drops the winner: the element keeps its inherited color, and the
     // weaker rule is not used.
     let sheet = Sheet::parse(
         "window { color: #eeeeee; --ink: #123456; }\nknob { color: #010101; }\nknob#cutoff { color: var(--missing); padding: 3px var(--ink); }",
@@ -763,7 +763,7 @@ fn explain_names_a_winning_declaration_whose_value_did_not_hold() {
     // A shorthand's parts are named as longhands, with the shorthand they came from.
     let padding: Vec<_> =
         rules.iter().flat_map(|rule| &rule.declarations).filter(|d| d.shorthand == Some("padding")).collect();
-    // Each part holds or not on its own: the colour is no length, the vertical parts are fine.
+    // Each part holds or not on its own: the color is no length, the vertical parts are fine.
     let parts: Vec<_> = padding.iter().map(|d| (d.name.as_str(), matches!(d.outcome, Outcome::Applied(_)))).collect();
     assert_eq!(
         parts,

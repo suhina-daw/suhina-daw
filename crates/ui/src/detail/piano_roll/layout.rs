@@ -126,7 +126,7 @@ pub fn selected_note_color(color: Color32, accent: Color32, plain: Color32) -> C
     if apart(r, ar) + apart(g, ag) + apart(b, ab) < NEAR_COLOR * NEAR_COLOR { plain } else { accent }
 }
 
-/// How far apart two colours are at least, in steps of red, green and blue, to tell them apart at a glance.
+/// How far apart two colors are at least, in steps of red, green and blue, to tell them apart at a glance.
 const NEAR_COLOR: i32 = 120;
 
 /// How much a drag of the grabbed note's right end by `raw` beats changes the selection's
@@ -259,7 +259,7 @@ pub(super) fn tool_role(icon: IconButton) -> String {
 }
 
 /// A tool's icon in place of the pointer, in `rect`: the toolbar's icon (the theme's when it has
-/// one, else the built-in artwork) in the text colour, ringed with a point of the window's colour
+/// one, else the built-in artwork) in the text color, ringed with a point of the window's color
 /// so it reads over a note as well as over the empty grid.
 ///
 /// It is `icon[kind="pointer"]`: its `color`, and its `background-color` for the ring.

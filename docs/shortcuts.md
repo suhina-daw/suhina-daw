@@ -33,7 +33,7 @@ key pressed, with its modifiers, and makes it the action's key (Escape cancels);
 the action; **Reset all** goes back to the defaults. A key bound to two actions is shown in red
 above the list.
 
-F2 opens the selected tracks’ floating [colour window](spec/colour-picker.md). Its key can be changed in Settings › Keys.
+F2 opens the selected tracks’ floating [color window](spec/color-picker.md). Its key can be changed in Settings › Keys.
 
 ## Presets
 

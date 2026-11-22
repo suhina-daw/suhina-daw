@@ -17,7 +17,7 @@ use crate::detail::piano_roll_ghosts::{self as ghost_view, GhostSource, Ghosts};
 use crate::detail::piano_roll_grid::PianoGrid;
 use crate::detail::piano_roll_ruler::{self as ruler_view, ClipShape, RulerState};
 use crate::detail::piano_roll_scale::{self as scale_view, Fold, KeyRows};
-use crate::interaction::grid::track_colour;
+use crate::interaction::grid::track_color;
 use crate::interaction::grid_menu::{grid_entries, grid_key_labels};
 pub use crate::interaction::key_name::{key_name, pitch_class_name, set_note_spelling};
 use crate::interaction::scroll::most_scroll_x;
@@ -241,7 +241,7 @@ pub fn show(
     cx: Context<'_>,
     actions: &mut Vec<Action>,
 ) {
-    // `[color]`, the clip's colour, for the notes drawn inside it.
+    // `[color]`, the clip's color, for the notes drawn inside it.
     let el = crate::kit::element::PIANO_ROLL.native(crate::kit::element::Native::default()).color(clip.color).enter();
     let mut styled_ui = el.ui(ui);
     let ui = &mut *styled_ui;

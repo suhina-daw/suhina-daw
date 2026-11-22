@@ -296,7 +296,7 @@ fn project_value(p: &Project) -> Value {
                     "name": t.name,
                     "clips": t.clips.iter().map(clip_value).collect::<Vec<_>>(),
                 });
-                // A take's own colour (#989), left out while it takes the palette's.
+                // A take's own color (#989), left out while it takes the palette's.
                 if let Some(Rgb(r, g, b)) = t.color {
                     take["color"] = json!(format!("#{r:02X}{g:02X}{b:02X}"));
                 }
@@ -722,7 +722,7 @@ fn clip_value(c: &Clip) -> Value {
         if !c.launch.is_default() {
             map.insert("launch".into(), launch_value(&c.launch));
         }
-        // Only a clip with a colour of its own carries one; the others show their track's.
+        // Only a clip with a color of its own carries one; the others show their track's.
         if let Some(Rgb(r, g, b)) = c.color {
             map.insert("color".into(), json!(format!("#{r:02X}{g:02X}{b:02X}")));
         }

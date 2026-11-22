@@ -165,7 +165,7 @@ impl Session {
         open
     }
 
-    /// Runs an edit on the project, gives what it added an id and keeps the tracks' colours, and
+    /// Runs an edit on the project, gives what it added an id and keeps the tracks' colors, and
     /// fails when what is left does not validate. The caller puts `before` back on an error.
     fn apply(&mut self, prepared: &Prepared, params: &Value, before: &Project) -> Result<Value, CommandError> {
         // A plug-in an earlier build took for an ARA one is no longer its chain's clip host, in
@@ -188,9 +188,9 @@ impl Session {
         if prepared.spec.id.starts_with("device.") {
             crate::devices::name_new_devices(&self.project, params, before, &mut value);
         }
-        self.keep_track_colours(before);
+        self.keep_track_colors(before);
         if matches!(prepared.spec.id, "clip.create" | "clip.addFiles") {
-            self.colour_new_clips(before);
+            self.color_new_clips(before);
         }
         match self.project.validate() {
             Ok(()) => Ok(value),
@@ -230,8 +230,8 @@ impl Session {
             // that cannot be sent, as a new graph.
             let mixer = std::mem::take(&mut self.sync.mixer_edits);
             let envelope = self.sync.envelope_edit.take();
-            // An edit that changes nothing the engine plays (a colour, a name, a marker) keeps the
-            // playing graph: colouring every clip of a large project built a graph for each of
+            // An edit that changes nothing the engine plays (a color, a name, a marker) keeps the
+            // playing graph: coloring every clip of a large project built a graph for each of
             // them, six seconds in all.
             let unheard = !prepared.spec.policy.heard || std::mem::take(&mut self.sync.unheard);
             let sent = unheard

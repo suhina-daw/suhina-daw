@@ -943,9 +943,9 @@ fn a_narrow_clip_draws_no_name_and_nothing_outside_itself() {
 }
 
 /// The time selection over a clip's track lights the stretch of its body under it in the selection
-/// colour, under its name bar, as a selected clip's body is; the rest of the clip keeps its colour.
+/// color, under its name bar, as a selected clip's body is; the rest of the clip keeps its color.
 #[test]
-fn the_time_selection_lights_a_clips_body_in_the_selection_colour() {
+fn the_time_selection_lights_a_clips_body_in_the_selection_color() {
     let timeline = Timeline::build(&crate::demo::demo_project(), None);
     let clip =
         timeline.lanes.iter().flat_map(|l| l.clips.iter()).find(|c| !c.audio && c.length >= 4.0).cloned().unwrap();
@@ -1012,7 +1012,7 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
     let rect = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(160.0, 60.0));
     let tint = crate::kit::theme::studio("accent").gamma_multiply(0.45);
     let lit = |span: Option<(ClipId, f64, f64)>| {
-        // The base sheet's colours, as the style engine gives them over a few frames.
+        // The base sheet's colors, as the style engine gives them over a few frames.
         crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some("".into()), ..Default::default() });
         let ctx = egui::Context::default();
         let mut found = Vec::new();
@@ -1056,15 +1056,15 @@ fn the_piano_rolls_time_selection_is_lit_on_its_clip() {
 }
 
 #[test]
-fn a_muted_clip_is_the_base_sheet_gray_whatever_its_colour() {
-    // #1393: dimming the colour left a muted clip looking like any other clip on a gray track.
+fn a_muted_clip_is_the_base_sheet_gray_whatever_its_color() {
+    // #1393: dimming the color left a muted clip looking like any other clip on a gray track.
     let surface = crate::kit::theme::studio("panel-background");
     let gray = clip::muted_clip_gray(false);
     assert_eq!(gray, Color32::from_rgb(0xA9, 0xA6, 0xA0), "the base sheet's clip[muted]");
     assert_eq!(clip::muted_clip_gray(true), Color32::from_rgb(0xBD, 0xBA, 0xB4), "clip[muted][selected]");
-    for colour in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), gray] {
-        assert_eq!(clip::clip_body(surface, colour, 82, true, false), gray, "{colour:?}");
-        let selected = clip::clip_body(surface, colour, 82, true, true);
+    for color in [Color32::from_rgb(0xFF, 0x9A, 0x3C), Color32::from_rgb(0x4A, 0x4A, 0x4A), gray] {
+        assert_eq!(clip::clip_body(surface, color, 82, true, false), gray, "{color:?}");
+        let selected = clip::clip_body(surface, color, 82, true, true);
         assert!(
             selected.to_srgba_unmultiplied()[0] > gray.to_srgba_unmultiplied()[0],
             "selection lifts a muted clip's brightness"
@@ -1078,11 +1078,11 @@ fn a_muted_clip_is_the_base_sheet_gray_whatever_its_colour() {
 }
 
 #[test]
-fn a_clip_on_a_muted_track_keeps_its_colour_in_its_name_bar() {
+fn a_clip_on_a_muted_track_keeps_its_color_in_its_name_bar() {
     let surface = crate::kit::theme::studio("panel-background");
     let orange = Color32::from_rgb(0xFF, 0x9A, 0x3C);
     let gray = clip::muted_clip_gray(false);
-    // On a muted track: the bar is the colour a clip that plays has.
+    // On a muted track: the bar is the color a clip that plays has.
     let on_track = clip::name_bar_fill(gray, surface, orange, 82, true, false);
     assert_eq!(on_track, clip::clip_body(surface, orange, 82, false, false));
     // Turned off itself: the bar is gray, a hair off the body.
@@ -1109,7 +1109,7 @@ fn a_clip_on_a_muted_track_is_drawn_muted_too() {
 #[test]
 fn a_clip_too_low_for_a_name_bar_still_has_its_mute_mark() {
     // #1399 review: the mark was drawn only inside the name bar, so a clip on a low lane turned
-    // off was the same as one on a muted track, or one whose colour is gray.
+    // off was the same as one on a muted track, or one whose color is gray.
     let low = Rect::from_min_size(Pos2::new(100.0, 40.0), Vec2::new(120.0, 24.0));
     assert!(clip::clip_name_bar(low).is_none(), "24 points is below the name bar's least height");
     let center = clip::mute_mark_center(low, None, 107.0).expect("a 24-point clip has room for the mark");
@@ -1153,7 +1153,7 @@ fn name_bar_look_with(css: &str, bar_fill: Color32) -> clip::NameBarLook {
 
 #[test]
 fn the_mute_mark_takes_the_ink_of_the_name_bar_as_drawn() {
-    // #1399 review: the mark's ink came from the clip's own bar colour, so on a theme's dark bar
+    // #1399 review: the mark's ink came from the clip's own bar color, so on a theme's dark bar
     // it was dark on dark while the name was readable.
     let gray = clip::muted_clip_gray(false);
     let dark = name_bar_look_with("clip-name { background-color: #000000; }", gray);
@@ -1161,10 +1161,10 @@ fn the_mute_mark_takes_the_ink_of_the_name_bar_as_drawn() {
     assert_eq!(dark.ink, clip::ink_on(Color32::BLACK), "light ink on the theme's black bar");
     assert_ne!(dark.ink, clip::ink_on(gray));
 
-    let coloured = name_bar_look_with("clip-name { background-color: #000000; color: #FFCC00; }", gray);
-    assert_eq!(coloured.ink, Color32::from_rgb(0xFF, 0xCC, 0x00), "the theme's own name colour");
+    let colored = name_bar_look_with("clip-name { background-color: #000000; color: #FFCC00; }", gray);
+    assert_eq!(colored.ink, Color32::from_rgb(0xFF, 0xCC, 0x00), "the theme's own name color");
 
-    // Unstyled, the bar is the clip's own colour and the ink reads on it, as before.
+    // Unstyled, the bar is the clip's own color and the ink reads on it, as before.
     let plain = name_bar_look_with("", gray);
     assert_eq!((plain.fill, plain.ink), (gray, clip::ink_on(gray)));
 }

@@ -1,9 +1,9 @@
 /* Catppuccin Latte, reduced to a few settings: every token below follows them. */
-@property --ground { syntax: "<color>"; initial-value: #EFF1F5; label: "Background"; group: "Colours"; }
-@property --surface { syntax: "<color>"; initial-value: #E6E9EF; label: "Panels"; group: "Colours"; }
-@property --ink { syntax: "<color>"; initial-value: #4C4F69; label: "Text"; group: "Colours"; }
-@property --tint { syntax: "<color>"; initial-value: #8839EF; label: "Accent"; group: "Colours"; }
-@property --highlight { syntax: "<color>"; initial-value: #DF8E1D; label: "Selection"; group: "Colours"; }
+@property --ground { syntax: "<color>"; initial-value: #EFF1F5; label: "Background"; group: "Colors"; }
+@property --surface { syntax: "<color>"; initial-value: #E6E9EF; label: "Panels"; group: "Colors"; }
+@property --ink { syntax: "<color>"; initial-value: #4C4F69; label: "Text"; group: "Colors"; }
+@property --tint { syntax: "<color>"; initial-value: #8839EF; label: "Accent"; group: "Colors"; }
+@property --highlight { syntax: "<color>"; initial-value: #DF8E1D; label: "Selection"; group: "Colors"; }
 :root {
   --window-background: var(--ground);
   --panel-background: var(--surface);

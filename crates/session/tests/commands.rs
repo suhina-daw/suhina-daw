@@ -1057,7 +1057,7 @@ fn a_return_track_stays_out_of_groups() {
 }
 
 #[test]
-fn tracks_rename_colour_and_delete() {
+fn tracks_rename_color_and_delete() {
     let mut session = Session::new(project());
     run(&mut session, "track.rename", json!({ "track": "Lead", "name": "Keys" })).unwrap();
     run(&mut session, "track.setColor", json!({ "track": "Keys", "color": "#D08F6E" })).unwrap();

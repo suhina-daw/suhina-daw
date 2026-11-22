@@ -421,7 +421,7 @@ fn every_backup_choice_is_kept_and_others_keep_the_default() {
 
 #[test]
 fn unknown_lines_keep_the_defaults() {
-    let (settings, warnings) = Settings::from_text("animations = sometimes\ncolour = pink\nnonsense\n\n# fine\n");
+    let (settings, warnings) = Settings::from_text("animations = sometimes\ncolor = pink\nnonsense\n\n# fine\n");
     assert_eq!(settings, Settings::default());
     assert_eq!(warnings.len(), 3);
 }

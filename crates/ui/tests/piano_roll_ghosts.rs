@@ -129,7 +129,7 @@ fn pick(h: &mut Harness<'static, App>, now: &str, entry: &str) {
 }
 
 #[test]
-fn the_clips_playing_together_show_by_default_in_their_track_colours() {
+fn the_clips_playing_together_show_by_default_in_their_track_colors() {
     let mut renderer = engine();
     let h = piano_app(&mut renderer);
     assert_eq!(h.state().piano_roll().ghost_source, GhostSource::Together);

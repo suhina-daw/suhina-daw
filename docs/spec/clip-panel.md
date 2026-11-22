@@ -28,8 +28,8 @@ panel shares its title row and its Clip part, with the note tools beside them
 
 ## Layout
 
-**Title row** (26 points): the clip's **colour** (a swatch; a click opens the palette, as a track's
-colour does; `clip.setColor`), its **name** (a double-click renames it in a text field, Enter keeps
+**Title row** (26 points): the clip's **color** (a swatch; a click opens the palette, as a track's
+color does; `clip.setColor`), its **name** (a double-click renames it in a text field, Enter keeps
 it, Escape leaves it; `clip.rename`) and its length in beats at the right. A line under it.
 
 Under it, in a row (the detail area under the views), three parts side by side, 8 points in from the
