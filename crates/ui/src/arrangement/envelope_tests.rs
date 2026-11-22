@@ -144,7 +144,7 @@ fn a_drag_ends_when_the_drawing_it_started_in_stops() {
     let mut shown = Vec::new();
     let mut left = Vec::new();
     // The editor starts a drag of the whole line.
-    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         let seen = ui.ctx().cumulative_pass_nr();
         let draft = Draft { clip, site: "audio-editor", index: usize::MAX, points: moved.clone(), seen };
         let lift = Lift { clip, from: committed.clone(), moved: None, start: 0.0 };
@@ -153,29 +153,34 @@ fn a_drag_ends_when_the_drawing_it_started_in_stops() {
             d.insert_temp(lift_key(), lift);
         });
     });
+    output.textures_delta.clear();
     // The editor draws it again: the drag stands.
-    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         keep_draft(ui.ctx(), clip, "audio-editor");
         shown.push(points_now(ui.ctx(), clip, &committed));
     });
+    output.textures_delta.clear();
     // The editor is gone; the Arrangement, drawing first in a pass, still reads it once, and
     // its own drawing does not keep a drag that started elsewhere.
-    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         end_stale_draft(ui.ctx(), clip);
         shown.push(points_now(ui.ctx(), clip, &committed));
         keep_draft(ui.ctx(), clip, "arrangement");
     });
+    output.textures_delta.clear();
     // A pass on, the drag is over for every drawing.
-    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         end_stale_draft(ui.ctx(), clip);
         shown.push(points_now(ui.ctx(), clip, &committed));
         left.push(ui.data(|d| (d.get_temp::<Draft>(draft_key()).is_some(), d.get_temp::<Lift>(lift_key()).is_some())));
     });
+    output.textures_delta.clear();
     // The editor drawing the clip again starts from the envelope as set.
-    let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         keep_draft(ui.ctx(), clip, "audio-editor");
         shown.push(points_now(ui.ctx(), clip, &committed));
     });
+    output.textures_delta.clear();
     assert_eq!(shown, vec![moved.clone(), moved, committed.clone(), committed.clone(), committed]);
     assert_eq!(left, vec![(false, false)], "the draft and its lift went");
 }

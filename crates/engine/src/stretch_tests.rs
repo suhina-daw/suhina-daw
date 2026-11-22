@@ -602,10 +602,11 @@ fn a_looped_texture_clip_reads_nothing_past_the_loop_on_its_last_pass() {
 #[test]
 fn the_longest_grain_is_whole_at_the_highest_file_rate() {
     for (rate, want) in [(48_000u32, 19_200usize), (*STRETCH_SAMPLE_RATES.end(), 76_800)] {
-        let mut audio = region(&[(0.0, 0.0), (2.0, 1.0)], StretchMode::Tonal);
+        // Twice the file's speed, so the voice stretches rather than reading the file as it is.
+        let mut audio = region(&[(0.0, 0.0), (2.0, 2.0)], StretchMode::Tonal);
         audio.warp.grain = *GRAIN_RANGE.end();
         let Some(voice) =
-            StretchVoice::new(&with(&clip(2.0, 0.0, None), &audio), sine(440.0, 1.0, rate), 120.0, 48_000)
+            StretchVoice::new(&with(&clip(2.0, 0.0, None), &audio), sine(440.0, 2.0, rate), 120.0, 48_000)
         else {
             panic!("no voice at {rate} Hz")
         };

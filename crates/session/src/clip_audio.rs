@@ -972,17 +972,23 @@ mod tests {
     /// A new marker rolled back to its own beat, just past where the marker before it moved, would
     /// be saved within `SAME_MARKER` of it and merged by the next read: the quantize is refused.
     #[test]
-    fn a_quantize_that_leaves_two_markers_on_one_beat_is_refused() {
+    fn a_quantize_that_leaves_two_markers_on_one_beat_puts_back_the_one_that_moved() {
         let at = |time: f64, audio_time: f64| suhina_model::WarpMarker { time, audio_time };
         // The first moves to 1.0; the new one (1.0000005) to 1.2; the last (not in the range)
-        // stays at 1.1, before 1.2, so the new one goes back to 1.0000005.
+        // stays at 1.1, before 1.2, so the new one goes back to 1.0000005, where the first would
+        // land on it: the first goes back to its own beat too, and nothing moves.
         let all = [(at(0.5, 0.25), true), (at(1.000_000_5, 0.5), false), (at(1.1, 0.55), true)];
         let to = |beat: f64| match beat {
             b if b < 0.6 => 1.0,
             b if b < 1.05 => 1.2,
             b => b,
         };
-        assert!(quantized(&all, to).is_err());
+        let (kept, moved) = quantized(&all, to).unwrap();
+        let beats: Vec<f64> = kept.iter().map(|m| m.time).collect();
+        assert_eq!((beats, moved), (vec![0.5, 1.000_000_5, 1.1], 0));
+        // Two the clip had, both unmoved on one beat, leave no order to find: refused.
+        let all = [(at(1.0, 0.25), true), (at(1.000_000_5, 0.5), true)];
+        assert!(quantized(&all, |b| b).is_err());
         // Further apart, they are kept: the first moved, the new one back at its own beat.
         let all = [(at(0.5, 0.25), true), (at(1.01, 0.5), false), (at(1.1, 0.55), true)];
         let (kept, moved) = quantized(&all, to).unwrap();
