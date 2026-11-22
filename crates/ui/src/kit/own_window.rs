@@ -28,7 +28,7 @@ pub struct Frame {
 /// the system's title bar where [`Frame::title_bar`] says so.
 pub fn builder(builder: ViewportBuilder, frame: Frame) -> ViewportBuilder {
     // Every window clears to see-through under a see-through theme (`App::clear_color` is the
-    // app's, not the window's): one that is not see-through shows the system's own window colour
+    // app's, not the window's): one that is not see-through shows the system's own window color
     // there. Where the main window is not asked to be see-through (the OpenGL renderer), nor are
     // these.
     let builder = builder.with_transparent(frame.see_through);
@@ -53,7 +53,7 @@ impl Base {
     }
 }
 
-/// Paints the base of a window of its own over all of `ui`: `window`'s background colour and
+/// Paints the base of a window of its own over all of `ui`: `window`'s background color and
 /// gradients, in the window's corners. Full screen, it has neither corners nor a title bar.
 pub fn base(ui: &Ui, frame: Frame) -> Base {
     let whole = ui.max_rect();

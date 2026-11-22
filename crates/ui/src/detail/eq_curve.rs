@@ -81,7 +81,7 @@ const ANALYSER_RELEASE: f64 = 1.2;
 /// The analyser's filled area's gray: the theme's secondary gray scaled to [`ANALYSER_FILL`] of
 /// its value, opaque, so the area reads as a solid shape over the grid behind it
 /// (`gamma_multiply` would thin it to a veil the grid shows through).
-fn analyser_gray(colors: &super::device_canvas::Colours) -> Color32 {
+fn analyser_gray(colors: &super::device_canvas::Colors) -> Color32 {
     let [r, g, b, _] = colors.text_secondary.to_array();
     Color32::from_rgb(
         (r as f32 * ANALYSER_FILL).round() as u8,
@@ -403,7 +403,7 @@ fn draw_display(
     two_curves: bool,
     spectrum: Option<&[f32; ANALYSER_BANDS]>,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let painter = ui.painter_at(display);
     ui.interact(display, ui.scope_id().with("eq-display"), Sense::hover())
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, "EQ response display"));
@@ -511,7 +511,7 @@ fn draw_dots(
     address: &Address,
     actions: &mut Vec<Action>,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let painter = ui.painter_at(display);
     for (index, band) in edited.iter().copied().enumerate() {
         let at = Pos2::new(
@@ -627,7 +627,7 @@ fn draw_strip(
     let field_name = ["Frequency", "Gain", "Q"][field];
     let Some(parameter) = parameter_by_field(parameters, selection.0, selection.1, field_name) else { return };
     let logarithmic = parameter.id.ends_with('Q') || parameter.id.ends_with("Frequency");
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let group = Rect::from_min_size(
         bounds.min + Vec2::new(STRIPS[0], STRIPS[1] + field as f32 * STRIPS[3]),
         Vec2::new(STRIPS[2], STRIPS[3]),
@@ -742,7 +742,7 @@ fn draw_type_menus(
     address: &Address,
     actions: &mut Vec<Action>,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     for (index, band) in edited.iter().copied().enumerate() {
         let rect = Rect::from_min_size(
             bounds.min + Vec2::new(DISPLAY[0] + index as f32 * BAND_WIDTH, MENU_ROW),
@@ -827,7 +827,7 @@ fn draw_numbers(
     address: &Address,
     actions: &mut Vec<Action>,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     for (index, band) in edited.iter().copied().enumerate() {
         let rect = Rect::from_min_size(
             bounds.min + Vec2::new(DISPLAY[0] + index as f32 * BAND_WIDTH, NUMBER_ROW),
@@ -877,7 +877,7 @@ fn draw_numbers(
 /// The Edit switch in the globals' column: which curve's bands the display edits, in Left/Right
 /// and Mid/Side. Panel state only; the device has no such parameter.
 fn draw_edit_switch(ui: &mut egui::Ui, bounds: Rect, selection: &mut (usize, usize), address: &Address) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let rect = Rect::from_min_size(bounds.min + Vec2::new(EDIT[0], EDIT[1]), Vec2::new(EDIT[2], EDIT[3]));
     let painter = ui.painter_at(rect);
     let width = rect.width() / 2.0 - 1.0;

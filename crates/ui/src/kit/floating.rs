@@ -174,8 +174,8 @@ pub(crate) fn dialog_size(dialog: &Entered, area: Rect, size: Vec2) -> Vec2 {
 /// sheet gives it no border. Returns the content box what it holds goes in (#1336).
 pub(crate) fn dialog(painter: &Painter, dialog: &Entered, rect: Rect) -> Rect {
     // Its background from whichever sheet gives it, the user-agent's included (which always
-    // does), so a dialog never takes the colour of the window or region it opens over; the
-    // panel colour only where no sheet is loaded or the one that is gives a clear background.
+    // does), so a dialog never takes the color of the window or region it opens over; the
+    // panel color only where no sheet is loaded or the one that is gives a clear background.
     let fill = dialog
         .style()
         .map(|style| style.background)
@@ -251,9 +251,9 @@ pub(crate) fn frame_styled(
     // Over egui's own frame, the element's background from whichever sheet gives it: the
     // user-agent sheet's and the base sheet's too, not only a theme's own rule. egui fills its
     // frame from the window's frame (`widget[kind="window"]`), which a theme on the user-agent
-    // sheet alone leaves clear. A frame a view filled in a colour of its own keeps it.
-    // egui's frame is told by its colour: `opacity` is egui's own fade to the bit ([`shown`], its
-    // test) and both fade with `gamma_multiply`, so the faded colours are equal, not near. A view
+    // sheet alone leaves clear. A frame a view filled in a color of its own keeps it.
+    // egui's frame is told by its color: `opacity` is egui's own fade to the bit ([`shown`], its
+    // test) and both fade with `gamma_multiply`, so the faded colors are equal, not near. A view
     // that fills a frame with `window_fill` itself gets the sheet's background, as egui's does.
     let default = ctx.global_style().visuals.window_fill;
     let faded = |color: Color32| if opacity > 0.0 && opacity < 1.0 { color.gamma_multiply(opacity) } else { color };
@@ -277,7 +277,7 @@ pub(crate) fn frame_styled(
             list.all_entries().map(|clipped| clipped.shape.clone()).collect::<Vec<_>>()
         })
     };
-    // egui scales the frame's colours while the popup fades in: undo that for the fallbacks.
+    // egui scales the frame's colors while the popup fades in: undo that for the fallbacks.
     let unfaded = |color: Color32| {
         if opacity > 0.0 && opacity < 1.0 { color.gamma_multiply(1.0 / opacity) } else { color }
     };

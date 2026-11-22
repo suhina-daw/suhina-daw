@@ -252,7 +252,7 @@ pub fn rendered(app: App, subject: &Subject, width: f32, scale: f32, gpu: &Gpu) 
 pub struct Shot {
     pub pixels: image::RgbaImage,
     pub see_through: bool,
-    /// The colour an opaque window clears to before drawing, premultiplied.
+    /// The color an opaque window clears to before drawing, premultiplied.
     pub clear: [u8; 4],
 }
 

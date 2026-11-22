@@ -18,7 +18,7 @@ pub mod ids {
     pub const NEW_CHANNEL: u8 = 64;
     pub const NEW_PATTERN: u8 = 65;
     pub const TEMPO_COARSE: u8 = 66;
-    pub const COLOUR: u8 = 128;
+    pub const COLOR: u8 = 128;
     pub const TEMPO: u8 = 156;
     /// Written with a one-byte value although it is in the four-byte range (the spec's exception).
     pub const ONE_BYTE_EXCEPTION: u8 = 172;
@@ -81,7 +81,7 @@ pub enum ValueKind {
     Signed,
     F32,
     TwoU16,
-    Colour,
+    Color,
     /// A string in the file's encoding.
     String,
     /// A string that is ASCII in every version (the version event).
@@ -98,7 +98,7 @@ pub enum Value {
     F32(f32),
     TwoU16(u16, u16),
     /// Red, green, blue.
-    Colour(u8, u8, u8),
+    Color(u8, u8, u8),
     String(String),
     Binary(Vec<u8>),
 }
@@ -109,7 +109,7 @@ pub fn kind_of(id: u8) -> ValueKind {
     use ids::*;
     match id {
         CHANNEL_ENABLED | LICENSED => ValueKind::Bool,
-        COLOUR => ValueKind::Colour,
+        COLOR => ValueKind::Color,
         VERSION => ValueKind::AsciiString,
         NAME..=URL | LICENSEE..=AUTHOR => ValueKind::String,
         192..=255 => ValueKind::Binary,
@@ -152,11 +152,11 @@ impl Event {
                 let [a, b, c, e] = d.to_le_bytes();
                 Value::TwoU16(u16::from_le_bytes([a, b]), u16::from_le_bytes([c, e]))
             }
-            (ValueKind::Colour, Payload::Dword(d)) => {
+            (ValueKind::Color, Payload::Dword(d)) => {
                 let [r, g, b, _] = d.to_le_bytes();
-                Value::Colour(r, g, b)
+                Value::Color(r, g, b)
             }
-            (ValueKind::F32 | ValueKind::TwoU16 | ValueKind::Colour, _) => return Err(wrong(4)),
+            (ValueKind::F32 | ValueKind::TwoU16 | ValueKind::Color, _) => return Err(wrong(4)),
             (ValueKind::String, _) => {
                 return Err(FlpError::BadString { offset: self.offset, reason: "needs the file's encoding" });
             }

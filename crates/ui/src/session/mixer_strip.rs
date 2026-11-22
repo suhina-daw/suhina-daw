@@ -33,8 +33,8 @@ const READOUT: f32 = 12.0;
 const UNDER_READOUT: f32 = 2.0;
 /// A row of knobs (pan, sends) and the gap under it.
 const KNOB_ROW: f32 = theme::KNOB + 4.0;
-/// The track colour's band down the strip's left edge, in its padding.
-const COLOUR_BAND: f32 = 5.0;
+/// The track color's band down the strip's left edge, in its padding.
+const COLOR_BAND: f32 = 5.0;
 /// The name row and the gap under it.
 const NAME: f32 = 16.0;
 const UNDER_NAME: f32 = 2.0;
@@ -81,7 +81,7 @@ pub(crate) fn rail_width() -> f32 {
 }
 
 /// The thickness of `el`, a `fader-rail` already entered: `fader-rail { width }` in the theme,
-/// else 5 points. A fader enters one rail element for both its thickness and its artwork's colour.
+/// else 5 points. A fader enters one rail element for both its thickness and its artwork's color.
 fn rail_width_of(el: &crate::kit::element::Entered) -> f32 {
     el.style().and_then(|c| c.width).filter(|w| *w >= 1.0).unwrap_or(5.0).min(32.0)
 }
@@ -100,7 +100,7 @@ pub const DEVICES_AT: f32 = 260.0;
 /// strip's height has no room for, or the sheet hides, is `None`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Layout {
-    /// The band of the track's colour down the strip's left edge (`track-colour`).
+    /// The band of the track's color down the strip's left edge (`track-color`).
     pub band: Option<Rect>,
     pub name: Option<Rect>,
     /// Where the track's audio goes: "→" and the output dropdown.
@@ -246,7 +246,7 @@ pub fn layout_in(
     let part = Item::part;
     let mut tree = row::Tree::default();
     let mut add = |item: Item, slot: Slot| tree.add(item, slot);
-    add(part("track-colour", "mixer-color").width(COLOUR_BAND), Slot::Band);
+    add(part("track-color", "mixer-color").width(COLOR_BAND), Slot::Band);
     let body = add(part("group", "mixer-body"), Slot::None);
     if name {
         add(part("track-name", "mixer-name").height(NAME).in_group(body), Slot::Name);
@@ -432,7 +432,7 @@ pub fn show(
         .attr(Selected, state.selected == Some(column.track))
         .attr(Muted, column.mute)
         .enter();
-    // The strip in a shade of its track's colour, as the column above it.
+    // The strip in a shade of its track's color, as the column above it.
     let tint = style_class.background_or(motion::mix(
         crate::kit::style_class::surface_or(style_class.background()),
         egui::Color32::from_rgb(column.color.0, column.color.1, column.color.2),
@@ -470,7 +470,7 @@ pub fn show(
             state.selected_slot = None;
         }
     }
-    // The track's colour down the left edge, at every height; a click opens the palette.
+    // The track's color down the left edge, at every height; a click opens the palette.
     let shared = Shared { reserve_input: state.reserve_input, fader: state.strip_fader_shown() };
     let kind = Strip::Track { armable: column.armable };
     let parts = layout_in(Host::Strip(&style_class), whole, !column.sends.is_empty(), column.plays_audio, shared, kind);
@@ -478,8 +478,8 @@ pub fn show(
         painter.rect_filled(band, 0.0, color_picker::fill(column.color, column.mute));
         let band_hit = band.intersect(painter.clip_rect());
         if band_hit.is_positive() {
-            let colour_id = id.with("strip-colour");
-            color_picker::area(ui, band_hit, colour_id, column.track, &column.name, column.color, actions);
+            let color_id = id.with("strip-color");
+            color_picker::area(ui, band_hit, color_id, column.track, &column.name, column.color, actions);
         }
     }
     if let Some(name) = parts.name {
@@ -563,10 +563,10 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
     let track_id = format!("track-{}", column.track.0);
     let name_style = crate::kit::element::TRACK_NAME.id(&track_id).response(&response).attr(Selected, selected).enter();
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{} strip", column.name)));
-    // The name stands on the track's colour, as in the column's header.
+    // The name stands on the track's color, as in the column's header.
     let native_fill = color_picker::fill(column.color, column.mute);
-    // An alpha material layers over the track colour. An explicitly authored
-    // transparent solid background can still remove that colour completely.
+    // An alpha material layers over the track color. An explicitly authored
+    // transparent solid background can still remove that color completely.
     let fill = if name_style.style().is_some_and(|style| style.has_gradient() && style.background.a() == 0) {
         native_fill
     } else {
@@ -590,7 +590,7 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
         Align2::LEFT_CENTER,
         &column.name,
         theme::ui_font(theme::TEXT),
-        // Ink that reads on the fill, unless the sheet gives the name a colour.
+        // Ink that reads on the fill, unless the sheet gives the name a color.
         name_style.color_or(theme::text_on(fill)),
     );
 }

@@ -42,8 +42,8 @@ mod value_controls;
 use self::clip::*;
 use crate::arrangement::gesture::*;
 
-/// The colour Main's automation lanes are drawn in: it has no track colour of its own.
-const MAIN_COLOUR: Rgb = Rgb(150, 150, 150);
+/// The color Main's automation lanes are drawn in: it has no track color of its own.
+const MAIN_COLOR: Rgb = Rgb(150, 150, 150);
 use self::header::*;
 use self::lane_menu::*;
 use self::markers_loop::*;
@@ -94,8 +94,8 @@ const SOLO: f32 = 26.0;
 /// A group's fold triangle at the start of its header row.
 const FOLD: f32 = 20.0;
 /// How far a track inside a group is indented in its header, a level.
-/// The track colour's band down a header's left edge.
-const COLOUR_BAND: f32 = 6.0;
+/// The track color's band down a header's left edge.
+const COLOR_BAND: f32 = 6.0;
 /// Points per beat: the default and the zoom range.
 const DEFAULT_BEAT_WIDTH: f32 = 8.0;
 /// From a whole song on screen to single samples of a short sound: at 4 000 points a beat, a beat
@@ -141,7 +141,7 @@ thread_local! {
         const { std::cell::Cell::new((Color32::TRANSPARENT, Color32::TRANSPARENT)) };
 }
 
-/// Reads the view's two surfaces from the sheet, with `arrangement` in scope: the window's colour
+/// Reads the view's two surfaces from the sheet, with `arrangement` in scope: the window's color
 /// and the panels'.
 fn read_surfaces() {
     let window = crate::kit::element::ARRANGEMENT.look().background();
@@ -149,7 +149,7 @@ fn read_surfaces() {
     SURFACES.with(|cell| cell.set((window, panel)));
 }
 
-/// What the view draws under its grid, empty lanes and dimmed rows: the colour of the region it
+/// What the view draws under its grid, empty lanes and dimmed rows: the color of the region it
 /// is in where that has one, else the base sheet's `arrangement` background.
 pub(crate) fn window_surface() -> Color32 {
     crate::kit::style_class::surface_or(SURFACES.with(std::cell::Cell::get).0)
@@ -160,8 +160,8 @@ pub(crate) fn panel_surface() -> Color32 {
     crate::kit::style_class::surface_or(SURFACES.with(std::cell::Cell::get).1)
 }
 
-/// The colour of the grid's lines on a bar (`major`) or between bars: `grid-line[kind="bar"]`
-/// and `grid-line[kind="beat"]`'s own `color`, else the sheet's grid colour (their base `color`)
+/// The color of the grid's lines on a bar (`major`) or between bars: `grid-line[kind="bar"]`
+/// and `grid-line[kind="beat"]`'s own `color`, else the sheet's grid color (their base `color`)
 /// faded into the view so the lines stay under the clips. Read once a frame, for every line of
 /// its kind.
 fn grid_color(major: bool) -> Color32 {
@@ -169,7 +169,7 @@ fn grid_color(major: bool) -> Color32 {
     look.own_color_or(motion::mix(window_surface(), look.color(), if major { 0.55 } else { 0.35 }))
 }
 
-/// The colour of a line of `kind` between the view's rows and bands, `separator[kind]`.
+/// The color of a line of `kind` between the view's rows and bands, `separator[kind]`.
 fn line_color(kind: &str) -> Color32 {
     crate::kit::element::SEPARATOR.attribute("kind", kind).look().color()
 }
@@ -192,7 +192,7 @@ pub fn waveform_zoom_step(zoom: f32, steps: i32) -> f32 {
 }
 const CLIP_BODY_LEAST: f32 = 36.0;
 
-/// `#RRGGBB`, as colour parameters take it.
+/// `#RRGGBB`, as color parameters take it.
 fn hex(suhina_engine::model::Rgb(r, g, b): suhina_engine::model::Rgb) -> String {
     format!("#{r:02X}{g:02X}{b:02X}")
 }
@@ -419,7 +419,7 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 /// Draws the Arrangement view in the space left in `ui` and adds what the user asked for to
 /// `actions`.
 /// The grid's `lines` (x, on a bar) inside `rect`, drawn over a `fill` laid over the grid (the
-/// selection colour of a time selection or a selected clip): faint lines of the ink that reads on
+/// selection color of a time selection or a selected clip): faint lines of the ink that reads on
 /// it, stronger on the bars, so the grid stays in sight whatever the fill.
 pub(crate) fn grid_over(painter: &egui::Painter, rect: Rect, lines: &[(f32, bool)], fill: Color32) {
     let ink = theme::text_on(fill.to_opaque());
@@ -813,7 +813,7 @@ fn show_lanes(
         crate::arrangement::envelope::toggle_editing(ui.ctx(), clip);
     }
     state.clip_grid = std::sync::Arc::new(grid_xs);
-    // Tempo and time-signature changes: a line in the accent colour and what changes, after
+    // Tempo and time-signature changes: a line in the accent color and what changes, after
     // room for the bar number.
     // `tempo-mark`: its `color`, line and text.
     let tempo_ink = crate::kit::element::TEMPO_MARK.look().color();
@@ -887,8 +887,8 @@ fn show_lanes(
             // Blinking while it waits, as the Play button does.
             let on = (ui.input(|i| i.time) * 4.0).floor() as i64 % 2 == 0;
             let ink = crate::kit::element::PLAYHEAD.attribute("kind", "pending").look().color();
-            let colour = if on { ink } else { ink.gamma_multiply(0.4) };
-            painter.vline(x, ruler.y_range(), egui::Stroke::new(2.0, colour));
+            let color = if on { ink } else { ink.gamma_multiply(0.4) };
+            painter.vline(x, ruler.y_range(), egui::Stroke::new(2.0, color));
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(125));
         }
     }
@@ -1337,12 +1337,12 @@ fn show_lanes(
     let mut ghost = None;
     let mut rows_seen: Vec<(TrackId, Rect)> = Vec::new();
     let mut clip_rects: Vec<((TrackId, ClipId), Rect)> = Vec::new();
-    // The line under each track's lane, `separator[kind="lane"]`: a bar line's colour by default.
+    // The line under each track's lane, `separator[kind="lane"]`: a bar line's color by default.
     let lane_line = crate::kit::element::SEPARATOR.attribute("kind", "lane").look().own_color_or(grid_bar);
     for shown in &drawn {
         let Some(lane) = timeline.lanes.get(shown.lane) else { continue };
         // A folded group's row draws the clips of the track it stands in for, and that track's
-        // colour with them, while its header stays the group's.
+        // color with them, while its header stays the group's.
         let Some(clips_lane) = timeline.lanes.get(shown.clips) else { continue };
         track_number = focus_number.unwrap_or(track_number + 1);
         let Some(row) = row_of(lane.track) else { continue };
@@ -1366,7 +1366,7 @@ fn show_lanes(
         lane_el.paint(&lanes_painter, row.clip.intersect(lanes_area));
         // A selected track's lane, tinted with `track-lane[selected]`'s background. A theme's own
         // rule for it is painted above with the lane; the base sheet's light tint of the selection
-        // colour is not (a base rule's background is the element's computed value, which the
+        // color is not (a base rule's background is the element's computed value, which the
         // view paints itself), so it is painted here. Not on the lane the piano roll edits, which
         // keeps its own highlight.
         if state.selected_tracks.contains(&lane.track)
@@ -1377,7 +1377,7 @@ fn show_lanes(
         {
             lanes_painter.rect_filled(row.clip.intersect(lanes_area), 0.0, style.background);
         }
-        // The time selection over this track's whole row, in the selection colour under its clips
+        // The time selection over this track's whole row, in the selection color under its clips
         // (the clips light the stretch of their bodies under it), so the grid shows through it.
         if let Some(selection) =
             state.time_selection.as_ref().filter(|s| s.row.is_none() && s.tracks.contains(&clips_lane.track))
@@ -1516,7 +1516,7 @@ fn show_lanes(
             actions.push(Action::new("clip.create", params));
         }
         // The track the piano roll edits, alone in the view: lit, so it is clear which it is.
-        // It is `track-lane[checked]`: a background or border colour the sheet gives that state
+        // It is `track-lane[checked]`: a background or border color the sheet gives that state
         // replaces the light or the edge; one it gives every lane does not.
         if let Some(plain) = &plain_lane {
             let lit = lane_el.look();
@@ -1528,7 +1528,7 @@ fn show_lanes(
             lanes_painter.rect_filled(edge, 0.0, lit.border());
         }
         // A folded group's lane: every track inside it, a thin row each with its clips in their
-        // colours, so it shows how much is in there and where.
+        // colors, so it shows how much is in there and where.
         if shown.folded {
             let inside = inside_lanes(&timeline.lanes, shown.lane);
             let tracks: Vec<&Lane> =
@@ -1689,10 +1689,10 @@ fn show_lanes(
                 None => egui::Rangef::new(row.top(), row.bottom() + under + if joined { 1.0 } else { 0.0 }),
             };
             let lit = Rect::from_x_y_ranges(span, band);
-            // With a selection colour, the track's row is lit under its clips (above); only the
+            // With a selection color, the track's row is lit under its clips (above); only the
             // take and automation lanes under it are lit here.
             if selection.row.is_none()
-                && crate::kit::selection::look().mode != crate::kit::selection::SelectionColour::Own
+                && crate::kit::selection::look().mode != crate::kit::selection::SelectionColor::Own
             {
                 let below = Rect::from_x_y_ranges(span, egui::Rangef::new(row.bottom(), band.max));
                 if below.height() > 0.0 {
@@ -1935,10 +1935,10 @@ fn show_lanes(
         if response.dragged_by(egui::PointerButton::Primary) {
             state.main_height = (state.main_height - response.drag_delta().y).clamp(ROW, MAX_LANE);
         }
-        // Lined up with the track names, which start after their colour band; the controls in
+        // Lined up with the track names, which start after their color band; the controls in
         // the row's first line however tall it is.
         let inner = Rect::from_min_max(
-            Pos2::new(header.left() + COLOUR_BAND + PAD, header.top() + 2.0),
+            Pos2::new(header.left() + COLOR_BAND + PAD, header.top() + 2.0),
             Pos2::new(header.right() - PAD, header.top() + ROW - 2.0),
         );
         let font = theme::ui_font(theme::TEXT);
@@ -2022,7 +2022,7 @@ fn show_lanes(
         let lanes = automation::TrackLanes {
             track: TrackId::MAIN,
             name: "Main",
-            color: MAIN_COLOUR,
+            color: MAIN_COLOR,
             top: header.bottom() + 1.0,
         };
         automation::show(
@@ -2038,7 +2038,7 @@ fn show_lanes(
     }
 
     // Takes recording into the arrangement: a clip from where the pass began to the playhead,
-    // with its notes or its waveform so far, edged in the record colour (#909).
+    // with its notes or its waveform so far, edged in the record color (#909).
     for take in timeline.live_takes.iter().filter(|t| !t.finished) {
         let Some(row) = row_of_clips(take.track) else { continue };
         let Some(lane) = timeline.lanes.iter().find(|l| l.track == take.track) else { continue };
@@ -2076,7 +2076,7 @@ fn show_lanes(
         if let Some((start, end)) = shown {
             let line = crate::kit::element::LOOP_LINE.enter();
             let style = line.style();
-            let colour = line.color();
+            let color = line.color();
             let width = style.as_ref().and_then(|s| s.width).map_or(1.5, |w| w.clamp(0.5, 6.0));
             let down = egui::Rangef::new(lanes_area.top(), fixed.bottom());
             // The timeline's width, not the view's: a beat under the track headers, on either
@@ -2085,8 +2085,8 @@ fn show_lanes(
             let line_painter = painter.with_clip_rect(column);
             for beat in [start, end] {
                 let x = x_of(beat).round() + 0.5;
-                if column.x_range().contains(x) && colour.a() > 0 {
-                    line_painter.vline(x, down, egui::Stroke::new(width, colour));
+                if column.x_range().contains(x) && color.a() > 0 {
+                    line_painter.vline(x, down, egui::Stroke::new(width, color));
                 }
             }
         }

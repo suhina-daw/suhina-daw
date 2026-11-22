@@ -126,13 +126,13 @@ Per frame, with the left and right sides through the same filters:
 script; the file is its output), lays out the design boards D (the device row) and E (the expanded
 view). The canvases draw from the parameters and from the device's live values
 ([ADR 0032](../decisions/0032-device-readouts.md)), so they follow every knob and the sound. Every
-colour follows the theme: text, panel, control, border and accent are the theme's, and the display,
-the three band colours and the gain line are theme tokens (`--device-display`,
+color follows the theme: text, panel, control, border and accent are the theme's, and the display,
+the three band colors and the gain line are theme tokens (`--device-display`,
 `--device-series-1` … `3` for the bands, `4` and `5` for the gain line and the spectrum;
 [SDK UI](sdk-custom-ui.md)).
 
 - **Band view** (both canvases): the dark display with each band tinted between the crossovers;
-  the input spectrum filled softly in its own colour, the output's (input plus the band's gain change) dotted
+  the input spectrum filled softly in its own color, the output's (input plus the band's gain change) dotted
   over it; a 0 dB line near the top with the gain line under it, falling by each band's cut with
   the area above it shaded; each band's above threshold dashed with a ring in the middle of its
   band and its below threshold fainter; the crossovers with a grip near the bottom and their
@@ -149,7 +149,7 @@ the three band colours and the gain line are theme tokens (`--device-display`,
   (both stages at once, their knees with Soft knee's width, the limit held at ±36 dB), so crossed
   thresholds and the knee show as they sound; the input level is a line through it, the cut or lift
   there a segment off the diagonal and a dot; after a divider Amount (large, in the
-  accent), Time and Output; each band's own output peak (after its gain) as a bar in the band's colour; the output's peak in dB centred over
+  accent), Time and Output; each band's own output peak (after its gain) as a bar in the band's color; the output's peak in dB centred over
   its two meters, which end with the knobs' values and are dragged up or down to change their range (`meterRange`, its bottom number; the band bars share that scale, and every meter falls to nothing within two seconds of silence); and at the right edge the Default and OTT presets in a column of their own. While the expanded strip is open the band view gives way to the
   three bands' curves side by side, each with its power button and Solo, and the rest moves left
   into the chosen band's column.

@@ -124,7 +124,7 @@ fn entries(ui: &mut Ui, entries: &[Entry], picked: &mut Option<String>) {
 /// framed and blurred as `menu` is where it opens.
 fn open_menu<R>(ui: &mut Ui, content: impl FnOnce(&mut Ui) -> R) -> R {
     crate::kit::floating::declare(ui.ctx(), ui.layer_id().id, crate::kit::floating::Kind::Menu);
-    // `menu` styles the open menu: its box, text colour, corner radius and font size.
+    // `menu` styles the open menu: its box, text color, corner radius and font size.
     let menu = crate::kit::element::MENU.enter();
     // Its box takes the place of egui's frame once the frame is painted (`liquid`), as a
     // pop-up's does: one box, `menu`'s as it is here, in the bar.

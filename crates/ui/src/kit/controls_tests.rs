@@ -22,7 +22,7 @@ fn harness() -> Harness<'static, State> {
         |ui, state: &mut State| {
             crate::kit::theme::install(ui.ctx());
             super::heading(ui, "Palette");
-            super::note(ui, "Colours you use appear here");
+            super::note(ui, "Colors you use appear here");
             super::separator(ui);
             if super::button(ui, "Random").clicked() {
                 state.clicks += 1;
@@ -48,7 +48,7 @@ fn buttons_tick_boxes_choices_and_sections_report_their_clicks_and_states() {
     let mut harness = harness();
     harness.run();
     harness.get_by_label("Palette");
-    harness.get_by_label("Colours you use appear here");
+    harness.get_by_label("Colors you use appear here");
     harness.get_by_label("Random").click();
     harness.run();
     assert_eq!(harness.state().clicks, 1);

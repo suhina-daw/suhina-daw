@@ -32,16 +32,16 @@ fn color(value: u32) -> suhina_model::Rgb {
     suhina_model::Rgb(value as u8, (value >> 8) as u8, (value >> 16) as u8)
 }
 
-/// The gray FL gives a channel, a mixer insert or a playlist row nobody coloured. It is FL's look,
-/// not a choice the user made, so it comes in as no colour, and the track then gets the colour
-/// a new Suhina track of its kind gets (`crate::appearance::default_colours`).
+/// The gray FL gives a channel, a mixer insert or a playlist row nobody colored. It is FL's look,
+/// not a choice the user made, so it comes in as no color, and the track then gets the color
+/// a new Suhina track of its kind gets (`crate::appearance::default_colors`).
 pub(crate) fn is_fl_default(c: suhina_model::Rgb) -> bool {
     use suhina_model::Rgb;
     matches!(c, Rgb(92, 101, 106) | Rgb(72, 81, 86) | Rgb(74, 82, 88))
 }
 
-/// A custom colour `value`, when `enabled` (FL's flag event, from FL 2025 on) says so or there is
-/// no flag (earlier versions keep the colour without one), and it is not FL's default gray.
+/// A custom color `value`, when `enabled` (FL's flag event, from FL 2025 on) says so or there is
+/// no flag (earlier versions keep the color without one), and it is not FL's default gray.
 fn custom_color(enabled: Option<u32>, value: Option<u32>) -> Option<suhina_model::Rgb> {
     if enabled == Some(0) {
         return None;
@@ -258,7 +258,7 @@ fn finish(import: &mut Import) -> Result<(), FlpError> {
         let rows = crate::appearance::rows(&flp, selected)?;
         crate::appearance::apply(import, &rows);
     }
-    crate::appearance::default_colours(&mut import.project);
+    crate::appearance::default_colors(&mut import.project);
     validate_routes(&import.project)?;
     import.project.assign_ids().map_err(|_| error(0, "project identity limit exceeded"))?;
     import.project.validate().map_err(|errors| error(0, format!("invalid imported project: {errors:?}")))

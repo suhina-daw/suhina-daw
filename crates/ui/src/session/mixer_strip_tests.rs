@@ -154,7 +154,7 @@ fn mixer_toggles_standing_up_stack_solo_cue_and_arm() {
 fn a_theme_lays_the_parts_out_and_hides_them() {
     let original = styled("", theme::TRACK_COLUMN, 340.0);
     let moved = styled(
-        "mixer meter { order: -1; margin: 0 4px 0 0; } mixer track-colour { display: none; } \
+        "mixer meter { order: -1; margin: 0 4px 0 0; } mixer track-color { display: none; } \
          #mixer-pan { margin-left: 5px; width: 40px; }",
         theme::TRACK_COLUMN,
         340.0,
@@ -347,7 +347,7 @@ fn a_send_takes_its_class_and_its_own_id() {
     use crate::kit::{native_css, skin};
     let grid = TrackGrid::build(&crate::demo::demo_project(), None);
     let column = grid.columns.iter().find(|c| !c.sends.is_empty()).expect("the demo has a track with sends");
-    for (css, colour) in [
+    for (css, color) in [
         ("send { background-color: #00FF00; }", Color32::from_rgb(0, 0xFF, 0)),
         ("send { background-color: #00FF00; } #mixer-send-1 { background-color: #FF0000; }", Color32::RED),
     ] {
@@ -377,7 +377,7 @@ fn a_send_takes_its_class_and_its_own_id() {
             found = output
                 .shapes
                 .iter()
-                .any(|shape| matches!(&shape.shape, egui::Shape::Rect(shape) if shape.fill == colour));
+                .any(|shape| matches!(&shape.shape, egui::Shape::Rect(shape) if shape.fill == color));
             output.textures_delta.clear();
         }
         assert!(found, "{css}");

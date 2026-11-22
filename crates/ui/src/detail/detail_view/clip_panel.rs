@@ -200,9 +200,9 @@ fn field_surface(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::
 /// a button or a list, `panel-toggle` a switch), as the sheet paints it (`:hover`, `:active`,
 /// `[checked]` while `checked`): its background, fading to the one it has under the pointer, its
 /// border and radius, 3-point corners where it sets none and, with `outline`, a hairline in its
-/// `border-color`. `colours` are a switch's fill and ink where the sheet gives none
+/// `border-color`. `colors` are a switch's fill and ink where the sheet gives none
 /// ([`widgets::toggle_colors`]): a switch that is on keeps them unless the sheet gives `[checked]` a
-/// background or colour of its own, so a theme that styles every button alike does not hide which
+/// background or color of its own, so a theme that styles every button alike does not hide which
 /// switches are on. Returns the sheet's `color` for its text, else the switch's, else the
 /// element's own.
 #[allow(clippy::too_many_arguments)]
@@ -214,15 +214,15 @@ pub(super) fn button_face(
     rect: Rect,
     response: &egui::Response,
     checked: bool,
-    colours: Option<(egui::Color32, egui::Color32)>,
+    colors: Option<(egui::Color32, egui::Color32)>,
     outline: bool,
 ) -> egui::Color32 {
     use crate::kit::element::{Checked, Look, Native};
     // The element alone, to tell a `[checked]` rule from the one every button has.
     let plain = if checked { element.native(Native::default()).style() } else { None };
     let el = element.attribute("kind", kind).response(response).attr(Checked, checked).enter();
-    let fill = colours.map_or_else(|| el.hover_fade(widgets::hover(ui, response), Look::background), |c| c.0);
-    let ink = colours.map_or_else(|| el.hover_fade(widgets::hover(ui, response), Look::color), |c| c.1);
+    let fill = colors.map_or_else(|| el.hover_fade(widgets::hover(ui, response), Look::background), |c| c.0);
+    let ink = colors.map_or_else(|| el.hover_fade(widgets::hover(ui, response), Look::color), |c| c.1);
     let style = el.style().filter(|s| {
         plain.as_ref().is_none_or(|p| {
             (s.authored.background && s.background != p.background) || (s.authored.color && s.color != p.color)
@@ -513,9 +513,9 @@ pub(super) fn small_button(
 pub(super) fn toggle(ui: &Ui, painter: &egui::Painter, rect: Rect, name: &str, text: &str, on: bool) -> bool {
     let state = if on { "On" } else { "Off" };
     let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-switch", name)), format!("{name}: {state}"));
-    let colours = widgets::toggle_colors(ui, &response, on);
+    let colors = widgets::toggle_colors(ui, &response, on);
     let ink =
-        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, rect, &response, on, Some(colours), !on);
+        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, rect, &response, on, Some(colors), !on);
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
     response.clicked()
 }
@@ -526,9 +526,9 @@ fn scale_switch(ui: &Ui, painter: &egui::Painter, rect: Rect, on: bool) -> bool 
     let state = if on { "On" } else { "Off" };
     let response =
         widgets::button_area(ui, rect, Id::unique("clip-panel-scale-switch"), format!("Scale switch: {state}"));
-    let colours = widgets::toggle_colors(ui, &response, on);
+    let colors = widgets::toggle_colors(ui, &response, on);
     let ink =
-        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, rect, &response, on, Some(colours), !on);
+        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, rect, &response, on, Some(colors), !on);
     let keys = Rect::from_center_size(rect.center(), Vec2::new(12.0, 10.0));
     let line = egui::Stroke::new(1.0, ink);
     painter.rect_stroke(keys, 1.0, line, egui::StrokeKind::Inside);
@@ -568,7 +568,7 @@ pub(super) fn drop_down(
     let ink = button_face(ui, crate::kit::element::DROPDOWN, "panel", painter, rect, &response, false, None, false);
     let text = Rect::from_min_max(rect.min + Vec2::new(6.0, 0.0), rect.max - Vec2::new(14.0, 0.0));
     widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, theme::ui_font(theme::TEXT_SMALL), ink);
-    // The chevron is the list's own colour, unless a theme colours the list's text.
+    // The chevron is the list's own color, unless a theme colors the list's text.
     let themed =
         crate::kit::element::DROPDOWN.attribute("kind", "panel").look().themed(crate::kit::element::Paint::Color);
     let chevron =
@@ -668,7 +668,7 @@ pub(super) fn stacked_height(_info: &ClipInfo) -> f32 {
     clip + 14.0 + audio + 14.0 + STACKED_GAIN + 16.0
 }
 
-/// The title row of a clip's panel: its colour (a click opens the palette), its name (a
+/// The title row of a clip's panel: its color (a click opens the palette), its name (a
 /// double-click renames it), its length in beats and, for a clip with an editor, the Clip /
 /// Devices switch. Returns the switch's pick.
 pub(super) fn title_row(
@@ -683,8 +683,8 @@ pub(super) fn title_row(
     let swatch = Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 6.0, rect.center().y), Vec2::splat(12.0));
     // `icon[kind="swatch"]`: its `color` where the clip has none, its `border-color` round it.
     let look = crate::kit::element::ICON.attribute("kind", "swatch").look();
-    let colour = panel.color.map_or_else(|| look.color(), color_picker::color32);
-    painter.rect_filled(swatch, 2.0, colour);
+    let color = panel.color.map_or_else(|| look.color(), color_picker::color32);
+    painter.rect_filled(swatch, 2.0, color);
     painter.rect_stroke(swatch, 2.0, theme::hairline(look.border()), egui::StrokeKind::Inside);
     // An arrangement clip's or a slot's: `clip.setColor` and `clip.setColorMany` take either.
     {

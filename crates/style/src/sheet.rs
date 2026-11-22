@@ -157,7 +157,7 @@ pub fn accepts(name: &str, value: &str) -> bool {
 }
 
 /// The part of an `outline` shorthand (`2px solid #fff`, in any order) that sets `property`. As in
-/// CSS an omitted width is `medium` (3 points), style `none` and colour the current foreground.
+/// CSS an omitted width is `medium` (3 points), style `none` and color the current foreground.
 pub(crate) fn outline_part(property: Property, value: &str) -> Result<String, String> {
     crate::syntax::validate(value)?;
     let mut parser = Parser::new(value);
@@ -176,7 +176,7 @@ pub(crate) fn outline_part(property: Property, value: &str) -> Result<String, St
         } else if color.is_none() && crate::value::Color::parse(&text).is_ok() {
             color = Some(text);
         } else {
-            return Err("An outline is a width, a style and a colour".into());
+            return Err("An outline is a width, a style and a color".into());
         }
     }
     match property {
@@ -188,7 +188,7 @@ pub(crate) fn outline_part(property: Property, value: &str) -> Result<String, St
 }
 
 /// The part of a `background` shorthand that sets `property` (`background-color` or
-/// `background-image`). Like CSS, an omitted colour is transparent and omitted images are none.
+/// `background-image`). Like CSS, an omitted color is transparent and omitted images are none.
 /// Positions, sizes, repeats and URLs are not drawn natively and are an error.
 pub(crate) fn background_part(property: Property, value: &str) -> Result<String, String> {
     crate::syntax::validate(value)?;
@@ -203,7 +203,7 @@ pub(crate) fn background_part(property: Property, value: &str) -> Result<String,
         match token {
             Token::Comma => {
                 if color.is_some() {
-                    return Err("A background colour belongs to the last layer only".into());
+                    return Err("A background color belongs to the last layer only".into());
                 }
                 if !layer_has_image {
                     images.push("none".into());
@@ -232,11 +232,11 @@ pub(crate) fn background_part(property: Property, value: &str) -> Result<String,
                 }
                 let text = parser.slice_from(start).trim();
                 if color.is_some() || crate::value::Color::parse(text).is_err() {
-                    return Err("Only colours and gradients are drawn from the background shorthand".into());
+                    return Err("Only colors and gradients are drawn from the background shorthand".into());
                 }
                 color = Some(text.to_owned());
             }
-            _ => return Err("Only colours and gradients are drawn from the background shorthand".into()),
+            _ => return Err("Only colors and gradients are drawn from the background shorthand".into()),
         }
     }
     match property {
@@ -358,7 +358,7 @@ impl Sheet {
     }
     /// Every declaration of the sheet's rules, `@media` and `@layer` ones included, as its
     /// property's name and its value as written: for checks of a whole sheet (that a sheet gives
-    /// no fixed colour).
+    /// no fixed color).
     pub fn declarations(&self) -> impl Iterator<Item = (&str, &str)> {
         self.rules.iter().flat_map(|rule| rule.declarations.iter().map(|d| (d.name.as_str(), d.value.as_str())))
     }
@@ -953,7 +953,7 @@ fn declarations(
     Ok(declarations)
 }
 
-/// `value` as each colour scheme sees it: once with its `light-dark()` calls taken for a light
+/// `value` as each color scheme sees it: once with its `light-dark()` calls taken for a light
 /// theme and once for a dark one, or once as it is when it has none.
 fn scheme_branches(value: &str) -> Result<Vec<String>, String> {
     if crate::variables::mentions_light_dark(value) {

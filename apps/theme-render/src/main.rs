@@ -188,7 +188,7 @@ fn run() -> Result<(), String> {
                 }
                 println!(
                     "A rule for a state no scene shows, or in an @media block for another window size or the \
-                     other colour scheme, cannot match here, and is listed too."
+                     other color scheme, cannot match here, and is listed too."
                 );
             }
             return if found.failed.is_empty() {

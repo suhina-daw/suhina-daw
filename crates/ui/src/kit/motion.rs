@@ -59,7 +59,7 @@ pub fn pulse(ctx: &Context) -> f32 {
 pub fn mix(from: Color32, to: Color32, t: f32) -> Color32 {
     let t = t.clamp(0.0, 1.0);
     let channel = |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * t).round() as u8;
-    // Premultiplied channels blend without a fringe toward a clear colour.
+    // Premultiplied channels blend without a fringe toward a clear color.
     let ([r0, g0, b0, a0], [r1, g1, b1, a1]) = (from.to_array(), to.to_array());
     Color32::from_rgba_premultiplied(channel(r0, r1), channel(g0, g1), channel(b0, b1), channel(a0, a1))
 }
@@ -69,7 +69,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn translucent_colours_are_not_premultiplied_twice() {
+    fn translucent_colors_are_not_premultiplied_twice() {
         let a = Color32::from_rgba_unmultiplied(80, 140, 200, 128);
         assert_eq!(mix(a, a, 0.5), a);
         assert_eq!(mix(a, Color32::TRANSPARENT, 0.0), a);
@@ -77,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn colours_blend_from_one_end_to_the_other() {
+    fn colors_blend_from_one_end_to_the_other() {
         let (a, b) = (Color32::from_rgb(0, 100, 200), Color32::from_rgb(100, 100, 0));
         assert_eq!(mix(a, b, 0.0), a);
         assert_eq!(mix(a, b, 1.0), b);

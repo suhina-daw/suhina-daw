@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Clips' colours and names as a track's: a clip with no colour of its own shows its track's
+//! Clips' colors and names as a track's: a clip with no color of its own shows its track's
 //! (a new clip takes it that way); `clip.setColor` gives clips one, or with `"none"` hands them
 //! back to the track's (the track menu's *Assign track color to all clips*); `track.renameClips`
 //! names every clip of a track after the track.

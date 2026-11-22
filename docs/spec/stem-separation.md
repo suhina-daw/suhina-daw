@@ -37,7 +37,7 @@ non-commercial (#146 › The licence question). Therefore:
 - Suhina ships no weights and downloads none. A user adds a model from a file they have
   (`separation.addModel`); it is kept in `<settings>/models/<id>/`.
 - A model is described by a **manifest**, data and not code: id, name, architecture (which backend
-  runs it), its stems (id, name, colour), sample rate, channels, window, hop and weighting, each
+  runs it), its stems (id, name, color), sample rate, channels, window, hop and weighting, each
   file with its SHA-256 and size, the rights holder's licence with its source URL and the date it
   was checked, the training data, and any credit it requires.
 - A model whose licence is missing or not compatible with GPL-3.0 is listed with the reason and
@@ -140,7 +140,7 @@ cores, a model kept loaded between jobs) belongs to the session (planned).
   files go beside the project or into the settings folder is the ADR's call; the missing-files flow
   ([`missing-files.md`](missing-files.md)) is the safety net either way.
 - **Placement** as Stems files are placed: a group named after the source clip, one audio track per
-  stem named and coloured from the manifest, each clip at the source clip's position, and the
+  stem named and colored from the manifest, each clip at the source clip's position, and the
   source clip left where it is. One undo step removes the whole group.
 - **Commands**, the same from the window, the CLI and MCP:
   - `separation.models`: every model with its stems, licence, source, whether it is installed and

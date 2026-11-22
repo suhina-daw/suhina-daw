@@ -1,9 +1,9 @@
 /* Nord, reduced to a few settings: every token below follows them. */
-@property --ground { syntax: "<color>"; initial-value: #2E3440; label: "Background"; group: "Colours"; }
-@property --surface { syntax: "<color>"; initial-value: #3B4252; label: "Panels"; group: "Colours"; }
-@property --ink { syntax: "<color>"; initial-value: #ECEFF4; label: "Text"; group: "Colours"; }
-@property --tint { syntax: "<color>"; initial-value: #88C0D0; label: "Accent"; group: "Colours"; }
-@property --highlight { syntax: "<color>"; initial-value: #EBCB8B; label: "Selection"; group: "Colours"; }
+@property --ground { syntax: "<color>"; initial-value: #2E3440; label: "Background"; group: "Colors"; }
+@property --surface { syntax: "<color>"; initial-value: #3B4252; label: "Panels"; group: "Colors"; }
+@property --ink { syntax: "<color>"; initial-value: #ECEFF4; label: "Text"; group: "Colors"; }
+@property --tint { syntax: "<color>"; initial-value: #88C0D0; label: "Accent"; group: "Colors"; }
+@property --highlight { syntax: "<color>"; initial-value: #EBCB8B; label: "Selection"; group: "Colors"; }
 :root {
   --window-background: var(--ground);
   --panel-background: var(--surface);

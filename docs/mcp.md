@@ -396,7 +396,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   presets and projects in it, the built-in effects and instruments, and installed plug-ins; `library.list`,
   `library.info`, `library.folders`, `library.refresh`, `library.recent`, `library.pinned`,
   `library.tags` read it; `library.pin`, `library.unpin`, `library.tag`, `library.setTag` and
-  `library.removeTag` change pins and colour tags. `library.addFolder` and
+  `library.removeTag` change pins and color tags. `library.addFolder` and
   `library.removeFolder` are refused for agents: the user chooses the browser's folders.
 
 - **The sample map.** The server also analyses the library's samples in the background, as the

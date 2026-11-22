@@ -147,18 +147,18 @@ refused or suspended, never by losing its edits.
   show the engine block separately from the measured driver callback size.
 
 - Theme skins: editable SVG/PNG controls with state variants and image sequences, configurable level-meter presentation including signal-driven artwork frames and theme-owned intensity, theme-owned toolbar layouts, and portable CSS/JSON/SVG/PNG packages with live literal-value synchronization. Suhina's own style engine (`suhina-style`, no browser engine) adds a retained native style tree, cascade layers, variables, calc(), media ranges, linear/radial/conic gradients, color-mix(), bounded box shadows, paint transitions/keyframes, Flex/Grid layout of the toolbar, the workspace panels, the track headers and the mixer strips. Bar/window geometry, remaining raw controls and further CSS effects still need integration.
-- Theme states and tracks: `:checked`, `:selected`, `:playing`, `:recording`, `:armed` and `:muted` in theme CSS, a track's or clip's colour as a `color` attribute, name colours, per-view track artwork, each bar's own separator line, styled menus, and a least Arrangement header width; a crash leaves a file in the data folder's `crashes/`.
+- Theme states and tracks: `:checked`, `:selected`, `:playing`, `:recording`, `:armed` and `:muted` in theme CSS, a track's or clip's color as a `color` attribute, name colors, per-view track artwork, each bar's own separator line, styled menus, and a least Arrangement header width; a crash leaves a file in the data folder's `crashes/`.
 - Theme control shapes: buttons, the toolbar's fields and the volume and pan fields take their background, border, corner radius, thickness and shadows from the theme's CSS (`#arrangement-volume`, `.value-fill`, `volume.track` artwork and the rest); a workspace panel can float over the view; a theme can put the Arrangement track headers on a side; Settings › Themes has a search.
-- Theme presentation: native Launcher column widths and row heights come from the theme's CSS; mixer/name backgrounds consume authored materials, and stereo meter gradients retain fixed dBFS colour positions with native peak/RMS opacity and lit-region glow. Fader scales move independently of the rail/cap.
+- Theme presentation: native Launcher column widths and row heights come from the theme's CSS; mixer/name backgrounds consume authored materials, and stereo meter gradients retain fixed dBFS color positions with native peak/RMS opacity and lit-region glow. Fader scales move independently of the rail/cap.
 
-- The green-and-white Suhina Sheet, blue/cream glass Suhina Meadow and brown pixel-textured Suhina Blocks are available as built-in themes. Sheet and Meadow include compact Session geometry, native CSS and original editable SVG controls; Meadow embeds an original generated green-hill background and liquid settings. Blocks uses brown plank CSS without landscape wallpaper, plus colour-keyed SVG track textures.
+- The green-and-white Suhina Sheet, blue/cream glass Suhina Meadow and brown pixel-textured Suhina Blocks are available as built-in themes. Sheet and Meadow include compact Session geometry, native CSS and original editable SVG controls; Meadow embeds an original generated green-hill background and liquid settings. Blocks uses brown plank CSS without landscape wallpaper, plus color-keyed SVG track textures.
 
 - Private image backgrounds use a cached source and display-scaled, alpha-correct blur; Settings keeps its own readable material. Native Mica has been removed.
 
 - Theme variants: a theme's settings are CSS custom properties, the core set every theme has and any it declares with `@property` (shown under Theme settings with a control for its type). A variant (`variants/<id>.json`) holds other values for them, such as a light and a dark version of one theme; the picker shows a swatch per variant, and a theme's settings are edited and saved in a variant, so built-in themes need no copy for it.
 - Theme packages: Export theme… writes one theme as a `.theme.suhina` file with a SHA-256 manifest; dropping or opening one brings it in after checking every file, and `suhina-cli theme pack` and `theme validate` do the same from a terminal.
-- Theme reach: sends, the add-track buttons, the ruler, loop bar and play position, clip parts and states (`:playing`, `:recording`), level-bar handles, fader sizes, a placeable mixer divider, the piano roll (grid, keys, notes with the clip's colour, tools), each built-in device's panel (`#device-compressor`), and the ordinary buttons and fields in Settings, dialogs and pages take the theme's CSS; artwork reads the theme's variables, draws text and can be nine-sliced. New clips take their track's colour (New clip colour).
-- Theme customization includes independent Browser/coloured-surface text, alpha-preserving gradients, editable liquid strengths, a private image backdrop and configurable application-bar identity/project information.
+- Theme reach: sends, the add-track buttons, the ruler, loop bar and play position, clip parts and states (`:playing`, `:recording`), level-bar handles, fader sizes, a placeable mixer divider, the piano roll (grid, keys, notes with the clip's color, tools), each built-in device's panel (`#device-compressor`), and the ordinary buttons and fields in Settings, dialogs and pages take the theme's CSS; artwork reads the theme's variables, draws text and can be nine-sliced. New clips take their track's color (New clip color).
+- Theme customization includes independent Browser/colored-surface text, alpha-preserving gradients, editable liquid strengths, a private image backdrop and configurable application-bar identity/project information.
 - Private image backgrounds retain image compositing on transparent GPU windows; narrow Arrangement headers keep names, recording controls and meters separate.
 
 - SDK sampler graphs can bind a sample while being added to a track; project saving,
@@ -243,8 +243,8 @@ refused or suspended, never by losing its edits.
   file when dragged or quick-added. `device.add {stock}` and `track.add {stock}` add one by its
   key, dragging one from the browser does the same, and each is one undo step.
 
-- Track and clip colours are the project's own in every theme: the colour picker and new tracks
-  and clips (from the window, the CLI or MCP) take Suhina's colours, and a theme draws a track's
+- Track and clip colors are the project's own in every theme: the color picker and new tracks
+  and clips (from the window, the CLI or MCP) take Suhina's colors, and a theme draws a track's
   header, column, strip, lane, its clips and the piano roll from their `color` attribute
   (`attr(color type(<color>))`), with each Arrangement row a `track-lane` of its own.
 
@@ -255,24 +255,24 @@ refused or suspended, never by losing its edits.
   theme that leaves them alone looks as before.
 
 - Themes style the control bar, the tabs, the menus, Settings, the start page and the dialogs on
-  their own: their words are `label` kinds, their title rows, lists, colour swatches and theme cards
+  their own: their words are `label` kinds, their title rows, lists, color swatches and theme cards
   are elements, every lit switch (a track's on switch, the computer keyboard, a Settings switch or
   chosen segment) has a lit look a theme states, and the detail area's splitter takes
   `[closed]` while the area is closed; a theme that leaves them alone looks as before.
 - Themes style the browser, the clip panels, the follow action, device and device group panels,
   expanded panels and the piano roll's keys and toolbar on their own: their dim words, captions,
   titles and values are `label` kinds, a theme states their switches' lit look, and
-  the Arrangement's header edge is a divider a theme can colour; a theme that leaves them alone
+  the Arrangement's header edge is a divider a theme can color; a theme that leaves them alone
   looks as before.
 - Themes style egui's own widgets everywhere: a rule for `button` (`:hover`, `:active`,
   `:disabled`, `[checked]`), `text-input` (`:focus`), `menu` or `scroll-bar` reaches the scroll
   bars, text fields, drop-downs, check boxes, menus and pop-ups the views draw outside a style
   scope too, rebuilt only when the styles reset; a theme that leaves them alone looks as before.
 - Suhina's own look is a base style sheet under every theme: a theme's rules always win over it, a
-  theme that sets only colour variables keeps every state, a rule like `mixer { --text-value: gold; }`
-  colours a region through its variables, `"base": "none"` in `theme.json` leaves it out, and a
-  `user.css` that sets `--accent` recolours Suhina Studio too. Every built-in theme looks as before, bar a few lit states in the layout showcase themes (Suhina Meadow, Blocks and Sheet), which are rewritten with the layout system.
-- A theme keeps only the colours it sets, as the custom properties of its style sheet
+  theme that sets only color variables keeps every state, a rule like `mixer { --text-value: gold; }`
+  colors a region through its variables, `"base": "none"` in `theme.json` leaves it out, and a
+  `user.css` that sets `--accent` recolors Suhina Studio too. Every built-in theme looks as before, bar a few lit states in the layout showcase themes (Suhina Meadow, Blocks and Sheet), which are rewritten with the layout system.
+- A theme keeps only the colors it sets, as the custom properties of its style sheet
   (`--accent`, `--window-background`): any other is Suhina Studio's, a saved or copied theme writes
   just those, and the old token names (`--surface-0`, `--line`) are no longer read. Every built-in
   theme looks as before, bar a few lit states in the layout showcase themes (Suhina Meadow, Blocks
@@ -299,7 +299,7 @@ refused or suspended, never by losing its edits.
 - The NAM Amp Modeler's panel is an amp head: its own artwork behind the controls, the pack,
   the model and the ◀ ▶ model steppers on one row, EQ, HQ and the Mid Freq's value under them,
   and six knobs on the plate. The texts, arcs, pointers and lit buttons take the theme's
-  colours, and a theme's `device.knob.body` and `device.knob.pointer` artwork puts knobs of the
+  colors, and a theme's `device.knob.body` and `device.knob.pointer` artwork puts knobs of the
   user's own in place of the panel's.
 
 - **Instruments that are switched off or missing stay silent:** they still take their track's
@@ -330,7 +330,7 @@ refused or suspended, never by losing its edits.
   always silent.
 - **Folders:** Put in a folder in a track's menu gathers tracks (a selection, or one track) under a
   folder track that only groups them in view: what they play and where stays as it was. A folder
-  folds, names and colours its tracks like a group, has no mixer controls and is kept in the
+  folds, names and colors its tracks like a group, has no mixer controls and is kept in the
   project file.
 
 - **Importing `.flp` projects (partial):** the window, `suhina-cli` and the MCP server open an FL
@@ -341,7 +341,7 @@ refused or suspended, never by losing its edits.
   substitutes. Mixer routing becomes groups and sends, a mixer insert fed by one source folds into
   its track, an instrument's own mute switches its device off and a mixer mute stays on its track
   or group. Volume automation of audio clips becomes gain envelopes and supported device and mixer
-  automation becomes lanes on its owner; playlist colours and groups become track colours and
+  automation becomes lanes on its owner; playlist colors and groups become track colors and
   folders. Samples are found beside the project or in the browser's library. Everything else
   (step-sequencer notes, note expression, unsupported plug-ins and curves) is kept in the project
   and named in the import's warnings (`docs/spec/flp-model-mapping.md`).
@@ -535,7 +535,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   apply when the scene launches (bars and the metronome count in the new time signature from
   there). Playing clips stay with their row when scenes are inserted or deleted while playing
   ([#404](https://github.com/suhina-daw/suhina-daw/issues/404)).
-- A slot's mark is the shape its click does: a play triangle in the track colour while stopped,
+- A slot's mark is the shape its click does: a play triangle in the track color while stopped,
   a stop square while playing — a playing trigger clip's click stops it, and a playing scene's
   row stops on its button's click (`scene.stop`). The Delete key takes a selected slot's clip
   off its slot.
@@ -783,7 +783,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The **browser** (Ctrl+B shows and hides it, left or right of the view): search (Ctrl+F),
   category filters (All, Samples, MIDI, Instruments, Effects, Presets, Plug-ins), a sidebar of
   Pinned, Recent (by kind), the Tags and the folders the user added (a path, or a folder dropped on the
-  window), a tree with type icons, lengths and colour tags, a preview strip with the waveform,
+  window), a tree with type icons, lengths and color tags, a preview strip with the waveform,
   length, tempo and key, and a footer with the tags as filters. Samples and MIDI files preview
   through the engine (auto-play, or the play button; MIDI through the selected track's
   instrument), whether the project plays or not. Dragging samples and MIDI files onto a lane,
@@ -796,7 +796,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   ([spec](docs/spec/browser.md), [ADR 0011](docs/decisions/0011-preview-and-added-audio.md),
   [ADR 0012](docs/decisions/0012-file-library.md)).
 - The browser's **tag editor** (the footer's Edit tags button): every tag in a list — its
-  colour, its name (typed to rename), how many items carry it and Remove (asking first), and a
+  color, its name (typed to rename), how many items carry it and Remove (asking first), and a
   row that adds one; a click on a row filters by it, as the footer's dots do.
 - Samples, Stems files and MIDI files dragged from the system's file manager land like a drag
   from the browser: on the slot, lane or empty space under the pointer, outlined while they hover
@@ -835,7 +835,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   pasted) finds the others beside it and where its folder moved to; Copy file name hands the name
   to a file search tool. Apply relinks them in one undo step ([spec](docs/spec/missing-files.md)).
 - The **sample map** (the browser's Sample map button, large in the main area, or in a window of its own for a second screen, Ctrl+Alt+M, which keeps its place): the samples
-  of the browser's place laid out by how they sound, coloured by kind (kick, snare, clap, hats,
+  of the browser's place laid out by how they sound, colored by kind (kick, snare, clap, hats,
   toms, cymbals, percussion, bass, tonal, vocal, effect), as a free cloud or snapped to a grid that follows the view's shape (`soundmap.layout`
   takes `aspect`), with the kinds' names over their regions and a
   legend that filters. Pointing at a sample previews it; click, Ctrl+click, Shift+drag and the
@@ -850,7 +850,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   layout, and the layout keeps each kind in regions of its own, so a tambourine in a folder of
   kicks lands among the percussion. Right-click a point › **Kind ▸** sets a kind by hand
   (`soundmap.setKind`); it wins over the name and the sound and is kept
-  ([spec](docs/spec/sample-map.md) › Kinds and colours, #325).
+  ([spec](docs/spec/sample-map.md) › Kinds and colors, #325).
 - A menu bar and a **Settings** dialog over the window (Options › Settings, Ctrl+,; Escape closes
   it) with its pages listed down the
   left: General, Audio, MIDI, Plug-ins, Arrangement, Launcher and mixer, Clip editor, Transport,
@@ -864,11 +864,11 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - The whole window zooms from 50 % to 200 % (Ctrl and + or -, Cmd on macOS; Ctrl and 0 for
   100 %; View › Zoom in and Settings › Appearance › Zoom), and the zoom is kept for the next run
   ([spec](docs/spec/window-zoom.md)).
-- **Themes**: every colour comes from the theme in use, a folder with a `theme.css` in the
+- **Themes**: every color comes from the theme in use, a folder with a `theme.css` in the
   `themes` folder (`theme { name: …; } :root { --accent: #A6A3FF; … }`), which Suhina never
-  rewrites; themes from earlier versions are converted once, keeping the originals; track and clip colours are the
+  rewrites; themes from earlier versions are converted once, keeping the originals; track and clip colors are the
   project's own, which a theme draws from their `color` attribute but never chooses. Among those that come with Suhina are Suhina
-  Studio and Suhina Light, High Contrast, Nord, Catppuccin Mocha and Latte). Settings › Appearance › Theme picks one, changes its colours, renames, duplicates, reads
+  Studio and Suhina Light, High Contrast, Nord, Catppuccin Mocha and Latte). Settings › Appearance › Theme picks one, changes its colors, renames, duplicates, reads
   the files again, backs every theme up into a zip and exports a template zip with a README an AI
   agent can make a theme from; a theme file or backup dropped on the window is added, and a file
   saved in an editor shows within a second.
@@ -947,12 +947,12 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   (`clip.consolidate`, [spec](docs/spec/arrangement-editing.md#splitting)).
 - Tracks: click a header to select it (Ctrl adds), Ctrl+G groups the selection, drag a header
   to move the track (a group moves with its tracks); right-click a header or a Launcher column for
-  name, colour, group, ungroup and delete. Clips: right-click or Delete and Ctrl+D.
-- Track colours show at a glance: an Arrangement header has a band of the track's colour down
+  name, color, group, ungroup and delete. Clips: right-click or Delete and Ctrl+D.
+- Track colors show at a glance: an Arrangement header has a band of the track's color down
   its edge, a Launcher column's header and its channel strip's name are filled with it, and the
-  strip has a band down its left edge. A click on a band opens the colour palette (the theme's eight
-  track colours, the same swatches as the track's menu and a colour tag's menu); a swatch sets the
-  colour in one undo step (`track.setColor`, [spec](docs/spec/ui-session-view.md#track-colour)).
+  strip has a band down its left edge. A click on a band opens the color palette (the theme's eight
+  track colors, the same swatches as the track's menu and a color tag's menu); a swatch sets the
+  color in one undo step (`track.setColor`, [spec](docs/spec/ui-session-view.md#track-color)).
 - Groups inside groups, up to 16 levels ([#209](https://github.com/suhina-daw/suhina-daw/issues/209)):
   the sound goes through every group's volume, mute and devices to the output, solo follows the
   nesting, and the fold triangle on a group's header hides its tracks in both views. Drag a header
@@ -967,7 +967,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   selection as one undo step ([spec](docs/spec/arrangement-editing.md#selecting-clips)). Header
   clicks take a run of tracks the same way.
 - A group's triangle folds its tracks away into one lane, which stands in for the track being
-  worked on (its clips, waveform and colour), or the first track inside it; a Stems file's group
+  worked on (its clips, waveform and color), or the first track inside it; a Stems file's group
   arrives folded ([spec](docs/spec/arrangement-editing.md#folded-groups)).
 - Waveforms in clips, the browser's preview and the sample map's tooltips are drawn by one
   renderer ([spec](docs/spec/waveforms.md)): peaks at three resolutions with RMS, computed once
@@ -1155,7 +1155,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   edge drags it taller or shorter; and the toolbar's **Audition** button (off at start) makes drawn
   and moved notes sound once through the track's instrument (`preview.noteOn {keys}`).
 - **Ghost notes in the piano roll** ([#348](https://github.com/suhina-daw/suhina-daw/issues/348)):
-  the notes of other clips are drawn faintly behind the edited clip's, in their own track's colour,
+  the notes of other clips are drawn faintly behind the edited clip's, in their own track's color,
   so a part can be written against another (a bass line against the chords). The toolbar's
   **Ghosts** menu shows the clips playing at the same time (the default; for a slot's clip, the
   other slots of its scene), the other clips of the same track, one clip picked from a list, or
@@ -1226,18 +1226,18 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   and the audition sounds notes from the press and at each pitch of a drag. A rectangle over no note
   selects a stretch of time for the keys to act on, a bar on the ruler shows what is selected in time,
   and a click leaves a mark where a paste goes. Shift goes on from a time selection, here and in the
-  Arrangement, a selected note has a colour of its own, and a double-click with the right button on
+  Arrangement, a selected note has a color of its own, and a double-click with the right button on
   a ghost note opens its clip. With several MIDI clips picked, a strip over the ruler shows them all,
   and a click on a bar or a faint note gives that clip the focus.
 
-- Audio clip panel (#1190, #742, #824): a selected audio clip's column in the detail area is laid out in groups, Clip (colour, markers and loop with Set to the playhead), Audio (warp, a stretch mode drop-down, the clip's tempo with ÷2 and ×2 and where it came from, Find to pick another source's tempo), Gain (a fader, −70 to +24 dB) and Pitch (a knob in semitones and a cents field). Every number can be typed after a double-click. Every audio clip has its own gain, pitch and warp, also two clips of the same file, and a gain envelope drawn on its waveform in the Arrangement (a double-click adds a point, a drag moves it, a double-click removes it); `clip.setTempo`, `clip.findTempo` and `clip.setEnvelope` do the same for agents.
+- Audio clip panel (#1190, #742, #824): a selected audio clip's column in the detail area is laid out in groups, Clip (color, markers and loop with Set to the playhead), Audio (warp, a stretch mode drop-down, the clip's tempo with ÷2 and ×2 and where it came from, Find to pick another source's tempo), Gain (a fader, −70 to +24 dB) and Pitch (a knob in semitones and a cents field). Every number can be typed after a double-click. Every audio clip has its own gain, pitch and warp, also two clips of the same file, and a gain envelope drawn on its waveform in the Arrangement (a double-click adds a point, a drag moves it, a double-click removes it); `clip.setTempo`, `clip.findTempo` and `clip.setEnvelope` do the same for agents.
 
 - The browser's **Tags section** in the sidebar reaches a tag's items again (#1196): one row
-  per tag with its colour dot, its name and how many items carry it (a tag with none dimmed),
+  per tag with its color dot, its name and how many items carry it (a tag with none dimmed),
   clicked as a place lists every item that carries it of any kind (`library.search` takes it
   as `tag:<name>`), Ctrl-click combines tags, the row's right-click menu adds (a New tag…
-  field with an Add tag button, taking the colour the menu's own tag shows), renames live as
-  the name is typed, recolours
+  field with an Add tag button, taking the color the menu's own tag shows), renames live as
+  the name is typed, recolors
   (the palette or the theme editor's picker in the menu) and removes it (asking first while
   items carry it);
   items dropped on a row are tagged with it, and a tag dragged from its row tags the item it
@@ -1246,7 +1246,7 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   dots stay only as the quick filter of the list shown.
 
 - Swing (#1221): the project has a swing amount, set with the **Swing** slider beside **Resize all** in the Arrangement, that delays every second sixteenth of each eighth as MIDI clips play (up to half a sixteenth at 100 %, the triplet at about 67 %), live and in renders, the notes themselves unmoved. Every MIDI clip follows it until it gets its own in the clip panel's **Swing** row (the **Global** switch and a slider); turning **Global** back on keeps the clip's own amount for later. `transport.setSwing` and `clip.setSwing` do the same for agents; the project file is version 12.
-- MIDI clip panel (#1222, #1214): a selected MIDI clip's column in the detail area is the same compact panel as an audio clip's (its colour, name, length and the Clip / Devices switch; Start and End, Loop, Position and Length with Set to the playhead, and its scale), with what the tools act on in figures under it (notes, pitch, span, muted, velocity range) and the note tools beside it on two tabs: Notes (Transpose, Fit to scale to the clip's scale, Invert, Reverse, Legato, ×2 and ÷2) and Transform (Quantise, Humanise, Randomise velocity and Ramp velocity, each with its settings and an Apply button that says what it acts on). Humanise moves notes by milliseconds, mostly a little and never past its limit, each note on its own and keeping its length; `note.humanize` takes `ms`. With the detail area stacked the tools go under the Clip part.
+- MIDI clip panel (#1222, #1214): a selected MIDI clip's column in the detail area is the same compact panel as an audio clip's (its color, name, length and the Clip / Devices switch; Start and End, Loop, Position and Length with Set to the playhead, and its scale), with what the tools act on in figures under it (notes, pitch, span, muted, velocity range) and the note tools beside it on two tabs: Notes (Transpose, Fit to scale to the clip's scale, Invert, Reverse, Legato, ×2 and ÷2) and Transform (Quantise, Humanise, Randomise velocity and Ramp velocity, each with its settings and an Apply button that says what it acts on). Humanise moves notes by milliseconds, mostly a little and never past its limit, each note on its own and keeping its length; `note.humanize` takes `ms`. With the detail area stacked the tools go under the Clip part.
 
 - **New nightly available:** a nightly checks once per start whether a newer nightly is out
   (Settings › Agents and updates › Updates › *Check for updates*, on by default) and says so in a
@@ -1256,9 +1256,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   out. A tester never has to look for the new build on GitHub
   ([spec](https://github.com/suhina-daw/suhina-daw/blob/main/docs/spec/updates.md)).
 
-- Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever colour a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).
+- Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever color a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).
 
-- Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever colour a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).
+- Floating surfaces in themes: every menu, right-click menu, dropdown, tooltip and dialog blurs the window behind it, whatever color a theme gives its frame; `backdrop-filter: blur() | none` on `popup`, `menu`, `dialog` and `tooltip` turns it on or off, and a theme styles a popup's and a tooltip's frame (background, border, corners, shadow).
 - The window as one grid in themes: the menu bar, the tabs, the toolbar, the status bar and the browser, view and detail panels are laid out by one CSS grid on `window`, which Suhina's own sheet states, so a theme can move the status bar to the top, put the toolbar under the views or hide a bar with `grid-template-areas`, `grid-area` and `display: none`; the layout settings are attributes on `window` (`[detail]`, `[browser]`, `[menu-bar]`).
 
 - The bars' items in themes: the toolbar, the status bar, the project tabs, the application bar, the piano roll's toolbar and the MIDI tools' tabs lay out their items in one CSS row, so a theme sets their gaps, padding, alignment and sizes and hides an item with `display: none`, which takes its input away too; a narrow bar still gives way in Suhina's order.
@@ -1302,23 +1302,23 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   a fainter bar, Ctrl+drag on a stem sets it, Alt+Shift+Up and Down step it, the clip panel shows
   it beside the velocities, and `note.setVelocityRange` sets it; project files are version 13.
 
-- Selected tracks and clips share one selection colour, the theme's `selection.background`, in
+- Selected tracks and clips share one selection color, the theme's `selection.background`, in
   the Arrangement and the Launcher: a selected header and clip are filled with it, their own
-  colour kept in a band or down the clip's edge, and the selected tracks' lanes and Launcher
-  columns take a light tint of it. Settings › Appearance › Selection colour keeps the theme's,
-  keeps each clip's own colour or uses one picked colour. Settings › Arrangement › Automation ›
-  Automation colour can draw every automation line and point in one colour of the theme's or
-  picked ones, instead of the track's colour.
+  color kept in a band or down the clip's edge, and the selected tracks' lanes and Launcher
+  columns take a light tint of it. Settings › Appearance › Selection color keeps the theme's,
+  keeps each clip's own color or uses one picked color. Settings › Arrangement › Automation ›
+  Automation color can draw every automation line and point in one color of the theme's or
+  picked ones, instead of the track's color.
 
-- Track and clip colour menus (arrangement and launcher clips) offer 36 colours in a grid, with
-  arrows to the user's saved colours; More colours or F2 opens a persistent floating colour window with saved colours that are
+- Track and clip color menus (arrangement and launcher clips) offer 36 colors in a grid, with
+  arrows to the user's saved colors; More colors or F2 opens a persistent floating color window with saved colors that are
   kept in order, moved and removed, exact hex/RGB/HSL, a stepped 7 × 7 grid for each of 36
-  perceptually even hues (or any hue) that holds every palette colour, and a saturation/value
-  field with optional soft selection, random colours and default restoration. Live adjustments
+  perceptually even hues (or any hue) that holds every palette color, and a saturation/value
+  field with optional soft selection, random colors and default restoration. Live adjustments
   and multi-track or multi-clip choices form one Undo step each; the DAW stays usable while it
   is open.
 
-- Selected track headers move together in project order into open or folded groups and folders, with separate inside and before/after drop feedback in the Arrangement and Launcher. Disclosure buttons reveal their clickable gutter on hover and keyboard focus; in Arrangement the gutter spans the header's full height and follows the timeline-facing edge on either side. The colour strip remains separate, and header double-clicks also open and close containers (#1569).
+- Selected track headers move together in project order into open or folded groups and folders, with separate inside and before/after drop feedback in the Arrangement and Launcher. Disclosure buttons reveal their clickable gutter on hover and keyboard focus; in Arrangement the gutter spans the header's full height and follows the timeline-facing edge on either side. The color strip remains separate, and header double-clicks also open and close containers (#1569).
 - Source folders and groups disappear when their last members leave, in the same undo step. Removing a group's processing asks first, with a remembered desktop preference; command clients confirm the affected groups explicitly (#1569).
 
 - The experimental **Instrument** has a compact stock panel and a larger native editor with

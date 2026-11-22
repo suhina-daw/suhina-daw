@@ -28,10 +28,10 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
 - **Labels are the test and accessibility API.** An interactive thing sets
   `widget_info(|| WidgetInfo::labeled(...))` with a label as a user would say it ("Launch Walk on
   Bass (scene 2)"). Tests find it with `get_by_label`, so keep labels stable.
-- **Theme colours are variables and base-sheet rules**, never a raw `Color32` for a semantic
-  colour. The colour variables are registered in `crates/theme-package/src/core.css` with Suhina
+- **Theme colors are variables and base-sheet rules**, never a raw `Color32` for a semantic
+  color. The color variables are registered in `crates/theme-package/src/core.css` with Suhina
   Studio's values, and the base sheet (`crates/theme-package/src/base.css`) gives them to the
-  elements; a view reads its colours from its element (`crate::kit::element`), so a theme's
+  elements; a view reads its colors from its element (`crate::kit::element`), so a theme's
   variable or its own rule reaches what it paints.
 - **A change to what the views paint is checked in every built-in theme.** `suhina-theme-render`'s
   `painted` test digests what each scene paints in each built-in theme and variant
@@ -65,7 +65,7 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   `submenu`, `heading`, `hint`, `separator`) inside the menu egui opens. The metronome's menu
   (`session/record_controls.rs`) is the example; the older menus in `interaction/menus.rs` still
   use egui's rows and move over in their own change. A panel laid out in egui's flow (a column
-  of rows, as the track colour window) takes `kit::controls` (`button`, `check_box`, `options`,
+  of rows, as the track color window) takes `kit::controls` (`button`, `check_box`, `options`,
   `disclosure`, `slider`, `heading`, `note`, `text`, `separator`); a view with a fixed geometry
   paints the same faces from `widgets` (`button_with_id`, `check_box`, `option_face`,
   `slider_face`) into its own rectangles. Both reuse the elements Settings and the dialogs use,
@@ -80,7 +80,7 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   `kit::own_window`: `builder` for its viewport (see-through, under the macOS title bar as the
   main window is), `base` for `window`'s background under it, and `Entered::paint_root` for the
   element that fills it (its background over the whole window, its padding; no border, corners,
-  shadow or blur). Never fill such a window with a colour of the view's own.
+  shadow or blur). Never fill such a window with a color of the view's own.
 - `motion::mix`/`toward`/`pulse` for hovers and fills, `widgets::button_area` for clickable
   rects, `Status::Hint` for status-bar hints.
 - **A menu with a text field** (a rename): egui's context menu closes on a click inside it, which

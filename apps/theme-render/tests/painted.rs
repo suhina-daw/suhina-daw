@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Every built-in theme and variant paints each scene as recorded in `painted/<theme>.txt` (#1023): what
-//! moves the views onto elements, or the colours into the sheet, changes no theme's look unless
+//! moves the views onto elements, or the colors into the sheet, changes no theme's look unless
 //! it means to. Headless: the digest of [`painted::scene`]'s listing, no GPU.
 //!
 //! A change that means to change a look records the new digests:

@@ -118,11 +118,11 @@ fn embedded_color_background_stays_inside_its_fitted_window_in_every_mode() {
 
 #[test]
 fn color_tool_previews_selected_headers_and_restores_the_selection_appearance_on_close() {
-    use suhina_ui::kit::selection::{SelectionColour, SelectionLook};
+    use suhina_ui::kit::selection::{SelectionColor, SelectionLook};
     for arrangement in [false, true] {
         let mut app = demo_app();
         let mut settings = app.settings().clone();
-        let selection = SelectionLook { mode: SelectionColour::Custom, custom: egui::Color32::from_rgb(139, 107, 231) };
+        let selection = SelectionLook { mode: SelectionColor::Custom, custom: egui::Color32::from_rgb(139, 107, 231) };
         settings.view.selection = selection;
         app.set_settings(&egui::Context::default(), settings);
         let mut h = window(app);
@@ -694,7 +694,7 @@ fn a_palette_color_shows_chosen_in_the_palette_and_in_steps() {
 }
 
 #[test]
-fn the_colour_grids_are_centered_in_the_window() {
+fn the_color_grids_are_centered_in_the_window() {
     let mut app = demo_app();
     app.run(&Action::new("ui.colorPicker", json!({"tracks":[1]})));
     let mut h = window(app);

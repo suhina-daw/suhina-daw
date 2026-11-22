@@ -96,7 +96,7 @@ hand while the disk is looked at keeps that choice.
 
 | Column | Shows |
 |---|---|
-| (mark) | a dot in the state's colour |
+| (mark) | a dot in the state's color |
 | File name | its name; its old path on hover |
 | Used by | "38 clips", "1 sampler", "2 clips, 1 sampler" |
 | Status | *Missing* (`label[kind="error"]`), *Found* (`ok`), *3 found* (`warning`: others of its name to choose from), *Chosen* (by hand, the accent) |

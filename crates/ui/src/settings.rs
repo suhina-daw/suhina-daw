@@ -947,7 +947,7 @@ const WINDOW_POSITION: i32 = 30_000;
 /// What a saved built-in theme that has since gone or changed its id is called now.
 fn renamed_theme(id: &str) -> Option<String> {
     Some(match id {
-        // Editor Dark's colours are Suhina Studio's Darker variant.
+        // Editor Dark's colors are Suhina Studio's Darker variant.
         "editor-dark" => "suhina-studio@darker".into(),
         "suhina-dark" | "suhina-studio-dark" | "dracula" | "solarized-dark" | "suhina-forest-amber" => {
             crate::kit::theme::BUILT_IN.into()

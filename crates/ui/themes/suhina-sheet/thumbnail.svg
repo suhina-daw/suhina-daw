@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90">
-  <!-- A miniature arrangement in the colours of the theme and the variant shown. -->
+  <!-- A miniature arrangement in the colors of the theme and the variant shown. -->
   <rect width="160" height="90" fill="var(--window-background, #1D1C1A)"/>
   <rect width="160" height="12" fill="var(--panel-background, #252421)"/>
   <rect x="6" y="4" width="4" height="4" fill="var(--text-secondary, #9A958C)"/>

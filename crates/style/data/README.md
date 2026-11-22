@@ -1,8 +1,8 @@
-# Colour names
+# Color names
 
-`colour-names.tsv` contains 1,066 names, each with one RGB value. It combines two sources:
+`color-names.tsv` contains 1,066 names, each with one RGB value. It combines two sources:
 
-- **xkcd colour survey.** Randall Munroe and the survey's contributors'
+- **xkcd color survey.** Randall Munroe and the survey's contributors'
   [name/RGB table](https://xkcd.com/color/rgb.txt), downloaded 2026-11-19. The source file's
   first line dedicates it under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/);
   the full text is in `LICENSE-CC0.txt`. It has 949 data rows (the 2010 article describes the
@@ -25,10 +25,10 @@ What was curated:
 
 - **Omitted (xkcd):** 72 source names (crude or derogatory names, four ambiguous labels, and
   spelling or spacing variants whose correctly spelled name exists), listed below, and a
-  further 148 that are not expected names of real colours: "-ish" and "-y" forms (Greenish
+  further 148 that are not expected names of real colors: "-ish" and "-y" forms (Greenish
   Blue, Purpley Pink), slash variants (Blue/Green), jokes and characters (Boring Green, Barney,
   Kermit Green), materials and things (Dirt, Tea, Velvet) and Spanish names (Azul, Rosa).
-- **Omitted (Wikipedia):** names that are brand-like, invented or not recognised as a colour
+- **Omitted (Wikipedia):** names that are brand-like, invented or not recognised as a color
   (for example Generic Viridian, Solid Pink, Unmellow Yellow, Vanilla Ice), and names that
   repeat another entry's RGB value (one name is kept for each value, the one in common use:
   Payne's Gray over Dark Electric Blue, Café au Lait over French Beige and Tuscan Tan).
@@ -42,6 +42,8 @@ What was curated:
   Light, Pale and Bright forms move lightness, saturation and hue the right way from their
   base; names that could not be made consistent (Neon Fuchsia, Deep Chestnut, Deep Taupe,
   Vivid Tangerine) were dropped.
+
+Answers that are not names are omitted too: a hue adjective on its own (*reddish*, *pinky*, *purpley*), an opinion (*nice blue*) and *pale peach*, whose survey value is a pale yellow.
 
 Omitted xkcd source names (72): nasty green, really light blue, blue blue, booger, bland, egg shell, baby shit brown, liliac, ugly brown, kelley green, darkgreen, light light green, toupe, light lavendar, baby puke green, burnt siena, terracota, ugly blue, booger green, greenblue, icky green, golden rod, gross green, light light blue, shit green, darkblue, orangered, poop green, dark, piss yellow, bluegrey, royal, barf green, pale, greyblue, baby shit green, diarrhea, ugly purple, puke brown, bile, yellowgreen, baby poo, vomit yellow, lightgreen, baby poop green, fluro green, perrywinkle, light urple, ugly pink, ocher, lightblue, ugly yellow, poo, snot, baby poop, poo brown, poop brown, ocre, aqua marine, shit brown, shit, snot green, bluegreen, puke yellow, terra cotta, poop, vomit green, ugly green, vomit, forrest green, puke, puke green.
 

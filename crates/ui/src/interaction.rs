@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! What the views share: dragging and dropping, picking a value from a list, the context menus,
-//! groups inside groups, the grid of tracks and slots, the track colour picker, the timelines'
+//! groups inside groups, the grid of tracks and slots, the track color picker, the timelines'
 //! grid and how far they scroll, the grid menu, the toolbars' icon buttons and a MIDI key's name.
 
 pub mod color_picker;

@@ -328,7 +328,7 @@ fn old_mixer_places_keep_one_shared_chain_and_levels() {
     assert_eq!(
         recolored.tracks.iter().find(|t| t.channel == Some(bus_id)).unwrap().color,
         Some(suhina_model::Rgb(68, 85, 102)),
-        "playlist beats the authored mixer colour"
+        "playlist beats the authored mixer color"
     );
 }
 
@@ -1250,10 +1250,10 @@ fn rewritten(original: &[u8], mut f: impl FnMut(&mut Vec<u8>, u8, Vec<u8>)) -> O
     Some(appended(original[..22].to_vec(), &bytes))
 }
 
-/// A channel's colour without the flag event (projects from FL versions before it) is its own;
-/// FL's untouched gray is no choice, so the track gets the colour a new Suhina MIDI track gets.
+/// A channel's color without the flag event (projects from FL versions before it) is its own;
+/// FL's untouched gray is no choice, so the track gets the color a new Suhina MIDI track gets.
 #[test]
-fn channel_colours_without_a_flag_are_kept_and_fl_gray_becomes_suhinas_default() {
+fn channel_colors_without_a_flag_are_kept_and_fl_gray_becomes_suhinas_default() {
     let with = |value: u32| {
         rewritten(&fixture(96, 32), |out, id, payload| {
             event(out, id, &payload);
@@ -1265,10 +1265,10 @@ fn channel_colours_without_a_flag_are_kept_and_fl_gray_becomes_suhinas_default()
     };
     let own = import_bytes(&with(0x00202260)).unwrap().project;
     assert!(own.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::Rgb(96, 34, 32))));
-    // (92, 101, 106): FL's default channel colour.
+    // (92, 101, 106): FL's default channel color.
     let gray = import_bytes(&with(0x006A655C)).unwrap().project;
     assert!(gray.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::NEW_MIDI_COLOR)));
-    // A playlist row in FL's gray does not colour its clips or tracks either.
+    // A playlist row in FL's gray does not color its clips or tracks either.
     let mut row = [0u8; 66];
     row[..4].copy_from_slice(&1u32.to_le_bytes());
     row[4..8].copy_from_slice(&0x00565148u32.to_le_bytes());

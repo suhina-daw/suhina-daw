@@ -8,14 +8,14 @@
  * It holds only what keeps every element usable: layout, the regions' overflow, the default
  * artwork, the floating surfaces' blur, and plain readable text on an opaque window. It selects
  * elements by name, state and attribute only: no classes, no ids and no variables, and its only
- * colours are the window's two fixed plain ones and its background again for the menus, pop-ups,
+ * colors are the window's two fixed plain ones and its background again for the menus, pop-ups,
  * tooltips and dialogs over it, so nothing in it depends on a theme. The element
  * reference lists every element it names.
  */
 
-/* The floor's colours: plain light text on an opaque dark window, fixed values, so a theme
+/* The floor's colors: plain light text on an opaque dark window, fixed values, so a theme
    without the base sheet is readable before it styles anything. The menus, pop-ups, tooltips and
-   dialogs over the window take its background too. The base sheet gives them Suhina's own colours
+   dialogs over the window take its background too. The base sheet gives them Suhina's own colors
    over these. */
 window { color: #e6e6e6; }
 window,
@@ -126,7 +126,7 @@ dialog,
 tooltip { backdrop-filter: blur(20px); }
 
 /* The line between a bar and the view is the bar's border: under each bar over the views, over the
-   status bar. Its colour is the base sheet's. */
+   status bar. Its color is the base sheet's. */
 application-bar,
 menu-bar,
 project-tabs,
@@ -188,7 +188,7 @@ status-bar { padding: 0 6px; gap: 6px; }
 bar-item[kind="status-message"] { flex: 1; min-width: 0; align-self: stretch; }
 bar-item[kind="status-counts"] { align-self: stretch; }
 
-/* A mixer strip lays its parts out (#1453): the band of its track's colour down its left edge, over
+/* A mixer strip lays its parts out (#1453): the band of its track's color down its left edge, over
    its body, a column of the parts the strip's height has room for, from the bottom up. The app
    gives each part its size (a row's height, the fader's length, a button's width) and says which
    parts the height has room for; the sheet places them, by `order`. The strip's groups lay its
@@ -196,7 +196,7 @@ bar-item[kind="status-counts"] { align-self: stretch; }
    `[kind="main"]`. */
 mixer { display: flex; align-items: stretch; }
 mixer group { align-items: stretch; }
-mixer > track-colour { margin-right: -5px; flex-shrink: 0; }
+mixer > track-color { margin-right: -5px; flex-shrink: 0; }
 group[kind="mixer-body"] {
   display: flex;
   flex-direction: column;
@@ -244,7 +244,7 @@ mixer-toggles { display: flex; gap: 2px; flex-shrink: 0; }
 group[kind="mixer-sends"] { margin-top: 4px; }
 
 /* A track header lays its parts out (#1453): the groups' bands down its indent, the band of its
-   track's colour, its body and its meter. The body holds one or two lines of controls and, taller,
+   track's color, its body and its meter. The body holds one or two lines of controls and, taller,
    the routing. Which line holds what is the app's, by the header's size: `[layout]` is `short`
    (one line), `narrow` (the name, then the buttons and the volume), `side` (the buttons with the
    volume and pan beside them, the name and the sends) or `stacked` (the buttons and the name, then
@@ -253,7 +253,7 @@ group[kind="mixer-sends"] { margin-top: 4px; }
 track-header { display: flex; align-items: stretch; }
 track-header group { align-items: flex-start; }
 group[kind="header-indent"],
-track-header > track-colour { flex-shrink: 0; }
+track-header > track-color { flex-shrink: 0; }
 group[kind="header-body"] { display: flex; flex-direction: column; align-items: stretch; flex: 1; min-width: 0; margin: 0 6px; padding: 4px 0; }
 track-header[size="tiny"] group[kind="header-body"] { padding: 1px 0; }
 track-header[size="small"] group[kind="header-body"] { padding: 2px 0; }
@@ -338,7 +338,7 @@ track-header[disclosure="right"] group[kind="header-disclosure"] { margin-left: 
 track-header[disclosure="right"] group[kind="header-body"] { margin-left: 6px; margin-right: 2px; }
 track-header[header-side="left"] > meter { margin-left: 6px; margin-right: 0; }
 
-/* Default artwork. Each image takes its colour only from its element's `color` (currentColor), so a
+/* Default artwork. Each image takes its color only from its element's `color` (currentColor), so a
    copy of it works in any theme. A theme replaces one with its own rule for the same element. */
 icon[kind="midi"] { image: url("suhina:track.midi.svg"); }
 icon[kind="audio"] { image: url("suhina:track.audio.svg"); }
@@ -358,5 +358,5 @@ knob-pointer { image: url("suhina:knob.pointer.svg"); }
 meter { image: url("suhina:meter.svg"); }
 icon[kind="folder"] { image: url("suhina:folder.svg"); }
 
-/* A theme's swatch in the theme picker: a rounded square of its colour. */
+/* A theme's swatch in the theme picker: a rounded square of its color. */
 theme-swatch { background-color: attr(color type(<color>)); border-radius: 6px; }

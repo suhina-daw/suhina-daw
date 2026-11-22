@@ -67,7 +67,7 @@ pub fn separator(ui: &mut Ui) {
 
 /// A row of a menu as wide as the menu or its words (the menu grows to the widest), `extra`
 /// more at its right end: lit with the pointer's fill under the pointer, with the chosen one's
-/// fill while `checked`, its words in the entry's `color` (on the chosen fill, the colour that
+/// fill while `checked`, its words in the entry's `color` (on the chosen fill, the color that
 /// reads on it unless the theme gives one).
 fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32) -> Response {
     let font = theme::ui_font(theme::TEXT);

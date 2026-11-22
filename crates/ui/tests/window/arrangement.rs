@@ -928,7 +928,7 @@ fn container_headers_have_wide_fold_targets_and_double_click_toggles_them() {
 }
 
 #[test]
-fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_separate() {
+fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_color_band_separate() {
     struct Arrangement {
         timeline: Timeline,
         state: ArrangementViewState,
@@ -956,11 +956,11 @@ fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_sepa
             harness.run();
             let header = harness.get_by_label("Track Container").rect();
             let target = harness.get_by_label("Fold Container").rect();
-            let colour = harness.get_by_label("Container color").rect();
+            let color = harness.get_by_label("Container color").rect();
             assert!((target.top() - header.top()).abs() <= 1.0, "{target:?} / {header:?}");
             assert!((target.bottom() - header.bottom()).abs() <= 1.0, "{target:?} / {header:?}");
             assert_eq!(target.center().x > header.center().x, headers_left);
-            assert!(!target.intersects(colour), "the colour strip keeps its own action");
+            assert!(!target.intersects(color), "the color strip keeps its own action");
             // Exercise the entire gutter, well away from the small glyph at the top.
             for fraction in [0.08, 0.5, 0.92] {
                 let at = egui::pos2(target.center().x, target.top() + target.height() * fraction);
@@ -976,8 +976,8 @@ fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_sepa
             assert!(harness.state().actions.is_empty(), "folding is view state");
             harness.get_by_label("Container color").click();
             harness.run();
-            assert!(harness.query_by_label("More colors").is_some(), "the strip opens the colour menu");
-            assert!(harness.query_by_label("Track Drums").is_some(), "colour selection does not fold");
+            assert!(harness.query_by_label("More colors").is_some(), "the strip opens the color menu");
+            assert!(harness.query_by_label("Track Drums").is_some(), "color selection does not fold");
         }
     }
 }
@@ -2200,9 +2200,9 @@ fn the_empty_area_menu_pastes_tracks_and_insert_multiple_adds_several() {
 }
 
 /// A track with take lanes has a button in its header that hides and shows them, and a click on
-/// a take puts its part on the track in the take's colour (#953).
+/// a take puts its part on the track in the take's color (#953).
 #[test]
-fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_colour() {
+fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_color() {
     let mut project = demo_project();
     let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
     let clip = project
@@ -2233,7 +2233,7 @@ fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_colour() {
     harness.get_by_label("Show take lanes of Drums").click();
     harness.run();
     // The track's clip is the take's own pass, so it reads as a part of Take 1 (#989). A click on
-    // the take's clip comps it, coloured: at the clip's own place on the row, the same as on the
+    // the take's clip comps it, colored: at the clip's own place on the row, the same as on the
     // track's lane.
     let lane = harness.get_by_label("Clip Drums Take 1 on Drums at bar 1").rect();
     let row = harness.get_by_label("Comp from Drums Take 1").rect();
@@ -2255,7 +2255,7 @@ fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_colour() {
     harness.run();
     harness.drop_at(to);
     harness.run();
-    let coloured = harness.state().session().is_some_and(|s| {
+    let colored = harness.state().session().is_some_and(|s| {
         s.project()
             .arrangement
             .lanes
@@ -2264,8 +2264,8 @@ fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_colour() {
             .flat_map(|l| &l.clips)
             .any(|c| c.color.is_some())
     });
-    assert!(coloured, "the comped part shows the take's colour");
-    // The part is still named after its take, and the take lane's menu recolours it.
+    assert!(colored, "the comped part shows the take's color");
+    // The part is still named after its take, and the take lane's menu recolors it.
     harness.get_by_label("Clip Drums Take 1 on Drums at bar 1");
     harness.get_by_label("Comp from Drums Take 1").click_secondary();
     harness.run();
@@ -3485,7 +3485,7 @@ fn a_selection_rectangle_past_the_edge_scrolls_and_picks_clips_out_of_view() {
     assert!(picked.contains(&chords), "a clip out of view when it began: {picked:?}");
 }
 
-/// A click on an unselected track's header outlines it from the first frame in the colour it
+/// A click on an unselected track's header outlines it from the first frame in the color it
 /// keeps: the header's element is selected in the frame that selects the track, so its border is
 /// not the unselected look's for one frame (a flicker, #1023's combined pull request).
 #[test]

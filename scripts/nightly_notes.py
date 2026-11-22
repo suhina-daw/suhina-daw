@@ -54,7 +54,7 @@ ALLOWED_URL = "https://github.com/suhina-daw/suhina-daw/"
 NOTES_LIMIT = 20000
 # Discord allows 4096 characters in an embed's description; a little is kept free.
 EMBED_LIMIT = 4000
-EMBED_COLOUR = 0x5865F2
+EMBED_COLOR = 0x5865F2
 
 Gh = Callable[[list[str], str | None], str]
 Send = Callable[..., dict]
@@ -175,7 +175,7 @@ def publish(tag: str, notes: str, repo: str, webhook: str, gh: Gh = run_gh, send
             "title": title[:256],
             "url": f"https://github.com/{repo}/releases/tag/{tag}",
             "description": description(notes),
-            "color": EMBED_COLOUR,
+            "color": EMBED_COLOR,
         }
         send("POST", webhook, "the releases webhook", {"embeds": [embed], "allowed_mentions": {"parse": []}})
         set_body(gh, repo, dated["id"], mark_posted(body))

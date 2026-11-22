@@ -668,7 +668,7 @@ pub(super) struct ButtonPaint<'a> {
 }
 
 impl ButtonPaint<'_> {
-    /// One icon button: the shape in the tool's colours, a tooltip with its name and the key it
+    /// One icon button: the shape in the tool's colors, a tooltip with its name and the key it
     /// has, and the same name as its accessible label. Returns whether it was clicked.
     pub(super) fn place(&self, area: Rect, button: IconButton, chosen: bool, active: bool) -> bool {
         let ui = self.ui;

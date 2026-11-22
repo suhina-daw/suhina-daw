@@ -234,7 +234,7 @@ fn an_edit_to_the_authors_sheet_is_read_and_editor_saves_leave_it_alone() {
     let css = root.join("themes/portable/theme.css");
     let edited_sheet = format!(
         "/* My notes stay. */\n{}",
-        // The saved sheet writes only the colours the theme sets, and this theme sets none.
+        // The saved sheet writes only the colors the theme sets, and this theme sets none.
         std::fs::read_to_string(&css).unwrap() + ":root { --accent: #12AB34; }\n"
     );
     assert!(edited_sheet.contains("--accent: #12AB34;"));
@@ -298,7 +298,7 @@ fn a_json_theme_migrates_keeping_its_comments_and_its_originals() {
     std::fs::create_dir_all(themes.join("old/assets")).unwrap();
     let mut json: serde_json::Value = serde_json::from_str(&theme.to_json()).unwrap();
     json["stylesheet"] = serde_json::json!("old/style.css");
-    // Earlier versions wrote the track colours into every theme; tracks keep their own now, and
+    // Earlier versions wrote the track colors into every theme; tracks keep their own now, and
     // the theme still converts (#1020).
     for key in ["track.1", "track.8", "clip.midiDefault", "clip.audioDefault"] {
         json["colors"][key] = serde_json::json!("#FF9A3C");

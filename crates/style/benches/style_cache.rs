@@ -51,7 +51,7 @@ fn time(label: &str, frames: u32, mut frame: impl FnMut()) -> Duration {
     each
 }
 
-/// 64 tracks of 120 clips each: most clips in their track's colour, one in eight its own.
+/// 64 tracks of 120 clips each: most clips in their track's color, one in eight its own.
 fn arrangement() {
     let tracks = 64;
     let mut elements = vec![Element::new("window", None), Element::new("arrangement", Some(0))];
@@ -62,13 +62,13 @@ fn arrangement() {
     let clips: Vec<(usize, Element)> = (0..tracks * 120)
         .map(|index| {
             let track = index / 120;
-            let colour = if index % 8 == 0 {
+            let color = if index % 8 == 0 {
                 format!("#{:06x}", index * 2_654_435 % 0xff_ffff)
             } else {
                 PALETTE[track % 16].to_owned()
             };
             let mut clip = Element::new("clip", None)
-                .with_attribute("color", &colour)
+                .with_attribute("color", &color)
                 .with_attribute("kind", if index % 3 == 0 { "audio" } else { "midi" });
             if index % 20 == 0 {
                 clip.states.push("selected".into());

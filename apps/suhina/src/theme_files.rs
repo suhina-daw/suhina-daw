@@ -822,7 +822,7 @@ fn lone_sheet(
     let name = stem.strip_suffix(".theme").unwrap_or(stem);
     let name = if name == "theme" { "Theme" } else { name };
     let (mut theme, warnings) = theme::from_folder(theme::ThemeMeta::new(name, theme::DEFAULT_SWATCH), text);
-    // The swatch as the colour it is here, since the sheet alone may not say every value it needs.
+    // The swatch as the color it is here, since the sheet alone may not say every value it needs.
     theme.meta.swatch = theme::hex(theme.swatch.unwrap_or(theme.color("panel-background")));
     theme::resolve_resources(&mut theme, &mut resource)?;
     Ok((theme, warnings))

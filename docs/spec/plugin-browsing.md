@@ -90,9 +90,9 @@ missing value, or one an earlier version kept, is `instruments` quietly; any oth
 
 ## Favourites and tags
 
-Pins and colour tags work on a plug-in's row as on a file: the row's key is
+Pins and color tags work on a plug-in's row as on a file: the row's key is
 `plugin:<spec>` ([browser](browser.md) › Terms), which the pin list and the tag store keep like
 any key; the **Pinned** place and the footer's tag filters list tagged and pinned plug-ins with
-the rest. The tags are the user's own named tags with colours
+the rest. The tags are the user's own named tags with colors
 (`library.setTag`, `library.tag`); a plug-in can carry any of them, and filtering by a tag
 shows the plug-ins that carry it among the files.

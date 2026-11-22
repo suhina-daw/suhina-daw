@@ -397,7 +397,7 @@ fn samples(peaks: &Peaks, lane: Lane, columns: &[Column], rate: f64, y: &dyn Fn(
     LaneShape::Samples { points, dots: spacing >= DOT_SPACING }
 }
 
-/// The colours of a waveform: the peaks, and the RMS band drawn over them.
+/// The colors of a waveform: the peaks, and the RMS band drawn over them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Colors {
     pub peak: Color32,
@@ -405,7 +405,7 @@ pub struct Colors {
 }
 
 impl Colors {
-    /// From one colour: the peaks lighter (more see-through), the RMS band in the colour itself.
+    /// From one color: the peaks lighter (more see-through), the RMS band in the color itself.
     pub fn from(color: Color32) -> Self {
         Self { peak: color.gamma_multiply(0.55), rms: color }
     }
