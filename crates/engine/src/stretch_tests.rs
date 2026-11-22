@@ -251,10 +251,11 @@ fn slices_stop_at_the_end_of_the_stretch_the_clip_plays_in() {
 /// never NaN: `at - at.floor()` of infinity is NaN, which reached the stretcher's output.
 #[test]
 fn a_position_that_is_not_finite_reads_silence() {
-    let samples = (0..5_000).map(|i| i as f32 / 10_000.0).collect();
-    let data = Arc::new(AudioData { sample_rate: 1000, channels: 1, samples });
+    // 8 kHz, the least rate a voice takes.
+    let samples = (0..40_000).map(|i| i as f32 / 80_000.0).collect();
+    let data = Arc::new(AudioData { sample_rate: 8000, channels: 1, samples });
     let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Texture);
-    let Some(voice) = StretchVoice::new(&with(&clip(4.0, 0.0, None), &r), data, 120.0, 1000) else {
+    let Some(voice) = StretchVoice::new(&with(&clip(4.0, 0.0, None), &r), data, 120.0, 8000) else {
         panic!("no voice")
     };
     for at in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {

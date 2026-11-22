@@ -637,10 +637,12 @@ fn the_audio_editors_menu_grays_what_has_nothing_to_act_on() {
 fn the_devices_switch_takes_an_audio_clip_to_its_devices_and_back() {
     let mut harness = opened_audio_editor();
     assert!(harness.query_by_label("Audio editor").is_some());
-    harness.state_mut().run(&Action::new("view.devices", json!({})));
+    // A window action (Ctrl+Shift+D), not a command: it runs on the next frame.
+    harness.state_mut().queue_action("view.devices");
     harness.run();
     assert!(harness.query_by_label("Audio editor").is_none(), "the devices took the editor's place");
-    harness.state_mut().run(&Action::new("view.devices", json!({})));
+    // A window action (Ctrl+Shift+D), not a command: it runs on the next frame.
+    harness.state_mut().queue_action("view.devices");
     harness.run();
     assert!(harness.query_by_label("Audio editor").is_some(), "and the editor is back");
 }
