@@ -10,8 +10,8 @@ browser-search suhina-meadow cc003caccf626c00
 clip-audio suhina-meadow 5d25d3400d20a417
 clip-midi suhina-meadow 9fa54a33b1a27a80
 color-menu-saved suhina-meadow ad9f33b99c9cf0e5
-color-picker suhina-meadow 996a6c7390030bfd
-color-picker-field suhina-meadow 14244d72d1334e8b
+color-picker suhina-meadow d192e85912a01e58
+color-picker-field suhina-meadow 1d6734b627d6f11a
 context-menu suhina-meadow 7cb20dfc4e8a2c66
 control-bar-toggles suhina-meadow fea5e456d49e96f0
 count-in-menu suhina-meadow cea334285f687cf4

@@ -10,8 +10,8 @@ browser-search high-contrast fe46c0e5f0cd2e3b
 clip-audio high-contrast 912de111dc8716e1
 clip-midi high-contrast f8cc48792fe10b87
 color-menu-saved high-contrast 2d87ffb44500a3b4
-color-picker high-contrast e9f883437b6e2d0f
-color-picker-field high-contrast 53783838fcc0341a
+color-picker high-contrast c3e5cada81fc95d0
+color-picker-field high-contrast f484fccf4c56f8f5
 context-menu high-contrast e3a0e487fc8d22da
 control-bar-toggles high-contrast f4add764345e81ee
 count-in-menu high-contrast 9fa2df76fb4e90fc

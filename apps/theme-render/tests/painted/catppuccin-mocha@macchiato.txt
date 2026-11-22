@@ -10,8 +10,8 @@ browser-search catppuccin-mocha@macchiato 7ad868ea00d79ccb
 clip-audio catppuccin-mocha@macchiato 1d64d18d552d8f28
 clip-midi catppuccin-mocha@macchiato a39f5425a31ec88b
 color-menu-saved catppuccin-mocha@macchiato 3711818fe7f2828a
-color-picker catppuccin-mocha@macchiato 5c3b9deee9bc2edc
-color-picker-field catppuccin-mocha@macchiato 7e53e575c9300bcc
+color-picker catppuccin-mocha@macchiato b62bfdd08f464737
+color-picker-field catppuccin-mocha@macchiato e8b46adb51868e33
 context-menu catppuccin-mocha@macchiato dd6675c01f568cf7
 control-bar-toggles catppuccin-mocha@macchiato 44f7eb7c6ff14a04
 count-in-menu catppuccin-mocha@macchiato 7ee6cf3492c3c409

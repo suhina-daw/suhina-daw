@@ -10,8 +10,8 @@ browser-search suhina-blocks 46b71b99449856de
 clip-audio suhina-blocks a9e144291d1ef6f6
 clip-midi suhina-blocks 443a1a340df7e040
 color-menu-saved suhina-blocks b5114eb3dd3edaa8
-color-picker suhina-blocks e8aefa614ab5c423
-color-picker-field suhina-blocks 702a51dfeabcd7f8
+color-picker suhina-blocks f5474c45de9807c2
+color-picker-field suhina-blocks 0c1aca8d70c300d9
 context-menu suhina-blocks 89930f36245bee79
 control-bar-toggles suhina-blocks a23a7d4a69d08a92
 count-in-menu suhina-blocks 23111049d9babf16

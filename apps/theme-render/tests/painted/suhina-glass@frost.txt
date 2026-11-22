@@ -10,8 +10,8 @@ browser-search suhina-glass@frost 2be4ecb6922ecf7f
 clip-audio suhina-glass@frost 5b0e6f509e6a63ec
 clip-midi suhina-glass@frost 71aefd61addfb217
 color-menu-saved suhina-glass@frost 051d53302243d081
-color-picker suhina-glass@frost 5742a824c7006e0f
-color-picker-field suhina-glass@frost 23095042520ef01d
+color-picker suhina-glass@frost cb0e72a61fd3f90e
+color-picker-field suhina-glass@frost b7720ec0206fc2c4
 context-menu suhina-glass@frost 6672fad1e4e77958
 control-bar-toggles suhina-glass@frost 69d907f2b9cf5642
 count-in-menu suhina-glass@frost 03e33b97afcf0e25

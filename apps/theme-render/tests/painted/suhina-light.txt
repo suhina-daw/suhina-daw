@@ -10,8 +10,8 @@ browser-search suhina-light 0004abc537f0a31d
 clip-audio suhina-light 973f5f2a359882de
 clip-midi suhina-light b579079ec09a1e0a
 color-menu-saved suhina-light 95fe353204ff6ca2
-color-picker suhina-light cf6238e2953ab6d9
-color-picker-field suhina-light 140513c76b8d0742
+color-picker suhina-light a1d161d6491ab31a
+color-picker-field suhina-light 6c1b33ab37e43b6d
 context-menu suhina-light f15112d1d7c9ff3f
 control-bar-toggles suhina-light 79c1fb64c45bd710
 count-in-menu suhina-light bb6c6afb324eb8e5

@@ -10,8 +10,8 @@ browser-search nord@snow-storm 9bbe957498b88a15
 clip-audio nord@snow-storm 2e8892d732801d5a
 clip-midi nord@snow-storm b204f3050c3a2bdc
 color-menu-saved nord@snow-storm 1b0a41fdc514cf01
-color-picker nord@snow-storm 6b99af883d264a91
-color-picker-field nord@snow-storm 26d82b317c03b4fc
+color-picker nord@snow-storm 2bf79f82c0912042
+color-picker-field nord@snow-storm c53981c4a1ac3303
 context-menu nord@snow-storm 00cfab34425e6a08
 control-bar-toggles nord@snow-storm 4ce355e2571a506e
 count-in-menu nord@snow-storm 1ac18f55c00a64ef

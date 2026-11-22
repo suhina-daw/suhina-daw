@@ -10,8 +10,8 @@ browser-search nord acf269ddfa6f36cf
 clip-audio nord d60e60f3ec437491
 clip-midi nord 40db53eb797606c7
 color-menu-saved nord c19e3511e1c2ee0b
-color-picker nord 0a66923e359db5b7
-color-picker-field nord f722c530470a26a8
+color-picker nord 9a56e415371521a2
+color-picker-field nord 8f97c5a6a700e635
 context-menu nord e3edfe8e426ccc94
 control-bar-toggles nord 321aacb132287ce0
 count-in-menu nord 241f4011f871a2c8

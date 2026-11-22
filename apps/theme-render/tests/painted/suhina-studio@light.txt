@@ -10,8 +10,8 @@ browser-search suhina-studio@light f656dd6b0afc7d8c
 clip-audio suhina-studio@light 10a31e19e7dec034
 clip-midi suhina-studio@light 5aaad9a3a769fc99
 color-menu-saved suhina-studio@light ea8bc15afd4ac344
-color-picker suhina-studio@light 5004a7268966e056
-color-picker-field suhina-studio@light 4288a92136578d61
+color-picker suhina-studio@light 071601d6f873ca85
+color-picker-field suhina-studio@light 801161f2799a7a3e
 context-menu suhina-studio@light 4c8d7d22b710a1c2
 control-bar-toggles suhina-studio@light d27d57e1c3d31fa8
 count-in-menu suhina-studio@light bd6dbf4d2c916cf0
