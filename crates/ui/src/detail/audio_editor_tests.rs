@@ -454,7 +454,7 @@ fn a_new_single_click_sends_the_one_waiting_before_it() {
     let second = Action::new("transport.jump", json!({ "beats": 3.0 }));
     waiting.click(1.0, 1, Some(first.clone()), &mut out);
     waiting.click(1.1, 1, Some(second.clone()), &mut out);
-    assert_eq!(out, [first.clone()]);
+    assert_eq!(out, std::slice::from_ref(&first));
     waiting.tick(2.0, 0.3, &mut out);
     assert_eq!(out, [first, second]);
 }
