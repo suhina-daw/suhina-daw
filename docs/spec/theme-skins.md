@@ -1378,10 +1378,10 @@ shortened with "…" to fit, wrapped onto another line where it has no line brea
 outside its clip; a text painted twice at one place, each copy clipped to one side (a value over
 a fill, in two colours), counts as one with its clips joined where they touch, and the scrolled scenes' clipped
 texts are left out, since a view scrolled along cuts at its edge on purpose. Some cuts are meant
-and some are bugs not yet fixed, so `apps/theme-render/tests/cut/` holds one file per theme or
-variant with its cut texts, each once under the first scene by name that shows it: a change that cuts a new text, or
-stops cutting one, fails until the list is recorded with `SUHINA_BLESS=1`, and the pull request
-says why. A text wholly outside its clip shows nothing and is not listed, so a label pushed out
+and some are bugs not yet fixed, so `apps/theme-render/tests/cut/` holds one file per theme drawn
+with its cut texts, each once under the first scene by name that shows it: a change that cuts a new
+text, or stops cutting one, is flagged with the painted digests, the pull request says why, and the
+default branch records the new list after the merge. A text wholly outside its clip shows nothing and is not listed, so a label pushed out
 of sight entirely is not found this way. A paragraph that wraps on purpose (help text in Settings or
 a dialog) is listed as wrapped too.
 

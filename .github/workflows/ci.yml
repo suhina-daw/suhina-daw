@@ -360,6 +360,7 @@ jobs:
             exit 0
           fi
           themes=()
+          unavailable=()
           for f in "${files[@]}"; do themes+=("$(basename "$f" .md)"); done
           mkdir -p "$DIFFS"
           if [ "$COMPARE" = true ] && git fetch --quiet --depth=2 origin "$GITHUB_SHA" && git checkout --quiet --detach HEAD^1; then
@@ -368,10 +369,23 @@ jobs:
                 --no-fail-fast -E 'package(suhina-theme-render) & test(/^painted::themes::/)'; then
               echo "::notice::The base commit's theme tests did not all pass; the comparison shows what they drew."
             fi
+            # A listing is `<scene>.<theme>.txt`; a theme id has no dot. A scene the base drew for
+            # none of this theme's scenes was not drawn there at all (its tests did not build or
+            # run), so it has no diff; a scene missing beside others of its theme is new.
             for after in "$REPORT"/after/*.txt; do
               name=$(basename "$after" .txt)
+              theme=${name#*.}
               before="$BEFORE/$name.txt"
-              [ -f "$before" ] || before=/dev/null
+              if [ ! -f "$before" ]; then
+                theme_drawn=("$BEFORE"/*."$theme".txt)
+                if [ ${#theme_drawn[@]} -eq 0 ]; then
+                  unavailable+=("$name")
+                  continue
+                fi
+                before=/dev/null
+              fi
+              # An empty listing is a scene the pull request no longer draws.
+              [ -s "$after" ] || after=/dev/null
               diff -u --label "base/$name" --label "pull-request/$name" "$before" "$after" > "$DIFFS/$name.diff" || true
             done
           else
@@ -384,6 +398,10 @@ jobs:
             echo "Flagged, not failed: check that the change means these. The recordings are written after the merge."
             echo
             cat "${files[@]}"
+            if [ ${#unavailable[@]} -gt 0 ]; then
+              echo
+              echo "The base commit drew none of these themes' scenes, so they have no diff: $(IFS=,; echo "${unavailable[*]}" | sed 's/,/, /g')."
+            fi
             if [ ${#diffs[@]} -gt 0 ]; then
               echo
               echo "#### What the flagged scenes paint differently"

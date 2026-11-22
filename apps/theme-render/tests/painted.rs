@@ -237,7 +237,7 @@ fn painted_differences(theme: &str, all: &Drawings) -> Option<String> {
     }
     println!("{shown}");
     // The listings that differ, named as `SUHINA_PAINTED_DUMP` names them, for CI to compare with
-    // the same scenes drawn on the base commit.
+    // the same scenes drawn on the base commit; a scene recorded but no longer drawn is an empty file.
     if let Some(folder) = std::env::var_os("SUHINA_PAINTED_REPORT") {
         let folder = PathBuf::from(folder).join("after");
         std::fs::create_dir_all(&folder).unwrap();
@@ -245,6 +245,9 @@ fn painted_differences(theme: &str, all: &Drawings) -> Option<String> {
             if let Some(Ok(listing)) = listings.get(key) {
                 std::fs::write(folder.join(format!("{}.{}.txt", key.0, key.1)), listing).unwrap();
             }
+        }
+        for (scene, theme) in recorded.keys().filter(|key| !now.contains_key(*key)) {
+            std::fs::write(folder.join(format!("{scene}.{theme}.txt")), "").unwrap();
         }
     }
     Some(format!(
