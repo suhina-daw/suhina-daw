@@ -1151,7 +1151,7 @@ pub fn find_transients_in_place(ctx: &egui::Context, on: bool) {
 }
 
 fn transients_in_place_id() -> egui::Id {
-    egui::Id::new("audio-editor-transients-in-place")
+    egui::Id::unique("audio-editor-transients-in-place")
 }
 
 fn transient_cache(ctx: &egui::Context) -> TransientCache {
