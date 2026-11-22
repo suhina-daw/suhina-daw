@@ -1904,6 +1904,105 @@ pub fn slider_face(ui: &Ui, painter: &Painter, track: Rect, response: &Response,
     }
 }
 
+/// A band's slider, `slider[kind="band"]`, so a theme styles the color picker's Hue apart from a
+/// plain slider.
+const BAND: &str = "band";
+
+/// A band's height: a row of the color picker's Steps grid.
+const BAND_HEIGHT: f32 = 14.0;
+
+/// The hairline round a band and between its blocks: `slider[kind="band"] slider-rail`'s
+/// `background-color`.
+fn band_rail() -> Color32 {
+    SLIDER_RAIL.probe_in(SLIDER.attribute("kind", BAND)).background()
+}
+
+/// A color band's face in `track`: a [`BAND_HEIGHT`] band through `stops`, evenly spaced from left to right
+/// (two at least for a gradient), under [`band_handle`] at `share` filled with `fill`.
+pub fn band_face(
+    ui: &Ui,
+    painter: &Painter,
+    track: Rect,
+    response: &Response,
+    share: f32,
+    stops: &[Color32],
+    fill: Color32,
+) {
+    let rail = band_rail();
+    let band = Rect::from_center_size(track.center(), Vec2::new(track.width(), BAND_HEIGHT));
+    let mut mesh = egui::Mesh::default();
+    let last = stops.len().saturating_sub(1).max(1) as f32;
+    for (index, &color) in stops.iter().enumerate() {
+        let x = band.left() + band.width() * index as f32 / last;
+        mesh.colored_vertex(Pos2::new(x, band.top()), color);
+        mesh.colored_vertex(Pos2::new(x, band.bottom()), color);
+        if index > 0 {
+            let at = (index as u32) * 2;
+            mesh.add_triangle(at - 2, at - 1, at);
+            mesh.add_triangle(at - 1, at + 1, at);
+        }
+    }
+    painter.add(egui::Shape::mesh(mesh));
+    painter.rect_stroke(band, 0.0, theme::hairline(rail), egui::StrokeKind::Outside);
+    band_handle(ui, painter, band, response, share, fill);
+}
+
+/// A [`band_face`] cut into equal blocks, one of each of `colors` from left to right with the
+/// rail's hairline between them.
+pub fn stepped_band_face(
+    ui: &Ui,
+    painter: &Painter,
+    track: Rect,
+    response: &Response,
+    share: f32,
+    colors: &[Color32],
+    fill: Color32,
+) {
+    let rail = band_rail();
+    let band = Rect::from_center_size(track.center(), Vec2::new(track.width(), BAND_HEIGHT));
+    let width = band.width() / colors.len().max(1) as f32;
+    for (index, &color) in colors.iter().enumerate() {
+        let left = band.left() + width * index as f32;
+        painter.rect_filled(
+            Rect::from_min_max(Pos2::new(left, band.top()), Pos2::new(left + width, band.bottom())),
+            0.0,
+            color,
+        );
+        if index > 0 {
+            painter.line_segment([Pos2::new(left, band.top()), Pos2::new(left, band.bottom())], theme::hairline(rail));
+        }
+    }
+    painter.rect_stroke(band, 0.0, theme::hairline(rail), egui::StrokeKind::Outside);
+    band_handle(ui, painter, band, response, share, fill);
+}
+
+/// The handle of [`band_face`] and [`stepped_band_face`] on `band` at `share`, filled with
+/// `fill`: edged in `slider[kind="band"] slider-handle`'s `background-color` (`:hover`'s under
+/// the pointer, faded as [`slider_face`] fades it) inside the rail's hairline, and ringed in the
+/// slider's `accent-color` while it has the keys.
+fn band_handle(ui: &Ui, painter: &Painter, band: Rect, response: &Response, share: f32, fill: Color32) {
+    let hovered = hover(ui, response);
+    let (pressed, disabled, focused) =
+        (response.is_pointer_button_down_on(), !response.enabled(), response.has_focus());
+    let slider = |pointer: bool| SLIDER.attribute("kind", BAND).pointer(pointer, pressed, disabled).focused(focused);
+    let rest = SLIDER_HANDLE.probe_in(slider(false)).background();
+    let edge = if hovered > 0.0 {
+        motion::mix(rest, SLIDER_HANDLE.probe_in(slider(true)).background(), hovered)
+    } else {
+        rest
+    };
+    let rail = band_rail();
+    let el = SLIDER.attribute("kind", BAND).response(response).enter();
+    let handle_x = band.left() + band.width() * share.clamp(0.0, 1.0);
+    let cap = Rect::from_center_size(Pos2::new(handle_x, band.center().y), Vec2::new(7.0, BAND_HEIGHT + 4.0));
+    painter.rect_filled(cap, 3.0, fill);
+    painter.rect_stroke(cap, 3.0, Stroke::new(2.0, edge), egui::StrokeKind::Inside);
+    painter.rect_stroke(cap, 3.0, theme::hairline(rail), egui::StrokeKind::Outside);
+    if focused {
+        painter.rect_stroke(cap.expand(2.0), 4.0, Stroke::new(1.0, el.accent()), egui::StrokeKind::Outside);
+    }
+}
+
 /// A tick box and its words in `rect`, one control named `label`: a `button[kind="check"]`,
 /// `[checked]` while `on`, its `border-color` for the box (a step stronger under the pointer)
 /// and its `background-color` for the mark; the words a `label[kind="check"]`'s `color`, its

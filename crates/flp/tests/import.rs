@@ -1267,7 +1267,7 @@ fn channel_colours_without_a_flag_are_kept_and_fl_gray_becomes_suhinas_default()
     assert!(own.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::Rgb(96, 34, 32))));
     // (92, 101, 106): FL's default channel colour.
     let gray = import_bytes(&with(0x006A655C)).unwrap().project;
-    assert!(gray.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::NEW_MIDI_COLOUR)));
+    assert!(gray.tracks.iter().filter(|t| t.id.0 < 2).all(|t| t.color == Some(suhina_model::NEW_MIDI_COLOR)));
     // A playlist row in FL's gray does not colour its clips or tracks either.
     let mut row = [0u8; 66];
     row[..4].copy_from_slice(&1u32.to_le_bytes());

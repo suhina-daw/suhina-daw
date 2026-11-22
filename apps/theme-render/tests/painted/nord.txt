@@ -9,10 +9,10 @@ browser-plug-ins nord feccdf28d8bcc4a4
 browser-search nord acf269ddfa6f36cf
 clip-audio nord d60e60f3ec437491
 clip-midi nord 40db53eb797606c7
-colour-picker nord 2bf94341ac5b7b2d
-colour-picker-field nord 28ffa248c0c51a77
-colour-picker-wheel nord fac18885d05fcf3f
-context-menu nord de2383c5da92bf0e
+color-menu-saved nord c19e3511e1c2ee0b
+color-picker nord 0a66923e359db5b7
+color-picker-field nord f722c530470a26a8
+context-menu nord e3edfe8e426ccc94
 control-bar-toggles nord 321aacb132287ce0
 count-in-menu nord 241f4011f871a2c8
 cpu nord c8c2fb4ec0672f1c

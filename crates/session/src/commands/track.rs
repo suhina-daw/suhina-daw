@@ -910,7 +910,7 @@ fn set_color(session: &mut Session, params: &Value) -> Result<Value, CommandErro
     let color = if text.eq_ignore_ascii_case("none") {
         None
     } else {
-        Some(crate::colours::parse_hex(text).ok_or("color must be \"#rrggbb\" or \"none\"")?)
+        Some(crate::colors::parse_hex(text).ok_or("color must be \"#rrggbb\" or \"none\"")?)
     };
     let args = Args::new(params);
     if args.has("track") && args.has("tracks") {

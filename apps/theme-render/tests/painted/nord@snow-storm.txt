@@ -9,10 +9,10 @@ browser-plug-ins nord@snow-storm e71610ff1f4ca830
 browser-search nord@snow-storm 9bbe957498b88a15
 clip-audio nord@snow-storm 2e8892d732801d5a
 clip-midi nord@snow-storm b204f3050c3a2bdc
-colour-picker nord@snow-storm 57f84a267f7d38a2
-colour-picker-field nord@snow-storm 61a079dd75f4e149
-colour-picker-wheel nord@snow-storm bcdc4c4e926c4bea
-context-menu nord@snow-storm 35ac740c7be43492
+color-menu-saved nord@snow-storm 1b0a41fdc514cf01
+color-picker nord@snow-storm 6b99af883d264a91
+color-picker-field nord@snow-storm 26d82b317c03b4fc
+context-menu nord@snow-storm 00cfab34425e6a08
 control-bar-toggles nord@snow-storm 4ce355e2571a506e
 count-in-menu nord@snow-storm 1ac18f55c00a64ef
 cpu nord@snow-storm 0f58387689033be5

@@ -36,7 +36,7 @@ const CONTROL_COLUMN: f32 = 240.0;
 const LINE_ROW: f32 = 24.0;
 const SEGMENT: f32 = 15.0;
 /// The width of a colour row's picker button.
-const COLOUR_SWATCH_WIDTH: f32 = 40.0;
+const COLOR_SWATCH_WIDTH: f32 = 40.0;
 /// The width of a colour row's **Theme** button.
 const THEME_BUTTON_WIDTH: f32 = 52.0;
 /// The Browse… button at the end of a path field.
@@ -764,7 +764,7 @@ impl Cx<'_> {
     ) {
         let value = field(self.settings);
         let mut colour = *value;
-        let (held, _) = colour_picker(self.ui, self.painter, self.name, row, &mut colour, false, see_through);
+        let (held, _) = color_picker(self.ui, self.painter, self.name, row, &mut colour, false, see_through);
         self.outcome.adjusting |= held;
         if colour != *value {
             *value = colour;
@@ -783,7 +783,7 @@ impl Cx<'_> {
     ) {
         let value = field(self.settings);
         let mut colour = value.unwrap_or(themed);
-        let (held, reset) = colour_picker(self.ui, self.painter, self.name, row, &mut colour, value.is_some(), false);
+        let (held, reset) = color_picker(self.ui, self.painter, self.name, row, &mut colour, value.is_some(), false);
         self.outcome.adjusting |= held;
         if reset {
             *value = None;
@@ -3581,7 +3581,7 @@ fn segmented_parts<T: Copy + PartialEq>(
 /// opacity slider when `see_through`: whether the picker is held open with the button down (a
 /// drag in it), and whether **Theme** was clicked. The hex and **Theme** are the kit's text and
 /// button, so the theme styles them as every other row's.
-fn colour_picker(
+fn color_picker(
     ui: &mut Ui,
     painter: &egui::Painter,
     name: &str,
@@ -3591,7 +3591,7 @@ fn colour_picker(
     see_through: bool,
 ) -> (bool, bool) {
     let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
-    let swatch = Rect::from_min_size(rect.min, Vec2::new(COLOUR_SWATCH_WIDTH, SEGMENT));
+    let swatch = Rect::from_min_size(rect.min, Vec2::new(COLOR_SWATCH_WIDTH, SEGMENT));
     let theme_button = Rect::from_min_size(
         Pos2::new(rect.right() - THEME_BUTTON_WIDTH, rect.top() + 1.0),
         Vec2::new(THEME_BUTTON_WIDTH, SEGMENT),

@@ -1083,13 +1083,13 @@ switch is lit only by a rule for its lit state.
   `widgets::toggle_colors` stays only for the controls that already take their lit colours from
   `Toggle::of` or a `[checked]` comparison and use it as their fallback.
 - **New elements:** `dialog-title` (a dialog's title row), `list-row` (a row a click picks,
-  `[selected]`), `colour-swatch` (the colour picker's swatches), `theme-card` (a theme's card in
+  `[selected]`), `color-swatch` (the colour picker's swatches), `theme-card` (a theme's card in
   the picker, `[selected]` for the theme in use). The start page's tabs are `editor-tab#tab-recent`
   and `#tab-templates`. A dialog's progress bar is `progress` and `progress-fill`, the toolbar's
   RAM and CPU `meter` and `meter-level`, a drag pill `tooltip`, a splash a `dialog`. The detail
   area's splitter, `divider#detail-splitter`, takes `[closed]` while the area is closed.
 - **What stays on the palette:** the window background's scaling (`app/background.rs`), the theme
-  editor's palette editing and the colour a track's header takes from its track (`colour_picker::fill`
+  editor's palette editing and the colour a track's header takes from its track (`color_picker::fill`
   mixes the control colour into it while a track is off): the theme model's slice. A bar's native
   line where no sheet runs has no rule to read.
 - **A theme that styles the new elements:** a rule for `button` now reaches the control bar's

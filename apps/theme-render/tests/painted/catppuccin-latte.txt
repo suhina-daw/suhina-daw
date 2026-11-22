@@ -9,10 +9,10 @@ browser-plug-ins catppuccin-latte 5bdfa437cb62cc87
 browser-search catppuccin-latte fd504796e8714ba6
 clip-audio catppuccin-latte 4537d5fe42ec4059
 clip-midi catppuccin-latte 5b42fdca6dbfbd62
-colour-picker catppuccin-latte 78339ca2ce6304b1
-colour-picker-field catppuccin-latte 5a69387027994f48
-colour-picker-wheel catppuccin-latte c6a6741a4ea819b3
-context-menu catppuccin-latte 18c922351f47729c
+color-menu-saved catppuccin-latte d11e49d49e1fab77
+color-picker catppuccin-latte fc334f30f93cd7db
+color-picker-field catppuccin-latte 1c53830dd90c3abb
+context-menu catppuccin-latte 56636cac98f6fda2
 control-bar-toggles catppuccin-latte ffd7c6c8598df4de
 count-in-menu catppuccin-latte ad2c7b097c795225
 cpu catppuccin-latte 9c7fbdf18f4304b5

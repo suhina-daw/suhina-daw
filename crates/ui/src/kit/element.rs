@@ -1184,13 +1184,13 @@ names! {
     TOOLTIP = "tooltip";
     PROGRESS = "progress";
     PROGRESS_FILL = "progress-fill";
-    COLOUR_FIELD = "colour-field";
+    COLOR_FIELD = "color-field";
+    COLOR_SWATCH = "color-swatch";
     SETTINGS = "settings";
     SETTINGS_NAV = "settings-nav";
     DIALOG = "dialog";
     DIALOG_TITLE = "dialog-title";
     DIALOG_ACTIONS = "dialog-actions";
-    COLOUR_SWATCH = "colour-swatch";
     LIST_ROW = "list-row";
     START_PAGE = "start-page";
     PLUGIN_MANAGER = "plugin-manager";
