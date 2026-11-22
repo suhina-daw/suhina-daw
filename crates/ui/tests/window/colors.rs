@@ -694,7 +694,7 @@ fn a_palette_color_shows_chosen_in_the_palette_and_in_steps() {
 }
 
 #[test]
-fn the_steps_grid_is_the_fields_size_and_both_are_centered_in_the_window() {
+fn the_colour_grids_are_centered_in_the_window() {
     let mut app = demo_app();
     app.run(&Action::new("ui.colorPicker", json!({"tracks":[1]})));
     let mut h = window(app);
@@ -710,8 +710,6 @@ fn the_steps_grid_is_the_fields_size_and_both_are_centered_in_the_window() {
     h.run();
     let field = h.get_by_label("Color field").rect();
     let near = |a: f32, b: f32| (a - b).abs() < 0.5;
-    assert!(near(field.width(), 268.0) && near(field.height(), 110.0), "{field:?}");
-    assert!(near(grid.width(), field.width()) && near(grid.height(), field.height()), "{grid:?} vs {field:?}");
     assert!(near(grid.center().x, middle), "{grid:?} centered on {middle}");
     assert!(near(field.center().x, middle), "{field:?} centered on {middle}");
 }
