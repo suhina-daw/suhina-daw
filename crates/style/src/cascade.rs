@@ -23,7 +23,7 @@ pub enum Layer {
     /// Suhina's user-agent sheet (`suhina_theme_package::USER_AGENT_SHEET`): the bare floor.
     UserAgent,
     /// Suhina's design under every theme (`suhina_theme_package::BASE_SHEET`), the core variables'
-    /// registrations and the theme's colour map. Like the user agent's, its declarations are not
+    /// registrations and the theme's color map. Like the user agent's, its declarations are not
     /// [`ComputedStyle::authored`]: they are Suhina's, not a theme's.
     Base,
     Theme,
@@ -969,19 +969,19 @@ pub fn root_variables(viewport: Viewport, sheets: &[AppliedSheet<'_>]) -> Result
 
 /// Resolves a `<color>` value (a theme's swatch) for the given theme and variant sheets
 /// without applying them: `var()` takes the [`root_variables`]. With no element to read,
-/// `currentColor` and `attr()` are refused, and so is a value that is not a colour.
+/// `currentColor` and `attr()` are refused, and so is a value that is not a color.
 pub fn resolve_color(value: &str, viewport: Viewport, sheets: &[AppliedSheet<'_>]) -> Result<[u8; 4], String> {
     if crate::variables::mentions_attr(value) {
-        return Err("A colour without an element cannot use attr()".into());
+        return Err("A color without an element cannot use attr()".into());
     }
     let variables = root_variables(viewport, sheets)?;
     let substituted = crate::variables::substitute(value, &variables)?;
     if crate::variables::mentions_attr(&substituted) {
-        return Err("A colour without an element cannot use attr()".into());
+        return Err("A color without an element cannot use attr()".into());
     }
     match Color::parse(substituted.trim())? {
         Color::Rgba(rgba) => Ok(rgba),
-        Color::Current => Err("A colour without an element cannot use currentColor".into()),
+        Color::Current => Err("A color without an element cannot use currentColor".into()),
     }
 }
 

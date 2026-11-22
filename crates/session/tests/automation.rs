@@ -394,7 +394,7 @@ fn malformed_automation_edits_are_refused_and_change_nothing() {
         ("automation.addPoint", json!({ "track": 1, "device": 0, "param": "volume", "beat": 0, "value": 0 })),
         ("automation.addPoint", json!({ "track": 1, "device": -1, "param": "gain", "beat": 0, "value": 0 })),
         ("automation.addPoint", json!({ "track": 1, "beat": 0, "value": 0 })),
-        ("automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0, "colour": 1 })),
+        ("automation.addPoint", json!({ "track": 1, "param": "pan", "beat": 0, "value": 0, "color": 1 })),
         ("automation.movePoint", json!({ "track": 1, "param": "pan", "point": 1, "beat": 2 })),
         ("automation.movePoint", json!({ "track": 1, "param": "pan", "point": 0 })),
         ("automation.movePoint", json!({ "track": 1, "param": "volume", "point": 0, "beat": 2 })),

@@ -245,6 +245,13 @@ fn everything() -> Project {
                                 GainPoint::new(4.0, 3.0),
                             ],
                             tempo_source: Some(TempoSource::Name),
+                            warp: WarpSettings {
+                                slice: SliceAt::Sixteenth,
+                                tail: SliceTail::BackAndForth,
+                                envelope: 40.0,
+                                grain: 120.0,
+                                scatter: 60.0,
+                            },
                         },
                         ..clip(2, 4.0)
                     }],
@@ -1620,6 +1627,12 @@ fn a_file_of_every_version_reads() {
                 }
             }
         }
+        if version < 16 {
+            // The stretch modes' settings came with version 16.
+            for clip in expected.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+                clip.audio.warp = WarpSettings::default();
+            }
+        }
         // Devices get their ids in document order when a file before version 6 is read.
         assert_eq!(from_json(&text).map(renumbered), Ok(renumbered(expected)), "version {version}");
     }
@@ -1903,4 +1916,73 @@ fn a_version_14_folder_and_instrument_role_become_fields() {
     let named = |name: &str| devices.iter().find(|d| d.name == name).unwrap();
     assert!(named("Synth").is_external_instrument() && named("Synth").extensions.0.is_empty());
     assert!(named("Lost").is_missing_instrument() && named("Lost").extensions.0.is_empty());
+}
+
+/// A clip's stretch-mode settings are written only where one differs from its default, each field
+/// may be left out, and a name or a number out of range is refused.
+#[test]
+fn warp_settings_are_written_when_changed_and_checked_when_read() {
+    let mut project = everything();
+    // The fixture's audio clip has its own settings; a clip at the defaults writes none.
+    let text = to_json(&project);
+    assert!(text.contains("\"warp_settings\""), "{text}");
+    for lane in &mut project.arrangement.lanes {
+        for clip in &mut lane.clips {
+            clip.audio.warp = WarpSettings::default();
+        }
+    }
+    assert!(!to_json(&project).contains("warp_settings"));
+    let audio_clip = |file: &mut Value| -> Option<String> {
+        let lanes = file["project"]["arrangement"]["lanes"].as_array()?;
+        let lane = lanes.iter().position(|l| l["name"] == "Free")?;
+        Some(format!("/project/arrangement/lanes/{lane}/clips/0/audio"))
+    };
+    let read_with = |settings: Value| {
+        let mut file: Value = serde_json::from_str(&to_json(&everything())).unwrap();
+        let at = audio_clip(&mut file).unwrap();
+        file.pointer_mut(&at).unwrap()["warp_settings"] = settings;
+        from_json(&file.to_string())
+    };
+    // Only the slice given: the rest at their defaults.
+    let read = read_with(json!({ "slice": "1/8" })).unwrap();
+    let warp =
+        read.arrangement.lanes.iter().flat_map(|l| &l.clips).map(|c| c.audio.warp).find(|w| w.slice == SliceAt::Eighth);
+    assert_eq!(warp, Some(WarpSettings { slice: SliceAt::Eighth, ..WarpSettings::default() }));
+    for bad in [
+        json!({ "slice": "1/7" }),
+        json!({ "tail": "sideways" }),
+        json!({ "slice": 4 }),
+        json!({ "envelope": 101.0 }),
+        json!({ "grain": 5.0 }),
+        json!({ "scatter": -1.0 }),
+        json!({ "grain": "long" }),
+        json!("loud"),
+    ] {
+        assert!(read_with(bad.clone()).is_err(), "{bad}");
+    }
+    assert!(read_with(Value::Null).is_ok(), "null is no settings");
+}
+
+/// Settings out of their ranges (a project built in code) are written as the engine plays them,
+/// so the file reads back; settings in range are written as they are.
+#[test]
+fn warp_settings_out_of_range_save_as_they_play() {
+    for (grain, envelope, scatter) in [(5.0, 50.0, 25.0), (f64::NAN, 50.0, 25.0), (60.0, f64::INFINITY, -3.0)] {
+        let mut project = everything();
+        for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+            clip.audio.warp = WarpSettings { grain, envelope, scatter, ..WarpSettings::default() };
+        }
+        let read = from_json(&to_json(&project)).unwrap_or_else(|e| panic!("{grain} {envelope} {scatter}: {e}"));
+        let held = WarpSettings { grain, envelope, scatter, ..WarpSettings::default() }.held();
+        for clip in read.arrangement.lanes.iter().flat_map(|l| &l.clips) {
+            assert_eq!(clip.audio.warp, held, "{grain} {envelope} {scatter}");
+        }
+    }
+    let mut project = everything();
+    let own = WarpSettings { grain: 120.0, envelope: 40.0, scatter: 10.0, ..WarpSettings::default() };
+    for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
+        clip.audio.warp = own;
+    }
+    let read = from_json(&to_json(&project)).unwrap();
+    assert!(read.arrangement.lanes.iter().flat_map(|l| &l.clips).all(|c| c.audio.warp == own));
 }

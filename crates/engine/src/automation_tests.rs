@@ -138,7 +138,7 @@ fn mixer_gains_are_a_line_between_grid_values_in_any_block() {
     let at = |frame: f64| VolumeTaper.value(0.85 * (frame / 1000.0).min(1.0)) as f32;
     mix.plan(0, 1024, true);
     let whole: Vec<(f32, f32)> = (0..1024).map(|f| mix.gains(f)).collect();
-    // At each step of the grid the lane's value, in a straight line between, centred.
+    // At each step of the grid the lane's value, in a straight line between, centered.
     for (f, g) in whole.iter().enumerate().take(960) {
         let grid = (f - f % MIX_STEP) as f64;
         let x = (f % MIX_STEP) as f32 / MIX_STEP as f32;
@@ -162,7 +162,7 @@ fn mixer_gains_are_a_line_between_grid_values_in_any_block() {
 }
 
 #[test]
-fn a_volume_jump_is_an_s_shaped_ramp_centred_on_it_and_a_straight_segment_is_left_alone() {
+fn a_volume_jump_is_an_s_shaped_ramp_centered_on_it_and_a_straight_segment_is_left_alone() {
     // 0 dB, a jump to -18 dB at frame 10,000 (beat 100), then a straight segment to -6 dB.
     let db = |d: f64| 10f64.powf(d / 20.0);
     let c = channel(vec![lane("volume", &[(0.0, 1.0), (100.0, 1.0), (100.0, db(-18.0)), (200.0, db(-6.0))])]);

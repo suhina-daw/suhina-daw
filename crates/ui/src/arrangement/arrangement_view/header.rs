@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A track's header beside its lane: name, routing, inputs, meter and the colour band.
+//! A track's header beside its lane: name, routing, inputs, meter and the color band.
 
 use super::*;
 
@@ -118,15 +118,15 @@ pub(super) fn audio_input(
 /// Width of the meter lying in a return or main row, left of its volume.
 pub(super) const LYING_METER: f32 = 48.0;
 
-/// Where a return or main row shows its meter: lying down, ending at `right`, centred on `y`.
+/// Where a return or main row shows its meter: lying down, ending at `right`, centered on `y`.
 pub(super) fn lying_meter(right: f32, y: f32) -> Rect {
     Rect::from_min_max(Pos2::new(right - LYING_METER, y - meter::WIDTH / 2.0), Pos2::new(right, y + meter::WIDTH / 2.0))
 }
 
-/// A header's colour band in `band`, where its layout puts it: the track's colour down its left
+/// A header's color band in `band`, where its layout puts it: the track's color down its left
 /// edge, the full height of the header, at full strength while the track is off too, as the one
-/// place its colour stays beside the grey header (#1393). A click opens the palette.
-pub(super) fn colour_band(
+/// place its color stays beside the gray header (#1393). A click opens the palette.
+pub(super) fn color_band(
     ui: &Ui,
     painter: &egui::Painter,
     band: Rect,
@@ -135,9 +135,9 @@ pub(super) fn colour_band(
     id: Id,
     actions: &mut Vec<Action>,
 ) {
-    painter.rect_filled(band, 0.0, colour_picker::fill(lane.color, false));
+    painter.rect_filled(band, 0.0, color_picker::fill(lane.color, false));
     if band.intersects(clip) {
-        colour_picker::area(ui, band.intersect(clip), id.with("colour"), lane.track, &lane.name, lane.color, actions);
+        color_picker::area(ui, band.intersect(clip), id.with("color"), lane.track, &lane.name, lane.color, actions);
     }
 }
 
@@ -183,6 +183,12 @@ pub(super) fn track_header(
     if body.clicked() {
         state.targeted = Some(lane.track);
         let (shift, command) = ui.input(|i| (i.modifiers.shift, i.modifiers.command));
+        // A clip selected on another track would keep the detail area on that track, which is
+        // what it shows first: one plain click makes this track the one worked on, as a
+        // double-click does, without a group's double-click folding it (#1339).
+        if !shift && !command && state.selected_clip().is_some_and(|(track, _)| track != lane.track) {
+            state.clear_selected_clip();
+        }
         state.pick_track(lane.track, shift, command, order.tracks);
         // The track, not a clip, is what Delete acts on now (#690); a clip on it stays selected,
         // and the detail area shows the track's devices (#950).
@@ -208,19 +214,22 @@ pub(super) fn track_header(
     {
         state.track_drop = Some((dragged, pointer.y));
     }
+    // While the color tool edits the track, its header is styled as neither selected nor muted,
+    // so a sheet's selected or muted background never hides the color being chosen.
+    let preview = crate::kit::selection::previews_track(ui.ctx(), lane.track);
     let own = crate::kit::element::TRACK_HEADER
         .id(&format!("track-{}", lane.track.0))
         .color(rgb(lane.color))
-        .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
-        .attr(crate::kit::element::Muted, lane.mute)
+        .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track) && !preview)
+        .attr(crate::kit::element::Muted, lane.mute && !preview)
         .attr(crate::kit::element::Armed, lane.armed)
         .enter();
     work_trace.mark("style");
     // What the header holds goes in its content box, inside its border and padding (#1336), and
     // its rows are as tall as that box allows.
     let inside = own.content_in(rect);
-    // A track inside groups has their colours down its indent, the outermost first, so a group and
-    // its tracks read as one block: the group's colour runs from its header down all of them.
+    // A track inside groups has their colors down its indent, the outermost first, so a group and
+    // its tracks read as one block: the group's color runs from its header down all of them.
     let mut ancestors = Vec::new();
     let mut parent = lane.parent;
     while let Some(group) = parent.filter(|_| ancestors.len() < lane.depth) {
@@ -255,7 +264,7 @@ pub(super) fn track_header(
         parts.navigation = false;
     }
     let selection = state.selected_tracks.clone();
-    // Open until a click outside: its items close it themselves, and a colour dragged in its
+    // Open until a click outside: its items close it themselves, and a color dragged in its
     // picker does not (#712).
     egui::Popup::context_menu(&body).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
         let into: Vec<(TrackId, String)> = nesting::move_targets(nest.places, lane.track)
@@ -265,7 +274,7 @@ pub(super) fn track_header(
         let menu = TrackMenu {
             track: lane.track,
             name: &lane.name,
-            colour: lane.color,
+            color: lane.color,
             is_group: lane.kind == ColumnKind::Group,
             is_return: lane.kind == ColumnKind::Return,
             selection: &selection,
@@ -280,38 +289,39 @@ pub(super) fn track_header(
     });
     work_trace.mark("interaction");
     let selected = state.selected_tracks.contains(&lane.track) || state.focus == Some(lane.track);
-    let preview = crate::kit::selection::previews_track(ui.ctx(), lane.track);
-    // A selected track's header is filled with the one selection colour every selected header
-    // and clip shares (Settings › Appearance › Selection colour); its own colour stays in its band.
-    // With Clip's own colour, and for the track the piano roll edits without its being selected,
-    // the header keeps its colour with a small brightness lift and an outline.
+    // A selected track's header is filled with the one selection color every selected header
+    // and clip shares (Settings › Appearance › Selection color); its own color stays in its band.
+    // With Clip's own color, and for the track the piano roll edits without its being selected,
+    // the header keeps its color with a small brightness lift and an outline.
     let selection_fill = (state.selected_tracks.contains(&lane.track) && !lane.mute && !preview)
         .then(|| crate::kit::selection::fill(&own))
         .flatten();
-    // The theme's header colours (`--track-headerBackground`, `--track-headerSelectedBackground`),
-    // which the track's colour is worked into; a rule for `track-header` paints over the result.
+    // The theme's header colors (`--track-headerBackground`, `--track-headerSelectedBackground`),
+    // which the track's color is worked into; a rule for `track-header` paints over the result.
+    // While the color tool edits the track, the unselected one, so the header shows the color
+    // with the shading it will have.
     let background = own
         .style()
         .and_then(|style| {
-            style.colour_variable(if selected {
+            style.color_variable(if selected && !preview {
                 "--track-headerSelectedBackground"
             } else {
                 "--track-headerBackground"
             })
         })
         .unwrap_or(egui::Color32::TRANSPARENT);
-    let strength = crate::kit::style_class::theme_header_tint().unwrap_or(state.header_colour_strength);
-    // A muted track's header is the `track-header[muted]` grey, as its clips are, not a dimmer
-    // shade of its colour (#1393); its colour stays in the band down its edge. The grey is the
+    let strength = crate::kit::style_class::theme_header_tint().unwrap_or(state.header_color_strength);
+    // A muted track's header is the `track-header[muted]` gray, as its clips are, not a dimmer
+    // shade of its color (#1393); its color stays in the band down its edge. The gray is the
     // computed background, so `--track-headerMutedBackground` reaches it.
     let header_fill = if preview {
-        rgb(lane.color)
+        color_surface(background, rgb(lane.color), strength)
     } else if lane.mute {
-        own.computed_background_or(muted_header_grey(selected))
+        own.computed_background_or(muted_header_gray(selected))
     } else if let Some(fill) = selection_fill {
         fill
     } else {
-        let surface = colour_surface(background, rgb(lane.color), strength);
+        let surface = color_surface(background, rgb(lane.color), strength);
         if selected { motion::mix(surface, crate::kit::element::name_ink(), 0.07) } else { surface }
     };
     if preview
@@ -326,9 +336,7 @@ pub(super) fn track_header(
     {
         painter.rect_filled(rect, 0.0, header_fill);
     }
-    if !preview {
-        crate::kit::liquid::paint(painter, rect, &own, header_fill, crate::kit::liquid::Surface::Track);
-    }
+    crate::kit::liquid::paint(painter, rect, &own, header_fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`arrangement track-header`) over the native one.
     if preview {
         own.paint_over(
@@ -346,7 +354,7 @@ pub(super) fn track_header(
     // The name and the controls' ink read on whichever background is shown.
     let header_fill = if preview { header_fill } else { own.background_or(header_fill) };
     if selected {
-        // `track-header[selected]`'s border colour, else a shade of the track's own.
+        // `track-header[selected]`'s border color, else a shade of the track's own.
         let outline = own.border_or(motion::mix(own.border(), saturated(rgb(lane.color)), 0.5));
         let outline = if preview { crate::kit::selection::readable(outline, header_fill) } else { outline };
         painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, outline), StrokeKind::Inside);
@@ -366,9 +374,9 @@ pub(super) fn track_header(
             edge += if state.headers_left { -step } else { step };
         }
     }
-    // The track's own band follows its ancestors and opens its colour palette.
+    // The track's own band follows its ancestors and opens its color palette.
     if let Some(band) = parts.band {
-        colour_band(ui, painter, band, clip, lane, id, actions);
+        color_band(ui, painter, band, clip, lane, id, actions);
     }
     let level = state.meters.track(lane.track);
     if let Some(at) = parts.meter {
@@ -507,7 +515,7 @@ pub(super) fn track_header(
         // The sheet's own background for the name (`arrangement track-name`).
         name_style.paint(painter, name.intersect(clip));
     }
-    // Ink that reads on the fill, unless the sheet gives the name a colour.
+    // Ink that reads on the fill, unless the sheet gives the name a color.
     let name_color = name_style.color_or(if lane.mute {
         motion::mix(header_fill, theme::text_on(header_fill), 0.75)
     } else {
@@ -759,7 +767,7 @@ pub(super) fn track_header(
 
 /// The background the base sheet gives `arrangement track-header[muted]` (`[muted][selected]` while
 /// selected), worked out once: the fallback where no sheet styles the window.
-pub(super) fn muted_header_grey(selected: bool) -> Color32 {
-    static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
-    super::clip::muted_grey(&GREYS, "track-header", selected)
+pub(super) fn muted_header_gray(selected: bool) -> Color32 {
+    static GRAYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
+    super::clip::muted_gray(&GRAYS, "track-header", selected)
 }

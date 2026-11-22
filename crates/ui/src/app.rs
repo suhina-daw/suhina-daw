@@ -12,7 +12,7 @@ mod audio_settings;
 mod background;
 mod browser_panel;
 pub mod closing_dialog;
-mod colour_window;
+mod color_window;
 mod control_bar;
 mod detail_area;
 use detail_area::DetailInsets;
@@ -418,7 +418,7 @@ struct AutoArm {
 }
 
 pub struct App {
-    colour_window: colour_window::ColourWindow,
+    color_window: color_window::ColorWindow,
     background: background::Background,
     /// When the level meters last showed something new (`ui.input` time).
     meters_moved_at: f64,
@@ -612,6 +612,8 @@ pub struct App {
     /// The radius of the window's rounded corners, which a see-through window does not clip to:
     /// the bars at the top and bottom round theirs to match. 0 when the system clips them.
     window_corner: u8,
+    /// The main window was asked to be see-through, which its windows of their own follow.
+    see_through_asked: bool,
     /// The detail area was closed as an editor (the splitter dragged down, the toolbar's ×, View ›
     /// Hide editor): selecting a clip opens it again. And the clip shown last frame, to tell when
     /// another is selected (`docs/spec/ui-clip-editor.md` › Least height and closing).
@@ -722,6 +724,10 @@ pub struct App {
     /// Samples a drag carried out of every Suhina window, for the desktop app to hand the
     /// system as a drag of files the file manager copies (#865).
     drag_out: Option<Vec<PathBuf>>,
+    /// Whether files dragged in from the system go onto one track each, as the label beside the
+    /// pointer said in the last frame they hovered: the drop does what the label said, though the
+    /// window, given the focus by the drop, reads the keys afresh (`App::system_drag`).
+    system_separate: Option<bool>,
     pending_drop: Option<PendingDrop>,
     /// Where the detail area is this frame and the track it shows, for drops on its devices.
     detail_drop: Option<(Rect, TrackId)>,
@@ -731,6 +737,15 @@ pub struct App {
     sample_drops: Vec<crate::detail::device_canvas::SampleTarget>,
     /// The piano roll a selected MIDI clip shows in the detail area.
     piano_roll: PianoRollState,
+    /// The audio editor's zoom and scroll, for the audio clip it shows.
+    audio_editor: crate::detail::audio_editor::AudioEditorState,
+    /// Whether the audio editor drew its reset dialog in the last frame: it holds the keys and the
+    /// actions as the window's dialogs do (`App::dialog_holds_actions`). Not the editor's own
+    /// `reset_open`, which an editor no longer drawn (the detail area closed, the clip gone) keeps.
+    audio_reset_shown: bool,
+    /// Commands that look for transients in a clip's file, held until the window's background
+    /// analysis has found them, with the project they were made in (`App::with_transients`).
+    transients_waiting: Vec<(Option<ProjectId>, Action)>,
     /// Backups a crash left, offered one at a time (`docs/spec/backups.md` › The offer on
     /// start); the one chosen to open, and a backup to show in the file manager, for the app.
     recovery: Vec<suhina_session::backup::Leftover>,
@@ -789,7 +804,7 @@ impl App {
         projects.read_local_audio(true);
         Self {
             projects,
-            colour_window: Default::default(),
+            color_window: Default::default(),
             background: background::Background::default(),
             shown_project: None,
             stashes: HashMap::new(),
@@ -875,6 +890,7 @@ impl App {
             window: None,
             title_bar: 0.0,
             window_corner: 0,
+            see_through_asked: true,
             editor_closed: false,
             last_clip: None,
             piano_grid: crate::detail::piano_roll_grid::PianoGrid::default(),
@@ -925,11 +941,15 @@ impl App {
             map_window: MapWindow::default(),
             copy_to: Vec::new(),
             drag_out: None,
+            system_separate: None,
             pending_drop: None,
             detail_drop: None,
             expanded_panel: None,
             sample_drops: Vec::new(),
             piano_roll: PianoRollState::default(),
+            audio_editor: crate::detail::audio_editor::AudioEditorState::default(),
+            audio_reset_shown: false,
+            transients_waiting: Vec::new(),
             recovery: Vec::new(),
             recovery_open: None,
             reveal: None,
@@ -1099,6 +1119,22 @@ impl App {
     pub fn set_window_frame(&mut self, title_bar: f32, corner: u8) {
         self.title_bar = title_bar.max(0.0);
         self.window_corner = corner;
+    }
+
+    /// Whether the main window was asked to be see-through (the GPU renderer): its windows of
+    /// their own are asked the same. On unless this says otherwise.
+    pub fn set_see_through_asked(&mut self, asked: bool) {
+        self.see_through_asked = asked;
+    }
+
+    /// What a window of its own takes after the main window: whether it is see-through, its
+    /// title bar and corners.
+    pub(crate) fn own_window_frame(&self) -> crate::kit::own_window::Frame {
+        crate::kit::own_window::Frame {
+            see_through: self.see_through_asked,
+            title_bar: self.title_bar,
+            corner: self.window_corner,
+        }
     }
 
     /// The open projects.
@@ -1501,7 +1537,8 @@ impl App {
         self.recovery_open.take()
     }
 
-    /// A backup to show in the file manager.
+    /// A file or folder to show in the system's file manager, selected there where it can be: a
+    /// backup, a plug-in's file, a missing file's folder, or a browser row.
     pub fn take_reveal_request(&mut self) -> Option<PathBuf> {
         self.reveal.take()
     }
@@ -1641,8 +1678,8 @@ impl App {
         self.arrangement.returns_hidden = settings.view.returns_hidden;
         self.arrangement.waveform_zoom = settings.view.waveform_zoom as f32 / 100.0;
         self.arrangement.waveform_appearance = settings.view.waveform;
-        self.arrangement.audio_colour_strength = settings.view.audio_colour_strength;
-        self.arrangement.header_colour_strength = settings.view.header_colour_strength;
+        self.arrangement.audio_color_strength = settings.view.audio_color_strength;
+        self.arrangement.header_color_strength = settings.view.header_color_strength;
         if settings.map_window {
             self.sample_map.set_window(true, &mut self.browser);
         }
@@ -2429,7 +2466,7 @@ impl App {
             match place {
                 None => keep = false,
                 Some(spot) => {
-                    // The field takes the name's own place and colours, with no frame of its
+                    // The field takes the name's own place and colors, with no frame of its
                     // own, the whole name selected to type over (#916).
                     let rect = spot.rect;
                     crate::kit::floating::area(
@@ -2440,11 +2477,11 @@ impl App {
                     .order(egui::Order::Foreground)
                     .fixed_pos(rect.min)
                     .show(ui.ctx(), |ui| {
-                        // An opaque back in the name's own colour, so the name the view drew
+                        // An opaque back in the name's own color, so the name the view drew
                         // under the field does not show through it.
                         let back = ui.painter().add(egui::Shape::Noop);
-                        // The selected name is a shade of its own ink on its own colour, not
-                        // the theme's selection colour, which on a coloured header reads as a
+                        // The selected name is a shade of its own ink on its own color, not
+                        // the theme's selection color, which on a colored header reads as a
                         // box of its own.
                         let selection = &mut ui.visuals_mut().selection;
                         selection.bg_fill = motion::mix(spot.fill.to_opaque(), spot.text, 0.28);
@@ -2899,7 +2936,7 @@ impl App {
 
     /// Runs one command and shows its outcome in the status bar.
     pub fn run(&mut self, action: &Action) {
-        if self.run_colour_window_action(action) {
+        if self.run_color_window_action(action) {
             return;
         }
         if let Some(gesture) = action.params.get("gesture").and_then(serde_json::Value::as_str) {
@@ -2920,7 +2957,7 @@ impl App {
         // of what was there before, so it lets go.
         if matches!(action.id, "edit.undo" | "edit.redo") {
             self.carry = None;
-            self.colour_history_changed();
+            self.color_history_changed();
         }
         if action.id == "ui.renameClip" {
             let mut target = action.params.clone();
@@ -3011,16 +3048,12 @@ impl App {
                 self.status = Status::Hint(format!("Armed, hearing In {input}: change it under Audio From"));
             }
             Ok(result) => {
-                if action.id == "track.setColor"
-                    && result["changed"].as_bool() == Some(true)
-                    && let Some(colour) = action.params["color"].as_str().and_then(suhina_session::colours::parse_hex)
+                let colored = (action.id == "track.setColor" && result["changed"].as_bool() == Some(true))
+                    || action.id == "clip.setColorMany";
+                if colored
+                    && action.params["gesture"].as_str() == Some(crate::interaction::color_picker::panel::GESTURE)
                 {
-                    if action.params["gesture"].as_str() == Some(crate::interaction::colour_picker::panel::GESTURE) {
-                        self.colour_window.pending_recent = Some(colour);
-                    } else {
-                        crate::interaction::colour_picker::panel::remember(&mut self.settings.recent_colours, colour);
-                        self.settings_changed = true;
-                    }
+                    self.color_window.gesture_pending = true;
                 }
                 if action.id == "edit.undo" {
                     self.piano_roll.undo_ran();
@@ -3231,10 +3264,10 @@ impl App {
             crate::kit::skin::configure(&crate::kit::skin::Skin::default());
             crate::kit::native_css::set_colors(&theme::Colors::new());
         }
-        // The selection colour is the window's, as the theme's colours are: a chosen one goes over
+        // The selection color is the window's, as the theme's colors are: a chosen one goes over
         // the theme's `selection.background` before the styles are worked out.
         crate::kit::selection::set(self.settings.view.selection);
-        self.arrangement.automation.colours = self.settings.view.automation;
+        self.arrangement.automation.colors = self.settings.view.automation;
         // The backdrop's opacity before the styles: the frame an image first shows in is faded.
         let backdrop = self.background.prepare(ui, &self.settings);
         let _css_frame = crate::kit::native_css::frame_with_motion(
@@ -3348,7 +3381,7 @@ impl App {
         if !self.arrangement.toolbar {
             self.arrangement.tool = arrangement_view::ArrangementTool::Select;
         }
-        self.arrangement.has_focus = !self.piano_roll.focused;
+        self.arrangement.has_focus = !self.piano_roll.focused && !self.audio_editor.focused();
         self.arrangement.take_solo = self.session().and_then(Session::take_solo);
         // The default grid from the settings: at start, and again when the setting changes.
         if self.applied_grid != Some(self.settings.view.default_grid) {
@@ -3385,7 +3418,7 @@ impl App {
         self.frame_trace.mark("sample map analysis");
         let dropped = self.dropped_files(ui);
         let device_keyboard = crate::detail::device_canvas::owns_keyboard(ui.ctx());
-        if !self.colour_window_owns_keyboard(ui.ctx()) && !device_keyboard {
+        if !self.color_window_owns_keyboard(ui.ctx()) && !device_keyboard {
             keys_for_shortcuts(ui.ctx());
         }
         if !device_keyboard {
@@ -3402,9 +3435,9 @@ impl App {
                 self.run_menu_item(&id, ui.ctx(), &mut actions);
             }
         }
-        // The floating colour tool owns Escape while a text draft or drag is active.
-        self.show_colour_window(ui.ctx(), &mut actions);
-        self.preview_colour_targets(ui.ctx());
+        // The floating color tool owns Escape while a text draft or drag is active.
+        self.show_color_window(ui.ctx(), &mut actions);
+        self.preview_color_targets(ui.ctx());
         self.shortcuts(ui, &mut actions);
         self.apply_zoom(ui.ctx());
         self.frame_trace.mark("keys");
@@ -3503,7 +3536,7 @@ impl App {
                 .show_separator_line(false)
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
-                    // The strip reads as the top of the toolbar under it, in the toolbar's colour.
+                    // The strip reads as the top of the toolbar under it, in the toolbar's color.
                     let _style_class = crate::kit::element::TOOLBAR.enter();
                     let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
                     ui.painter().rect_filled(
@@ -3615,7 +3648,11 @@ impl App {
             (false, false) => Some((dropped, true)),
             (false, true) => Some((self.hovered_files(ui), false)).filter(|(items, _)| !items.is_empty()),
         };
-        // The lines over and under the views, in their `border-color` (the palette's line colour).
+        // No files from the system over the window: the next drag starts with the keys as they are.
+        if system.is_none() {
+            self.system_separate = None;
+        }
+        // The lines over and under the views, in their `border-color` (the palette's line color).
         // A private image is already painted underneath the window: its transparent regions stay
         // visible instead of being covered with separator ink.
         let image = crate::kit::liquid::background_image(ui.ctx()).is_some();
@@ -3695,6 +3732,9 @@ impl App {
                 }
             });
             let detail_rect = layout.rect(Region::Detail);
+            // The audio editor's reset dialog holds the actions only while it is drawn; the
+            // detail area says so again as it draws it.
+            self.audio_reset_shown = false;
             let inner = match detail_rect.filter(|_| grid.is_some()) {
                 Some(detail) if self.detail_open => {
                     let geometry = (main, detail, layout.detail_follows);
@@ -3705,6 +3745,7 @@ impl App {
                     // A hidden piano roll does not keep the keyboard, nor the view to one track, and
                     // a note its audition sounds goes off.
                     self.piano_roll.focused = false;
+                    self.audio_editor.set_focused(false);
                     actions.extend(self.piano_roll.stop_audition());
                     actions.extend(self.piano_roll.settle_on_hide());
                     self.arrangement.focus = None;
@@ -4112,6 +4153,11 @@ impl App {
         self.update_title(ui.ctx());
         self.frame_trace.mark("dialogs");
         let actions: Vec<Action> = actions.into_iter().map(|action| self.remove_every_pick(action)).collect();
+        // Those that look for transients take the ones found in the background, or wait for them.
+        // While a dialog holds the actions, those that waited stay waiting rather than being
+        // dropped with the actions made behind the dialog: they go once it closes.
+        let actions =
+            if actions_held || self.dialog_holds_actions() { actions } else { self.with_transients(ui.ctx(), actions) };
         let ran = actions.len();
         for action in &actions {
             if actions_held || self.dialog_holds_actions() {
@@ -4407,7 +4453,7 @@ impl App {
     }
 }
 
-/// The label beside the pointer while something is dragged: outlined in the accent colour when
+/// The label beside the pointer while something is dragged: outlined in the accent color when
 /// it can land where the pointer is.
 fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
     drops::pill(ctx, pointer, text, lands);
@@ -4421,7 +4467,7 @@ pub(crate) const NAME_RECT_SLOT: &str = "slot-name-rect";
 pub(crate) const NAME_RECT_TRACK: &str = "track-name-rect";
 
 /// Where a view drew a name last frame, for a rename in place: its place, the pass it was drawn
-/// in, the colours behind and of the text and the text's size, so the field reads as the name
+/// in, the colors behind and of the text and the text's size, so the field reads as the name
 /// itself (#916).
 #[derive(Debug, Clone, Copy)]
 pub struct NameSpot {
@@ -4442,6 +4488,7 @@ pub(crate) fn clipboard_line(command: &str) -> Option<String> {
         "automation.copy" => "automation",
         "device.copy" => "devices",
         "track.copy" | "track.cut" => "tracks",
+        "range.copy" | "range.cut" => "a range",
         _ => return None,
     };
     Some(format!("Suhina: {what} copied"))

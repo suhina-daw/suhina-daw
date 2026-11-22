@@ -27,7 +27,7 @@ pub fn unpremultiply(pixels: &RgbaImage) -> RgbaImage {
 }
 
 /// The shot over `backdrop`, scaled to cover the window and blurred when the window is
-/// see-through. An opaque window clears to its colour first, so nothing behind it shows.
+/// see-through. An opaque window clears to its color first, so nothing behind it shows.
 pub fn over_backdrop(shot: &Shot, backdrop: &RgbaImage, scale: f32) -> RgbaImage {
     let (w, h) = shot.pixels.dimensions();
     let under = if shot.see_through {
@@ -52,15 +52,15 @@ pub fn over(top: &RgbaImage, under: &RgbaImage) -> RgbaImage {
     out
 }
 
-/// `image` scaled to cover `w` × `h` and cropped to its centre, as a desktop picture fills it. The
+/// `image` scaled to cover `w` × `h` and cropped to its center, as a desktop picture fills it. The
 /// part that shows is cut out first, so the work is the window's size however thin the picture
-/// is, and it is laid over black so that its transparent pixels show nothing of their colour.
+/// is, and it is laid over black so that its transparent pixels show nothing of their color.
 fn cover(image: &RgbaImage, w: u32, h: u32) -> Option<RgbaImage> {
     let (iw, ih) = image.dimensions();
     if iw == 0 || ih == 0 || w == 0 || h == 0 {
         return None;
     }
-    // The largest centred part of the image with the window's proportions.
+    // The largest centered part of the image with the window's proportions.
     let (cw, ch) = if u64::from(iw) * u64::from(h) >= u64::from(ih) * u64::from(w) {
         (((u64::from(ih) * u64::from(w)) / u64::from(h)).clamp(1, u64::from(iw)) as u32, ih)
     } else {
@@ -80,9 +80,9 @@ fn cover(image: &RgbaImage, w: u32, h: u32) -> Option<RgbaImage> {
 /// A backdrop for when none is given: bright diagonal bands and a fine checker, so a hole in the
 /// window and the blur behind it both show.
 pub fn default_backdrop() -> RgbaImage {
-    const COLOURS: [[u8; 3]; 4] = [[236, 92, 72], [250, 204, 72], [64, 180, 120], [72, 132, 236]];
+    const COLORS: [[u8; 3]; 4] = [[236, 92, 72], [250, 204, 72], [64, 180, 120], [72, 132, 236]];
     RgbaImage::from_fn(1280, 900, |x, y| {
-        let band = COLOURS[((x + y) / 160 % 4) as usize];
+        let band = COLORS[((x + y) / 160 % 4) as usize];
         let checker = (x / 8 + y / 8) % 2 == 0;
         let [r, g, b] = band.map(|c| if checker { c } else { c.saturating_sub(40) });
         Rgba([r, g, b, 255])
@@ -94,7 +94,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_half_transparent_white_over_black_is_mid_grey_and_unpremultiplies_to_white() {
+    fn a_half_transparent_white_over_black_is_mid_gray_and_unpremultiplies_to_white() {
         let top = RgbaImage::from_pixel(1, 1, Rgba([128, 128, 128, 128]));
         let under = RgbaImage::from_pixel(1, 1, Rgba([0, 0, 0, 255]));
         assert_eq!(over(&top, &under).get_pixel(0, 0).0, [128, 128, 128, 255]);
@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn a_thin_backdrop_covers_the_window_from_its_centre() {
+    fn a_thin_backdrop_covers_the_window_from_its_center() {
         let thin =
             RgbaImage::from_fn(
                 1,
@@ -117,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn transparent_backdrop_pixels_show_black_not_their_colour() {
+    fn transparent_backdrop_pixels_show_black_not_their_color() {
         let clear = RgbaImage::from_pixel(4, 4, Rgba([0, 255, 0, 0]));
         assert_eq!(cover(&clear, 4, 4).unwrap().get_pixel(1, 1).0, [0, 0, 0, 255]);
         let half = RgbaImage::from_pixel(4, 4, Rgba([200, 100, 50, 128]));

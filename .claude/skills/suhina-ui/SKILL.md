@@ -28,18 +28,22 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
 - **Labels are the test and accessibility API.** An interactive thing sets
   `widget_info(|| WidgetInfo::labeled(...))` with a label as a user would say it ("Launch Walk on
   Bass (scene 2)"). Tests find it with `get_by_label`, so keep labels stable.
-- **Theme colours are variables and base-sheet rules**, never a raw `Color32` for a semantic
-  colour. The colour variables are registered in `crates/theme-package/src/core.css` with Suhina
+- **Theme colors are variables and base-sheet rules**, never a raw `Color32` for a semantic
+  color. The color variables are registered in `crates/theme-package/src/core.css` with Suhina
   Studio's values, and the base sheet (`crates/theme-package/src/base.css`) gives them to the
-  elements; a view reads its colours from its element (`crate::kit::element`), so a theme's
+  elements; a view reads its colors from its element (`crate::kit::element`), so a theme's
   variable or its own rule reaches what it paints.
-- **A change to what the views paint is checked in every built-in theme.** `suhina-theme-render`'s
-  `painted` test digests what each scene paints in each built-in theme and variant
-  (`apps/theme-render/tests/painted/`, one file per theme or variant, shared by every system:
-  the scenes are drawn as on Linux wherever they run). Moving a view onto elements must leave every
-  digest as it is; a change meant to alter a look records them with
-  `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` and says why. Compare
-  listings with `SUHINA_PAINTED_DUMP=<folder>` before and after. Text that differs between
+- **A change to what the views paint is checked in the built-in themes.** `suhina-theme-render`'s
+  `painted` test digests what each scene paints in seven built-in themes, one for each way a theme
+  is made (`theme_tests!` lists them; `apps/theme-render/tests/painted/`, one file per theme, shared by every system:
+  the scenes are drawn as on Linux wherever they run). A drawing that differs is flagged, not
+  failed: the test prints it, and CI lists it in the job summary with a warning and a diff of
+  each flagged scene's paint listing against the base commit. Moving a view onto
+  elements must flag nothing; a change meant to alter a look says why in its pull request. **Never
+  record the digests in a branch** (`SUHINA_BLESS=1`, or committing `tests/painted/` or
+  `tests/cut/`): the default branch records them after the merge, and CI fails a pull request that
+  edits them, since two that did conflicted. Compare listings with `SUHINA_PAINTED_DUMP=<folder>`
+  before and after. Text that differs between
   systems reads the window's system from `crate::kit::platform::current()`, never `cfg!(target_os)`,
   or the recording holds on one system only.
 - **What a theme styles is an element** of the registry (`suhina_theme_package::elements`):
@@ -64,7 +68,23 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   `widgets::lit_toggle`, words `widgets::text_in`, and a menu's rows `kit::menu` (`item`,
   `submenu`, `heading`, `hint`, `separator`) inside the menu egui opens. The metronome's menu
   (`session/record_controls.rs`) is the example; the older menus in `interaction/menus.rs` still
-  use egui's rows and move over in their own change. A control the kit lacks is added to it.
+  use egui's rows and move over in their own change. A panel laid out in egui's flow (a column
+  of rows, as the track color window) takes `kit::controls` (`button`, `check_box`, `options`,
+  `disclosure`, `slider`, `heading`, `note`, `text`, `separator`); a view with a fixed geometry
+  paints the same faces from `widgets` (`button_with_id`, `check_box`, `option_face`,
+  `slider_face`) into its own rectangles. Both reuse the elements Settings and the dialogs use,
+  so a theme needs no rule of the panel's own. A control the kit lacks is added to it.
+- A dialog is `kit::dialog`: `dialog::enter("<name>")` (one `dialog` element, told apart by
+  `name`; add a new name to the `dialog` element's description in `theme-package`), then
+  `project_dialog::panel` with the size of its *contents*, which returns the content box (inside
+  the sheet's padding, under the title row), and its buttons through `dialog::actions` (a
+  `dialog-actions` row the sheet lays out; `Action::space()` splits it). Never add `PAD` around
+  a dialog's contents: the padding is the theme's.
+- A view in a system window of its own (Settings, the color window, the sample map) is made with
+  `kit::own_window`: `builder` for its viewport (see-through, under the macOS title bar as the
+  main window is), `base` for `window`'s background under it, and `Entered::paint_root` for the
+  element that fills it (its background over the whole window, its padding; no border, corners,
+  shadow or blur). Never fill such a window with a color of the view's own.
 - `motion::mix`/`toward`/`pulse` for hovers and fills, `widgets::button_area` for clickable
   rects, `Status::Hint` for status-bar hints.
 - **A menu with a text field** (a rename): egui's context menu closes on a click inside it, which

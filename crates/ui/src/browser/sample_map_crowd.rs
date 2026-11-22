@@ -37,7 +37,7 @@ fn kind_index(kind: Kind) -> usize {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Cluster {
     pub kind: Kind,
-    /// The cluster's item nearest to its centre, in map coordinates.
+    /// The cluster's item nearest to its center, in map coordinates.
     pub spot: [f32; 2],
     pub count: usize,
 }
@@ -111,7 +111,7 @@ pub(crate) fn clusters(items: &[([f32; 2], Kind)]) -> Vec<Cluster> {
             *size >= floor.max(at_least)
         })
         .collect();
-    // The centre of each kept cluster, then the item nearest to it.
+    // The center of each kept cluster, then the item nearest to it.
     let component_of = |p: [f32; 2], kind: Kind| -> Option<usize> {
         let id = *component.get(cell_of(p, side)?)?.get(kind_index(kind))?;
         let id = usize::try_from(id).ok()?;
@@ -124,7 +124,7 @@ pub(crate) fn clusters(items: &[([f32; 2], Kind)]) -> Vec<Cluster> {
             sum[1] += f64::from(p[1]);
         }
     }
-    let centres: Vec<[f32; 2]> = sums
+    let centers: Vec<[f32; 2]> = sums
         .iter()
         .zip(&found)
         .map(|(s, (_, n))| {
@@ -135,8 +135,8 @@ pub(crate) fn clusters(items: &[([f32; 2], Kind)]) -> Vec<Cluster> {
     let mut nearest: Vec<Option<([f32; 2], f32)>> = vec![None; found.len()];
     for (p, kind) in items {
         let Some(id) = component_of(*p, *kind) else { continue };
-        let (Some(centre), Some(best)) = (centres.get(id), nearest.get_mut(id)) else { continue };
-        let d = (p[0] - centre[0]).powi(2) + (p[1] - centre[1]).powi(2);
+        let (Some(center), Some(best)) = (centers.get(id), nearest.get_mut(id)) else { continue };
+        let d = (p[0] - center[0]).powi(2) + (p[1] - center[1]).powi(2);
         if best.is_none_or(|(_, b)| d < b) {
             *best = Some((*p, d));
         }
@@ -159,7 +159,7 @@ pub(crate) fn label_scale(count: usize, smallest: usize) -> f32 {
     (1.0 + 0.15 * ratio.max(1.0).log2()).min(LABEL_MAX_SCALE)
 }
 
-/// Where each label goes, in the order given (largest cluster first): centred on its spot, or
+/// Where each label goes, in the order given (largest cluster first): centered on its spot, or
 /// moved up or down by its own height when that overlaps a label already placed; `None` when
 /// none of the three is free or the label would leave `area`. No two placed labels overlap.
 pub(crate) fn place_labels(labels: &[(Pos2, Vec2)], area: Rect) -> Vec<Option<Rect>> {
@@ -183,16 +183,16 @@ pub(crate) fn place_labels(labels: &[(Pos2, Vec2)], area: Rect) -> Vec<Option<Re
 
 /// The density raster of the points at `screen` that fall in `rect`: one texel per [`BIN`] pixels.
 /// The points are spread over their neighbourhood with a small Gaussian kernel, so clusters read as
-/// soft regions rather than blocks. A texel is coloured by the mix of the kinds' colours there
+/// soft regions rather than blocks. A texel is colored by the mix of the kinds' colors there
 /// (each weighted by its alpha), and more opaque the more points are near it (the logarithm,
-/// against the densest texel) and the more opaque their colours are. `colour(i)` is point `i`'s
-/// colour, or `None` when it is dimmed: dimmed points only show as faint grey under the others.
+/// against the densest texel) and the more opaque their colors are. `color(i)` is point `i`'s
+/// color, or `None` when it is dimmed: dimmed points only show as faint gray under the others.
 /// `spread` is how many times the kernel is applied: 0 keeps each point to its own texel, so
-/// neighbours stand apart; more makes softer regions. `dimmed` is the grey the dimmed points show
+/// neighbours stand apart; more makes softer regions. `dimmed` is the gray the dimmed points show
 /// in. Drawn with linear filtering.
 pub(crate) fn density(
     screen: &[Pos2],
-    colour: impl Fn(usize) -> Option<Color32>,
+    color: impl Fn(usize) -> Option<Color32>,
     rect: Rect,
     spread: usize,
     dimmed: Color32,
@@ -208,7 +208,7 @@ pub(crate) fn density(
         let x = (((at.x - rect.min.x) / BIN) as usize).min(width - 1);
         let y = (((at.y - rect.min.y) / BIN) as usize).min(height - 1);
         let Some(texel) = texels.get_mut(y * width + x) else { continue };
-        match colour(i) {
+        match color(i) {
             Some(c) => {
                 let [r, g, b, a] = c.to_srgba_unmultiplied();
                 let a = f32::from(a) / 255.0;
@@ -226,14 +226,14 @@ pub(crate) fn density(
     }
     let densest = texels.iter().map(|t| t[0]).fold(0.0f32, f32::max).max(1e-6).ln_1p();
     let dimmest = texels.iter().map(|t| t[4]).fold(0.0f32, f32::max).max(1e-6).ln_1p();
-    let [grey_r, grey_g, grey_b, grey_a] = dimmed.to_srgba_unmultiplied();
+    let [gray_r, gray_g, gray_b, gray_a] = dimmed.to_srgba_unmultiplied();
     let pixels = texels
         .iter()
         .map(|t| {
             let shown = (t[0].ln_1p() / densest).min(1.0);
             if t[0] > 0.02 {
                 // Smooth towards the edges; full in the densest regions.
-                // ... and as opaque as the points' colours are on average.
+                // ... and as opaque as the points' colors are on average.
                 let alpha = shown * (2.0 - shown) * (t[5] / t[0]).min(1.0);
                 let weight = t[5].max(1e-6);
                 Color32::from_rgba_unmultiplied(
@@ -243,8 +243,8 @@ pub(crate) fn density(
                     (alpha * 255.0) as u8,
                 )
             } else if t[4] > 0.02 {
-                let alpha = 48.0 * f32::from(grey_a) / 255.0 * (t[4].ln_1p() / dimmest).min(1.0);
-                Color32::from_rgba_unmultiplied(grey_r, grey_g, grey_b, alpha as u8)
+                let alpha = 48.0 * f32::from(gray_a) / 255.0 * (t[4].ln_1p() / dimmest).min(1.0);
+                Color32::from_rgba_unmultiplied(gray_r, gray_g, gray_b, alpha as u8)
             } else {
                 Color32::TRANSPARENT
             }
@@ -291,13 +291,13 @@ pub(crate) fn dot_style(visible: usize, area: f32) -> (f32, f32) {
 mod tests {
     use super::*;
 
-    /// `n` items of `kind` spread evenly in a small square around `centre`.
-    fn blob(kind: Kind, centre: [f32; 2], n: usize) -> Vec<([f32; 2], Kind)> {
+    /// `n` items of `kind` spread evenly in a small square around `center`.
+    fn blob(kind: Kind, center: [f32; 2], n: usize) -> Vec<([f32; 2], Kind)> {
         let side = (n as f32).sqrt().ceil() as usize;
         (0..n)
             .map(|i| {
                 let (x, y) = ((i % side) as f32 / side as f32, (i / side) as f32 / side as f32);
-                ([centre[0] - 0.04 + x * 0.08, centre[1] - 0.04 + y * 0.08], kind)
+                ([center[0] - 0.04 + x * 0.08, center[1] - 0.04 + y * 0.08], kind)
             })
             .collect()
     }
@@ -362,18 +362,18 @@ mod tests {
     }
 
     #[test]
-    fn density_mixes_kind_colours_softly_and_shows_dimmed_points_faintly() {
+    fn density_mixes_kind_colors_softly_and_shows_dimmed_points_faintly() {
         let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(60.0, 3.0));
         let red = Color32::from_rgb(200, 0, 0);
         let blue = Color32::from_rgb(0, 0, 200);
         // Texel 0: one red and one blue point; texel 10: a dimmed point; one outside.
         let screen = [Pos2::new(1.0, 1.0), Pos2::new(2.0, 2.0), Pos2::new(31.0, 1.0), Pos2::new(500.0, 1.0)];
-        let colour = |i: usize| match i {
+        let color = |i: usize| match i {
             0 => Some(red),
             1 => Some(blue),
             _ => None,
         };
-        let image = density(&screen, colour, rect, 1, crate::kit::theme::studio("text-hint"));
+        let image = density(&screen, color, rect, 1, crate::kit::theme::studio("text-hint"));
         assert_eq!(image.size, [20, 1]);
         let mixed = image.pixels[0].to_srgba_unmultiplied();
         assert!(mixed[0].abs_diff(100) <= 1 && mixed[2].abs_diff(100) <= 1, "{mixed:?}");
@@ -386,20 +386,20 @@ mod tests {
         assert_eq!(image.pixels[19], Color32::TRANSPARENT);
     }
 
-    /// A translucent kind colour stays translucent in the raster, keeps its own RGB (not the
-    /// premultiplied one) and counts for less in a mix with an opaque colour.
+    /// A translucent kind color stays translucent in the raster, keeps its own RGB (not the
+    /// premultiplied one) and counts for less in a mix with an opaque color.
     #[test]
-    fn density_keeps_the_alpha_of_translucent_colours() {
+    fn density_keeps_the_alpha_of_translucent_colors() {
         let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(60.0, 3.0));
         let faint_red = Color32::from_rgba_unmultiplied(200, 0, 0, 128);
         let blue = Color32::from_rgb(0, 0, 200);
         // Texel 0: one faint red point alone; texel 10: a faint red and a blue point.
         let screen = [Pos2::new(1.0, 1.0), Pos2::new(31.0, 1.0), Pos2::new(32.0, 1.0)];
-        let colour = |i: usize| Some(if i == 2 { blue } else { faint_red });
-        let image = density(&screen, colour, rect, 0, crate::kit::theme::studio("text-hint"));
+        let color = |i: usize| Some(if i == 2 { blue } else { faint_red });
+        let image = density(&screen, color, rect, 0, crate::kit::theme::studio("text-hint"));
         let alone = image.pixels[0].to_srgba_unmultiplied();
         assert!(alone[0].abs_diff(200) <= 2 && alone[2] == 0, "{alone:?}");
-        assert!(alone[3] < 140, "a translucent colour is not drawn opaque: {alone:?}");
+        assert!(alone[3] < 140, "a translucent color is not drawn opaque: {alone:?}");
         let mixed = image.pixels[10].to_srgba_unmultiplied();
         assert!(mixed[2] > mixed[0], "the opaque blue outweighs the faint red: {mixed:?}");
         assert!(mixed[3] > alone[3] && mixed[3] < 255, "{mixed:?}");
@@ -412,16 +412,16 @@ mod tests {
         // Ten texels a side; two points on row 5, in columns 0 and 2.
         let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(30.0, 30.0));
         let screen = [Pos2::new(1.0, 16.0), Pos2::new(7.0, 16.0)];
-        let colour = |_| Some(Color32::from_rgb(200, 0, 0));
+        let color = |_| Some(Color32::from_rgb(200, 0, 0));
         let at = |image: &ColorImage, column: usize| image.pixels[5 * 10 + column];
-        let sharp = density(&screen, colour, rect, 0, crate::kit::theme::studio("text-hint"));
+        let sharp = density(&screen, color, rect, 0, crate::kit::theme::studio("text-hint"));
         assert!(at(&sharp, 0).a() > 0 && at(&sharp, 2).a() > 0);
         assert_eq!(at(&sharp, 1), Color32::TRANSPARENT);
-        let soft = density(&screen, colour, rect, 2, crate::kit::theme::studio("text-hint"));
+        let soft = density(&screen, color, rect, 2, crate::kit::theme::studio("text-hint"));
         assert!(at(&soft, 1).a() > 0);
         // A wider spread reaches further: two texels past a point it is stronger.
         assert!(
-            at(&soft, 4).a() > at(&density(&screen, colour, rect, 1, crate::kit::theme::studio("text-hint")), 4).a()
+            at(&soft, 4).a() > at(&density(&screen, color, rect, 1, crate::kit::theme::studio("text-hint")), 4).a()
         );
     }
 

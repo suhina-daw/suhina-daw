@@ -54,7 +54,7 @@ fn an_element_s_style_is_its_own_never_the_innermost_one() {
 }
 
 #[test]
-fn a_drawn_item_takes_its_colour_attribute() {
+fn a_drawn_item_takes_its_color_attribute() {
     let css = "clip { background-color: attr(color type(<color>), #000000); }";
     let color = egui::Color32::from_rgb(0xff, 0x9a, 0x3c);
     let style = frames(css, || {
@@ -64,12 +64,12 @@ fn a_drawn_item_takes_its_colour_attribute() {
     assert_eq!(style.map(|s| s.background), Some(color));
 }
 
-/// A colour a theme gives a knob, or a view around a fader, does not reach the parts whose artwork
-/// keeps a colour of its own: a knob's body and a fader's rail and cap keep their palette colours
+/// A color a theme gives a knob, or a view around a fader, does not reach the parts whose artwork
+/// keeps a color of its own: a knob's body and a fader's rail and cap keep their palette colors
 /// (the user-agent tier's rules on the parts themselves), and only the knob's pointer takes the
-/// knob's colour (#1019 review).
+/// knob's color (#1019 review).
 #[test]
-fn a_colour_around_a_knob_or_fader_does_not_reach_its_body_rail_or_cap() {
+fn a_color_around_a_knob_or_fader_does_not_reach_its_body_rail_or_cap() {
     let css = ":root { --control-background: #112233; --control-hoverBackground: #223344; \
                --text-value: #FFFFFF; } mixer { color: #00FF00; } knob { color: #FF0000; }";
     let unset = egui::Color32::from_rgb(1, 2, 3);
@@ -93,10 +93,10 @@ fn a_colour_around_a_knob_or_fader_does_not_reach_its_body_rail_or_cap() {
     assert!(near(cap, mix(rgb(0x11, 0x22, 0x33), egui::Color32::WHITE, 0.28)), "{cap:?}");
 }
 
-/// A fader's cap under the pointer takes the hover colour of the palette's tier
+/// A fader's cap under the pointer takes the hover color of the palette's tier
 /// (`fader-cap:hover`), which applies when the cap is entered with its pointer state.
 #[test]
-fn a_hovered_fader_cap_takes_its_hover_colour() {
+fn a_hovered_fader_cap_takes_its_hover_color() {
     let css = ":root { --control-background: #112233; --control-hoverBackground: #808080; \
                --text-value: #FFFFFF; }";
     let (normal, hovered) = frames(css, || {
@@ -119,7 +119,7 @@ fn a_part_entered_with_its_controls_response_takes_its_hover_rule() {
     let css = "knob-body { color: #000000; } knob-body:hover { color: #00FF00; }";
     super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
     let ctx = egui::Context::default();
-    let mut colours = Vec::new();
+    let mut colors = Vec::new();
     for _ in 0..3 {
         let input =
             egui::RawInput { events: vec![egui::Event::PointerMoved(egui::pos2(10.0, 10.0))], ..Default::default() };
@@ -127,7 +127,7 @@ fn a_part_entered_with_its_controls_response_takes_its_hover_rule() {
             let _frame = super::super::native_css::frame_with_motion(ui, false);
             let rect = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(20.0, 20.0));
             let response = ui.interact(rect, egui::Id::unique("knob"), egui::Sense::click_and_drag());
-            colours.push((
+            colors.push((
                 KNOB_BODY.response_if(Some(&response)).enter().computed_color_or(egui::Color32::RED),
                 KNOB_BODY.response_if(None).enter().computed_color_or(egui::Color32::RED),
             ));
@@ -136,13 +136,13 @@ fn a_part_entered_with_its_controls_response_takes_its_hover_rule() {
         .clear();
     }
     super::super::skin::configure(&super::super::skin::Skin::default());
-    assert_eq!(colours.last(), Some(&(egui::Color32::from_rgb(0, 0xFF, 0), egui::Color32::BLACK)), "{colours:?}");
+    assert_eq!(colors.last(), Some(&(egui::Color32::from_rgb(0, 0xFF, 0), egui::Color32::BLACK)), "{colors:?}");
 }
 
-/// A sound on the sample map takes the user-agent sheet's colour for its kind, not a colour a
+/// A sound on the sample map takes the user-agent sheet's color for its kind, not a color a
 /// theme gives the map around it, and a theme's rule for a kind replaces it.
 #[test]
-fn a_sample_point_takes_its_kinds_colour_not_the_maps() {
+fn a_sample_point_takes_its_kinds_color_not_the_maps() {
     let css = "sample-map { color: #00FF00; } sample-point[kind=\"snare\"] { color: #0000FF; }";
     let (kick, snare) = frames(css, || {
         let _map = SAMPLE_MAP.enter();
@@ -182,8 +182,8 @@ fn one_frame<R>(ctx: &egui::Context, css: &str, mut draw: impl FnMut() -> R) -> 
     (result.unwrap(), super::super::native_css::budget().asked)
 }
 
-/// The colour of a `slot` while its `clip` is entered by `draw`, after the frames the tree takes.
-fn slot_colour_around(css: &str, mut draw: impl FnMut()) -> egui::Color32 {
+/// The color of a `slot` while its `clip` is entered by `draw`, after the frames the tree takes.
+fn slot_color_around(css: &str, mut draw: impl FnMut()) -> egui::Color32 {
     frames(css, || {
         let slot = SLOT.enter();
         draw();
@@ -199,8 +199,8 @@ fn an_entered_element_given_the_pointer_makes_its_ancestors_hover() {
     let rgb = egui::Color32::from_rgb;
     let css = "slot { color: #112233; } slot:hover { color: #445566; } clip { color: #102030; } \
                slot:hover clip { color: #708090; }";
-    assert_eq!(slot_colour_around(css, || drop(CLIP.pointer(false, false, false).enter())), rgb(0x11, 0x22, 0x33));
-    assert_eq!(slot_colour_around(css, || drop(CLIP.pointer(true, false, false).enter())), rgb(0x44, 0x55, 0x66));
+    assert_eq!(slot_color_around(css, || drop(CLIP.pointer(false, false, false).enter())), rgb(0x11, 0x22, 0x33));
+    assert_eq!(slot_color_around(css, || drop(CLIP.pointer(true, false, false).enter())), rgb(0x44, 0x55, 0x66));
     let clip = frames(css, || {
         let _slot = SLOT.enter();
         CLIP.pointer(true, false, false).enter().style().map(|s| s.color).unwrap_or_default()
@@ -220,7 +220,7 @@ fn a_look_asked_for_under_the_pointer_does_not_make_its_ancestors_hover() {
         || CLIP.pointer(true, false, false).style().map(|s| s.color).unwrap_or_default(),
     ] {
         let mut asked = egui::Color32::TRANSPARENT;
-        let slot = slot_colour_around(css, || asked = ask());
+        let slot = slot_color_around(css, || asked = ask());
         assert_eq!(asked, rgb(0x70, 0x80, 0x90), "the hovered look is asked for");
         assert_eq!(slot, rgb(0x11, 0x22, 0x33), "and the slot stays as it was");
     }
@@ -596,7 +596,7 @@ fn a_glow_stops_at_a_viewport_edge_that_cuts_its_control() {
 
 #[test]
 fn a_child_of_a_parent_held_for_a_transition_is_not_kept_under_the_parent_s_new_chain() {
-    // The header's colour moves to blue on hover over a second; the label inherits it.
+    // The header's color moves to blue on hover over a second; the label inherits it.
     let css = "track-header { color: #FF0000; transition: color 1s linear; } \
                track-header:hover { color: #0000FF; }";
     super::super::skin::configure(&super::super::skin::Skin { css: Some(Arc::from(css)), ..Default::default() });
@@ -629,8 +629,8 @@ fn a_child_of_a_parent_held_for_a_transition_is_not_kept_under_the_parent_s_new_
     assert!(!asked, "the frame painted the whole tree's styles");
 }
 
-/// A drawn item's [`Look`]: its own `color` for a line or a mark, never the text colour a view's
-/// rule gives what is in it; its text colour inherited; the token wherever no rule reaches it
+/// A drawn item's [`Look`]: its own `color` for a line or a mark, never the text color a view's
+/// rule gives what is in it; its text color inherited; the token wherever no rule reaches it
 /// (#1417).
 #[test]
 fn a_look_takes_its_own_rules_and_the_token_elsewhere() {
@@ -641,18 +641,18 @@ fn a_look_takes_its_own_rules_and_the_token_elsewhere() {
     let (slot_line, column_line, column_text, mark) = frames(css, || {
         let _view = SESSION.enter();
         let slot = SEPARATOR.attribute("kind", "slot").look();
-        // A kind with no rule of the base sheet's: those take their own colour, not the view's.
+        // A kind with no rule of the base sheet's: those take their own color, not the view's.
         let column = SEPARATOR.attribute("kind", "lane").look();
         let mark = SLOT_MARK.look();
         (slot.own_color_or(token), column.own_color_or(token), column.color_or(token), mark)
     });
-    assert_eq!(slot_line, rgb(0, 0xff, 0), "a rule on the line gives its colour");
-    assert_eq!(column_line, token, "the view's text colour does not reach a line");
-    assert_eq!(column_text, rgb(0xff, 0, 0), "but it is the text colour inside it");
+    assert_eq!(slot_line, rgb(0, 0xff, 0), "a rule on the line gives its color");
+    assert_eq!(column_line, token, "the view's text color does not reach a line");
+    assert_eq!(column_text, rgb(0xff, 0, 0), "but it is the text color inside it");
     assert_eq!(mark.background_or(token), rgb(0, 0, 0xff));
     assert_eq!(mark.border_or(token), rgb(0xff, 0xff, 0));
     assert_eq!(mark.own_color_or(token), token);
-    // Without a sheet, every colour is the token's.
+    // Without a sheet, every color is the token's.
     let unstyled = Look::default();
     assert_eq!(
         (unstyled.own_color_or(token), unstyled.background_or(token), unstyled.border_or(token)),
@@ -676,7 +676,7 @@ fn queued_is_an_attribute() {
 }
 
 /// A rule for every `button` does not hide which toggle is on: while lit, only a rule for the
-/// state (`button[checked]`) gives it a colour (#1417 review).
+/// state (`button[checked]`) gives it a color (#1417 review).
 #[test]
 fn a_rule_for_every_button_does_not_hide_a_lit_one() {
     let rgb = egui::Color32::from_rgb;
@@ -714,7 +714,7 @@ fn a_probe_is_no_sibling_of_what_is_drawn_after_it() {
     assert_eq!(after_look, rgb(0x10, 0x20, 0x30), "a drawn button is a sibling");
 }
 
-/// A rule for every stop button does not hide the queued one: its colour comes from a rule for
+/// A rule for every stop button does not hide the queued one: its color comes from a rule for
 /// `[queued]` or stays the native accent (#1428 review).
 #[test]
 fn a_rule_for_every_slot_does_not_hide_a_queued_one() {
@@ -794,7 +794,7 @@ fn the_plain_look_keeps_the_pointer_state() {
 /// so the `[muted]` rule's background and border come back rather than the fallback token
 /// (#1428 review).
 #[test]
-fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
+fn a_muted_clip_s_colors_come_back_through_a_probe_with_motion_on() {
     let rgb = egui::Color32::from_rgb;
     let token = rgb(1, 2, 3);
     let css = "clip { background-color: #102030; border-color: #203040; \
@@ -807,9 +807,9 @@ fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
         ctx.run_ui(egui::RawInput { time: Some(f64::from(frame) * 0.1), ..Default::default() }, |ui| {
             let _frame = super::super::native_css::frame_with_motion(ui, true);
             let _view = SESSION.enter();
-            let colour = rgb(0x80, 0x20, 0x20);
-            let plain = CLIP.color(colour).probe();
-            let drawn = CLIP.color(colour).attr(Muted, true).enter();
+            let color = rgb(0x80, 0x20, 0x20);
+            let plain = CLIP.color(color).probe();
+            let drawn = CLIP.color(color).attr(Muted, true).enter();
             let state = drawn.look();
             seen = (state.unlike(&plain, Paint::Background, token), state.unlike(&plain, Paint::Border, token));
         })
@@ -820,7 +820,7 @@ fn a_muted_clip_s_colours_come_back_through_a_probe_with_motion_on() {
     assert_eq!(seen, (rgb(0x40, 0x50, 0x60), rgb(0x50, 0x60, 0x70)));
 }
 
-/// A toggle's colours ([`super::super::widgets::Toggle`]): off, the button's own where the sheet
+/// A toggle's colors ([`super::super::widgets::Toggle`]): off, the button's own where the sheet
 /// gives them; lit, only what a rule for the lit state gives, the ink worked out from the lit fill
 /// where that rule gives no ink of its own (#1023).
 #[test]
@@ -842,7 +842,7 @@ fn a_toggle_is_lit_only_by_a_rule_for_its_lit_state() {
     assert_eq!(
         toggle(general, true, false),
         Toggle { off: (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60)), on: (on, ink_on(on)), own_image: false },
-        "a rule for every button colours the unlit side only"
+        "a rule for every button colors the unlit side only"
     );
     assert_eq!(toggle(general, false, false).off, (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60)));
     let lit = format!("{general} button[checked] {{ background-color: #708090; }}");
@@ -859,7 +859,7 @@ fn a_toggle_is_lit_only_by_a_rule_for_its_lit_state() {
         let ink = |unlit| Toggle::of(&el, sides.as_ref(), unlit, off, on, ink_on).off.1;
         (ink(UnlitInk::Inherited), ink(UnlitInk::Own))
     });
-    // The base sheet gives the button its own ink, so a view's colour reaches neither.
+    // The base sheet gives the button its own ink, so a view's color reaches neither.
     assert_eq!(own_ink, (off.1, off.1));
     // Faded half way, half of each.
     let half =
@@ -914,7 +914,7 @@ fn paint_over_keeps_the_fill_it_is_given() {
 
 /// `accent-color` where the sheet gives one, else the token, on an element and on a look.
 #[test]
-fn accent_or_reads_the_accent_colour() {
+fn accent_or_reads_the_accent_color() {
     let rgb = egui::Color32::from_rgb;
     let token = rgb(1, 2, 3);
     let (entered, look, unstyled) = frames("knob { accent-color: #102030; }", || {
@@ -987,8 +987,8 @@ fn a_look_s_accent_and_image_are_compared_with_the_plain_one() {
 }
 
 /// The inks of a view's words: a rule for a `label` kind gives it, a name and a title take the text
-/// colour of the view they are in, and a kind the base sheet colours (a hint, a caption, a value, an
-/// error) takes only a rule of its own, never the colour a rule gives a view around it (#1449).
+/// color of the view they are in, and a kind the base sheet colors (a hint, a caption, a value, an
+/// error) takes only a rule of its own, never the color a rule gives a view around it (#1449).
 #[test]
 fn the_ink_helpers_read_label_kinds_from_the_sheet() {
     let rgb = egui::Color32::from_rgb;
@@ -999,13 +999,13 @@ fn the_ink_helpers_read_label_kinds_from_the_sheet() {
         (name_ink(), hint_ink(), caption_ink(), error_ink(), value_ink(), title_ink())
     });
     let plain = frames("", || (name_ink(), hint_ink(), caption_ink(), error_ink(), value_ink(), title_ink()));
-    assert_eq!(name, rgb(0x10, 0x20, 0x30), "a name inherits the dialog's colour");
+    assert_eq!(name, rgb(0x10, 0x20, 0x30), "a name inherits the dialog's color");
     assert_eq!(title, name, "so does a title");
     assert_eq!(caption, rgb(0x40, 0x50, 0x60), "a caption takes a rule for itself");
     assert_eq!(error, rgb(0xff, 0, 0));
-    assert_eq!(hint, plain.1, "a hint keeps the base sheet's ink under the dialog's colour");
+    assert_eq!(hint, plain.1, "a hint keeps the base sheet's ink under the dialog's color");
     assert_eq!(value, plain.4, "so does a value");
-    // With no rule, each is the base sheet's, which reads the colour variables.
+    // With no rule, each is the base sheet's, which reads the color variables.
     let tokens = (
         crate::kit::theme::studio("text-primary"),
         crate::kit::theme::studio("text-hint"),
@@ -1030,7 +1030,7 @@ fn a_list_row_and_a_dialog_title_take_their_own_background() {
                 LIST_ROW.look().background_or(token),
                 LIST_ROW.attr(Selected, true).look().color_or(token),
                 DIALOG_TITLE.look().background_or(token),
-                COLOUR_SWATCH.look().border_or(token),
+                COLOR_SWATCH.look().border_or(token),
             )
         },
     );
@@ -1040,7 +1040,7 @@ fn a_list_row_and_a_dialog_title_take_their_own_background() {
     );
 }
 
-/// `unlike` of [`Paint::Color`] counts the text colour a rule around the item gives too, but only where it
+/// `unlike` of [`Paint::Color`] counts the text color a rule around the item gives too, but only where it
 /// differs from the plain item's: a rule for every row does not hide the picked one (#1440 review).
 #[test]
 fn color_unlike_ignores_what_the_plain_item_has() {
@@ -1061,20 +1061,20 @@ fn color_unlike_ignores_what_the_plain_item_has() {
     assert_eq!(picked_ink(""), token);
 }
 
-/// The base sheet's muted grey is the Arrangement's: a muted Arrangement clip and track header are
-/// grey, and a deactivated Launcher clip, outside the Arrangement, keeps the look of its own
+/// The base sheet's muted gray is the Arrangement's: a muted Arrangement clip and track header are
+/// gray, and a deactivated Launcher clip, outside the Arrangement, keeps the look of its own
 /// `session clip[muted]` rule (#1393 review). A base
 /// sheet rule is never authored, so a drawn element's `background_or` keeps its fallback whatever
 /// the rule says: the Arrangement reads the computed background (`computed_background_or`), and
-/// `base_background` is its grey only where no sheet styles the window.
+/// `base_background` is its gray only where no sheet styles the window.
 #[test]
-fn the_muted_grey_reaches_the_arrangement_not_the_launcher() {
+fn the_muted_gray_reaches_the_arrangement_not_the_launcher() {
     use super::super::native_css::base_background;
-    let grey = Some(egui::Color32::from_rgb(0xA9, 0xA6, 0xA0));
+    let gray = Some(egui::Color32::from_rgb(0xA9, 0xA6, 0xA0));
     let muted = [("muted", "")];
-    assert_eq!(base_background(Some("arrangement"), "clip", &muted), grey, "arrangement clip[muted]");
-    assert_eq!(base_background(Some("arrangement"), "track-header", &muted), grey, "arrangement track-header[muted]");
-    assert_ne!(base_background(Some("session"), "clip", &muted), grey, "a Launcher clip keeps its own look");
+    assert_eq!(base_background(Some("arrangement"), "clip", &muted), gray, "arrangement clip[muted]");
+    assert_eq!(base_background(Some("arrangement"), "track-header", &muted), gray, "arrangement track-header[muted]");
+    assert_ne!(base_background(Some("session"), "clip", &muted), gray, "a Launcher clip keeps its own look");
     assert_eq!(base_background(None, "clip", &muted), None, "a clip outside the Arrangement");
 }
 

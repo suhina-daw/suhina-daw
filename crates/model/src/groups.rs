@@ -205,7 +205,7 @@ impl crate::Project {
 }
 
 impl Branch {
-    /// An empty branch at unity, centred.
+    /// An empty branch at unity, centered.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),

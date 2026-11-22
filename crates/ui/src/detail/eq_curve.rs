@@ -7,7 +7,7 @@
 //! and gain, the selected band's Frequency, Gain and Q are strips beside the display, the
 //! bands' type menus and numbered selectors run along the bottom, and the Edit switch picks
 //! which curve the display edits in Left/Right and Mid/Side. While sound plays through the
-//! device, the analyser also draws the spectrum of its output as a filled grey area behind the
+//! device, the analyser also draws the spectrum of its output as a filled gray area behind the
 //! curve, on the display's own vertical scale, from a ring the engine's audio thread keeps in
 //! the meter monitor. Which band is selected and which curve is edited are panel state; every
 //! edit is a `device.setParam` command, addressed by the device's full path, so a panel works
@@ -55,7 +55,7 @@ const DRAWN_RATE: f64 = DEFAULT_SAMPLE_RATE;
 /// The types whose gain shapes the response; the cuts and the notch have no gain.
 const GAIN_TYPES: [usize; 3] = [2, 3, 5];
 /// How many bands the analyser folds the spectrum into over the display's frequency range.
-/// 128 keeps a sine's peak narrow: each band spans about 6.2 % of its centre frequency,
+/// 128 keeps a sine's peak narrow: each band spans about 6.2 % of its center frequency,
 /// about 27 Hz at 440 Hz, so the transforms closest to the tone carry its peak alone and
 /// the columns beside it read the skirts.
 const ANALYSER_BANDS: usize = 128;
@@ -64,7 +64,7 @@ const ANALYSER_BANDS: usize = 128;
 /// sits far below a ±15 dB grid, so on the grid the line would fall below the display and
 /// never show (docs/spec/eq.md › The panel › The analyser).
 const ANALYSER_DB: (f64, f64) = (0.0, -60.0);
-/// The strength of the analyser's filled area's grey, of the theme's secondary grey at its
+/// The strength of the analyser's filled area's gray, of the theme's secondary gray at its
 /// full value: enough to read the shape at a glance, dim enough to sit behind the curve and
 /// the grid's labels.
 const ANALYSER_FILL: f32 = 0.45;
@@ -78,10 +78,10 @@ const ANALYSER_ATTACK: f64 = 0.02;
 /// reads instead of flickering bars.
 const ANALYSER_RELEASE: f64 = 1.2;
 
-/// The analyser's filled area's grey: the theme's secondary grey scaled to [`ANALYSER_FILL`] of
+/// The analyser's filled area's gray: the theme's secondary gray scaled to [`ANALYSER_FILL`] of
 /// its value, opaque, so the area reads as a solid shape over the grid behind it
 /// (`gamma_multiply` would thin it to a veil the grid shows through).
-fn analyser_grey(colors: &super::device_canvas::Colours) -> Color32 {
+fn analyser_gray(colors: &super::device_canvas::Colors) -> Color32 {
     let [r, g, b, _] = colors.text_secondary.to_array();
     Color32::from_rgb(
         (r as f32 * ANALYSER_FILL).round() as u8,
@@ -403,7 +403,7 @@ fn draw_display(
     two_curves: bool,
     spectrum: Option<&[f32; ANALYSER_BANDS]>,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let painter = ui.painter_at(display);
     ui.interact(display, ui.scope_id().with("eq-display"), Sense::hover())
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, "EQ response display"));
@@ -439,8 +439,8 @@ fn draw_display(
             }
         }
     }
-    // The analyser's filled grey area behind the response curves: the same frequency axis, its
-    // own vertical scale across the display's height, each band by its centre frequency — the
+    // The analyser's filled gray area behind the response curves: the same frequency axis, its
+    // own vertical scale across the display's height, each band by its center frequency — the
     // shape of the sound as the EQ shaped it, filled from its boundary down to the display's
     // bottom, not a level read against the gain grid.
     if let Some(bands) = spectrum {
@@ -448,19 +448,19 @@ fn draw_display(
             .iter()
             .enumerate()
             .map(|(band, &db)| {
-                let centre =
+                let center =
                     FREQUENCY.0 * (FREQUENCY.1 / FREQUENCY.0).powf((band as f64 + 0.5) / ANALYSER_BANDS as f64);
-                Pos2::new(frequency_x(centre, display), analyser_y(f64::from(db), display))
+                Pos2::new(frequency_x(center, display), analyser_y(f64::from(db), display))
             })
             .collect();
-        let grey = analyser_grey(&colors);
+        let gray = analyser_gray(&colors);
         // The filled area is a strip of triangles between the boundary and the display's
         // bottom; a raw mesh has a hard edge, so the boundary is drawn again as a stroke over
         // it, softening it the way the grid's own lines are softened.
         let mut mesh = egui::Mesh::default();
         for point in boundary.iter() {
-            mesh.colored_vertex(*point, grey);
-            mesh.colored_vertex(Pos2::new(point.x, display.bottom()), grey);
+            mesh.colored_vertex(*point, gray);
+            mesh.colored_vertex(Pos2::new(point.x, display.bottom()), gray);
         }
         for index in 1..boundary.len() as u32 {
             let top = index * 2;
@@ -468,7 +468,7 @@ fn draw_display(
             mesh.add_triangle(top - 1, top, top + 1);
         }
         painter.add(egui::Shape::mesh(mesh));
-        painter.add(egui::Shape::line(boundary, Stroke::new(1.0, grey)));
+        painter.add(egui::Shape::line(boundary, Stroke::new(1.0, gray)));
     }
     for (y, text) in db_labels {
         painter.text(
@@ -511,7 +511,7 @@ fn draw_dots(
     address: &Address,
     actions: &mut Vec<Action>,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let painter = ui.painter_at(display);
     for (index, band) in edited.iter().copied().enumerate() {
         let at = Pos2::new(
@@ -627,7 +627,7 @@ fn draw_strip(
     let field_name = ["Frequency", "Gain", "Q"][field];
     let Some(parameter) = parameter_by_field(parameters, selection.0, selection.1, field_name) else { return };
     let logarithmic = parameter.id.ends_with('Q') || parameter.id.ends_with("Frequency");
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let group = Rect::from_min_size(
         bounds.min + Vec2::new(STRIPS[0], STRIPS[1] + field as f32 * STRIPS[3]),
         Vec2::new(STRIPS[2], STRIPS[3]),
@@ -657,7 +657,7 @@ fn draw_strip(
         colors.text_value,
     );
     // The dial takes the room the row's bands leave: the caption to 12, the value from 37,
-    // and the group is 54 high - so the wheel is 24 points, centred between them. The
+    // and the group is 54 high - so the wheel is 24 points, centered between them. The
     // earlier 38-point wheel ran into the value's text (a screenshot from Ari).
     let dial_center = Pos2::new(group.center().x, group.top() + 25.0);
     let response = ui
@@ -742,7 +742,7 @@ fn draw_type_menus(
     address: &Address,
     actions: &mut Vec<Action>,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     for (index, band) in edited.iter().copied().enumerate() {
         let rect = Rect::from_min_size(
             bounds.min + Vec2::new(DISPLAY[0] + index as f32 * BAND_WIDTH, MENU_ROW),
@@ -827,7 +827,7 @@ fn draw_numbers(
     address: &Address,
     actions: &mut Vec<Action>,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     for (index, band) in edited.iter().copied().enumerate() {
         let rect = Rect::from_min_size(
             bounds.min + Vec2::new(DISPLAY[0] + index as f32 * BAND_WIDTH, NUMBER_ROW),
@@ -877,7 +877,7 @@ fn draw_numbers(
 /// The Edit switch in the globals' column: which curve's bands the display edits, in Left/Right
 /// and Mid/Side. Panel state only; the device has no such parameter.
 fn draw_edit_switch(ui: &mut egui::Ui, bounds: Rect, selection: &mut (usize, usize), address: &Address) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let rect = Rect::from_min_size(bounds.min + Vec2::new(EDIT[0], EDIT[1]), Vec2::new(EDIT[2], EDIT[3]));
     let painter = ui.painter_at(rect);
     let width = rect.width() / 2.0 - 1.0;

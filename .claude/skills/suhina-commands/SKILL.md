@@ -24,7 +24,7 @@ Every change a user makes to a project is a command (AGENTS.md rule 6). The regi
    `TRANSPORT` on a project, or `CommandKind::on(Target::Library, Effect::Change)` and the like
    for what is Suhina's rather than a project's. A drag's command takes `GESTURE`.
    - `Policy::DEFAULT`: heard, so the playing graph is rebuilt after it;
-   - `Policy::UNHEARD`: changes only what is shown (a name, a colour, a marker);
+   - `Policy::UNHEARD`: changes only what is shown (a name, a color, a marker);
    - `Policy::CRITICAL`: a backup is written just before it;
    - `agents: Agents::Denied(..)` or `Agents::NotWhenAttached(Agents::SETTINGS)` for what an agent
      may not run (ADR 0028).

@@ -328,7 +328,7 @@ impl BranchMix {
 }
 
 /// A branch's gains: its volume, and its pan by the equal-power law a track's channel uses,
-/// centred at unity.
+/// centered at unity.
 fn branch_gains(volume: f64, pan: f64) -> (f32, f32) {
     let volume = if volume.is_finite() { volume.max(0.0) } else { 0.0 };
     let (left, right) = suhina_dsp::pan::gains(pan);

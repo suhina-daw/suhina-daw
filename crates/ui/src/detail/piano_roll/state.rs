@@ -282,10 +282,10 @@ pub struct PianoRollState {
     /// The toolbar's Hide editor button was clicked this frame: the window hides the editor.
     pub hide_requested: bool,
     /// The key rows were scrolled by hand (the wheel, a pan, zooming the key height) since the
-    /// clip was shown: until then a change in the editor's height centres the notes again.
+    /// clip was shown: until then a change in the editor's height centers the notes again.
     pub(super) scrolled_by_hand: bool,
-    /// The grid's height the notes were last centred for.
-    pub(super) centred_for: f32,
+    /// The grid's height the notes were last centered for.
+    pub(super) centered_for: f32,
     /// Frames left to keep the selected notes in view: a key moved or sized them, and the view
     /// follows them on the frame the command lands and the one after.
     pub(super) reveal_selection: u8,
@@ -306,7 +306,7 @@ pub struct PianoRollState {
     /// it is added when the button is let go, dragged or not, and that click adds nothing more.
     pub(super) press_draw: bool,
     /// The fold and the clip's scale the rows were last drawn for: when they change, the notes are
-    /// centred in the new rows.
+    /// centered in the new rows.
     pub(super) rows_for: Option<(Fold, Option<Scale>)>,
     /// An edit of the selected notes asked to make room under them once they are let go.
     pub(super) settle_pending: bool,
@@ -404,7 +404,7 @@ impl Default for PianoRollState {
             focus_first: false,
             hide_requested: false,
             scrolled_by_hand: false,
-            centred_for: 0.0,
+            centered_for: 0.0,
             reveal_selection: 0,
             step_anchor: None,
             playing_key: None,

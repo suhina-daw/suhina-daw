@@ -12,13 +12,13 @@ use suhina_ui::demo::demo_project;
 use suhina_ui::settings::settings_view::Page;
 use suhina_ui::{App, kit::theme};
 
-/// The colour variable `variable` (a name without `--`) as the window's root resolved it in the
-/// last frame: the theme in use's colour.
+/// The color variable `variable` (a name without `--`) as the window's root resolved it in the
+/// last frame: the theme in use's color.
 #[allow(clippy::expect_used)] // a test helper outside #[test] functions
 fn live(variable: &str) -> egui::Color32 {
     suhina_ui::kit::native_css::root_color(&format!("--{variable}"))
         .or_else(|| suhina_ui::kit::theme::default_color(variable))
-        .expect("a colour variable")
+        .expect("a color variable")
 }
 
 /// A window too short for most pages.
@@ -55,7 +55,7 @@ fn render_themes_gallery_and_editor_for_review() {
     harness.render().unwrap().save(folder.join("editor.png")).unwrap();
 }
 
-/// A swatch is a rounded rectangle its colour fills to the edge, larger on the large card, and
+/// A swatch is a rounded rectangle its color fills to the edge, larger on the large card, and
 /// a card without variants is as high as one with them.
 #[test]
 fn variant_swatches_fill_their_rectangle_and_cards_are_one_height() {
@@ -188,7 +188,7 @@ fn many_variant_swatches_narrow_to_fit_on_one_line() {
 }
 
 #[test]
-fn theme_cards_show_a_thumbnail_or_a_card_in_the_swatch_colour() {
+fn theme_cards_show_a_thumbnail_or_a_card_in_the_swatch_color() {
     let (mut plain, warnings) = theme::from_folder(theme::ThemeMeta::new("Plain", "#123456"), ":root {}");
     assert!(warnings.is_empty(), "{warnings:?}");
     plain.thumbnail = None;
@@ -205,7 +205,7 @@ fn theme_cards_show_a_thumbnail_or_a_card_in_the_swatch_colour() {
     harness.run();
     harness.get_by_label("Settings page: Themes").click();
     harness.run();
-    // A theme without a thumbnail is a blank card filled with its swatch colour.
+    // A theme without a thumbnail is a blank card filled with its swatch color.
     let card = harness.get_by_label("Theme: Plain").rect();
     let swatch = egui::Color32::from_rgb(0x12, 0x34, 0x56);
     assert!(
@@ -260,7 +260,7 @@ fn themes_gallery_switches_immediately_and_opens_a_separate_editor() {
     let mut harness = short_window();
     harness.get_by_label("Settings page: Themes").click();
     settle(&mut harness);
-    assert!(harness.query_by_label("Colour grid.major").is_none());
+    assert!(harness.query_by_label("Color grid.major").is_none());
     wheel_to(&mut harness, "Theme: Suhina Light", 40);
     harness.get_by_label("Theme: Suhina Light").click();
     settle(&mut harness);
@@ -273,7 +273,7 @@ fn themes_gallery_switches_immediately_and_opens_a_separate_editor() {
     settle(&mut harness);
     // The variant editor shows only the theme's own quick controls, and Suhina Light declares none.
     assert!(harness.query_by_label_contains("This theme offers no quick controls").is_some());
-    assert!(harness.query_by_label("Colour grid.major").is_none());
+    assert!(harness.query_by_label("Color grid.major").is_none());
     assert!(harness.query_by_label("Theme panel liquid").is_none());
     assert!(harness.query_by_label("Theme: Suhina Light").is_none());
     assert_eq!(
@@ -385,20 +385,20 @@ fn holding_a_themes_own_setting_keeps_the_window_clear_until_release() {
             }
             _ => None,
         })
-        .expect("the colour picker's square");
+        .expect("the color picker's square");
     let pointer = square.center();
     harness.hover_at(pointer);
     harness.step();
     harness.input_mut().events.push(button(pointer, true));
     for _ in 0..6 {
         harness.step();
-        assert!(!dimmed(&harness), "clear while the colour is held");
+        assert!(!dimmed(&harness), "clear while the color is held");
     }
     harness.input_mut().events.push(button(pointer, false));
     harness.step();
-    assert!(dimmed(&harness), "dimmed again when the colour is let go");
+    assert!(dimmed(&harness), "dimmed again when the color is let go");
 
-    // The colours that follow the setting follow it every time, not only the first.
+    // The colors that follow the setting follow it every time, not only the first.
     let first = live("accent");
     for (fraction, x) in [(0.2, 0.8), (0.8, 0.3)] {
         let before = live("accent");
@@ -410,7 +410,7 @@ fn holding_a_themes_own_setting_keeps_the_window_clear_until_release() {
         harness.input_mut().events.push(button(pointer, false));
         harness.step();
         harness.step();
-        assert_ne!(live("accent"), before, "the accent follows the colour picked at {pointer:?}");
+        assert_ne!(live("accent"), before, "the accent follows the color picked at {pointer:?}");
         assert_ne!(live("accent"), first);
     }
 }
@@ -434,7 +434,7 @@ fn discard_changes_restores_a_themes_own_settings() {
     settle(&mut harness);
     let original = live("accent");
 
-    // A setting that no colour follows counts as a change too.
+    // A setting that no color follows counts as a change too.
     let glow = |h: &Harness<'static, App>| {
         h.get_by_role_and_label(egui::accesskit::Role::Slider, "Glow").accesskit_node().numeric_value()
     };
@@ -458,7 +458,7 @@ fn discard_changes_restores_a_themes_own_settings() {
             }
             _ => None,
         })
-        .expect("the colour picker's square");
+        .expect("the color picker's square");
     let press = |h: &mut Harness<'static, App>, pressed| {
         h.input_mut().events.push(egui::Event::PointerButton {
             pos: square.center(),
@@ -487,7 +487,7 @@ fn discard_changes_restores_a_themes_own_settings() {
     harness.get_by_label("Discard changes").click();
     settle(&mut harness);
     answer(&mut harness, "Discard");
-    assert_eq!(live("accent"), original, "the colour that follows the setting is back");
+    assert_eq!(live("accent"), original, "the color that follows the setting is back");
     assert_eq!(glow(&harness), before, "the slider is back");
 }
 
@@ -543,9 +543,9 @@ fn holding_a_real_slider_keeps_the_live_preview_visible() {
     let mut harness = short_window();
     harness.get_by_label("Search settings").focus();
     settle(&mut harness);
-    harness.get_by_label("Search settings").type_text("Track header colour strength");
+    harness.get_by_label("Search settings").type_text("Track header color strength");
     settle(&mut harness);
-    let rect = harness.get_by_label("Track header colour strength").rect();
+    let rect = harness.get_by_label("Track header color strength").rect();
     let pointer = rect.center();
     harness.hover_at(pointer);
     harness.step();
@@ -744,7 +744,7 @@ fn every_page_scrolls_to_its_last_setting_in_a_short_window() {
         ("Arrangement", Some("Show advanced settings")),
         ("Launcher and mixer", Some("Mixer control style: Knob")),
         ("Clip editor", Some("Piano roll toolbar size: Larger")),
-        ("Browser", Some("Colour tag limit: 1024")),
+        ("Browser", Some("Color tag limit: 1024")),
         ("Keys", Some("Change keys of file.new")),
         ("Appearance", Some("Show advanced settings")),
         ("Themes", Some("Browse for Themes folder")),
@@ -1053,16 +1053,16 @@ fn the_variant_editor_shows_only_the_themes_quick_controls() {
     for control in ["Background", "Panels", "Text", "Accent", "Selection"] {
         assert!(harness.query_all_by_label(control).next().is_some(), "{control} is one of Nord's quick controls");
     }
-    for gone in ["Colour accent", "Colour grid.major", "Theme panel liquid", "Use global liquid settings"] {
+    for gone in ["Color accent", "Color grid.major", "Theme panel liquid", "Use global liquid settings"] {
         assert!(harness.query_by_label(gone).is_none(), "{gone} is not a quick control of the theme");
     }
     assert!(harness.query_by_label_contains("This theme offers no quick controls").is_none());
 }
 
-/// A quick control's colour picker offers normal blending only: an additive colour is kept by egui
-/// with an alpha of 0, so choosing it saved the colour as transparent.
+/// A quick control's color picker offers normal blending only: an additive color is kept by egui
+/// with an alpha of 0, so choosing it saved the color as transparent.
 #[test]
-fn a_quick_controls_colour_picker_has_no_additive_blending() {
+fn a_quick_controls_color_picker_has_no_additive_blending() {
     let mut harness = short_window();
     harness.get_by_label("Settings page: Themes").click();
     settle(&mut harness);
@@ -1072,7 +1072,7 @@ fn a_quick_controls_colour_picker_has_no_additive_blending() {
     wheel_to(&mut harness, "Edit current variant", 40);
     harness.get_by_label("Edit current variant").click();
     settle(&mut harness);
-    harness.query_all_by_role(egui::accesskit::Role::ColorWell).next().expect("a colour control").click();
+    harness.query_all_by_role(egui::accesskit::Role::ColorWell).next().expect("a color control").click();
     settle(&mut harness);
     assert!(harness.query_by_label("Normal").is_none() && harness.query_by_label("Additive").is_none());
 }
@@ -1234,9 +1234,9 @@ fn new_variant_is_off_for_a_theme_without_quick_controls() {
 }
 
 /// A card's and a swatch's right-click menus offer what the card shows, with what a built-in theme
-/// can't do greyed out.
+/// can't do grayed out.
 #[test]
-fn right_click_menus_grey_out_what_a_built_in_theme_cannot_do() {
+fn right_click_menus_gray_out_what_a_built_in_theme_cannot_do() {
     let mut harness = short_window();
     ink_and_dim(&mut harness);
     wheel_to(&mut harness, "Theme: Nord", 40);

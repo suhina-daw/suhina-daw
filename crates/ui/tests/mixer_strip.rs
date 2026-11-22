@@ -683,7 +683,7 @@ fn session_pan_spans_the_strip_and_sends_have_room_for_values() {
     assert!(b.right() <= pan.right());
     let volume = harness.get_by_label("Drums volume").rect();
     let meter = harness.get_by_label_contains("Drums level:").rect();
-    // The fader is centred in the strip, as Main's is (#1487 B19); sends occupy one horizontal row
+    // The fader is centered in the strip, as Main's is (#1487 B19); sends occupy one horizontal row
     // below the controls.
     assert!((volume.center().x - pan.center().x).abs() <= 0.5, "{volume:?} {pan:?}");
     assert_eq!(a.left(), pan.left());

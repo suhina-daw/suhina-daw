@@ -144,7 +144,7 @@ impl MidiMapping {
     pub(crate) fn controller(&self, event: &LinkEvent) -> Option<(usize, ParamID, ParamValue)> {
         let (number, value) = match event.kind {
             EventKind::Controller { number, value, .. } => (usize::from(number), f64::from(value)),
-            // -1 to 1 becomes 0 to 1, the centre at one half.
+            // -1 to 1 becomes 0 to 1, the center at one half.
             EventKind::PitchBend { value, .. } => (129, (f64::from(value) + 1.0) / 2.0),
             // Channel aftertouch, as VST3 numbers it (#812).
             EventKind::Pressure { value, .. } => (128, f64::from(value)),

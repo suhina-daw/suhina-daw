@@ -3,7 +3,7 @@ description: The layout of Suhina's own project file (.suhina), field by field, 
 read_when: .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, version history, newer file refused, base64 state, muted note, note flags, velocity range, clip scale, default_scale, scale root and mode
 type: spec
 status: current
-last_verified: 2026-11-18
+last_verified: 2026-11-23
 covers:
   - crates/project-file/src/lib.rs
   - crates/model/src/ids.rs
@@ -11,14 +11,15 @@ covers:
 
 # The .suhina project file
 
-Suhina's own project file ([ADR 0010](../decisions/0010-project-files.md)), version 5. It is
+Suhina's own project file ([ADR 0010](../decisions/0010-project-files.md)), version 16 (the last
+row of *Versions* below; `VERSION` in `crates/project-file/src/lib.rs`). It is
 UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 ([ADR 0001](../decisions/0001-daw-neutral-model.md)); this lists them and what a reader accepts.
 
 ```json
 {
   "format": "suhina",
-  "version": 5,
+  "version": 16,
   "project": {
     "transport": { "tempo_bpm": 120.0, "time_signature": [4, 4] },
     "tracks": [ … ], "channels": [ … ], "contents": [ … ],
@@ -31,8 +32,8 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 
 ## Rules
 
-- `format` is `"suhina"` and `version` a whole number from 1 to the newest the reader knows (5);
-  anything else is refused, and the message names the format the file gave or the newest version
+- `format` is `"suhina"` and `version` a whole number from 1 to the newest the reader knows (the
+  last row of *Versions*, 16 as written here); anything else is refused, and the message names the format the file gave or the newest version
   the reader knows. A writer always writes the newest version (*Versions* below). Files saved
   before 2026-10-13 named another format and are not read
   ([ADR 0010](../decisions/0010-project-files.md) decision 12).
@@ -100,6 +101,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | 13 | A note's `velocity_range`, -127 to 127, written only when it is not 0 ([ADR 0037](../decisions/0037-rolled-note-values.md)); an earlier file's notes have none | #1282 |
 | 14 | A content's `linked`, for linked copies ([arrangement editing](arrangement-editing.md) › Linked copies); the `cosine` fade shape; a device's `inputs`, its key ([sidechain](sidechain.md)). An earlier file has none of them: its contents are not linked and its devices read no key | #1446 |
 | 15 | A track's `folder` and a device's `instrument`, written only when true (#1416): a presentation folder, and a device that is an instrument whatever its plug-in is now. A file before it said them with the `suhina/folder` (data `[1]`), `suhina/instrument` and `suhina/missing-instrument` extensions; they are read into the fields and dropped | #1446 |
+| 16 | The stretch modes' settings: a clip audio's `warp_settings` `{ slice, tail, envelope, grain, scatter }` ([clip panel](clip-panel.md) › Warp mode settings); an earlier file has none, every clip at the defaults | — |
 
 ## Parts
 
@@ -116,10 +118,10 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | `default_scale` | in `project`, beside `transport`: the scale new MIDI clips take, written only when the project has one; missing or `null` means none |
 | note | `time`, `duration` (beats); `key` 0–127; `velocity`, `release_velocity` 0–1; `channel` 0–15; `muted` (written only when the note is muted, missing means it plays; [ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: muted notes); `velocity_range` -127 to 127 (from version 13, written only when it is not 0; how far above or below its velocity the note may play, rolled each time it starts: [ADR 0037](../decisions/0037-rolled-note-values.md)) |
 | audio | `file` (relative to the project file, `/` between folders); `absolute_file`; `sample_rate`, `channels`, `duration_seconds` (if known); before version 10 also the state its clips play it with (`warped`, `stretch`, `warp_markers`, `gain`, `transpose`; see clip audio), read into each clip of the content; `stream`: which audio track of a file with several plays (a Stems file: 0 the master, 1 and up the stems; missing or `null` for an ordinary file) |
-| arrangement | `lanes`; `markers` `[{ beat, name }]`: named positions on the timeline, `beat` a number from 0 on; read in any order and kept in beat order; left out when there are none ([arrangement editing](arrangement-editing.md#markers)); `takes` `[{ track, name, clips, color? }]`: the take lanes, recorded passes kept under their tracks in the order recorded, their clips written as a lane's are but without ids, `color` (`"#RRGGBB"`) the take's own colour, left out while it takes the palette's; left out when there are none ([recording](recording.md#take-lanes)) |
+| arrangement | `lanes`; `markers` `[{ beat, name }]`: named positions on the timeline, `beat` a number from 0 on; read in any order and kept in beat order; left out when there are none ([arrangement editing](arrangement-editing.md#markers)); `takes` `[{ track, name, clips, color? }]`: the take lanes, recorded passes kept under their tracks in the order recorded, their clips written as a lane's are but without ids, `color` (`"#RRGGBB"`) the take's own color, left out while it takes the palette's; left out when there are none ([recording](recording.md#take-lanes)) |
 | arrangement lane | `id`; `name`; `track` or `null`; `clips` |
 | clip | `swing` `{ amount, own }` (version 11 on: the clip's own swing, 0 to 1, and whether it plays it instead of the project's; left out at its start; [swing](swing.md)); `id`; `content`; `start`, `length`, `offset` (beats); `loop` `[start, end]` or `null`; `enabled`; `fade_in`, `fade_out` (beats); `fade_in_shape`, `fade_out_shape` (`linear`, `equal_power`, `fast`, `slow` or `s_curve`; default `linear`) and `fade_in_curve`, `fade_out_curve` (−1 to 1, default 0), see [arrangement-editing](arrangement-editing.md#fades); `follow` (written only when it differs from the default, missing means off) `{ enabled, time, linked, a, b, chance_a, chance_b }`: time in beats (more than 0, at most 100000), actions `nothing`, `stop`, `again`, `previous`, `next`, `first`, `last`, `any`, `other` or `jump N` (N a scene, from 1), chances 0–100, see [clip-launching](clip-launching.md#follow-actions); `launch` `{mode, legato, quantization}`, written only when it differs from the defaults (`trigger`, `false`, `global`), each key optional, see [clip-launching](clip-launching.md#launch-settings); `ara` (`true`, written only when set): the clip plays through its channel's clip host (#990); `audio` (written only when it differs from the starting state: a clip audio, below) |
-| clip audio | an audio clip's own state, version 10 on ([clip panel](clip-panel.md)): `gain` (linear, default 1); `gain_envelope` `[{ beat, db, curve? }]` (content beats; dB from the gain, −70 to +24; `curve` the segment to the next point as an automation point's, `[x1, y1, x2, y2]` or a bend, left out when straight; at most 10 000; left out when empty); `transpose` (semitones, cents as hundredths; default 0); `warped` (default false); `stretch` `repitch`, `rhythmic`, `tonal`, `texture`, `smooth` or `high_quality` (default `smooth`); `warp_markers` `[{ time, audio_time }]` (content beats and file seconds); `tempo_source` `metadata`, `name`, `detected` or `manual` (left out when not known). A `tempo_source` not in this list, or a point without a `beat` or a `db`, is an error naming where it is |
+| clip audio | an audio clip's own state, version 10 on ([clip panel](clip-panel.md)): `gain` (linear, default 1); `gain_envelope` `[{ beat, db, curve? }]` (content beats; dB from the gain, −70 to +24; `curve` the segment to the next point as an automation point's, `[x1, y1, x2, y2]` or a bend, left out when straight; at most 10 000; left out when empty); `transpose` (semitones, cents as hundredths; default 0); `warped` (default false); `stretch` `repitch`, `rhythmic`, `tonal`, `texture`, `smooth` or `high_quality` (default `smooth`); `warp_markers` `[{ time, audio_time }]` (content beats and file seconds); `tempo_source` `metadata`, `name`, `detected` or `manual` (left out when not known); `warp_settings` (version 16 on) `{ slice, tail, envelope, grain, scatter }`, the stretch modes' settings ([clip panel](clip-panel.md) › Warp mode settings): `slice` `transients`, `1/4`, `1/8`, `1/16` or `1/32`, `tail` `off`, `loop` or `back-and-forth`, `envelope` and `scatter` percent (0 to 100), `grain` milliseconds (10 to 400); each field left out is its default (`transients`, `loop`, 100, 60, 25), and the whole object is left out when all are. A number outside its range is written clamped into it (one that is not a number at its default), as the engine plays it, so a project built in code saves to a file that reads back. A `tempo_source` not in this list, a `warp_settings` name not in its list or a number outside its range, or a point without a `beat` or a `db`, is an error naming where it is |
 | scene | `id`; `name`; `tempo_bpm` or `null`; `time_signature` `[numerator, denominator]` (left out when the scene has none; the numerator a whole number from 1 to 255, the denominator 1, 2, 4, 8 or 16) |
 | launcher column | `track`; `slots` `[{ clip, has_stop }]`, one per scene |
 | controller mapping | in the project's `controller_mappings` (from version 9), left out when empty: `source` (`key:<name>` or `note:<channel 1-16>:<note 0-127>`) and `target`, `{ "command", "track", "scene" }`: `clip.launch` with `track` and `scene`, `scene.launch` with `scene`, or `track.stop` with `track`, the scene from 0. A source appears once. The track and scene need not exist: a mapping whose target is gone is kept. A mapping that does not read refuses the file, as every part does. See [MIDI mapping › Launch keys](midi-mapping.md#launch-keys) |

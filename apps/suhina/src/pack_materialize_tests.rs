@@ -19,8 +19,8 @@ fn an_empty_library_receives_the_pack_once() {
         assert!(target.is_file(), "{target:?} is not there after unpack_pack");
         assert_eq!(std::fs::read(&target).unwrap(), bytes, "{name}'s copy is not the pack's bytes");
     }
-    // The provenance and licence records land beside the files ([ADR 0036] › 6): the
-    // README in both Suhina folders, the two licence texts beside the IRs they cover.
+    // The provenance and license records land beside the files ([ADR 0036] › 6): the
+    // README in both Suhina folders, the two license texts beside the IRs they cover.
     for (library_folder, pack_folder, name, bytes) in suhina_device_registry::pack_records() {
         let target = dir.join(library_folder).join(pack_folder).join(name);
         assert!(target.is_file(), "{target:?} is not there after unpack_pack");

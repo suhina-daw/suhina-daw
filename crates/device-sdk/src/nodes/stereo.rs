@@ -58,7 +58,7 @@ pub const PAN: NodeInfo = NodeInfo {
         PortInfo { name: "balance", default: Some(0.0), unit: "balance" },
     ],
     outputs: &["out", "left", "right"],
-    description: "Balance -1..1: unity at centre, attenuates the opposite channel to zero at the extremes.",
+    description: "Balance -1..1: unity at center, attenuates the opposite channel to zero at the extremes.",
     configuration: "none",
     example: "{\"kind\":\"pan\"}",
     rust_variant: "Pan",

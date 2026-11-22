@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! What the browser keeps between runs, in `browser.json` (`docs/spec/browser.md` › Where it is
-//! kept): the folders, the pins, the recent items by group, the colour tags — every one with
+//! kept): the folders, the pins, the recent items by group, the color tags — every one with
 //! an id of its own, grouped into folders of tags — and which items carry them. A file that
 //! cannot be read gives an empty store and a warning; parts that do not make sense are
 //! skipped with a warning.
@@ -88,7 +88,7 @@ impl Group {
     }
 }
 
-/// A colour tag. Items, folders and the order refer to it by its `id`; the `name` is for
+/// A color tag. Items, folders and the order refer to it by its `id`; the `name` is for
 /// people and is unique in the library ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tag {
@@ -188,11 +188,11 @@ impl Section {
     }
 }
 
-/// The named colours a new tag takes its name and colour from: the seven a library starts
-/// with first, then the CSS named colours (W3C Color Module Level 4) trimmed — no colour
-/// carries two names (gray/grey, aqua/cyan, magenta/fuchsia) and consecutive entries sit
+/// The named colors a new tag takes its name and color from: the seven a library starts
+/// with first, then the CSS named colors (W3C Color Module Level 4) trimmed — no color
+/// carries two names (aqua/cyan, magenta/fuchsia) and consecutive entries sit
 /// apart ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
-pub fn named_colours() -> &'static [(&'static str, &'static str)] {
+pub fn named_colors() -> &'static [(&'static str, &'static str)] {
     &[
         ("Red", "#C8645A"),
         ("Orange", "#D08F6E"),
@@ -200,7 +200,7 @@ pub fn named_colours() -> &'static [(&'static str, &'static str)] {
         ("Green", "#7FA673"),
         ("Blue", "#73AAC0"),
         ("Purple", "#A497CC"),
-        ("Grey", "#8C8A85"),
+        ("Gray", "#8C8A85"),
         ("Maroon", "#800000"),
         ("Brown", "#A52A2A"),
         ("Salmon", "#FA8072"),
@@ -317,7 +317,7 @@ fn level_name_taken(entries: &[TagEntry], parent: Option<u32>, name: &str, skip:
     level.iter().any(|e| e.id() != skip && e.name() == name)
 }
 
-/// Whether `text` is a colour as `#RRGGBB`.
+/// Whether `text` is a color as `#RRGGBB`.
 pub fn is_color(text: &str) -> bool {
     text.len() == 7 && text.starts_with('#') && text[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
@@ -515,7 +515,7 @@ fn folder_mut_in(entries: &mut Vec<TagEntry>, id: u32) -> Option<&mut TagFolder>
 const MAX_FILE_TAG_ID: u32 = 1 << 30;
 
 /// Whether a file's entry would be read in, as far as its own fields say: a name of the
-/// right length, and a tag's colour. Only such an entry reserves its id, so a broken one
+/// right length, and a tag's color. Only such an entry reserves its id, so a broken one
 /// takes no room from the ids handed out ([#1254] review).
 fn plausible(node: &Value, tag: bool) -> bool {
     let name = node.get("name").and_then(Value::as_str).map(str::trim).unwrap_or("");
@@ -737,7 +737,7 @@ fn read_tag_entries(
                 continue;
             }
             if !is_color(color) {
-                warnings.push(format!("browser.json: tag {name:?} has no #RRGGBB colour; skipped"));
+                warnings.push(format!("browser.json: tag {name:?} has no #RRGGBB color; skipped"));
                 continue;
             }
             let name = if name_is_id_form(name) {
@@ -971,7 +971,7 @@ pub struct Store {
 impl Default for Store {
     fn default() -> Self {
         let mut next = FIRST_TAG_ID;
-        let tags = named_colours()
+        let tags = named_colors()
             .iter()
             .take(7)
             .map(|(name, color)| {
@@ -1300,11 +1300,11 @@ impl Store {
         before != self.pins.len()
     }
 
-    /// The next name and colour a new tag takes: the first name of the named colours that
-    /// no tag has yet, with that colour ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+    /// The next name and color a new tag takes: the first name of the named colors that
+    /// no tag has yet, with that color ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
     /// A list exhausted numbers the first ("Red 2"), the way `track.paste` names a copy.
     pub fn next_tag_name_and_color(&self) -> (String, String) {
-        let named = named_colours();
+        let named = named_colors();
         for (name, color) in named {
             if !tag_name_taken(&self.tags, name) {
                 return (name.to_string(), color.to_string());
@@ -1320,15 +1320,15 @@ impl Store {
         (format!("{name} 2"), color.to_string())
     }
 
-    /// Adds tag `name` (or its id `id`'s) with `color`, or changes the colour and name of
+    /// Adds tag `name` (or its id `id`'s) with `color`, or changes the color and name of
     /// the one it names. A `name` that no tag has and no `id` names a new one, created with
-    /// the named colours' next turn when `color` is None ([#1254]). The name it wants
+    /// the named colors' next turn when `color` is None ([#1254]). The name it wants
     /// belongs to another tag already: refused.
     ///
     /// `folder` puts a made tag in that folder from its first byte ([#1254] review: the
     /// destination's own level is where the make asks its name), where `None` is the top.
-    /// Its own change only: a make, the same colours as its top-level ride, the checks at
-    /// the level it lands in; colours and renames of a tag another `id` names go on as
+    /// Its own change only: a make, the same colors as its top-level ride, the checks at
+    /// the level it lands in; colors and renames of a tag another `id` names go on as
     /// they did, with `folder` refused.
     pub fn set_tag(
         &mut self,
@@ -1365,7 +1365,7 @@ impl Store {
                     return Err(format!("there are {} tags already, the limit", self.tag_limit));
                 }
                 // The name it is made under: the rename's when one is asked, held to the
-                // same checks whichever colour came with it ([#1254] review: the no-colour
+                // same checks whichever color came with it ([#1254] review: the no-color
                 // make answers its `rename` too).
                 let mut named = wanted.to_string();
                 if let Some(r) = rename.map(str::trim).filter(|r| !r.is_empty()) {
@@ -1396,7 +1396,7 @@ impl Store {
                     });
                 }
                 let color = match color {
-                    // The colour as it was asked; else the named colours' turn from the
+                    // The color as it was asked; else the named colors' turn from the
                     // name it is made under.
                     Some(c) => c.to_string(),
                     None => self.new_tag_color_for(&named),
@@ -1407,11 +1407,11 @@ impl Store {
         Ok(())
     }
 
-    /// The colour a new tag named `name` takes when none was asked: the named colours'
+    /// The color a new tag named `name` takes when none was asked: the named colors'
     /// entry the name names (a hand-named "Tomato" gets its tomato), else the enum's next
-    /// colour ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
+    /// color ([#1254](https://github.com/suhina-daw/suhina-daw/issues/1254)).
     fn new_tag_color_for(&self, name: &str) -> String {
-        match named_colours().iter().find(|(named, _)| *named == name.trim()) {
+        match named_colors().iter().find(|(named, _)| *named == name.trim()) {
             Some((_, color)) => color.to_string(),
             None => self.next_tag_name_and_color().1,
         }
@@ -1429,7 +1429,7 @@ impl Store {
         }
     }
 
-    /// Changes `id`'s colour; `None` changes nothing.
+    /// Changes `id`'s color; `None` changes nothing.
     pub fn set_tag_color(&mut self, id: u32, color: Option<&str>) -> Result<(), String> {
         let Some(color) = color else { return Ok(()) };
         if !is_color(color) {

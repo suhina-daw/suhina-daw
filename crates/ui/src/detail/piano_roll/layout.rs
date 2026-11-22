@@ -126,7 +126,7 @@ pub fn selected_note_color(color: Color32, accent: Color32, plain: Color32) -> C
     if apart(r, ar) + apart(g, ag) + apart(b, ab) < NEAR_COLOR * NEAR_COLOR { plain } else { accent }
 }
 
-/// How far apart two colours are at least, in steps of red, green and blue, to tell them apart at a glance.
+/// How far apart two colors are at least, in steps of red, green and blue, to tell them apart at a glance.
 const NEAR_COLOR: i32 = 120;
 
 /// How much a drag of the grabbed note's right end by `raw` beats changes the selection's
@@ -259,7 +259,7 @@ pub(super) fn tool_role(icon: IconButton) -> String {
 }
 
 /// A tool's icon in place of the pointer, in `rect`: the toolbar's icon (the theme's when it has
-/// one, else the built-in artwork) in the text colour, ringed with a point of the window's colour
+/// one, else the built-in artwork) in the text color, ringed with a point of the window's color
 /// so it reads over a note as well as over the empty grid.
 ///
 /// It is `icon[kind="pointer"]`: its `color`, and its `background-color` for the ring.
@@ -311,17 +311,17 @@ pub(super) fn fit(state: &mut PianoRollState, grid: Rect, clip: &PianoClip, rows
     state.beat_width = clamp_beat_width(width / clip.length.max(1.0) as f32, &PIANO_ROLL_BEAT_WIDTHS);
     state.scroll.x = 0.0;
     state.scrolled_by_hand = false;
-    centre_notes(state, grid.height(), clip, rows);
+    center_notes(state, grid.height(), clip, rows);
 }
 
 /// Scrolls the key rows so the middle of the clip's lowest and highest note (C3 for an empty
 /// clip) is in the middle of a grid `height` tall, counting the rows `rows` shows.
-pub(super) fn centre_notes(state: &mut PianoRollState, height: f32, clip: &PianoClip, rows: &KeyRows) {
+pub(super) fn center_notes(state: &mut PianoRollState, height: f32, clip: &PianoClip, rows: &KeyRows) {
     let (low, high) = clip.notes.iter().fold((u8::MAX, 0u8), |(lo, hi), n| (lo.min(n.key), hi.max(n.key)));
     let middle = if low <= high { rows.middle_row(low, high) } else { rows.middle_row(60, 60) };
     let height = height.max(1.0);
     state.scroll.y = middle * state.key_height + state.key_height / 2.0 - height / 2.0;
-    state.centred_for = height;
+    state.centered_for = height;
 }
 
 /// The wheel scrolls, with Ctrl it zooms time and with Ctrl+Shift or Alt key height, around

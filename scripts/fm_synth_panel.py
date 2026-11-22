@@ -3,8 +3,8 @@
 
 """Writes devices/fm-synth/panel.json: the device row and the expanded panel (docs/spec/fm-synth.md).
 
-Colours are only the theme's palette and the --device-* tokens: a theme changes the panel's styles
-and nothing else (ADR 0034), and this script fails when a drawing has any other colour. Algorithm
+Colors are only the theme's palette and the --device-* tokens: a theme changes the panel's styles
+and nothing else (ADR 0034), and this script fails when a drawing has any other color. Algorithm
 pictures come from the engine's table in devices/fm-synth/src/core.rs.
 Run from the repository root: python scripts/fm_synth_panel.py
 """
@@ -20,7 +20,7 @@ from multiband_panel import (ACCENT, BORDER, CONTROL, DISPLAY, HIGHLIGHT, INVISI
 
 MODULATOR = [3, 0, 4, 255]
 CARRIER = [3, 0, 3, 255]
-# Each operator's colour, the same on its row, in the algorithm's picture and where something is sent to it.
+# Each operator's color, the same on its row, in the algorithm's picture and where something is sent to it.
 OP_COLORS = {1: [3, 0, 2, 255], 2: [3, 0, 3, 255], 3: [3, 0, 4, 255], 4: HIGHLIGHT, 5: SPECTRUM_COLOR, 6: ACCENT}
 CAPTION = tint(TEXT, 170)
 QUIET = tint(TEXT, 110)
@@ -248,14 +248,14 @@ def written(pid, x, y, value, suffix, decimals, size=11.0):
 
 def field(pid, caption, bounds, value, suffix="", decimals=0, log=False, visible=None, tag="", cid=None, invert=False, fill="bar", plain=False):
     """A number field that is its own slider: dragging up or down changes `pid` and the fill shows where
-    it is, from the left or, with `fill` "centre", from the middle. Tall enough, its name is over its
+    it is, from the left or, with `fill` "center", from the middle. Tall enough, its name is over its
     value; wide enough, beside it. In a table (`plain`) the column has its name."""
     _, _, w, h = bounds
     drawing = [rect(0.0, 0.0, w, h, CONTROL, 3.0)]
     share = par(pid, True, log)
     if fill == "bar":
         drawing.append(rect(0.0, 0.0, mul(share, w), h, FILL, 3.0))
-    elif fill == "centre":
+    elif fill == "center":
         drawing.append(rect(minimum(w / 2.0, mul(share, w)), 0.0, mul(maximum(sub(share, 0.5), sub(0.5, share)), w), h, FILL))
     if plain or (h < 28.0 and w < 90.0):
         drawing.append(written(pid, w / 2.0, (h - 13.0) / 2.0, value, suffix, decimals))
@@ -611,8 +611,8 @@ def lfo_curve(w, h, amplitude, color, shown, speed):
 
 
 def lfo_picture(x, y, w, h, tag, visible=None):
-    """The second LFO: its wave quietly, and in colour as much of it as reaches the sound. More cycles
-    fit as its rate rises, they run while it is on, and its amount and envelope shape the colour."""
+    """The second LFO: its wave quietly, and in color as much of it as reaches the sound. More cycles
+    fit as its rate rises, they run while it is on, and its amount and envelope shape the color."""
     reach = h / 2.0 - 5.0
     grid = [line([0.0, h * k / 4.0], [w, h * k / 4.0], GRID) for k in (1, 3)] + [line([w * k / 8.0, 0.0], [w * k / 8.0, h], GRID) for k in range(1, 8)]
     ground = [rect(0.0, 0.0, w, h, DISPLAY, 3.0)] + grid + [line([0.0, h / 2.0], [w, h / 2.0], tint(TEXT, 60))]
@@ -709,8 +709,8 @@ def op_tuning(n, coarse_bounds, fine_bounds, tag, visible=None):
 
 
 def op_mark(cid, n, bounds, visible=None):
-    """Operator `n`'s colour along the left of `bounds`."""
-    return graphic(cid, f"Operator {n}'s colour", bounds, [rect(0.0, 2.0, 3.0, bounds[3] - 4.0, OP_COLORS[n], 1.0)], visible)
+    """Operator `n`'s color along the left of `bounds`."""
+    return graphic(cid, f"Operator {n}'s color", bounds, [rect(0.0, 2.0, 3.0, bounds[3] - 4.0, OP_COLORS[n], 1.0)], visible)
 
 
 def op_toggle(n, bounds, tag):
@@ -962,7 +962,7 @@ def mod_page(x, y, tag):
         controls.append(label_beside(f"mod_{source}_name{tag}", name, cx + 2.0, cy, 58.0, 24.0, shown))
         controls.append(menu(f"mod.{source}.dest1", f"{name} goes to", [cx + 60.0, cy + 1.0, 86.0, 22.0], shown, tag))
         controls.append(field(f"mod.{source}.amount1", f"{name} amount", [cx + 150.0, cy + 1.0, 88.0, 22.0], percent(f"mod.{source}.amount1"), " %",
-                              visible=shown, tag=tag, fill="centre", cid=f"mod.{source}.amount1{tag}", plain=True))
+                              visible=shown, tag=tag, fill="center", cid=f"mod.{source}.amount1{tag}", plain=True))
     controls.append(more(f"more_6{tag}", 6, [x + 245.0 + 60.0, y + 14.0 + 4.0 * 26.0 + 1.0, 178.0, 22.0], shown, "Second routes…"))
     return controls
 
@@ -1039,7 +1039,7 @@ def f_pct(pid, caption, fill="bar"):
 
 
 def f_both(pid, caption):
-    return f_pct(pid, caption, "centre")
+    return f_pct(pid, caption, "center")
 
 
 def f_ms(pid, caption):
@@ -1221,9 +1221,9 @@ def expanded_matrix(y, tag):
         row = y + 18.0 + i * 22.5
         controls.append(graphic(f"x_matrix_{source}", name, [x, row, 86.0, 21.0], [text(0.0, 4.0, name, TEXT, 11.0)], shown))
         controls.append(menu(f"mod.{source}.dest1", f"{name} goes to", [x + columns[0], row, 168.0, 21.0], shown, tag))
-        controls.append(field(f"mod.{source}.amount1", f"{name} amount", [x + columns[1], row, 72.0, 21.0], percent(f"mod.{source}.amount1"), " %", visible=shown, tag=tag, fill="centre", plain=True))
+        controls.append(field(f"mod.{source}.amount1", f"{name} amount", [x + columns[1], row, 72.0, 21.0], percent(f"mod.{source}.amount1"), " %", visible=shown, tag=tag, fill="center", plain=True))
         controls.append(menu(f"mod.{source}.dest2", f"{name} also to", [x + columns[2], row, 218.0, 21.0], shown, tag))
-        controls.append(field(f"mod.{source}.amount2", f"{name} second amount", [x + columns[3], row, 78.0, 21.0], percent(f"mod.{source}.amount2"), " %", visible=shown, tag=tag, fill="centre", plain=True))
+        controls.append(field(f"mod.{source}.amount2", f"{name} second amount", [x + columns[3], row, 78.0, 21.0], percent(f"mod.{source}.amount2"), " %", visible=shown, tag=tag, fill="center", plain=True))
     x, w = 670.0, 430.0
     controls.append(section("x_routes_title", "Classic controllers", x, y, w, shown))
     controls.append(table_heads("x_routes_heads", [(0.0, "Controller"), (84.0, "Range"), (168.0, "Goes to")], x, y + 18.0, w, shown))
@@ -1454,16 +1454,16 @@ def check_reach(panel):
     assert not missing, missing[:12]
 
 
-def check_colours(value):
-    """Every colour in a drawing is the theme's: palette or token, or nothing at all."""
+def check_colors(value):
+    """Every color in a drawing is the theme's: palette or token, or nothing at all."""
     if isinstance(value, dict):
         for key, item in value.items():
             if key in ("color", "background", "fill") and isinstance(item, list):
                 assert item[0] == 3 or item == INVISIBLE, (key, item)
-            check_colours(item)
+            check_colors(item)
     elif isinstance(value, list):
         for item in value:
-            check_colours(item)
+            check_colors(item)
 
 
 def depth_of(expression):
@@ -1499,7 +1499,7 @@ def main():
     explain(panel["ui"])
     explain(panel["expanded"])
     check_reach(panel)
-    check_colours(panel)
+    check_colors(panel)
     check_depth(panel)
     for canvas in (panel["ui"], panel["expanded"]):
         check_fits(canvas)

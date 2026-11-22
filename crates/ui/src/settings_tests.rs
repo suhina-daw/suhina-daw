@@ -206,8 +206,8 @@ fn settings_survive_a_round_trip() {
         zoom: 130,
         map_window: true,
         map_window_rect: Some([-1600, 40, 900, 700]),
-        colour_window_rect: Some([-1200, 90, 340, 315]),
-        recent_colours: vec![suhina_engine::model::Rgb(37, 119, 231), suhina_engine::model::Rgb(230, 12, 90)],
+        color_window_rect: Some([-1200, 90, 340, 315]),
+        saved_colors: vec![suhina_engine::model::Rgb(37, 119, 231), suhina_engine::model::Rgb(230, 12, 90)],
         backup: suhina_session::backup::Interval::Minutes(240),
         backup_clean_up: false,
         agents: true,
@@ -431,7 +431,7 @@ fn every_backup_choice_is_kept_and_others_keep_the_default() {
 
 #[test]
 fn unknown_lines_keep_the_defaults() {
-    let (settings, warnings) = Settings::from_text("animations = sometimes\ncolour = pink\nnonsense\n\n# fine\n");
+    let (settings, warnings) = Settings::from_text("animations = sometimes\ncolor = pink\nnonsense\n\n# fine\n");
     assert_eq!(settings, Settings::default());
     assert_eq!(warnings.len(), 3);
 }

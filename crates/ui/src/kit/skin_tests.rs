@@ -325,10 +325,10 @@ fn a_legacy_skin_s_styles_join_its_sheet_under_today_s_names() {
     assert!(warnings.iter().any(|w| w.contains("nowhere")), "{warnings:?}");
 }
 
-/// Default artwork takes the colour its caller gives as its element's (`currentColor`), with no
-/// palette colour of its own: a knob body drawn in red is red.
+/// Default artwork takes the color its caller gives as its element's (`currentColor`), with no
+/// palette color of its own: a knob body drawn in red is red.
 #[test]
-fn default_artwork_takes_its_colour_from_current_color() {
+fn default_artwork_takes_its_color_from_current_color() {
     configure(&Skin::default());
     let ctx = egui::Context::default();
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -346,9 +346,9 @@ fn default_artwork_takes_its_colour_from_current_color() {
         .find(|image| image.size == [22, 22])
         .expect("the knob's body is rastered");
     output.textures_delta.clear();
-    let centre = image.pixels[image.width() * (image.height() / 2) + image.width() / 2];
-    let [r, g, b, _] = centre.to_srgba_unmultiplied();
-    assert!(r > 200 && g < 60 && b < 60, "{centre:?}");
+    let center = image.pixels[image.width() * (image.height() / 2) + image.width() / 2];
+    let [r, g, b, _] = center.to_srgba_unmultiplied();
+    assert!(r > 200 && g < 60 && b < 60, "{center:?}");
 }
 
 /// The default artwork a theme lacks, which Add default artwork copies; a role it has keeps its own.

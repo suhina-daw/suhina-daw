@@ -2,7 +2,7 @@
   "format": 1,
   "name": "Suhina Studio",
   "author": "The Suhina contributors",
-  "description": "Suhina's own warm greys, with darker, light, blue and forest variants.",
+  "description": "Suhina's own warm grays, with darker, light, blue and forest variants.",
   "swatch": "var(--window-background)",
   "color-scheme": "dark",
   "default-variant": "Dark"

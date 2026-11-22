@@ -38,7 +38,7 @@ serde_json.workspace = true
 eframe = { version = "0.37", features = ["glow", "persistence"] }  # MIT OR Apache-2.0
 # The system's own file and folder dialogs (Browse… beside a path field); on Linux through the
 # desktop portal, in Rust, with no GTK.
-rfd = "0.17"  # MIT
+rfd = "0.18"  # MIT
 # Deleted themes and variants go to the system's Trash or Recycle Bin (#1022).
 trash = { version = "5.4", default-features = false, features = ["coinit_apartmentthreaded", "jiff", "freedesktop"] }  # MIT
 
@@ -51,8 +51,10 @@ window-vibrancy = "0.8"  # MIT OR Apache-2.0
 muda = { version = "0.21", default-features = false }  # MIT OR Apache-2.0
 # The application's appearance, which the system's menus follow; these calls are safe ones.
 objc2 = "0.6"  # MIT
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAppearance", "NSApplication", "NSResponder"] }  # MIT
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }  # MIT
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAppearance", "NSApplication", "NSResponder", "NSView", "NSWindow", "objc2-quartz-core"] }  # MIT
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSArray", "NSEnumerator", "NSKeyValueCoding"] }  # MIT
+# The Metal layers of the windows of their own, pinned to their top left while they resize.
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer"] }  # MIT
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 # Samples dragged out of the window as files the file manager copies (#865): OLE DoDragDrop

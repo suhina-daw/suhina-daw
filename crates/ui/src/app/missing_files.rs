@@ -686,8 +686,8 @@ impl MissingFiles {
         if self.poll() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
-        // The panel is a dialog: the theme may style it, and its panel does not take the window's colour.
-        let dialog = crate::kit::element::DIALOG.enter();
+        // The panel is a dialog: the theme may style it, and its panel does not take the window's color.
+        let dialog = crate::kit::dialog::enter("missing-files");
         crate::kit::floating::area(ui.ctx(), Id::unique("missing-files"), crate::kit::floating::Kind::Own)
             .order(egui::Order::Foreground)
             .fixed_pos(area.min)
@@ -717,9 +717,8 @@ impl MissingFiles {
         let wanted = Vec2::new(WIDEST, wanted.max(560.0));
         let size = crate::kit::floating::dialog_size(dialog, area, wanted);
         let rect = Rect::from_center_size(area.center(), size);
-        let fill = crate::kit::style_class::own_background_or(crate::kit::element::app_fill("panel"));
         // What the dialog holds goes in its content box, inside its border and padding (#1336).
-        let inner = crate::kit::floating::dialog(&painter, dialog, rect, fill);
+        let inner = crate::kit::floating::dialog(&painter, dialog, rect);
         let painter = painter.with_clip_rect(inner);
         let inks = Inks::read();
         let mut outcome = None;
@@ -1455,7 +1454,7 @@ fn row_view(
     }
 }
 
-/// The panel's colours, read once a frame.
+/// The panel's colors, read once a frame.
 struct Inks {
     primary: Color32,
     secondary: Color32,

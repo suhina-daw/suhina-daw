@@ -116,6 +116,12 @@ describe a file. Read only the ones that match your task.
     drawn with an egui widget in a view
     ([docs/design/components.md](docs/design/components.md),
     [docs/guide/theme-authoring.md](docs/guide/theme-authoring.md)).
+16. **Code is written in US English.** Identifiers, file, crate and command names, style sheet
+    elements, attributes, properties and values, comments and test names use US spelling
+    (`color`, `center`, `behavior`, `normalize`, `gray`, `license`). Existing British names are
+    renamed in pull requests of their own, not in passing. Suhina is pre-alpha: a rename of
+    something a theme, a project file or a script reads (a theme element, a setting's key, a
+    command's id) keeps no alias for the old name.
 
 ## 2. Where to read more
 
@@ -151,7 +157,8 @@ Keep the tree building at every step. Report each check as passed, failed (with 
 run (and why). A pull request also carries what [`docs/workflow.md`](docs/workflow.md) › What a
 pull request carries lists: *How to check it*, settings help, a rebuilt app for a device,
 and the documents that describe what changed. A branch never edits what `next` generates:
-`docs/INDEX.md` and `docs/commands.md`. A new *What works now* bullet is a file of its own in `docs/works-now/`, not a line in `ROADMAP.md`.
+`docs/INDEX.md`, `docs/commands.md` and the theme recordings in `apps/theme-render/tests/painted/`
+and `cut/` (CI flags a change to how a theme looks; it is recorded after the merge). A new *What works now* bullet is a file of its own in `docs/works-now/`, not a line in `ROADMAP.md`.
 
 ## Code Review Rules
 

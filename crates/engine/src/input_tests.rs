@@ -473,7 +473,7 @@ fn a_late_delivery_of_held_frames_is_skipped_on_a_stereo_input_too() {
 /// A real loss is not mistaken for a late delivery: the held frames never come, the ring
 /// carries a block's production over nothing (the starvation emptied it), and the skip — which
 /// fires on a whole block's jump over the leftover a whole read leaves — never does. The read
-/// keeps main's behaviour, the take runs the loss's own shape, and one starvation cannot set a
+/// keeps main's behavior, the take runs the loss's own shape, and one starvation cannot set a
 /// skip that starves every block after it.
 #[test]
 fn a_lost_holds_frames_are_not_skipped_as_a_late_delivery() {

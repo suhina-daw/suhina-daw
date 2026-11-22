@@ -8,7 +8,7 @@
 //! right shows the row picked last. A plug-in is switched on or off by its checkbox; a file that
 //! failed, or that is built for another processor, is read again with its **Scan again**. Opened
 //! from Settings › Plug-ins and drawn in the Settings dialog's place until it is closed; what it
-//! changes goes through the `plugin.*` commands, as [`PluginRequest`]s the app runs. Every colour
+//! changes goes through the `plugin.*` commands, as [`PluginRequest`]s the app runs. Every color
 //! comes from the theme.
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Ui, Vec2};
@@ -17,7 +17,7 @@ use crate::kit::theme::{self, PAD};
 use crate::kit::{motion, widgets};
 use crate::settings::settings_view::{PluginRequest, PluginsView};
 
-/// The manager's colours, every one from the style sheet: words by how much they stand out
+/// The manager's colors, every one from the style sheet: words by how much they stand out
 /// (`label` and its kinds), the fills the app paints for itself (`app-fill`), a row's when picked
 /// or under the pointer (`list-row`) and the lines between rows (`separator[kind="row"]`, a
 /// `button`'s `border-color`). Read once a frame where the manager is painted, so its region's
@@ -73,7 +73,7 @@ thread_local! {
     static INKS: std::cell::Cell<Option<Inks>> = const { std::cell::Cell::new(None) };
 }
 
-/// The manager's colours this frame.
+/// The manager's colors this frame.
 fn ink() -> Inks {
     INKS.with(|cell| {
         cell.get().unwrap_or_else(|| {
@@ -329,7 +329,7 @@ impl State {
         }
     }
 
-    /// The mark's and the word's colour, from the theme.
+    /// The mark's and the word's color, from the theme.
     fn inks(self) -> (Color32, Color32) {
         match self {
             State::Ready => (ink().ok, ink().secondary),
@@ -774,7 +774,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     let painter = ui.painter_at(area);
     // What the page holds goes in its content box, inside its border and padding (#1336).
     let area = page.paint(&painter, area).content;
-    // The colours, read once a frame inside the manager's element.
+    // The colors, read once a frame inside the manager's element.
     INKS.with(|cell| cell.set(Some(Inks::read())));
     let parts = parts(area);
     let line = theme::hairline(ink().line);
@@ -913,7 +913,7 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
         let mut on = state.formats.iter().any(|f| f == format);
         let check =
             Rect::from_min_size(Pos2::new(item.left() + 6.0, item.top()), Vec2::new(item.width() - 6.0, item.height()));
-        // Laid out from the left of its line, as the sidebar's other items are, not centred in it.
+        // Laid out from the left of its line, as the sidebar's other items are, not centered in it.
         let layout = egui::Layout::left_to_right(egui::Align::Center);
         let response = ui
             .scope_builder(egui::UiBuilder::new().max_rect(check).layout(layout), |ui| {

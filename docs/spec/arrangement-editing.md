@@ -3,10 +3,10 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-20
+last_verified: 2026-11-23
 covers:
   - crates/session/src/commands.rs
-  - crates/session/src/colours.rs
+  - crates/session/src/colors.rs
   - crates/ui/src/arrangement/timeline.rs
   - crates/ui/src/arrangement/arrangement_view.rs
   - crates/ui/src/arrangement/automation_lanes.rs
@@ -20,7 +20,7 @@ covers:
   - crates/engine/src/loop_tests.rs
   - apps/suhina-cli/src/play.rs
   - crates/ui/src/interaction/menus.rs
-  - crates/ui/src/interaction/colour_picker.rs
+  - crates/ui/src/interaction/color_picker.rs
   - crates/ui/src/interaction/drop.rs
   - crates/session/src/files.rs
   - crates/project-file/src/lib.rs
@@ -46,7 +46,7 @@ Settings > Arrangement > Replace clip defaults off (paste after the selected cli
 When enabled, pasting onto a selected clip removes that whole destination clip and
 places the copy at its start, as one undoable `clip.paste` command with `replace` set
 to the destination clip id. Command clients may also use an unambiguous clip name; missing, ambiguous or other-track targets fail without changing the project. Other clips follow the existing stacking setting.
-Creation-only theme colours never recolour pasted or consolidated clips.
+Creation-only theme colors never recolor pasted or consolidated clips.
 Horizontal scrolling over the track-control pane stays in that pane; only scrolling
 over the timeline moves the arrangement horizontally. Vertical lane scrolling stays linked.
 
@@ -108,7 +108,7 @@ Edges and fades are dragged with Select only. Off, the view works as Select alwa
 **Focus.** The Arrangement and the piano roll are areas of their own: a press in one gives it the
 keyboard. The tool keys (1 to 6) choose the piano roll's tools while it has the keyboard and the
 Arrangement's while the Arrangement has it; with the toolbar on, the Arrangement draws a thin
-outline in the accent colour while it has the keyboard.
+outline in the accent color while it has the keyboard.
 
 ## Moving a clip
 
@@ -149,6 +149,10 @@ straight note value doubles (`1/16` to `1/8` to `1/4`) up to the beat; a triplet
 goes straight to the beat, so lines stay on the bar; from the beat it goes to the bar, then 2, 4,
 8 bars and so on. A value of a bar or more is never drawn finer than it is. So with `1/16`, zoomed
 in, a beat has four lines; zoomed out, lines fall on beats, then on bars.
+
+**Zoom range.** Ctrl and the wheel zoom between 4 000 points a beat and 1 point a beat, or further
+out when the project needs it: always far enough to see it whole, from its start to its last
+clip's end and the 16 bars after it (songs laid end to end, say).
 
 **What snaps.** Everything placed in the view goes to the nearest line of the grid as it is drawn
 at that zoom (never before the start): a clip moved by dragging ([moving a clip](#moving-a-clip)),
@@ -195,40 +199,45 @@ shows its name in the body instead (› Clip edges).
 
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
+A time selection goes over to the tracks so picked, keeping its span: a stretch picked (the loop
+brace's, say) moves from track to track with clicks on their headers. The edit keys still follow
+the header click, the newer act: Delete, like the keys below, acts on the tracks, not on what plays
+in the span, until a time selection is painted again.
 After a header click Delete removes the selected tracks, not a clip (a clip on the track stays
-selected for the detail area until another is picked); a click on a clip or a lane gives Delete
-back to the clips. In the Launcher view a header click does the same for its track (#690). After a
+selected for the detail area until another is picked) and not a device picked before it: the
+header click lets go of that pick, and a device picked after it takes Delete again. A click on a
+clip or a lane gives Delete back to the clips. In the Launcher view a header click does the same for its track (#690). After a
 header click **Ctrl+C**, **Ctrl+X**, **Ctrl+V** and **Ctrl+D** copy, cut, paste and duplicate the
 selected tracks, in their order, one undo step each (Tracks, #919). A time selection painted
 afterwards, in the lanes or on the ruler, or a click in a lane takes these keys back from the
 tracks: they then act on the painted time, until a header is clicked again (#1199). The
-header shows its track's colour strongly (60 % over the panel); a selected track's is filled
-with the selection colour every selected header and clip shares, with an outline, its own colour
-staying in the band down its edge ([Selection colour](#selection-colour)). Every track has a colour of its own: one saved without
-(a project from before tracks stored theirs) is given Suhina's fixed colour for its place when
+header shows its track's color strongly (60 % over the panel); a selected track's is filled
+with the selection color every selected header and clip shares, with an outline, its own color
+staying in the band down its edge ([Selection color](#selection-color)). Every track has a color of its own: one saved without
+(a project from before tracks stored theirs) is given Suhina's fixed color for its place when
 the project is opened (orange, yellow, light blue, violet in turn, the same in every theme),
-which is not an edit, so a copy of it, a group's colour and every view show the same. A track
-keeps its colour when tracks are added, removed or moved. A new
-track gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track
-colour**: *By clip type* gives an audio track Suhina's audio colour (orange `#FF9A3C`) and every
-other track its MIDI colour (light blue `#4FC3F7`); *One colour* gives every new track the MIDI
-colour. A new clip takes its track's colour, or with **New clip colour** › *By clip type* the
-MIDI or audio colour for its content. These colours are Suhina's own, never the theme's, and the
-CLI and MCP give them too. A track's colour is saved as `"color": "#RRGGBB"`, the final colour.
-*Not yet:* a palette slot for a colour picked from a palette (#1025), saved beside `color` as a
-key of its own, so that the files read today keep reading. A track never takes its colour from its place, so tracks made one after
-another can share a colour.
+which is not an edit, so a copy of it, a group's color and every view show the same. A track
+keeps its color when tracks are added, removed or moved. A new
+track gets a color stored as it is made, by Settings › Arrangement › Tracks › **New track
+color**: *By clip type* gives an audio track Suhina's audio color (orange `#FF9939`) and every
+other track its MIDI color (light blue `#57C0FF`); *One color* gives every new track the MIDI
+color. A new clip takes its track's color, or with **New clip color** › *By clip type* the
+MIDI or audio color for its content. These colors are Suhina's own, never the theme's, and the
+CLI and MCP give them too. A track's color is saved as `"color": "#RRGGBB"`, the final color.
+*Not yet:* a palette slot for a color picked from a palette (#1025), saved beside `color` as a
+key of its own, so that the files read today keep reading. A track never takes its color from its place, so tracks made one after
+another can share a color.
 
-## Clip colours
+## Clip colors
 
-A clip is drawn in its colour: the name bar along its top in full colour, the body a lighter
-shade of it, its notes or waveform in ink that reads on it (dark on a light colour). A clip with
-no colour of its own (`Clip::color` is `None`) shows its track's, so a new clip takes the
-track's colour and follows it. Moved to another track, a clip keeps the colour it showed
+A clip is drawn in its color: the name bar along its top in full color, the body a lighter
+shade of it, its notes or waveform in ink that reads on it (dark on a light color). A clip with
+no color of its own (`Clip::color` is `None`) shows its track's, so a new clip takes the
+track's color and follows it. Moved to another track, a clip keeps the color it showed
 (`clip.move` and `clip.moveMany` take `color`). The track menu's *Assign track color to all
 clips* (`clip.setColor {track, color: "none"}`) hands every clip of the track back to the
-track's colour; *Assign track name to clips* (`track.renameClips`) names them after the track. The track
-headers are tinted with their track's colour; a selected one takes the selection colour.
+track's color; *Assign track name to clips* (`track.renameClips`) names them after the track. The track
+headers are tinted with their track's color; a selected one takes the selection color.
 
 A clip on a lane at least 36 px tall has a name bar along its top. By default (Settings ›
 Arrangement › *Moving a clip*: **Name bar**, `clip_drag = name_bar`) a drag from the name bar
@@ -246,7 +255,7 @@ play start where it was clicked, on the grid (Alt: free), as a click on an empty
 does; a thin line (the insert marker) shows it in that lane while the play start is there, also
 while the transport plays and the playhead moves on. A clip picked this way is not lit but
 outlined, so the clip the detail area shows and Delete takes is plain to see; a clip picked whole
-is lit. The grid's lines show through a clip's body in its own colour, under the waveform: a
+is lit. The grid's lines show through a clip's body in its own color, under the waveform: a
 tenth of the way from the body to its ink between beats, a fifth on the bars, enough to place an
 edit or an envelope point by eye against the lanes' grid (Settings › Arrangement › *Grid in clips*, `clip_grid = on | off`,
 on by default). With *Ctrl+drag selects time
@@ -255,11 +264,11 @@ Ctrl (Cmd) held as the drag begins copies the clips instead (Shift when Ctrl sel
 they stay, and copies with contents of their own go where they are dropped (`clip.moveMany`
 with `copy`), the cursor showing the copy sign; while dragging, the originals stay drawn and the
 copies show where they will land. Dragging a selection draws every clip of it where it goes. A time selection is drawn in the
-selection colour ([Selection colour](#selection-colour)) over its tracks' rows, under their clips,
-and over the stretch of each clip's body under it, the clips' name bars keeping their own colour;
+selection color ([Selection color](#selection-color)) over its tracks' rows, under their clips,
+and over the stretch of each clip's body under it, the clips' name bars keeping their own color;
 the grid's lines are drawn over the fill in an ink that reads on it,
 with a line at each edge and a bar along the ruler; the take and automation lanes under the tracks
-are lit in `time-selection`'s colour. With Selection colour › Clip's own colour, and in one row
+are lit in `time-selection`'s color. With Selection color › Clip's own color, and in one row
 of a stack, it is drawn in the accent over the clips instead.
 
 Stacked clips keep their sub-rows: a clip of a stack deleted or moved away leaves the others
@@ -318,7 +327,7 @@ Let go, it is
   wanted, its content growing with it.
 - A looping clip goes on as far as its edge is dragged, its loop repeating: its right edge into
   later passes, its left edge back into earlier ones (to the song's start). Its repeats are
-  drawn as the clip itself, in its colour, one colour all along; where each pass starts it has a
+  drawn as the clip itself, in its color, one color all along; where each pass starts it has a
   small notch at its top edge and a continuous vertical line in the leading edge's shade, so the repeats read as
   blocks even in an empty clip (#700). A MIDI clip's notes are drawn in every pass.
 - On a lane too low for a name bar (under 36 px), a clip shows its name in its body, the track's
@@ -334,13 +343,14 @@ Let go, it is
   [ui-clip-editor.md](ui-clip-editor.md)) or with `clip.setLoop`, and a looping clip's edge then
   draws out its repeats.
 
-With Ctrl and Alt held (Settings › Arrangement › *Ctrl+Alt-drag on an edge stretches audio*, on by
-default) an
+With Shift held, or Ctrl and Alt (Settings › Arrangement › *Ctrl+Alt-drag on an edge stretches
+audio*, on by default), an
 audio clip's edge stretches its audio to the new length, its pitch kept: `clip.stretch {track, index, start?, end?}` scales the clip's warp markers and its gain
 envelope (an unwarped clip is warped first) and gives the clip a content of its own when another
 clip plays the same, as the content's length in beats changes. The clip is drawn stretched while
 the edge is dragged and stays drawn so once let go, until the project has the new length: drawn
-unstretched in its new extent for those frames, its waveform flashed at its old scale.
+unstretched in its new extent for those frames, its waveform flashed at its old scale. With the setting on, the pointer resting on an audio clip's edge shows a tooltip that says so:
+*Drag to trim the clip. Shift-drag stretches its audio with the edge* (#1185).
 
 **Each audio clip is its own.** Its gain, gain envelope, transpose, warp and warp markers are the
 clip's: a duplicate, a pasted copy and a split's parts start with the same and change apart, and
@@ -426,7 +436,7 @@ that play different material are refused, so no edit is lost. One undo step.
 An ordinary duplicate, a paste and a drag copy of a linked clip are independent at once: they get
 a content of their own, so they never join the link unasked. A split's parts keep playing the
 content from where it was cut, so they stay linked copies. Placement properties (start,
-length, offset, loop, fades, gain envelope, colour) stay each clip's own, as for any clip. The
+length, offset, loop, fades, gain envelope, color) stay each clip's own, as for any clip. The
 project file keeps `linked` on the content ([format](suhina-format.md) › Parts). An imported
 `.flp` pattern placed several times comes in linked ([FLP mapping](flp-model-mapping.md)).
 
@@ -490,21 +500,21 @@ replaces what it covers unless stacked. Both are `clip.copy` then `clip.paste`
 
 `clip.setEnabled {clips, enabled}` turns clips on or off: an off clip plays nothing and does not
 sound in a render, so it works as a clip mute. An off clip, and every clip on a muted track, is
-drawn grey whatever its colour, so it never reads as a darker shade of a clip that plays (#1393):
+drawn grey whatever its color, so it never reads as a darker shade of a clip that plays (#1393):
 the user-agent sheet's `arrangement clip[muted]` background (`#A9A6A0`, `#BDBAB4` with
 `[selected]`), which a theme restyles with a rule of its own; the rule is the Arrangement's, so a
 deactivated Launcher clip keeps its own look
-([theme skins](theme-skins.md) › The user-agent sheet). Its colour stays in the project and comes
+([theme skins](theme-skins.md) › The user-agent sheet). Its color stays in the project and comes
 back when it plays again; while it is grey it stays down the clip's leading edge, so the clip is
 still known by it, and its notes and waveform step back. The two kinds of muted clip differ:
 
 - **A clip turned off itself** is grey to its name bar, with a mute mark (a ring crossed by a
   slash) before its name, in the name's ink on the bar as it is drawn (a theme's `clip-name`
-  background and colour included). The mark tells it from a clip whose colour is grey. A clip
+  background and color included). The mark tells it from a clip whose color is grey. A clip
   too low for a name bar shows its name in its body, and the mark goes before that name on its
   line, the name starting after it, so a low lane tells the two kinds apart too; a clip too small
   to hold it has none.
-- **A clip that plays on a muted track** keeps its colour in its name bar, as it has it when the
+- **A clip that plays on a muted track** keeps its color in its name bar, as it has it when the
   track plays, and has no mark: the track's header says the track is off.
 
 A muted clip never shows as playing. The 0 key turns the selection off,
@@ -870,13 +880,19 @@ under `transport.loop` ([format](suhina-format.md)); a Live Set's arrangement lo
 
 **In the Arrangement view** the loop brace sits in a row of its own between the ruler and the
 marker row: a bar from the loop start to the loop end, bright while looping is on and dim while
-it is off. While looping is on, a line in the accent colour runs down every lane, the return tracks and
+it is off. While looping is on, a line in the accent color runs down every lane, the return tracks and
 Main at the loop start and at the loop end, so the region reads in the lanes too; while the
 brace is dragged the lines follow it. Dragging along an empty part of the row draws a new region on the grid a ruler click
-uses (Alt held: free) and turns looping on. Dragging within 4 px of an end of the brace moves that
-end; dragging its middle moves the whole region, keeping its length. A click on the brace, the key
-**Ctrl+L** (`transport.setLoopEnabled`, in the keymap) and a right-click on the row (**Turn loop
-on** or **Turn loop off**) turn looping on or off. With a time selection or clips selected, Ctrl+L
+uses (Alt held: free) and turns looping on. Dragging within 10 px of an end of the brace, outside it or in (in, at most a
+third of its width, so a short brace keeps a middle), moves that end, and the pointer is a two-way arrow there; dragging its middle moves the whole
+region, keeping its length, and the pointer is the four-way move arrow there. A
+click on the brace selects its span in time over every track (a click beside it does nothing);
+it never turns looping on or off. While a drag moves the brace or an end of it, the time selection
+follows it, on the tracks the selection is on (the selected tracks, with none). A click on the
+brace and a drag that moves it also take the play start marker to the loop's start, as a time
+selection made on the ruler takes it to its start, so the next play and a paste (Ctrl+V) begin
+there. The key **Ctrl+L** (`transport.setLoopEnabled`, in the keymap) and
+a right-click on the row (**Turn loop on** or **Turn loop off**) do. With a time selection or clips selected, Ctrl+L
 loops their span; pressed again while the loop is on over that very span, it turns looping off.
 While the piano roll has the keyboard (after a click in it) Ctrl+L leaves this loop alone, as the
 Arrangement's other keys do, and is the clip's own loop instead ([clip editor spec](ui-clip-editor.md)
@@ -912,7 +928,7 @@ to keep those controls usable, including at the 160 px minimum header width.
 | `track.setGroup {track, group, index?}` | Moves a track, a group with everything inside it, into the group track `group` (an id or a name), or out of every group with `"none"`, and its channel plays into that group (the main output for `"none"`). It lands at `index` among the tracks directly in that group (or at the top level), from 0; at the end without `index`, or with one past the end. Refused for a return track, a target that is not a group, a group into itself or a group inside it, and a move that would nest deeper than the cap. |
 | `track.move {track, to}` | Moves a track, a group with everything inside it, to position `to` in the track order. |
 | `track.moveTo {tracks, target, placement}` | Moves the selected roots in project order before, inside or after `target` (`placement`: `before`, `inside`, `after`), as one undo step. A selected descendant of another selected track travels with its ancestor exactly once. Inside requires an audio group or presentation folder and inserts the roots as its first children. Before/after use the target's parent, after its entire subtree. Invalid targets, cycles and nesting beyond the limit reject the whole move. Reordering within a parent preserves routing; changing parents follows `track.setGroup`, including the presentation-folder routing contract below. |
-| `track.rename`, `track.setColor`, `track.delete` | Name (not empty), colour (`#rrggbb` or `none`), and deleting a track with its clips and slots; deleting a group ungroups it. `track.delete` takes one `track` or a `tracks` list, which goes as one undo step: Delete with several tracks selected and **Delete track** on a selected track's menu delete the selection so (#1188). |
+| `track.rename`, `track.setColor`, `track.delete` | Name (not empty), color (`#rrggbb` or `none`), and deleting a track with its clips and slots; deleting a group ungroups it. `track.delete` takes one `track` or a `tracks` list, which goes as one undo step: Delete with several tracks selected and **Delete track** on a selected track's menu delete the selection so (#1188). |
 | `track.copy {tracks}`, `track.cut {tracks}` | Copy whole tracks for `track.paste`: each with its channel (volume, pan, mute, sends, output, inputs, monitoring; solo is not copied), devices with their parameters and plug-in states, automation, arrangement clips, take lanes and slots, and the clip contents they play; a group with every track in it. Cut deletes them after copying, as one undo step. Return tracks and Main are not copied. The copy reaches every open project, so it pastes in another tab too (#919). |
 | `track.paste {after?}` | Adds the copied tracks after `after` (in its group) or after the last regular track, with new ids and clip contents of their own (editing one copy's notes leaves the other alone), a number added to a name a track already has ("Bass 2"), slots fitted to the project's scenes, and sends only to returns the project has. A copied group's tracks play into the new group; the rest play into the group they land in, or Main. |
 | `track.duplicate {tracks}` | Copies the named tracks as a copy and paste do. Tracks next to each other in one group (or at the top), a group counted with its tracks, are copied as one block after the last of them, so two adjacent tracks give "A", "B", "A 2", "B 2"; a track apart from the others is copied right after itself (after a group's tracks, for a group). Returns the copies; the window selects them, so the next Ctrl+D copies them on. |
@@ -924,7 +940,7 @@ not per kind) ([browser](browser.md) › Files).
 
 In the Arrangement view a header click selects a track (Ctrl adds or takes one out, Shift takes a run), and the Launcher view's column headers select the same tracks the same way (#208), Ctrl+G
 groups the selection, dragging a selected header moves the whole selection (an unselected
-header moves just itself), and a right-click opens the track's menu: name, colour, group, ungroup,
+header moves just itself), and a right-click opens the track's menu: name, color, group, ungroup,
 **Move into group** (a submenu of every other group it can go into), **Move out of group** (one
 level up, right after the group it leaves), **Audio input** or **MIDI input** on a track that
 plays them (the source's channels and the monitoring; the commands the strip's block and the
@@ -932,15 +948,15 @@ Launcher view's menu share), **Cut**, **Copy**, **Duplicate** (the selected trac
 is among them) and **Paste** (after this track, enabled once tracks are copied), delete. A group's header starts with a triangle that
 folds its tracks away (Folded groups). The Launcher view's column headers have the same menu.
 
-A header's left edge is a 6 px band of the track's colour, the header's full height; return rows
+A header's left edge is a 6 px band of the track's color, the header's full height; return rows
 have one too. While the track is off its header is grey, the user-agent sheet's
 `arrangement track-header[muted]` background (`#A9A6A0`, `#B5B2AC` while selected), as its clips are, and the
-band keeps the track's colour at full strength (#1393). A click on the band opens the colour palette under
-it, the same three rows of eight swatches as the menu's. A swatch sets the colour of the
-selected tracks atomically (`track.setColor`, one undo step). **+ More colours** and **F2**
-open the persistent, non-modal [colour window](colour-picker.md), whose changes appear live.
+band keeps the track's color at full strength (#1393). A click on the band opens the color palette under
+it, the same palette grid as the menu's, with its arrows to the saved colors. A swatch sets the color of the
+selected tracks atomically (`track.setColor`, one undo step). **More colors** and **F2**
+open the persistent, non-modal [color window](color-picker.md), whose changes appear live.
 A press on the band that drags still resizes the header column where the band meets its inner
-edge ([Launcher view](ui-session-view.md) › Track colour).
+edge ([Launcher view](ui-session-view.md) › Track color).
 
 A **double-click on a group or folder header** (its name or background, not its controls)
 folds or unfolds its children. A double-click on an ordinary track header also
@@ -952,7 +968,7 @@ opens). It is window state, not a command.
 ### Groups inside groups
 
 A presentation folder is a track without a channel whose `folder` field is set (#1416). It
-folds, names, colours and orders its children as a group does, but has no mixer controls and
+folds, names, colors and orders its children as a group does, but has no mixer controls and
 plays nothing: it only gathers tracks in view. `track.folder {tracks, name?}` puts tracks (all in
 the same group, or in none) into a new folder in the place of the first of them; the track menu
 offers it as **Put in a folder**, or **Put selected tracks in a folder** for a selection. Moving
@@ -980,15 +996,15 @@ output; each group's volume, mute and devices apply on the way ([ADR 0004](../de
 › 10), and solo follows the nesting: a soloed track is heard through every group above it, a
 soloed group plays everything inside it at any depth.
 
-A header shows its nesting with full-height colour bands, outermost group first and the track's
+A header shows its nesting with full-height color bands, outermost group first and the track's
 own band last. Bands narrow with depth: 6, 4, 3, then 2 px at every deeper level, with 2 px between
 bands. Descendants keep each ancestor's band aligned with its header, so a group reads as one
 block without deep nesting crowding the controls. Every header keeps the fold triangle's room.
 A group's menu
 has **Recolor group**, which gives every track inside it, at any depth,
-the colour the group shows, and turns the clips of the group and of those tracks back to their
-track's colour (`track.colorGroup` with `clips`, one undo step). A looping clip's top notches are at most 2.5 px wide on each side of the boundary and
-shrink with the lane height. Its 1 px boundary line uses half the leading edge's contrast; the top notch cuts through to the canvas colour for a clearer silhouette. A group that holds tracks has
+the color the group shows, and turns the clips of the group and of those tracks back to their
+track's color (`track.colorGroup` with `clips`, one undo step). A looping clip's top notches are at most 2.5 px wide on each side of the boundary and
+shrink with the lane height. Its 1 px boundary line uses half the leading edge's contrast; the top notch cuts through to the canvas color for a clearer silhouette. A group that holds tracks has
 the fold triangle at the start of its header (Folded groups): the lanes of every track inside it, at any
 depth, are hidden while it is folded, and the Launcher view hides their columns; both views fold
 the same groups, and folding is part of the view, not an edit, so it does not undo. The fold
@@ -996,8 +1012,8 @@ button reserves 20 px of width, with the small triangle kept at its established 
 For a container, a dedicated disclosure gutter spans the full height of its header, including
 tall headers with routing controls. It faces the timeline: on the left when headers are on
 the right, and on the right when headers are on the left. The small glyph follows that gutter;
-the name and mixer controls stay outside it. The adjacent thin colour band remains a separate
-colour action. Hover reveals the whole clickable surface with a subtle rounded fill and border;
+the name and mixer controls stay outside it. The adjacent thin color band remains a separate
+color action. Hover reveals the whole clickable surface with a subtle rounded fill and border;
 keyboard focus uses the theme's accent outline. A tooltip names Fold/Unfold and explains
 the header double-click alternative. The Launcher uses the full height of the title strip.
 Single-click elsewhere still selects, Ctrl/Shift selection and dragging remain independent,
@@ -1180,7 +1196,7 @@ empty stretches too.
 
 A group track's header starts with a small triangle; clicking it **folds** the group. The lanes of
 the tracks inside it go away, and the group's own lane shows what is in them: a thin row for each
-track inside it that has clips, every clip a block in its colour where it plays, so the folded lane
+track inside it that has clips, every clip a block in its color where it plays, so the folded lane
 tells how much is in the group and where. Clicking the triangle again opens the group. A group
 holding no tracks shows no triangle.
 
@@ -1191,7 +1207,7 @@ so the whole file reads as one lane until its triangle is clicked
 
 Folding is view state, not part of the project: nothing in a saved project keeps it, so a project
 that is saved and opened shows every group open, and no command folds or opens one. A folded
-group's header stays its own — name, colour, volume, pan, mute, solo and output are the group's.
+group's header stays its own — name, color, volume, pan, mute, solo and output are the group's.
 The blocks on a folded lane are a view of the clips, not the clips: to select, move or edit one,
 open the group. The lane as a whole stands for every track inside it: a time selection painted
 over it is on the group and all of those tracks, so Cut, Copy, Delete, Duplicate, Split and
@@ -1254,57 +1270,57 @@ kind, replacing earlier Resize all/manual height overrides for those rows. The o
 heights stay as they are. Editing a named height updates matching sizes live, including while
 Settings remains open.
 
-## Selection colour
+## Selection color
 
-Everything selected takes **one shared selection colour**, the same for every track and clip
-whatever its own colour, so ten selected clips of different colours read as one selection
+Everything selected takes **one shared selection color**, the same for every track and clip
+whatever its own color, so ten selected clips of different colors read as one selection
 (#1217). It is the theme's `selection.background` token (a light shade; Suhina Studio's is
 `#DBDAFF`), with a value in every built-in theme:
 
 - A selected **track header**, in the Arrangement and over a Launcher column, is filled with it;
-  the track's colour stays in the header's colour band (in the Launcher a 3 px band along its
+  the track's color stays in the header's color band (in the Launcher a 3 px band along its
   top), and its name and controls take the ink that reads on it. A group's header is the same.
 - A selected **clip** in the Arrangement, however it was picked (its name bar, a click in its
-  body, a box or Ctrl+A), has its body filled with exactly that colour, the colour of a selected
-  header, while its name bar keeps the clip's own colour, as when it is not selected, and so does
-  its leading edge; its waveform or notes keep their colour where it reads on the fill, else take
-  the ink that does. In a Launcher slot the whole clip takes the colour, its own colour down its
+  body, a box or Ctrl+A), has its body filled with exactly that color, the color of a selected
+  header, while its name bar keeps the clip's own color, as when it is not selected, and so does
+  its leading edge; its waveform or notes keep their color where it reads on the fill, else take
+  the ink that does. In a Launcher slot the whole clip takes the color, its own color down its
   leading edge.
 - The **lane** of each selected track is tinted with it across the whole timeline, under its
-  clips (`arrangement track-lane[selected]`: the colour at 12 %, a theme part a theme can
+  clips (`arrangement track-lane[selected]`: the color at 12 %, a theme part a theme can
   restyle); the lane the piano roll edits keeps its own highlight (`[checked]`). In the Launcher a
   selected track's whole column, header, slots, stop row and strip, gets the same tint
   (`track-column[selected]`) under its outline.
 - A muted or deactivated track or clip keeps its grey; unselected ones are unchanged.
 
-Settings › Appearance › Selection › **Selection colour** chooses it (saved as `selection_colour`,
-not in the project): *From theme* (the default) uses the theme's; *Clip's own colour* keeps each
-selected header and clip in its own colour, a little brighter and outlined, as before there was
-one selection colour, so a selection still shows which track each clip is on (the lanes keep the
-tint), and a clip picked by a click in its body is only outlined, not lit (› Selecting clips); *Custom* shows **Custom selection colour** (`selection_custom_colour`), one colour and its
-opacity from the colour picker (saved as `#RRGGBBAA` while see-through), which is written over the theme's `--selection-background` on the window, so
+Settings › Appearance › Selection › **Selection color** chooses it (saved as `selection_color`,
+not in the project): *From theme* (the default) uses the theme's; *Clip's own color* keeps each
+selected header and clip in its own color, a little brighter and outlined, as before there was
+one selection color, so a selection still shows which track each clip is on (the lanes keep the
+tint), and a clip picked by a click in its body is only outlined, not lit (› Selecting clips); *Custom* shows **Custom selection color** (`selection_custom_color`), one color and its
+opacity from the color picker (saved as `#RRGGBBAA` while see-through), which is written over the theme's `--selection-background` on the window, so
 headers, clips and the tints all take it in every theme until *From theme* is chosen again.
 
-## Waveform colour
+## Waveform color
 
-Settings › Arrangement › Clips offers Waveform and note colour: Auto, Light, Dark (the default) or
+Settings › Arrangement › Clips offers Waveform and note color: Auto, Light, Dark (the default) or
 Custom. Dark gives existing settings files without a waveform preference uniform dark ink.
 Auto chooses contrasting light or dark ink from each clip's background; the other
 modes give every audio waveform, MIDI preview and ARA note overlay the same chosen ink.
-Custom reveals an opaque colour picker.
-The choice and custom RGB colour persist in application settings and update existing clips
+Custom reveals an opaque color picker.
+The choice and custom RGB color persist in application settings and update existing clips
 immediately, including while Settings is open. Clip names retain their own
 automatic contrast. Waveforms under ARA note overlays are
-dimmed from the chosen waveform colour as before. No audio or project data changes.
+dimmed from the chosen waveform color as before. No audio or project data changes.
 
-Audio clip colour strength and Track header colour strength are independent 0–100 percent
+Audio clip color strength and Track header color strength are independent 0–100 percent
 sliders in Arrangement settings. Both start at 82 percent, matching the existing MIDI clip
-strength. Their fills mix their theme surface with the original clip or track RGB colour;
+strength. Their fills mix their theme surface with the original clip or track RGB color;
 muting reduces that strength to 55 percent of its chosen value, preserving hue rather than
-mixing grey into the source colour. Disabled clips dim the same way. With Selection colour › Clip's own colour, selected clips lift
+mixing grey into the source color. Disabled clips dim the same way. With Selection color › Clip's own color, selected clips lift
 their strength by 12 percentage points (capped at 100) and selected headers retain a subtle
-brightness lift; otherwise they take the selection colour ([above](#selection-colour)). Header names, fold indicators, routing and send labels maintain contrast on
-the resulting surface. Explicit clip colours continue to override track colours. Changes
+brightness lift; otherwise they take the selection color ([above](#selection-color)). Header names, fold indicators, routing and send labels maintain contrast on
+the resulting surface. Explicit clip colors continue to override track colors. Changes
 apply live and persist as application settings without modifying project data.
 
 ## MIDI input monitoring

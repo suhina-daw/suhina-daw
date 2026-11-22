@@ -452,7 +452,7 @@ fn a_skipped_entry_reserves_no_id() {
     let file = dir.join("browser.json");
     let text = json!({
         "tags": [
-            { "tag": { "id": MAX_FILE_TAG_ID - 1, "name": "Broken", "color": "not a colour" } },
+            { "tag": { "id": MAX_FILE_TAG_ID - 1, "name": "Broken", "color": "not a color" } },
             { "name": "Legacy", "color": "#223344" },
         ],
     })
@@ -577,7 +577,7 @@ fn a_tag_reaches_the_deepest_folder_and_the_cap_counts_folder_levels() {
         parent = Some(store.add_tag_folder(Some(&format!("Level {depth}")), parent).unwrap());
     }
     let lowest = parent.unwrap();
-    // The defaults: Red..Grey with ids 1..7. A carried tag dropped in the deepest folder
+    // The defaults: Red..Gray with ids 1..7. A carried tag dropped in the deepest folder
     // lands: a tag is a leaf, it adds no folder level to count.
     store.move_tag_node(2, Some(lowest), 0).unwrap();
     assert_eq!(entry_depth(&store.tags, 2), MAX_TAG_DEPTH + 1, "the tag sits inside the fourth level's folder");
@@ -645,13 +645,13 @@ fn the_deepest_folders_tags_round_trip_and_a_fifth_level_is_left_out() {
 #[test]
 fn the_flattened_tags_lead_with_each_levels_folders() {
     let mut store = Store::default();
-    // The defaults, Red..Grey by id, then a folder appended last, Red filed in it.
+    // The defaults, Red..Gray by id, then a folder appended last, Red filed in it.
     let drum = store.add_tag_folder(Some("Drums"), None).unwrap();
     store.move_tag_node(1, Some(drum), 0).unwrap();
     let in_order: Vec<&str> = tags_iter(&store.tags).map(|t| t.name.as_str()).collect();
     assert_eq!(
         in_order,
-        ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Grey"],
+        ["Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray"],
         "the folder leads its level, the tags follow"
     );
     // A tag of a deeper folder leads its own level too.
@@ -660,23 +660,23 @@ fn the_flattened_tags_lead_with_each_levels_folders() {
     let in_order: Vec<&str> = tags_iter(&store.tags).map(|t| t.name.as_str()).collect();
     assert_eq!(
         in_order,
-        ["Orange", "Red", "Yellow", "Green", "Blue", "Purple", "Grey"],
+        ["Orange", "Red", "Yellow", "Green", "Blue", "Purple", "Gray"],
         "a subfolder's tag leads its parent level"
     );
 }
 
-// A new tag made without a colour is made under its `rename` still, held to the same
+// A new tag made without a color is made under its `rename` still, held to the same
 // name checks ([#1254] review).
 #[test]
-fn a_new_tag_made_without_a_colour_answers_its_rename() {
+fn a_new_tag_made_without_a_color_answers_its_rename() {
     let mut store = Store::default();
     store.set_tag("Coral", None, Some("Reef"), None).unwrap();
     let made = tags_iter(&store.tags).find(|t| t.name == "Reef").map_or(0, |t| t.id);
     assert!(made >= FIRST_TAG_ID, "the rename named the made tag");
     assert_eq!(
         tags_iter(&store.tags).find(|t| t.name == "Reef").map(|t| t.color.as_str()),
-        Some("#800000"), // Maroon's: the next named colour no tag has
-        "the no-colour make took the named colours' next turn from the name it was made under"
+        Some("#800000"), // Maroon's: the next named color no tag has
+        "the no-color make took the named colors' next turn from the name it was made under"
     );
     // A rename that another tag has: refused, not silently made under the asked name.
     assert!(store.set_tag("Coral", None, Some("Orange"), None).is_err(), "the taken name refuses");

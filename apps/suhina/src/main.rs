@@ -37,6 +37,8 @@ mod crash_log;
 mod data_folder;
 #[cfg(target_os = "macos")]
 mod mac_menu;
+#[cfg(target_os = "macos")]
+mod mac_windows;
 mod pack_materialize;
 mod recent;
 mod save_error;
@@ -240,6 +242,7 @@ fn main() -> ExitCode {
         }),
     };
     // The audio devices, and the output the settings choose (Settings › Audio, `audio.*`).
+    window.app.set_see_through_asked(see_through_asked);
     if under_title_bar {
         let (title_bar, corner) = mac_window_frame();
         window.app.set_window_frame(title_bar, corner);
@@ -450,14 +453,14 @@ struct StartUp {
 
 impl eframe::App for Window {
     /// Nothing behind the backgrounds while the theme asks for a see-through window: where none
-    /// is painted, the desktop shows. An opaque theme clears to its colour, so no alpha in it
+    /// is painted, the desktop shows. An opaque theme clears to its color, so no alpha in it
     /// ever reaches the desktop.
     fn clear_color(&self, visuals: &eframe::egui::Visuals) -> [f32; 4] {
         if self.see_through == Some(true) && suhina_ui::kit::theme::window_fill().a() < u8::MAX {
             [0.0; 4]
         } else {
-            // A window that cannot show the desktop clears to the panel colour over black, opaque:
-            // a theme's see-through colours then read dark, never as the white behind the window.
+            // A window that cannot show the desktop clears to the panel color over black, opaque:
+            // a theme's see-through colors then read dark, never as the white behind the window.
             let [r, g, b, _] = visuals.panel_fill.to_array();
             eframe::egui::Color32::from_rgba_premultiplied(r, g, b, 255).to_normalized_gamma_f32()
         }
@@ -479,6 +482,16 @@ impl eframe::App for Window {
             self.see_through = Some(see_through);
         }
         self.draw(ui, frame);
+        // What the windows of their own show while the system resizes them.
+        #[cfg(target_os = "macos")]
+        if let Some(window) = frame.winit_window() {
+            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            if let Ok(handle) = window.window_handle()
+                && let RawWindowHandle::AppKit(main) = handle.as_raw()
+            {
+                mac_windows::pin_frames_top_left(main.ns_view.as_ptr().cast_const());
+            }
+        }
         suhina_ui::kit::liquid::finish_backdrops(ui.ctx());
         self.blur(frame);
     }
@@ -581,6 +594,10 @@ impl Window {
         if let Some(backup) = self.app.take_reveal_request()
             && let Err(e) = theme_files::reveal(&backup, true)
         {
+            self.app.set_status(Status::Error(e));
+        }
+        // A file manager that could not be started on the thread that showed a file (Linux).
+        if let Some(e) = theme_files::take_reveal_error() {
             self.app.set_status(Status::Error(e));
         }
         if let Some(path) = self.app.take_saved_path() {

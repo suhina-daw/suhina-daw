@@ -4,7 +4,7 @@ read_when: FM synth, fm-synth, full FM instrument, DX7 compatibility, two envelo
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-23
 covers:
   - devices/fm-synth/**
 ---
@@ -43,11 +43,11 @@ rejected: two FM instruments would share most of their work and leave users choo
    GPL-3.0-or-later. Shared DSP goes in `crates/dsp` (AGENTS.md rule 8).
 7. **Harmonics are parameters.** A drawn waveform is 64 parameters per operator, hidden from
    generated lists, so undo, automation, MCP and project files need nothing new.
-8. **A theme changes styles only.** The panel takes its colours from the palette and the `--device-*`
+8. **A theme changes styles only.** The panel takes its colors from the palette and the `--device-*`
    tokens and its fonts from the theme. Its canvases, control positions, pages and display contents
    are fixed: with this many controls a changed layout would stop being usable, and
    [ADR 0021](0021-device-graph-files.md) keeps panels at a fixed size anyway. The panel holds no
-   fixed colours; the script that writes it fails on one.
+   fixed colors; the script that writes it fails on one.
 
 ## Consequences
 

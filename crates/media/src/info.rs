@@ -176,7 +176,7 @@ fn tempo_and_key_from_tags(tags: &[Tag]) -> (Option<f64>, Option<String>) {
     for tag in tags {
         match &tag.std {
             Some(StandardTag::Bpm(bpm)) if tempo.is_none() => tempo = Some(*bpm as f64),
-            Some(StandardTag::InitialKey(text)) if key.is_none() => key = normalise_key(text),
+            Some(StandardTag::InitialKey(text)) if key.is_none() => key = normalize_key(text),
             _ => {}
         }
         let raw = tag.raw.key.to_ascii_uppercase();
@@ -193,7 +193,7 @@ fn tempo_and_key_from_tags(tags: &[Tag]) -> (Option<f64>, Option<String>) {
             && matches!(raw.as_str(), "KEY" | "INITIALKEY" | "TKEY")
             && let RawValue::String(s) = &tag.raw.value
         {
-            key = normalise_key(s);
+            key = normalize_key(s);
         }
     }
     (tempo.filter(|t| TEMPO_RANGE.contains(t)), key)
@@ -374,7 +374,7 @@ fn key_word(word: &str) -> Option<String> {
 }
 
 /// A key from a metadata tag ("Am", "A minor", "F#", "8A" Camelot codes are not taken).
-fn normalise_key(text: &str) -> Option<String> {
+fn normalize_key(text: &str) -> Option<String> {
     let text = text.trim();
     if text.is_empty() || text.len() > 16 {
         return None;

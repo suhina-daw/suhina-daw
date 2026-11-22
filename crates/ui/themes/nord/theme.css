@@ -1,9 +1,9 @@
 /* Nord, reduced to a few settings: every token below follows them. */
-@property --ground { syntax: "<color>"; initial-value: #2E3440; label: "Background"; group: "Colours"; }
-@property --surface { syntax: "<color>"; initial-value: #3B4252; label: "Panels"; group: "Colours"; }
-@property --ink { syntax: "<color>"; initial-value: #ECEFF4; label: "Text"; group: "Colours"; }
-@property --tint { syntax: "<color>"; initial-value: #88C0D0; label: "Accent"; group: "Colours"; }
-@property --highlight { syntax: "<color>"; initial-value: #EBCB8B; label: "Selection"; group: "Colours"; }
+@property --ground { syntax: "<color>"; initial-value: #2E3440; label: "Background"; group: "Colors"; }
+@property --surface { syntax: "<color>"; initial-value: #3B4252; label: "Panels"; group: "Colors"; }
+@property --ink { syntax: "<color>"; initial-value: #ECEFF4; label: "Text"; group: "Colors"; }
+@property --tint { syntax: "<color>"; initial-value: #88C0D0; label: "Accent"; group: "Colors"; }
+@property --highlight { syntax: "<color>"; initial-value: #EBCB8B; label: "Selection"; group: "Colors"; }
 :root {
   --window-background: var(--ground);
   --panel-background: var(--surface);
@@ -22,7 +22,7 @@
   --grid-minor: color-mix(in oklab, var(--ground), var(--ink) 5%);
   --slot-empty: color-mix(in oklab, var(--surface), var(--ink) 20%);
   --pan-background: color-mix(in oklab, var(--ground), var(--surface) 30%);
-  --pan-centre: color-mix(in oklab, var(--ink), var(--surface) 50%);
+  --pan-center: color-mix(in oklab, var(--ink), var(--surface) 50%);
   --accent: var(--tint);
   --automation-pin: var(--tint);
   --selection: var(--highlight);

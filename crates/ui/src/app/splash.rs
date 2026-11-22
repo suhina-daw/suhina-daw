@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The splash shown while Suhina starts: a small panel with the logo and the version, drawn
-//! centred in the main window over its first frames. The work that makes starting slow (the
+//! centered in the main window over its first frames. The work that makes starting slow (the
 //! browser's library, the sample map, the project to open) waits until the splash has been on
 //! screen, runs once, and the splash fades out over the window that is ready.
 //!
@@ -134,7 +134,7 @@ impl Splash {
         );
 
         // The card is a `dialog`: its edge in its `border-color`, its words as a dialog's.
-        let card = crate::kit::element::DIALOG.enter();
+        let card = crate::kit::dialog::enter("splash");
         let rect = Rect::from_center_size(area.center(), SIZE.min(area.size()));
         painter.rect_filled(
             rect,
@@ -147,7 +147,7 @@ impl Splash {
         let line = |center_y: f32, height: f32| {
             Rect::from_center_size(egui::pos2(rect.center().x, center_y), Vec2::new(rect.width(), height))
         };
-        // The logo, the name in the theme's text colour; the name as text if it cannot be drawn.
+        // The logo, the name in the theme's text color; the name as text if it cannot be drawn.
         let width = (rect.width() - 2.0 * LOGO_MARGIN).clamp(0.0, LOGO_WIDTH);
         let size = Vec2::new(width, width / crate::kit::logo::aspect());
         let name = Rect::from_center_size(egui::pos2(rect.center().x, rect.center().y - 12.0), size);

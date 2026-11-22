@@ -1,1 +1,0 @@
-- Native audio effects follow the tempo and song position of their delayed input audio, including inside nested groups, on buses, returns and Main, and across historical transport boundaries.

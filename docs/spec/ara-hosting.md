@@ -3,7 +3,7 @@ description: What of ARA hosting is built and how it behaves - scanning, the cli
 read_when: ARA, ARA plug-in, clip host, Edit with, clip.setAra, araEdits, ara_update, ara_notes, ara_playback, ara_export, ara_import, test:ara, ARA archive, audio source region, suspended region, ARA editor
 type: spec
 status: draft
-last_verified: 2026-11-13
+last_verified: 2026-11-21
 covers:
   - crates/plugin-host/src/ara.rs
   - crates/session/src/ara.rs
@@ -219,7 +219,13 @@ the list below, in a first form). Where it differs from the decisions above it i
   answers `IPlugInEntryPoint` (`edits_clips`). One the scan did not mark (the module's ARA class
   named differently, say, or a catalog from before the scan read ARA) is then loaded again with
   its track's clips, with a notice, and is treated as an ARA plug-in from then on: the catalog
-  remembers it, so its next device, in any project, starts with its clips at once.
+  remembers it, so its next device, in any project, starts with its clips at once. The answer
+  counts only beside an ARA factory class in its module that can pair with it (by name, or any
+  class when the factory names pair none; `scan::may_edit_clips`): a shell module whose components
+  all answer `IPlugInEntryPoint` but that declares no ARA factory holds no ARA plug-in
+  ([#1673](https://github.com/suhina-daw/suhina-daw/issues/1673)). A device an earlier build made
+  a clip host that way, whose plug-in the catalog does not list as ARA, loses the mark at the next
+  device edit, in that edit's undo step, and shows in its chain again.
 - **Opened as a host with a pitch editor built in does.** A clip's menu (**Open in** the plug-in)
   and Alt+M work on any audio clip in the Arrangement: when the clip's track has no ARA plug-in
   running, the installed one (the scan's ARA plug-ins, Melodyne first, else Melodyne by name) is

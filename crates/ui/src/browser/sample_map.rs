@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The sample map view (docs/spec/sample-map.md): points laid out by how they sound, coloured by
+//! The sample map view (docs/spec/sample-map.md): points laid out by how they sound, colored by
 //! kind, as a cloud or a grid. The view draws and reports what the user did as [`MapEvent`]s;
 //! the browser turns them into its own selection, previews and drags.
 
@@ -56,7 +56,7 @@ pub struct MapPoint {
     /// An NKS preset, drawn as a ring.
     pub preset: bool,
     pub pinned: bool,
-    /// The colour tags it carries.
+    /// The color tags it carries.
     pub tags: Vec<String>,
 }
 
@@ -87,7 +87,7 @@ pub enum MapEvent {
     Similar(usize),
     /// Pin it, or unpin it when it is pinned.
     Pin(usize),
-    /// Set (`on`) or clear a colour tag on it.
+    /// Set (`on`) or clear a color tag on it.
     Tag {
         item: usize,
         tag: String,
@@ -126,7 +126,7 @@ pub struct MapView {
     pub window: bool,
     zoom: f32,
     /// The map position at the middle of the view.
-    centre: [f32; 2],
+    center: [f32; 2],
     hovered: Option<(usize, f64)>,
     previewed: Option<usize>,
     /// The point the primary button went down on: a drag carries it, not the point under the
@@ -210,14 +210,14 @@ impl std::fmt::Debug for Cache {
 struct DensityKey {
     points: Option<PointsKey>,
     zoom: f32,
-    centre: [f32; 2],
+    center: [f32; 2],
     legend: Vec<Kind>,
     similar: Option<(usize, Vec<usize>)>,
     spread: usize,
-    /// The grey of the dimmed points, baked into the raster, so a theme change redraws it.
+    /// The gray of the dimmed points, baked into the raster, so a theme change redraws it.
     hint: Color32,
-    /// Each kind's colour, baked into the raster likewise.
-    kind_colours: [Color32; Kind::ALL.len()],
+    /// Each kind's color, baked into the raster likewise.
+    kind_colors: [Color32; Kind::ALL.len()],
 }
 
 /// What to do with the density raster this frame.
@@ -258,7 +258,7 @@ impl Default for MapView {
             large: false,
             window: false,
             zoom: 1.0,
-            centre: [0.5, 0.5],
+            center: [0.5, 0.5],
             hovered: None,
             previewed: None,
             pressed: None,
@@ -313,7 +313,7 @@ impl MapView {
     /// the next one's are laid out in their place): the point-index states — the shown
     /// similar ones and who they are for, a hover, a preview, the pressed point — are
     /// indices into a points list that no longer is, and they read as unrelated samples of
-    /// the new layout ([#1254] review). The sizes, layout, zoom and centre are kept.
+    /// the new layout ([#1254] review). The sizes, layout, zoom and center are kept.
     pub fn forget_points(&mut self) {
         self.similar = None;
         self.hovered = None;
@@ -366,29 +366,29 @@ impl MapView {
     /// Fits all points in view.
     pub fn fit(&mut self) {
         self.zoom = 1.0;
-        self.centre = [0.5, 0.5];
+        self.center = [0.5, 0.5];
     }
 
     fn transform(&self, rect: Rect) -> Transform {
-        Transform { rect, scale: rect.width().min(rect.height()) * 0.92 * self.zoom, centre: self.centre }
+        Transform { rect, scale: rect.width().min(rect.height()) * 0.92 * self.zoom, center: self.center }
     }
 
     fn zoom_at(&mut self, rect: Rect, pointer: Pos2, factor: f32) {
         let before = self.transform(rect).to_map(pointer);
         self.zoom = (self.zoom * factor).clamp(MIN_ZOOM, MAX_ZOOM);
         let after = self.transform(rect).to_map(pointer);
-        self.centre = [self.centre[0] + before[0] - after[0], self.centre[1] + before[1] - after[1]];
-        self.clamp_centre();
+        self.center = [self.center[0] + before[0] - after[0], self.center[1] + before[1] - after[1]];
+        self.clamp_center();
     }
 
     fn pan(&mut self, rect: Rect, delta: Vec2) {
         let scale = self.transform(rect).scale.max(1e-6);
-        self.centre = [self.centre[0] - delta.x / scale, self.centre[1] - delta.y / scale];
-        self.clamp_centre();
+        self.center = [self.center[0] - delta.x / scale, self.center[1] - delta.y / scale];
+        self.clamp_center();
     }
 
-    fn clamp_centre(&mut self) {
-        for c in &mut self.centre {
+    fn clamp_center(&mut self) {
+        for c in &mut self.center {
             *c = c.clamp(0.0, 1.0);
         }
     }
@@ -399,17 +399,17 @@ impl MapView {
 struct Transform {
     rect: Rect,
     scale: f32,
-    centre: [f32; 2],
+    center: [f32; 2],
 }
 
 impl Transform {
     fn to_screen(self, p: [f32; 2]) -> Pos2 {
-        self.rect.center() + Vec2::new((p[0] - self.centre[0]) * self.scale, (p[1] - self.centre[1]) * self.scale)
+        self.rect.center() + Vec2::new((p[0] - self.center[0]) * self.scale, (p[1] - self.center[1]) * self.scale)
     }
 
     fn to_map(self, p: Pos2) -> [f32; 2] {
         let d = p - self.rect.center();
-        [self.centre[0] + d.x / self.scale.max(1e-6), self.centre[1] + d.y / self.scale.max(1e-6)]
+        [self.center[0] + d.x / self.scale.max(1e-6), self.center[1] + d.y / self.scale.max(1e-6)]
     }
 }
 
@@ -425,7 +425,7 @@ fn aspect_of(rect: Rect) -> f32 {
     if aspect.is_finite() && aspect > 0.0 { aspect } else { 1.0 }
 }
 
-/// Where each point is drawn: its cloud position, or the centre of its grid cell. The grid
+/// Where each point is drawn: its cloud position, or the center of its grid cell. The grid
 /// fills a box of the view's `aspect` around the map's middle (the view shows 1 across its
 /// shorter side), with square cells.
 fn positions(points: &[MapPoint], layout: Layout, grid: Option<&Grid>, aspect: f32) -> Vec<[f32; 2]> {
@@ -500,11 +500,11 @@ fn step(positions: &[[f32; 2]], from: usize, direction: [f32; 2]) -> Option<usiz
         .map(|(i, _)| i)
 }
 
-/// A kind's colour: its `sample-point[kind="…"]` element's `color`, which the user-agent sheet
+/// A kind's color: its `sample-point[kind="…"]` element's `color`, which the user-agent sheet
 /// gives (Suhina's muted palette, extended, with neighbouring kinds told apart) and a theme may
-/// change. Worked out once a frame, when the map is drawn ([`refresh_kind_colours`]).
-pub fn kind_colour(kind: Kind) -> Color32 {
-    KIND_COLOURS.with(|colours| colours.get()[kind_index(kind)])
+/// change. Worked out once a frame, when the map is drawn ([`refresh_kind_colors`]).
+pub fn kind_color(kind: Kind) -> Color32 {
+    KIND_COLORS.with(|colors| colors.get()[kind_index(kind)])
 }
 
 fn kind_index(kind: Kind) -> usize {
@@ -512,30 +512,30 @@ fn kind_index(kind: Kind) -> usize {
 }
 
 thread_local! {
-    static KIND_COLOURS: std::cell::Cell<[Color32; Kind::ALL.len()]> =
-        std::cell::Cell::new(user_agent_kind_colours());
+    static KIND_COLORS: std::cell::Cell<[Color32; Kind::ALL.len()]> =
+        std::cell::Cell::new(user_agent_kind_colors());
 }
 
-/// Each kind's colour as the user-agent sheet alone gives it, for where no sheet styles the
+/// Each kind's color as the user-agent sheet alone gives it, for where no sheet styles the
 /// window: the sheet's own cascade, so its rules may be written in any form.
-pub(crate) fn user_agent_kind_colours() -> [Color32; Kind::ALL.len()] {
-    static COLOURS: std::sync::OnceLock<[Color32; Kind::ALL.len()]> = std::sync::OnceLock::new();
-    *COLOURS.get_or_init(|| {
+pub(crate) fn user_agent_kind_colors() -> [Color32; Kind::ALL.len()] {
+    static COLORS: std::sync::OnceLock<[Color32; Kind::ALL.len()]> = std::sync::OnceLock::new();
+    *COLORS.get_or_init(|| {
         Kind::ALL.map(|kind| {
             crate::kit::native_css::base_color("sample-point", &[("kind", kind.id())]).unwrap_or(Color32::GRAY)
         })
     })
 }
 
-/// Works out each kind's colour for this frame, inside the map's element: one `sample-point`
+/// Works out each kind's color for this frame, inside the map's element: one `sample-point`
 /// element per kind, styled by the sheets in use, the user-agent sheet's rules included.
-fn refresh_kind_colours() {
-    let defaults = user_agent_kind_colours();
-    let colours = std::array::from_fn(|at| {
+fn refresh_kind_colors() {
+    let defaults = user_agent_kind_colors();
+    let colors = std::array::from_fn(|at| {
         let kind = Kind::ALL[at];
         crate::kit::element::SAMPLE_POINT.attribute("kind", kind.id()).enter().computed_color_or(defaults[at])
     });
-    KIND_COLOURS.with(|cell| cell.set(colours));
+    KIND_COLORS.with(|cell| cell.set(colors));
 }
 
 /// One part of the status's tooltip: a heading ("4 955 could not be read") and lines under it.
@@ -568,7 +568,7 @@ pub fn show(
     events: &mut Vec<MapEvent>,
 ) {
     let style_class = crate::kit::element::SAMPLE_MAP.enter();
-    refresh_kind_colours();
+    refresh_kind_colors();
     let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let whole = ui.available_rect_before_wrap();
@@ -702,7 +702,7 @@ fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
     }
     if ui.button("−").on_hover_text("Zoom out").clicked() {
         view.zoom = (view.zoom / 1.5).max(MIN_ZOOM);
-        view.clamp_centre();
+        view.clamp_center();
     }
     if ui.button("Fit").on_hover_text("Fit all points in view").clicked() {
         view.fit();
@@ -782,7 +782,7 @@ struct Content<'a> {
     /// Where each point is, in map coordinates.
     positions: &'a [[f32; 2]],
     grid: Option<&'a Grid>,
-    /// The library's colour tags, for the right-click menu.
+    /// The library's color tags, for the right-click menu.
     tags: &'a [String],
 }
 
@@ -1085,12 +1085,12 @@ fn draw_points(
         let key = DensityKey {
             points: view.cache.key,
             zoom: view.zoom,
-            centre: view.centre,
+            center: view.center,
             legend: kinds,
             similar: view.similar.clone(),
             spread: density_spread(view.dot_size),
             hint: crate::browser::browser_view::inks().hint,
-            kind_colours: Kind::ALL.map(kind_colour),
+            kind_colors: Kind::ALL.map(kind_color),
         };
         let now = painter.ctx().input(|i| i.time);
         if view.resized.0 != area {
@@ -1099,9 +1099,9 @@ fn draw_points(
         let drawn = view.cache.density.as_ref().map(|d| (&d.key, d.area));
         match density_plan(drawn, &key, area, view.resized.1, now) {
             DensityPlan::Build => {
-                let colour = |i: usize| points.get(i).filter(|p| !dimmed(i, p)).map(|p| kind_colour(p.kind));
-                // The dimmed points' grey is `label[kind="hint"]`'s.
-                let image = crowd::density(screen, colour, area, key.spread, key.hint);
+                let color = |i: usize| points.get(i).filter(|p| !dimmed(i, p)).map(|p| kind_color(p.kind));
+                // The dimmed points' gray is `label[kind="hint"]`'s.
+                let image = crowd::density(screen, color, area, key.spread, key.hint);
                 let texture = painter.ctx().load_texture("sample-map-density", image, egui::TextureOptions::LINEAR);
                 view.cache.density = Some(Density { key, area, transform, texture });
             }
@@ -1133,14 +1133,14 @@ fn draw_points(
             if crowded && !marked {
                 continue;
             }
-            let mut colour = kind_colour(point.kind);
+            let mut color = kind_color(point.kind);
             if point.guessed {
-                colour = colour.gamma_multiply(0.7);
+                color = color.gamma_multiply(0.7);
             }
             if pass {
-                colour = colour.gamma_multiply(0.18);
+                color = color.gamma_multiply(0.18);
             } else if !marked {
-                colour = colour.gamma_multiply(opacity);
+                color = color.gamma_multiply(opacity);
             }
             if cell > 0.0 {
                 let side = (cell - 1.0).max(1.0);
@@ -1149,20 +1149,20 @@ fn draw_points(
                     painter.rect_stroke(
                         r.shrink(1.0),
                         CornerRadius::same(2),
-                        Stroke::new(1.5, colour),
+                        Stroke::new(1.5, color),
                         StrokeKind::Inside,
                     );
                 } else {
-                    painter.rect_filled(r, CornerRadius::same(2), colour);
+                    painter.rect_filled(r, CornerRadius::same(2), color);
                 }
             } else if point.preset {
-                painter.circle_stroke(*at, radius + 0.5, Stroke::new(1.2, colour));
+                painter.circle_stroke(*at, radius + 0.5, Stroke::new(1.2, color));
             } else {
-                painter.circle_filled(*at, radius, colour);
+                painter.circle_filled(*at, radius, color);
             }
             let size = if cell > 0.0 { cell / 2.0 } else { radius };
             if point.in_use {
-                painter.circle_stroke(*at, size + 3.0, Stroke::new(1.5, colour));
+                painter.circle_stroke(*at, size + 3.0, Stroke::new(1.5, color));
             }
             if point.selected {
                 painter.circle_stroke(*at, size + 1.5, Stroke::new(1.0, rings.0));
@@ -1198,7 +1198,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
         .iter()
         .map(|c| {
             let font = theme::ui_font(label_font_size(view.label_size, crowd::label_scale(c.count, smallest)));
-            // Light text: a label sits on its own kind's colour, so that colour would not read.
+            // Light text: a label sits on its own kind's color, so that color would not read.
             painter.layout_no_wrap(c.kind.label().to_string(), font, tier.primary.gamma_multiply(fade))
         })
         .collect();
@@ -1233,8 +1233,8 @@ fn similar_strip(ui: &mut Ui, rect: Rect, view: &mut MapView, points: &[MapPoint
                 if ui.small_button("▶").on_hover_text(format!("Preview {}", point.name)).clicked() {
                     events.push(MapEvent::Preview(i));
                 }
-                let row = ui
-                    .selectable_label(point.selected, egui::RichText::new(&point.name).color(kind_colour(point.kind)));
+                let row =
+                    ui.selectable_label(point.selected, egui::RichText::new(&point.name).color(kind_color(point.kind)));
                 if row.clicked() {
                     events.push(MapEvent::Select { items: vec![i], add: false });
                     events.push(MapEvent::Preview(i));
@@ -1259,10 +1259,10 @@ fn legend(ui: &mut Ui, rect: Rect, view: &mut MapView) {
             continue;
         }
         let shown = view.legend.is_empty() || view.legend.contains(&kind);
-        let colour = if shown { kind_colour(kind) } else { kind_colour(kind).gamma_multiply(0.3) };
+        let color = if shown { kind_color(kind) } else { kind_color(kind).gamma_multiply(0.3) };
         let (dot, dot_response) = child.allocate_exact_size(Vec2::splat(10.0), Sense::click());
-        child.painter().circle_filled(dot.center(), 3.5, colour);
-        let text = egui::RichText::new(format!("{} {count}", kind.label())).color(colour).size(theme::TEXT_SMALL);
+        child.painter().circle_filled(dot.center(), 3.5, color);
+        let text = egui::RichText::new(format!("{} {count}", kind.label())).color(color).size(theme::TEXT_SMALL);
         let response: Response = child.add(egui::Label::new(text).sense(Sense::click()));
         child.add_space(theme::PAD);
         if response.clicked() || dot_response.clicked() {
@@ -1307,14 +1307,14 @@ mod many {
             .map(|i| {
                 let k = i % Kind::ALL.len();
                 let kind = Kind::ALL[k];
-                let centre = [0.15 + (k % 5) as f32 * 0.18, 0.15 + (k / 5) as f32 * 0.22];
+                let center = [0.15 + (k % 5) as f32 * 0.18, 0.15 + (k / 5) as f32 * 0.22];
                 MapPoint {
                     name: format!("{} {i}", kind.label()),
                     detail: String::new(),
                     // Roughly Gaussian clouds (the sum of three uniform draws), as t-SNE makes them.
                     position: [
-                        (centre[0] + (noise() + noise() + noise() - 1.5) * 0.06).clamp(0.0, 1.0),
-                        (centre[1] + (noise() + noise() + noise() - 1.5) * 0.07).clamp(0.0, 1.0),
+                        (center[0] + (noise() + noise() + noise() - 1.5) * 0.06).clamp(0.0, 1.0),
+                        (center[1] + (noise() + noise() + noise() - 1.5) * 0.07).clamp(0.0, 1.0),
                     ],
                     kind,
                     guessed: false,
@@ -1341,7 +1341,7 @@ mod many {
             let mut input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
             input.events.push(egui::Event::PointerMoved(Pos2::new(300.0 + frame as f32 * 7.0, 400.0)));
             if pan {
-                view.centre = [0.5 + frame as f32 * 0.001, 0.5];
+                view.center = [0.5 + frame as f32 * 0.001, 0.5];
             }
             let started = std::time::Instant::now();
             let mut output = ctx.run_ui(input, |ui| {
@@ -1497,7 +1497,7 @@ mod look {
     use super::*;
 
     /// Renders a map of generated clusters to `target/sample-map.png` to look at (not a test of
-    /// behaviour; run with `--ignored`).
+    /// behavior; run with `--ignored`).
     #[test]
     #[ignore]
     fn render_a_map() {
@@ -1509,7 +1509,7 @@ mod look {
             state ^= state << 5;
             state as f32 / u32::MAX as f32 - 0.5
         };
-        let centres = [
+        let centers = [
             (Kind::Kick, [0.2, 0.6]),
             (Kind::Bass, [0.3, 0.8]),
             (Kind::Snare, [0.5, 0.4]),
@@ -1520,14 +1520,14 @@ mod look {
             (Kind::Other, [0.4, 0.15]),
         ];
         let mut points = Vec::new();
-        for (k, (kind, centre)) in centres.iter().enumerate() {
+        for (k, (kind, center)) in centers.iter().enumerate() {
             for i in 0..150 {
                 let mut p = MapPoint {
                     name: format!("{} {i}", kind.label()),
                     detail: String::new(),
                     position: [
-                        centre[0] + (noise() + noise() + noise()) * 0.07,
-                        centre[1] + (noise() + noise() + noise()) * 0.07,
+                        center[0] + (noise() + noise() + noise()) * 0.07,
+                        center[1] + (noise() + noise() + noise()) * 0.07,
                     ],
                     kind: *kind,
                     guessed: i % 7 == 0,

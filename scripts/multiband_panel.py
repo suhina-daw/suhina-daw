@@ -7,8 +7,8 @@ The layout follows the design boards D (fitted to the device row) and E (the exp
 panels are drawn from expressions over the device's parameters and its live values (`readout`:
 per band its level and gain change, the output meter and the input spectrum), so the bands,
 crossovers, thresholds, curves and the signal follow the sound. Crossovers and thresholds are
-handles dragged in the band view. Every colour follows the theme: text, panel, control, border and
-accent are the SDK's theme colours, and the display, the band colours and the gain line are theme
+handles dragged in the band view. Every color follows the theme: text, panel, control, border and
+accent are the SDK's theme colors, and the display, the band colors and the gain line are theme
 tokens (`--device-display`, `--device-series-1..3`, `--device-highlight`) a theme may set.
 Run from the repository root: python scripts/multiband_panel.py
 """
@@ -24,7 +24,7 @@ PANEL = [3, 1, 2, 255]
 CONTROL = [3, 1, 3, 255]
 BORDER = [3, 1, 4, 255]
 ACCENT = [3, 1, 5, 255]
-# Theme tokens (THEME_TOKENS): their CSS property or the design's colour.
+# Theme tokens (THEME_TOKENS): their CSS property or the design's color.
 DISPLAY = [3, 0, 1, 255]
 HIGHLIGHT = [3, 0, 5, 255]
 SPECTRUM_COLOR = [3, 0, 6, 255]
@@ -164,9 +164,9 @@ def dashed(x_from, x_to, y, color, width=1.3, dashes=14):
             for k in range(dashes)]
 
 
-def band_change_at(centre, xs_hz):
-    """The gain change of the band a frequency `centre` (Hz) falls in."""
-    ln_c = math.log(centre)
+def band_change_at(center, xs_hz):
+    """The gain change of the band a frequency `center` (Hz) falls in."""
+    ln_c = math.log(center)
     low, high = par("lowCrossover"), par("highCrossover")
     above_low = step(sub(ln_c, {"op": "log", "value": minimum(low, high)}))
     above_high = step(sub(ln_c, {"op": "log", "value": maximum(low, high)}))
@@ -178,7 +178,7 @@ def band_view(x0, y0, w, h, big=False):
     a grid, the input spectrum filled in the accent with the output dotted over it, the 0 dB line
     and the gain line under it (each band's change, shaded), each band's thresholds dashed with a
     ring on the above one, the crossovers with their grips and frequencies, the band names with
-    their change (the chosen one boxed), the axis, and a grey veil over a band that is not heard."""
+    their change (the chosen one boxed), the axis, and a gray veil over a band that is not heard."""
     xs = edges(x0, w)
     label_size, value_size = (13.0, 12.0) if big else (11.0, 10.0)
     draws = [rect(x0, y0, w, h, DISPLAY, 3.0)]
@@ -192,21 +192,21 @@ def band_view(x0, y0, w, h, big=False):
         draws.append(line([x, y0], [x, y0 + h], tint(TEXT, 15)))
     # The spectrum: the analyser's bands sit evenly on the log axis; one convex quad per step.
     step_w = w / SPECTRUM_BANDS
-    centres_x = [x0] + [x0 + (i + 0.5) * step_w for i in range(SPECTRUM_BANDS)] + [x0 + w]
+    centers_x = [x0] + [x0 + (i + 0.5) * step_w for i in range(SPECTRUM_BANDS)] + [x0 + w]
     index = [0] + list(range(SPECTRUM_BANDS)) + [SPECTRUM_BANDS - 1]
-    centres_hz = [20.0 * 1000.0 ** ((i + 0.5) / SPECTRUM_BANDS) for i in index]
+    centers_hz = [20.0 * 1000.0 ** ((i + 0.5) / SPECTRUM_BANDS) for i in index]
     level_in = [readout(SPECTRUM + i) for i in index]
     ys_in = [level_y(v, y0, h) for v in level_in]
-    ys_out = [level_y(add(v, band_change_at(c, None)), y0, h) for v, c in zip(level_in, centres_hz)]
+    ys_out = [level_y(add(v, band_change_at(c, None)), y0, h) for v, c in zip(level_in, centers_hz)]
     # Soft as the design's gradient: a faint fill to the floor and a stronger band under the line.
-    for i in range(len(centres_x) - 1):
-        quad = [[centres_x[i], ys_in[i]], [centres_x[i + 1], ys_in[i + 1]], [centres_x[i + 1], y0 + h], [centres_x[i], y0 + h]]
+    for i in range(len(centers_x) - 1):
+        quad = [[centers_x[i], ys_in[i]], [centers_x[i + 1], ys_in[i + 1]], [centers_x[i + 1], y0 + h], [centers_x[i], y0 + h]]
         draws.append(path(quad, INVISIBLE, 0.0, fill=tint(SPECTRUM_COLOR, 22), closed_path=True))
-        under = [[centres_x[i], ys_in[i]], [centres_x[i + 1], ys_in[i + 1]], [centres_x[i + 1], add(ys_in[i + 1], h * 0.12)],
-                 [centres_x[i], add(ys_in[i], h * 0.12)]]
+        under = [[centers_x[i], ys_in[i]], [centers_x[i + 1], ys_in[i + 1]], [centers_x[i + 1], add(ys_in[i + 1], h * 0.12)],
+                 [centers_x[i], add(ys_in[i], h * 0.12)]]
         draws.append(path(under, INVISIBLE, 0.0, fill=tint(SPECTRUM_COLOR, 40), closed_path=True))
-    draws.append(path([[x, y] for x, y in zip(centres_x, ys_in)], tint(SPECTRUM_COLOR, 220), 1.4))
-    draws.append(path([[x, y] for x, y in zip(centres_x, ys_out)], tint(TEXT, 90), 1.0))
+    draws.append(path([[x, y] for x, y in zip(centers_x, ys_in)], tint(SPECTRUM_COLOR, 220), 1.4))
+    draws.append(path([[x, y] for x, y in zip(centers_x, ys_out)], tint(TEXT, 90), 1.0))
     # 0 dB of gain change, and the gain line under it: 3 px per dB (3.4 in the design's 178 px).
     zero = y0 + h * 0.17
     per_db = h * 3.4 / 178.0
@@ -217,7 +217,7 @@ def band_view(x0, y0, w, h, big=False):
         gain_y = add(zero, cut)
         draws.append(rect(left, zero, sub(right, left), cut, tint(HIGHLIGHT, 40)))
         draws.append(line([left, gain_y], [right, gain_y], HIGHLIGHT, 2.0 if big else 1.8))
-    # Thresholds: dashed in the band's colour, a ring on the above one in the middle of its band.
+    # Thresholds: dashed in the band's color, a ring on the above one in the middle of its band.
     for i, (bid, _, color) in enumerate(BANDS):
         left, right = xs[i], xs[i + 1]
         above = level_y(par(f"{bid}AboveThreshold"), y0, h)
@@ -234,7 +234,7 @@ def band_view(x0, y0, w, h, big=False):
         draws.append(circle([x, y0 + h - (16.0 if big else 12.0)], 7.0 if big else 5.0, ACCENT))
         draws.append(text(add(x, -46.0), y0 + h - (34.0 if big else 28.0), "", ACCENT, value_size, parameter=pid,
                           fmt="frequency", decimals=0))
-    # Band names with their gain change; the chosen band's is boxed in its colour.
+    # Band names with their gain change; the chosen band's is boxed in its color.
     for i, (bid, name, color) in enumerate(BANDS):
         left = xs[i]
         chosen = equal(par("band"), float(i))
@@ -295,7 +295,7 @@ def curve(bid, size, color):
     """A band's transfer curve in a size x size box, computed as the device computes it at 17
     input levels from -80 to 0 dB (both stages, knees, limit); the 1:1 diagonal; the input
     level as a line through the box, the cut or lift at it as a segment off the diagonal and a dot
-    on the curve; and a grey veil while the band is not heard."""
+    on the curve; and a gray veil while the band is not heard."""
     s = size / 80.0
 
     def point(x_db, y_db):
@@ -362,7 +362,7 @@ def button(cid, pid, caption, bounds, gesture="toggle", visible=None, off_label=
 
 
 def power(cid, bid, name, bounds, visible=None):
-    """The band's power button: a power symbol, grey while off and in the accent while on."""
+    """The band's power button: a power symbol, gray while off and in the accent while on."""
     _, _, w, h = bounds
     cx, cy, r = w / 2.0, h / 2.0, min(w, h) / 2.0 - 4.0
     drawing = [rect(0.0, 0.0, w, h, CONTROL, 3.0)]
@@ -426,7 +426,7 @@ def meter(cid, bounds, visible=None):
     """The output's peak: its level now in dB over two meters (accent and text, as the design), and
     the scale they span (`meterRange`, 0 at the top), which dragging up or down widens or narrows."""
     _, _, w, h = bounds
-    # Its bottom number ends where the knobs' values do; Peak and its value centre over the bars.
+    # Its bottom number ends where the knobs' values do; Peak and its value center over the bars.
     top, bottom = 30.0, h - 6.0
     center = w / 2.0
     span = bottom - top
@@ -464,7 +464,7 @@ def ott():
 
 
 def band_meters(cid, bounds, visible=None):
-    """Each band's own output peak, after its gain: a bar in the band's colour under its letter, on
+    """Each band's own output peak, after its gain: a bar in the band's color under its letter, on
     the output meter's scale (`meterRange`), which dragging changes here too."""
     _, _, w, h = bounds
     top, bottom = 30.0, h - 6.0

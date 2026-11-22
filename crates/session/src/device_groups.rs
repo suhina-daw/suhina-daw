@@ -189,6 +189,28 @@ pub(crate) fn check_chain(session: &Session, devices: &[Device], plays_notes: bo
     Ok(())
 }
 
+/// How far `devices` is from the rules [`check_chain`] checks, zero exactly when it holds them:
+/// one fault for each MIDI effect after the chain's start, each MIDI effect or instrument on a
+/// track that plays no notes, each instrument after the first, each effect before the
+/// instrument, and each group that breaks the group rules. A chain an earlier build left broken
+/// (#1673) can then be repaired an edit at a time: an edit that leaves no more faults than there
+/// were is not refused.
+fn chain_faults(session: &Session, devices: &[Device], plays_notes: bool) -> usize {
+    let kinds: Vec<Kind> = devices.iter().map(|d| kind_of(session, d)).collect();
+    let midi = kinds.iter().take_while(|k| **k == Kind::MidiEffect).count();
+    let mut faults = kinds.iter().skip(midi).filter(|k| **k == Kind::MidiEffect).count();
+    let instruments: Vec<usize> =
+        kinds.iter().enumerate().filter(|(_, k)| **k == Kind::Instrument).map(|(i, _)| i).collect();
+    if !plays_notes {
+        faults += midi + instruments.len();
+    }
+    faults += instruments.len().saturating_sub(1);
+    if let Some(&at) = instruments.first() {
+        faults += kinds.get(midi..at).map_or(0, |before| before.iter().filter(|k| **k == Kind::Effect).count());
+    }
+    faults + devices.iter().filter_map(Device::as_group).filter(|g| check_group(session, g).is_err()).count()
+}
+
 fn check_group(session: &Session, group: &DeviceGroup) -> Result<(), CommandError> {
     let mut instrument_group = false;
     for branch in &group.branches {
@@ -229,6 +251,9 @@ pub(crate) fn edit_chain<T>(
 ) -> Result<T, CommandError> {
     let notes = plays_notes(session, params)?;
     let mut devices = device_channel_read(session, params)?.devices.clone();
+    // How broken the chain is before the edit: one that already breaks the rules may still be
+    // edited, as long as the edit does not make it worse (#1673).
+    let faults_before = chain_faults(session, &devices, notes);
     let out = edit(&mut devices)?;
     if suhina_model::count_devices(&devices) > suhina_model::MAX_DEVICES {
         return Err(
@@ -238,7 +263,11 @@ pub(crate) fn edit_chain<T>(
     if suhina_model::device_group_depth(&devices) > suhina_model::MAX_DEVICE_GROUP_DEPTH {
         return Err(format!("device groups nest at most {} deep", suhina_model::MAX_DEVICE_GROUP_DEPTH).into());
     }
-    check_chain(session, &devices, notes)?;
+    if let Err(broken) = check_chain(session, &devices, notes)
+        && (faults_before == 0 || chain_faults(session, &devices, notes) > faults_before)
+    {
+        return Err(broken);
+    }
     device_channel(session, params)?.devices = devices;
     Ok(out)
 }

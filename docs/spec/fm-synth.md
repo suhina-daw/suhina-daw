@@ -3,7 +3,7 @@ description: The built-in FM Synth - operators, waveforms and drawn harmonics, D
 read_when: FM synth, fm-synth, operators, algorithms, FM waveforms, harmonics, time envelope, envelope loop, FM filter, spread, modulation matrix, FM panel, randomize, device.randomize, instrument randomizer
 type: spec
 status: current
-last_verified: 2026-11-20
+last_verified: 2026-11-23
 covers:
   - devices/fm-synth/**
   - crates/dsp/src/fm/**
@@ -106,7 +106,7 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
   and **More…**, and meters. The display has a line of what the page chooses above its picture, so a menu
   never covers it. The Mod page is the first route of every source, edited in place, in the room of the
   display and the dials.
-- **Each operator has a colour:** on its row, in the algorithm's picture, and where something is sent to it.
+- **Each operator has a color:** on its row, in the algorithm's picture, and where something is sent to it.
 - **Adding operators.** A new device starts with operator 1. An operator not in the sound shows only its
   number and its light, the first such row has **+ Add operator**, and in the algorithm's picture it is
   faint. An old project and a voice file keep their operators on.
@@ -132,7 +132,7 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
 - **The filter's picture** is its response, for each type and through Morph, with a line at the cutoff
   and frequency and resonance on one dot, or, with **Envelope** above it, its envelope, and the dials
   follow. On a low-pass or a high-pass the dot lies on the curve.
-- **The LFO's picture** is its wave on a grid, quietly, and in colour as much of it as reaches the sound after its
+- **The LFO's picture** is its wave on a grid, quietly, and in color as much of it as reaches the sound after its
   amount and its envelope. More cycles fit as its rate rises (two seconds' worth on the low range), and
   while it is on they run, at its rate up to three cycles a second. **Rate in** chooses Hz, Audio (hertz
   up to audio rate) or Sync (a note length). The classic LFO's rate reads in hertz too.
@@ -142,7 +142,7 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
   that modulates is outlined. A card on the Algo page takes the click anywhere on it.
 
 **A theme changes styles only:** palette, `--device-display`, `--device-series-1` … `5` (the
-operators' colours) and fonts. Layout is fixed.
+operators' colors) and fonts. Layout is fixed.
 
 The header's Close closes the larger view, and Undo is the app's own (Ctrl+Z).
 

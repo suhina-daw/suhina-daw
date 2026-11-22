@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, squash merge, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy, slow CI tests, nextest, test partitions
 type: howto
 status: current
-last_verified: 2026-11-19
+last_verified: 2026-11-23
 covers:
   - .github/workflows/ci.yml
   - .config/nextest.toml
@@ -438,15 +438,21 @@ partition saves; the doc tests, which nextest does not run, run in the first par
 picked from the workspace build with `-E "package(suhina-engine)"`, not built with `-p`: cargo
 resolves the dependencies' features for the one package then, and compiled a share of them again.
 
-**The theme drawings.** Each built-in theme or variant has its own test under
+**The theme drawings.** Each theme drawn (seven: one for each way a theme is made) has its own test under
 `painted::themes` in `apps/theme-render/tests/painted.rs`, so nextest spreads them across the
 partitions. Each test draws every scene except the build-dependent About dialog, on a fresh
 thread per scene, and checks both the painted digest and cut texts from those same drawings.
-There is no extra worker pool inside the tests; nextest controls their concurrency. A registry
-check fails if a theme or variant has no test or is listed twice. The recordings are one file per
-theme or variant in `apps/theme-render/tests/painted/` and `apps/theme-render/tests/cut/`, so
+There is no extra worker pool inside the tests; nextest controls their concurrency. A check fails
+if a theme drawn is not a built-in one, is listed twice, or the recordings hold a theme not drawn.
+The recordings are one file per theme drawn in `apps/theme-render/tests/painted/` and `apps/theme-render/tests/cut/`, so
 `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` can update them in parallel
-without tests writing the same file.
+without tests writing the same file. A drawing that differs from them is flagged, not failed: the
+tests write it to `SUHINA_PAINTED_REPORT`, and on Linux the job's last step puts the list in the
+job summary with a warning. On a pull request that step also checks out the base commit, draws the
+flagged themes again (`SUHINA_PAINTED_ONLY`, `SUHINA_PAINTED_DUMP`) and shows a `diff -u` of each
+flagged scene's paint listing, cut short in the summary and whole in the `theme-look-diffs-<n>`
+artifact. The recordings are written on the default branch after every merge by
+`docs-generated.yml` (job `looks`), and a pull request that edits them fails the docs job.
 
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
 is reported rather than the run stopping at the first (locally, `cargo test --workspace
@@ -468,7 +474,7 @@ once nextest is installed (`cargo install cargo-nextest --locked`).
 its own test under `scenes::layouts` in `apps/theme-render/tests/scenes.rs`. Each test drives every
 scene, on its own test thread; nextest can distribute the four themes over the three partitions
 instead of assigning their combined test to one runner. The built-in theme list and those tests
-come from the same table. The colour-only guard still rejects an unlisted theme with layout
+come from the same table. The color-only guard still rejects an unlisted theme with layout
 properties or artwork, and the other bundled themes still drive the launcher. This changes
 scheduling, not the scenes, assertions or drawing recordings.
 

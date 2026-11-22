@@ -9,7 +9,7 @@ use suhina_engine::model::{
     AudioInput, ClipId, InputChannels, MidiInput, MidiPort, Monitor, Rgb, TimeSignature, TrackId,
 };
 
-use crate::interaction::colour_picker;
+use crate::interaction::color_picker;
 use crate::kit::theme;
 use crate::kit::widgets::Action;
 use crate::settings::keymap::shown;
@@ -18,8 +18,8 @@ use crate::settings::keymap::shown;
 pub struct TrackMenu<'a> {
     pub track: TrackId,
     pub name: &'a str,
-    /// The colour the track shows, outlined among the swatches.
-    pub colour: Rgb,
+    /// The color the track shows, outlined among the swatches.
+    pub color: Rgb,
     pub is_group: bool,
     /// A return track: new tracks from its menu go after the regular tracks.
     pub is_return: bool,
@@ -383,7 +383,7 @@ pub fn midi_input_choices(ui: &mut Ui, track: TrackId, input: &MidiInput, ports:
     midi_monitor_choices(ui, track, input.monitor, actions);
 }
 
-/// The menu of a track header or column: name, colour, group, ungroup, move into or out of a
+/// The menu of a track header or column: name, color, group, ungroup, move into or out of a
 /// group, delete.
 pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) {
     let track = menu.track.0;
@@ -411,26 +411,38 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     }
     ui.data_mut(|d| d.insert_temp(id, text));
 
-    // Colour: the palette every colour choice offers.
-    // A colour picked with several tracks selected colours them all.
+    // Color: the palette every color choice offers.
+    // A color picked with several tracks selected colors them all.
     let single = [menu.track];
     let selected = if menu.selection.contains(&menu.track) { menu.selection } else { &single };
-    colour_picker::track_row(ui, menu.colour, selected, actions);
-    // A group's tracks, at any depth, and their clips: its colour, so the group reads as one in
+    color_picker::track_row(ui, menu.color, selected, actions);
+    // A group's tracks, at any depth, and their clips: its color, so the group reads as one in
     // every view.
     if menu.is_group && ui.button("Recolor group").clicked() {
-        // The colour the group shows: one it was never given is worked out from its place.
-        let params = json!({ "track": track, "color": colour_picker::hex(menu.colour), "clips": true });
+        // The color the group shows: one it was never given is worked out from its place.
+        let params = json!({ "track": track, "color": color_picker::hex(menu.color), "clips": true });
         actions.push(Action::new("track.colorGroup", params));
         ui.close();
     }
-    // The track's clips: back to the track's colour, or named after it.
+    // The track's clips, or with several tracks selected every one's: back to their track's
+    // color, or named after it; one undo step for them all (one gesture).
+    let now = ui.input(|i| i.time);
+    let each = |id: &'static str, params: &dyn Fn(u32) -> serde_json::Value, actions: &mut Vec<Action>| {
+        let gesture = (selected.len() > 1).then(|| crate::interaction::commands::gesture(format_args!("{id} {now}")));
+        for t in selected {
+            let mut own = params(t.0);
+            if let Some(gesture) = &gesture {
+                own["gesture"] = gesture.clone();
+            }
+            actions.push(Action::new(id, own));
+        }
+    };
     if ui.button("Assign track color to all clips").clicked() {
-        actions.push(Action::new("clip.setColor", json!({ "track": track, "color": "none" })));
+        each("clip.setColor", &|t| json!({ "track": t, "color": "none" }), actions);
         ui.close();
     }
     if ui.button("Assign track name to clips").clicked() {
-        actions.push(Action::new("track.renameClips", json!({ "track": track })));
+        each("track.renameClips", &|t| json!({ "track": t }), actions);
         ui.close();
     }
     if let Some((input, channels)) = menu.audio {
@@ -643,16 +655,11 @@ pub fn clip_menu(
     }
     let list: Vec<serde_json::Value> = clips.iter().map(|(_, clip)| json!({ "clip": clip.0 })).collect();
     ui.set_min_width(140.0);
-    // The clips' colour: a swatch or any colour, or back to their tracks' colour.
-    // One command for them all: one undo step, and a large selection takes it at once.
-    if let Some(pick) = colour_picker::swatch_row(ui, None) {
-        actions.push(Action::new(
-            "clip.setColorMany",
-            json!({ "clips": list.clone(), "color": colour_picker::hex(pick.colour) }),
-        ));
-        pick.close_menu(ui);
-    }
-    if ui.button("Track colour").clicked() {
+    // The clips' color: the track menu's palette and More colors, or back to their tracks'
+    // color. One command for them all: one undo step, and a large selection takes it at once.
+    let ids: Vec<_> = clips.iter().map(|(_, clip)| *clip).collect();
+    color_picker::clip_row(ui, None, &ids, actions);
+    if ui.button("Track color").clicked() {
         actions.push(Action::new("clip.setColorMany", json!({ "clips": list.clone(), "color": "none" })));
         ui.close();
     }
@@ -968,7 +975,7 @@ pub fn time_signature_list(
 }
 
 /// A clip slot's right-click menu: copy its clip, or paste the copied clip into it (`scene`
-/// from 1). Copy is greyed out on an empty slot, Paste while nothing has been copied.
+/// from 1). Copy is grayed out on an empty slot, Paste while nothing has been copied.
 /// The menu of a device in a track's chain: removing it takes it off the track, settings and
 /// all.
 /// A device's menu in the detail area; `branches` is how many branches it has when it is a
@@ -1054,16 +1061,29 @@ pub fn device_menu(
     }
 }
 
+/// A clip slot's menu. `clip` is the slot's clip and its own color, if it has one: the palette
+/// and More colors color it as the arrangement clip's menu does, and Track color hands it back to
+/// its track's.
+#[allow(clippy::too_many_arguments)]
 pub fn slot_menu(
     ui: &mut Ui,
     track: TrackId,
     scene: usize,
     name: &str,
-    has_clip: bool,
+    clip: Option<(ClipId, Option<Rgb>)>,
     can_paste: bool,
     actions: &mut Vec<Action>,
 ) {
+    let has_clip = clip.is_some();
     ui.set_min_width(140.0);
+    if let Some((clip, color)) = clip {
+        color_picker::clip_row(ui, color, &[clip], actions);
+        if ui.button("Track color").clicked() {
+            actions.push(Action::new("clip.setColor", json!({ "clip": clip.0, "color": "none" })));
+            ui.close();
+        }
+        ui.separator();
+    }
     // Rename, or with the setting on the clip's name typed to rename: applied with Enter or
     // Rename, as a marker's is.
     if has_clip && !name_field_on(ui) {
@@ -1164,7 +1184,7 @@ mod tests {
         assert_eq!(action("signature", " "), Some(("scene.setTimeSignature", json!({ "scene": 2 }))));
         // Not a number: sent as text, so the command's error says what is wrong.
         assert_eq!(action("tempo", "fast"), Some(("scene.setTempo", json!({ "scene": 2, "bpm": "fast" }))));
-        assert_eq!(action("colour", "red"), None);
+        assert_eq!(action("color", "red"), None);
     }
 
     /// A time signature from a menu: the start signature at bar 1, a change at a later bar

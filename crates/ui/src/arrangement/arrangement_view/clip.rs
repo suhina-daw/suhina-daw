@@ -731,6 +731,13 @@ pub(super) fn clip_box<'a>(
             }
             let id = Id::unique(("clip-edge", clip.id.0, grab as u8));
             let response = ui.interact(hit, id, Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            // An audio clip's edge says what Shift does to it, as the pointer rests on it: the drag
+            // stretches the audio to the new length instead of trimming it (#1185).
+            let response = if clip.audio && state.stretch_alt && state.gesture.edge().is_none() {
+                response.on_hover_text("Drag to trim the clip. Shift-drag stretches its audio with the edge")
+            } else {
+                response
+            };
             let what = match grab {
                 EdgeGrab::Left => "Left edge",
                 EdgeGrab::Right => "Right edge",
@@ -831,11 +838,11 @@ pub(super) fn clip_box<'a>(
     // A clip picked by a click in its body (the insert marker set there) looks as one not
     // picked, as the play start is what the click chose; picked whole, it is lit.
     let lit = selected && state.picked_whole;
-    // How the clip is drawn: with a selection colour (Settings › Appearance › Selection colour),
-    // every selected clip takes it, however it was picked; with Clip's own colour, only one picked
+    // How the clip is drawn: with a selection color (Settings › Appearance › Selection color),
+    // every selected clip takes it, however it was picked; with Clip's own color, only one picked
     // whole is lit.
     let drawn_selected =
-        if crate::kit::selection::look().mode == crate::kit::selection::SelectionColour::Own { lit } else { selected };
+        if crate::kit::selection::look().mode == crate::kit::selection::SelectionColor::Own { lit } else { selected };
     let fading = state.gesture.fade().copied().is_some_and(|d| d.key == key)
         || state.gesture.fade_curve().copied().is_some_and(|d| d.key == key);
     let pointer_in = widgets::pointer_over(ui, visible).is_some();
@@ -1073,7 +1080,7 @@ pub(super) fn clip_box<'a>(
         );
     };
     let mut envelope_place = None;
-    // The envelope's ink: what reads on the clip's colour, as its name does.
+    // The envelope's ink: what reads on the clip's color, as its name does.
     let envelope_ink = ink_on(motion::mix(super::panel_surface(), rgb(clip.color), 0.82));
     let result = match state.gesture.clip().copied() {
         Some(drag) if mine(&drag) && drag.target != lane.track => {
@@ -1123,6 +1130,7 @@ pub(super) fn clip_box<'a>(
                 origin: x_of(start),
                 beat_width: state.beat_width,
                 ink: envelope_ink,
+                site: "arrangement",
             });
             // An audio clip's edge dragged with Ctrl and Alt stretches its audio: drawn stretched
             // as it goes, about the edge that stays, not only once it is let go.
@@ -1148,6 +1156,7 @@ pub(super) fn clip_box<'a>(
                         origin: stretched(start),
                         beat_width: state.beat_width * factor as f32,
                         ink: envelope_ink,
+                        site: "arrangement",
                     });
                     paint_clip(
                         &painter.with_clip_rect(clip_area),
@@ -1181,9 +1190,9 @@ pub(super) fn clip_box<'a>(
             None
         }
     };
-    // With Clip's own colour, a clip picked by a click in its body is not lit (the play start is
+    // With Clip's own color, a clip picked by a click in its body is not lit (the play start is
     // what the click chose), but outlined, so the clip the editor and the keys work on is plain to
-    // see. With a selection colour it is filled with it like any selected clip (above).
+    // see. With a selection color it is filled with it like any selected clip (above).
     if selected && !drawn_selected && state.gesture.clip().is_none() {
         let edge = Rect::from_min_size(rect.min, Vec2::new(4.0, rect.height()));
         let body = motion::mix(super::panel_surface(), rgb(clip.color), 0.82);
@@ -1214,6 +1223,7 @@ pub(super) fn clip_box<'a>(
             origin: rect.left(),
             beat_width: state.beat_width,
             ink: envelope_ink,
+            site: "arrangement",
         });
         // The envelope's own grid (1/16 until another is picked in the clip's menu), not the
         // Arrangement's.
@@ -1369,9 +1379,9 @@ pub(super) fn paint_ara_notes(
     }
 }
 
-/// `colour` more saturated and a little brighter, for a selected track.
-pub(super) fn saturated(colour: Color32) -> Color32 {
-    let mut hsva = egui::ecolor::Hsva::from(colour);
+/// `color` more saturated and a little brighter, for a selected track.
+pub(super) fn saturated(color: Color32) -> Color32 {
+    let mut hsva = egui::ecolor::Hsva::from(color);
     hsva.s = (hsva.s * 1.3).min(1.0);
     hsva.v = (hsva.v * 1.12).min(1.0);
     hsva.into()
@@ -1396,7 +1406,7 @@ pub(super) fn clip_element_id(clip: &ClipBox) -> String {
 /// The `clip` element of an Arrangement clip, with its id, its `[color]` and its states:
 /// `[selected]`, `[muted]`, `[playing]` while the play position is inside it, `[recording]` while a
 /// take records over it. Everything drawn of one clip (its body, the outline of a clip picked by a
-/// click in its body) is looked up from this one description, so a rule for its colour or one of
+/// click in its body) is looked up from this one description, so a rule for its color or one of
 /// its states reaches each part.
 pub(super) fn clip_element<'a>(
     id: &'a str,
@@ -1445,7 +1455,7 @@ fn clip_parts(look: &super::state::ClipLook, track: TrackId, kind: super::state:
     parts
 }
 
-/// Draws a clip's body, colour strip, name and the marks of its notes (only those in view).
+/// Draws a clip's body, color strip, name and the marks of its notes (only those in view).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_clip(
     painter: &egui::Painter,
@@ -1484,19 +1494,19 @@ pub(super) fn paint_clip(
     // the lane or the clip beside it (#1198).
     let inside = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
     let painter = &inside;
-    // Keep the clip colour legible against the quiet grid. Selection changes brightness,
+    // Keep the clip color legible against the quiet grid. Selection changes brightness,
     // never hue; the reserved title area leaves notes and waveforms unobstructed.
-    // A muted clip is the sheet's `clip[muted]` grey, not a dimmer shade of its colour (#1393):
-    // its own colour stays only down its leading edge, and on a muted track in its name bar.
-    let strength = if clip.audio { look.audio_colour_strength } else { 82 };
+    // A muted clip is the sheet's `clip[muted]` gray, not a dimmer shade of its color (#1393):
+    // its own color stays only down its leading edge, and on a muted track in its name bar.
+    let strength = if clip.audio { look.audio_color_strength } else { 82 };
     let surface = super::panel_surface();
-    // A muted clip's grey is the computed `arrangement clip[muted]` background: the base sheet's
+    // A muted clip's gray is the computed `arrangement clip[muted]` background: the base sheet's
     // rule reads `--clip-mutedBackground`, so a theme that sets only the variable reaches it, and
     // a theme's own rule for the clip still wins.
-    // A selected clip that plays has its body filled with the one selection colour every selected
-    // clip and header shares (Settings › Appearance › Selection colour), while its name bar keeps
-    // the clip's own colour, as when it is not selected, and so does its leading edge. With Clip's
-    // own colour it keeps its colour, a little brighter.
+    // A selected clip that plays has its body filled with the one selection color every selected
+    // clip and header shares (Settings › Appearance › Selection color), while its name bar keeps
+    // the clip's own color, as when it is not selected, and so does its leading edge. With Clip's
+    // own color it keeps its color, a little brighter.
     let selection_fill = if selected && !off { crate::kit::selection::fill(&own) } else { None };
     let fallback = selection_fill.unwrap_or_else(|| clip_body(surface, rgb(clip.color), strength, off, selected));
     let body = if off { own.computed_background_or(fallback) } else { own.background_or(fallback) };
@@ -1527,9 +1537,9 @@ pub(super) fn paint_clip(
     if bar.is_none() {
         painter.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), 0.0, body);
     }
-    // The stretch of the body under the time selection, in the selection colour, as a selected
-    // clip's body is, its name bar kept (Settings › Appearance › Selection colour; with Clip's own
-    // colour the time selection is lit over the clips instead).
+    // The stretch of the body under the time selection, in the selection color, as a selected
+    // clip's body is, its name bar kept (Settings › Appearance › Selection color; with Clip's own
+    // color the time selection is lit over the clips instead).
     let time_fill = if off { None } else { look.time_lit.and_then(|_| crate::kit::selection::fill(&own)) };
     let time_lit = look.time_lit.zip(time_fill).and_then(|((from, to), fill)| {
         let x = egui::Rangef::new(x_of(from), x_of(to)).intersection(rect.x_range());
@@ -1542,7 +1552,7 @@ pub(super) fn paint_clip(
     crate::kit::liquid::paint(painter, rect.shrink(1.0), &own, body, crate::kit::liquid::Surface::Clip);
     let ink = ink_on(body);
     let edge_width = if selected { 4.0 } else { 3.0 };
-    // A muted clip keeps its colour down its leading edge, so it is still known by it.
+    // A muted clip keeps its color down its leading edge, so it is still known by it.
     let line_ink = motion::mix(body, ink, 0.5);
     let edge_ink = if off || selection_fill.is_some() { rgb(clip.color) } else { line_ink };
     if let Some(bar) = bar {
@@ -1563,7 +1573,7 @@ pub(super) fn paint_clip(
         edge_ink,
     );
     // A looping clip's passes are marked by the notches and lines at their starts (below), not by
-    // shades: the body is one colour all along.
+    // shades: the body is one color all along.
     // The grid shows through the body, under the waveform, the bars stronger: at 3.5 % and 7 % of
     // the clip's ink it was lost on a full clip, and placing an envelope point or an edit by eye
     // against the lanes' grid was guesswork.
@@ -1574,7 +1584,7 @@ pub(super) fn paint_clip(
         let (beat_ink, bar_ink) = (motion::mix(body, ink, 0.1), motion::mix(body, ink, 0.2));
         let lit_x = time_lit.map(|(lit, _)| lit.x_range());
         for &(x, on_bar) in lines.iter().filter(|(x, _)| *x > rect.left() + 1.0 && *x < rect.right() - 1.0) {
-            // Under a time selection the line is drawn for the selection colour's fill.
+            // Under a time selection the line is drawn for the selection color's fill.
             if lit_x.is_some_and(|lit| lit.contains(x)) {
                 continue;
             }
@@ -1588,23 +1598,23 @@ pub(super) fn paint_clip(
     // them so both read (ADR 0033, #720): dimmed to 40 % it read as an empty clip on a light body.
     let ara_notes = timeline.ara_notes.get(&clip.id).filter(|_| clip.audio).zip(timeline.tempo.as_ref());
     let appearance = look.waveform_appearance;
-    // Theme: the sheet's `clip-waveform` and `clip-notes` colours, else Dark.
-    let content_ink = if appearance.mode == crate::settings::view_settings::WaveformColour::Theme {
+    // Theme: the sheet's `clip-waveform` and `clip-notes` colors, else Dark.
+    let content_ink = if appearance.mode == crate::settings::view_settings::WaveformColor::Theme {
         parts.content.color_or(appearance.ink(ink))
     } else {
         appearance.ink(ink)
     };
-    // Notes the theme or the clip's colour chose that are lost on the body (an imported clip's own
-    // colour can be as dark as its notes) take the body's readable ink instead; a colour the user
+    // Notes the theme or the clip's color chose that are lost on the body (an imported clip's own
+    // color can be as dark as its notes) take the body's readable ink instead; a color the user
     // chose in Settings (Light, Dark, Custom) is kept as chosen.
-    use crate::settings::view_settings::WaveformColour;
-    let chosen = matches!(appearance.mode, WaveformColour::Light | WaveformColour::Dark | WaveformColour::Custom);
+    use crate::settings::view_settings::WaveformColor;
+    let chosen = matches!(appearance.mode, WaveformColor::Light | WaveformColor::Dark | WaveformColor::Custom);
     let content_ink = if !clip.audio && !chosen && theme::text_contrast(content_ink, body) < 3.0 {
         theme::text_on(body)
     } else {
         content_ink
     };
-    // On the selection colour, which may be light or dark whatever the theme is, they take an ink
+    // On the selection color, which may be light or dark whatever the theme is, they take an ink
     // that reads on it where theirs does not.
     let content_ink =
         if selection_fill.is_some() { crate::kit::selection::readable(content_ink, body) } else { content_ink };
@@ -1612,7 +1622,7 @@ pub(super) fn paint_clip(
         Some((_, fill)) => crate::kit::selection::readable(content_ink, fill),
         None => content_ink,
     };
-    // A muted clip's notes and waveform step back, so the grey reads first.
+    // A muted clip's notes and waveform step back, so the gray reads first.
     let content_ink = if off { motion::mix(body, content_ink, 0.6) } else { content_ink };
     let wave_ink = if ara_notes.is_some() { motion::mix(body, content_ink, 0.75) } else { content_ink };
     let dim = |_: Color32| wave_ink;
@@ -1625,7 +1635,7 @@ pub(super) fn paint_clip(
     );
     let pass = painter.ctx().cumulative_pass_nr();
     painter.ctx().data_mut(|d| {
-        // The name bar's colour, as it is drawn above (a hair lighter or darker than the body).
+        // The name bar's color, as it is drawn above (a hair lighter or darker than the body).
         let fill = name_look.as_ref().map_or(body, |look| look.fill);
         let size = own.font_size_or(theme::TEXT);
         let spot = crate::app::NameSpot { rect: strip, pass, fill, text: text_color, size };
@@ -1640,13 +1650,13 @@ pub(super) fn paint_clip(
     };
     let name_left = rect.left().max(view.left()) + 7.0 + button;
     // A clip turned off itself has the mute mark before its name: with it, it is never taken for
-    // a clip whose colour is grey, and a clip on a muted track (which has none) is told from one
+    // a clip whose color is gray, and a clip on a muted track (which has none) is told from one
     // muted on its own. A clip too low for a name bar has it too, before the name its body shows
     // (below).
-    let mark = if clip.enabled { None } else { mute_mark_centre(rect, bar, name_left) };
+    let mark = if clip.enabled { None } else { mute_mark_center(rect, bar, name_left) };
     if let (Some(bar), Some(look)) = (bar, name_look.as_ref()) {
-        if let Some(centre) = mark {
-            paint_mute_mark(painter, centre, text_color);
+        if let Some(center) = mark {
+            paint_mute_mark(painter, center, text_color);
         }
         let left = after_mute_mark(name_left, mark);
         let name_rect =
@@ -1718,8 +1728,8 @@ pub(super) fn paint_clip(
         // Only the notes in view are drawn; a long looped clip has thousands.
         let first = f64::from((view.left() - x_of(start)) / beat_width) - 1.0;
         let last = f64::from((view.right() - x_of(start)) / beat_width) + 1.0;
-        // Dark on the clip's colour, as notes read on a vivid body; light ink read as a
-        // highlight and vanished on the light colours.
+        // Dark on the clip's color, as notes read on a vivid body; light ink read as a
+        // highlight and vanished on the light colors.
         let in_view = |n: &&crate::arrangement::timeline::NoteMark| {
             n.start + n.length >= first && n.start <= last && n.start < span_end
         };
@@ -1746,8 +1756,8 @@ pub(super) fn paint_clip(
         let size = el.font_size_or(theme::TEXT).min((rect.height() - 2.0).max(6.0));
         let ink = el.color_or(text_color);
         // A clip turned off has its mute mark first, the name after it, as in a name bar.
-        if let Some(centre) = mark {
-            paint_mute_mark(painter, centre, ink);
+        if let Some(center) = mark {
+            paint_mute_mark(painter, center, ink);
         }
         let left = after_mute_mark(name_left, mark);
         let name_rect = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(rect.right() - 5.0, rect.bottom()));
@@ -1864,10 +1874,10 @@ fn paint_link_marker(painter: &egui::Painter, rect: Rect, ink: Color32) {
     if rect.height() < 16.0 || rect.width() < 24.0 {
         return;
     }
-    let centre = Pos2::new(rect.right() - 10.0, rect.bottom() - 6.0);
+    let center = Pos2::new(rect.right() - 10.0, rect.bottom() - 6.0);
     let stroke = Stroke::new(1.0, ink);
     for dx in [-2.5, 2.5] {
-        let link = Rect::from_center_size(centre + egui::vec2(dx, 0.0), egui::vec2(6.0, 4.0));
+        let link = Rect::from_center_size(center + egui::vec2(dx, 0.0), egui::vec2(6.0, 4.0));
         painter.rect_stroke(link, 2.0, stroke, StrokeKind::Inside);
     }
 }
@@ -1976,51 +1986,51 @@ pub(super) fn drawn_muted(track_muted: bool, enabled: bool) -> bool {
 }
 
 /// A clip's body where no sheet styles it. A muted clip (turned off, or on a muted track) is the
-/// base sheet's `clip[muted]` grey whatever its colour, so it never reads as a darker shade
-/// of a clip that plays (#1393); its colour stays in the project, down its leading edge, and in
+/// base sheet's `clip[muted]` gray whatever its color, so it never reads as a darker shade
+/// of a clip that plays (#1393); its color stays in the project, down its leading edge, and in
 /// its name bar on a muted track. Selection lifts the brightness either way and never changes
 /// the hue.
-pub(super) fn clip_body(surface: Color32, colour: Color32, strength: u8, muted: bool, selected: bool) -> Color32 {
+pub(super) fn clip_body(surface: Color32, color: Color32, strength: u8, muted: bool, selected: bool) -> Color32 {
     if muted {
-        return muted_clip_grey(selected);
+        return muted_clip_gray(selected);
     }
     let strength = if selected { strength.saturating_add(12).min(100) } else { strength };
-    colour_surface(surface, colour, strength)
+    color_surface(surface, color, strength)
 }
 
 /// The background the base sheet gives `arrangement clip[muted]` (`[muted][selected]` while
-/// selected), with Suhina Studio's colours, worked out once: the fallback where no sheet styles the
-/// window, as the sample map's kind colours are.
-pub(crate) fn muted_clip_grey(selected: bool) -> Color32 {
-    static GREYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
-    muted_grey(&GREYS, "clip", selected)
+/// selected), with Suhina Studio's colors, worked out once: the fallback where no sheet styles the
+/// window, as the sample map's kind colors are.
+pub(crate) fn muted_clip_gray(selected: bool) -> Color32 {
+    static GRAYS: std::sync::OnceLock<[Color32; 2]> = std::sync::OnceLock::new();
+    muted_gray(&GRAYS, "clip", selected)
 }
 
 /// The background the base sheet gives `arrangement <element>[muted]` (`[muted][selected]` while
-/// `selected`), worked out once into `greys`.
-pub(super) fn muted_grey(greys: &std::sync::OnceLock<[Color32; 2]>, element: &str, selected: bool) -> Color32 {
-    let greys = greys.get_or_init(|| {
+/// `selected`), worked out once into `grays`.
+pub(super) fn muted_gray(grays: &std::sync::OnceLock<[Color32; 2]>, element: &str, selected: bool) -> Color32 {
+    let grays = grays.get_or_init(|| {
         let of = |attributes: &[(&str, &str)]| {
             crate::kit::native_css::base_background(Some("arrangement"), element, attributes).unwrap_or(Color32::GRAY)
         };
         [of(&[("muted", "")]), of(&[("muted", ""), ("selected", "")])]
     });
-    greys[usize::from(selected)]
+    grays[usize::from(selected)]
 }
 
-/// The colour of a clip's name bar: a hair off its body, or, for a clip that plays on a muted
-/// track, the clip's colour as an unmuted clip's body has it, so the clips of a muted track keep
-/// their colour in their names while their bodies are grey.
+/// The color of a clip's name bar: a hair off its body, or, for a clip that plays on a muted
+/// track, the clip's color as an unmuted clip's body has it, so the clips of a muted track keep
+/// their color in their names while their bodies are gray.
 pub(super) fn name_bar_fill(
     body: Color32,
     surface: Color32,
-    colour: Color32,
+    color: Color32,
     strength: u8,
     on_muted_track: bool,
     selected: bool,
 ) -> Color32 {
     if on_muted_track {
-        return clip_body(surface, colour, strength, false, selected);
+        return clip_body(surface, color, strength, false, selected);
     }
     motion::mix(body, ink_on(body), 0.045)
 }
@@ -2028,16 +2038,16 @@ pub(super) fn name_bar_fill(
 /// A clip's name bar as the sheet's `clip-name` styles it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct NameBarLook {
-    /// The bar's fill: the sheet's background, else the clip's own bar colour.
+    /// The bar's fill: the sheet's background, else the clip's own bar color.
     pub fill: Color32,
-    /// The name's and the mute mark's ink: the sheet's colour, else the ink that reads on `fill`.
+    /// The name's and the mute mark's ink: the sheet's color, else the ink that reads on `fill`.
     pub ink: Color32,
     pub font_size: f32,
 }
 
-/// The name bar of a clip whose own bar colour is `bar_fill`, as the sheet styles it. The ink is
+/// The name bar of a clip whose own bar color is `bar_fill`, as the sheet styles it. The ink is
 /// worked out from the fill the bar is drawn in, so a theme's dark bar gets light ink even where
-/// it gives the name no colour of its own.
+/// it gives the name no color of its own.
 pub(super) fn name_bar_look(name: &crate::kit::element::Look, bar_fill: Color32) -> NameBarLook {
     let fill = name.background_or(bar_fill);
     NameBarLook { fill, ink: name.color_or(ink_on(fill)), font_size: name.font_size_or(theme::TEXT) }
@@ -2049,7 +2059,7 @@ const MUTE_MARK: f32 = 9.0;
 /// Where the mute mark of a clip turned off goes, its name starting at `left`: before the name,
 /// in the middle of the name bar or, on a clip too low for one, of the body that shows the name.
 /// `None` when the clip is too small to hold it.
-pub(super) fn mute_mark_centre(rect: Rect, bar: Option<Rect>, left: f32) -> Option<Pos2> {
+pub(super) fn mute_mark_center(rect: Rect, bar: Option<Rect>, left: f32) -> Option<Pos2> {
     let x = left + MUTE_MARK / 2.0;
     match bar {
         Some(bar) => Some(Pos2::new(x, bar.center().y)),
@@ -2065,20 +2075,20 @@ pub(super) fn after_mute_mark(left: f32, mark: Option<Pos2>) -> f32 {
 }
 
 /// The mark before the name of a clip turned off: a ring crossed by a slash, in the name's ink.
-fn paint_mute_mark(painter: &egui::Painter, centre: Pos2, ink: Color32) {
+fn paint_mute_mark(painter: &egui::Painter, center: Pos2, ink: Color32) {
     let radius = MUTE_MARK / 2.0 - 0.5;
     let stroke = Stroke::new(1.25, ink);
-    painter.circle_stroke(centre, radius, stroke);
+    painter.circle_stroke(center, radius, stroke);
     let reach = radius * std::f32::consts::FRAC_1_SQRT_2;
-    painter.line_segment([centre + Vec2::new(-reach, reach), centre + Vec2::new(reach, -reach)], stroke);
+    painter.line_segment([center + Vec2::new(-reach, reach), center + Vec2::new(reach, -reach)], stroke);
 }
 
-/// A colour over a theme surface at `strength` per cent, keeping its hue.
-pub(super) fn colour_surface(background: Color32, source: Color32, strength: u8) -> Color32 {
+/// A color over a theme surface at `strength` per cent, keeping its hue.
+pub(super) fn color_surface(background: Color32, source: Color32, strength: u8) -> Color32 {
     motion::mix(background, source, f32::from(strength.min(100)) / 100.0)
 }
 
-/// Text and marks that read on `background`: dark on a light colour, light on a dark one.
+/// Text and marks that read on `background`: dark on a light color, light on a dark one.
 pub(super) fn ink_on(background: Color32) -> Color32 {
     let [r, g, b, _] = background.to_array();
     let light = 0.299 * f32::from(r) + 0.587 * f32::from(g) + 0.114 * f32::from(b);
@@ -2102,7 +2112,7 @@ fn take_selection() -> crate::kit::element::Look {
 }
 
 /// Draws `lane`'s take lanes under it (`docs/spec/recording.md` › Take lanes): each take's
-/// clips dimmed in the take's own colour, as they do not play. A double-click on a take's clip puts
+/// clips dimmed in the take's own color, as they do not play. A double-click on a take's clip puts
 /// the whole clip on the track, a drag across a take the part dragged over (`take.comp`), a Ctrl
 /// drag paints an area across the lanes or moves pieces, and a piece's lower corners move its
 /// edges; the take's name has Delete take in its menu.
@@ -2182,15 +2192,15 @@ pub(super) fn take_lanes(
         if row.bottom() < at.visible.top() || row.top() > at.visible.bottom() {
             continue;
         }
-        let colour = take.color;
+        let color = take.color;
         let params = json!({
             "track": lane.track.0,
             "take": take.number,
-            "color": crate::interaction::colour_picker::hex(colour),
+            "color": crate::interaction::color_picker::hex(color),
         });
-        // The header in the take's colour, a darker shade of it, with a strip of the colour itself
+        // The header in the take's color, a darker shade of it, with a strip of the color itself
         // at its inner edge, as a track's header has (#989).
-        let swatch = crate::interaction::colour_picker::color32(colour);
+        let swatch = crate::interaction::color_picker::color32(color);
         let lane_key = (lane.track, take.number);
         let picked = state.take_lanes_picked.contains(&lane_key);
         // The take's header, `take-header` with the take's `[color]`, `[selected]` while picked.
@@ -2207,7 +2217,7 @@ pub(super) fn take_lanes(
             painter.rect_stroke(header, 0.0, Stroke::new(1.5, outline), StrokeKind::Inside);
         }
         // The name's ink, and its buttons' where no rule of theirs sets one: the header's text
-        // colour, read while it is in scope.
+        // color, read while it is in scope.
         let ink = take_header.color_or(ink_on(shade));
         // The lane's clips and buttons are not inside the header.
         drop(take_header);
@@ -2217,7 +2227,7 @@ pub(super) fn take_lanes(
             Sense::click(),
         );
         name.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, take.name.clone()));
-        // The piece a right-click on the lane was over, which Recolor colours alone (#989).
+        // The piece a right-click on the lane was over, which Recolor colors alone (#989).
         let piece = state.take_piece.filter(|(t, n, _)| *t == lane.track && *n == take.number).map(|(_, _, p)| p);
         let menu = |ui: &mut Ui, state: &mut ArrangementViewState, actions: &mut Vec<Action>, piece: Option<usize>| {
             take_menu(ui, lane.track, take, piece, &params, state, actions)
@@ -2248,14 +2258,14 @@ pub(super) fn take_lanes(
             state.time_selection = None;
         }
         name.context_menu(|ui| menu(ui, state, actions, None));
-        // Its buttons, as a track's header has (#989): delete, solo, its colour, and the up arrow
+        // Its buttons, as a track's header has (#989): delete, solo, its color, and the up arrow
         // that puts the whole take on the track.
         let button = Vec2::splat(16.0);
         let row_y = header.center().y - button.y / 2.0;
         let place = |x: f32| Rect::from_min_size(Pos2::new(x, row_y), button);
         let delete = place(header.left() + 8.0);
         let solo = place(delete.right() + 3.0);
-        let colour_button = place(solo.right() + 3.0);
+        let color_button = place(solo.right() + 3.0);
         let promote = place(header.right() - 4.0 - button.x);
         let small = theme::ui_font(theme::TEXT_SMALL);
         let soloed = state.take_solo == Some((lane.track, take.number));
@@ -2293,11 +2303,11 @@ pub(super) fn take_lanes(
                 let number = if soloed { 0 } else { take.number };
                 actions.push(Action::new("take.solo", json!({ "track": lane.track.0, "take": number })));
             }
-            let r = clicked(colour_button, "Recolor lane", format!("Colour of {}", take.name));
-            painter.rect_filled(colour_button.shrink(3.0), 2.0, swatch);
+            let r = clicked(color_button, "Recolor lane", format!("Color of {}", take.name));
+            painter.rect_filled(color_button.shrink(3.0), 2.0, swatch);
             egui::Popup::menu(&r).show(|ui| {
-                if let Some(picked) = crate::interaction::colour_picker::swatch_row(ui, Some(colour)) {
-                    let hex = crate::interaction::colour_picker::hex(picked.colour);
+                if let Some(picked) = crate::interaction::color_picker::swatch_row(ui, Some(color)) {
+                    let hex = crate::interaction::color_picker::hex(picked.color);
                     actions.push(Action::new(
                         "take.setColor",
                         json!({ "track": lane.track.0, "take": take.number, "color": hex }),
@@ -2317,7 +2327,7 @@ pub(super) fn take_lanes(
             }
         }
         let name_left =
-            if header.height() >= button.y + 4.0 { colour_button.right() + 6.0 } else { header.left() + 10.0 };
+            if header.height() >= button.y + 4.0 { color_button.right() + 6.0 } else { header.left() + 10.0 };
         widgets::text_in(
             painter,
             Rect::from_min_max(Pos2::new(name_left, header.top()), Pos2::new(promote.left() - 4.0, header.bottom())),
@@ -2326,7 +2336,7 @@ pub(super) fn take_lanes(
             small,
             ink,
         );
-        // Each piece in its colour, a dark shade of it where the comp does not use it and lit where
+        // Each piece in its color, a dark shade of it where the comp does not use it and lit where
         // it does (#989): a take keeps its hue either way.
         for clip in &take.clips {
             let lit = Lane { mute: false, color: clip.color, ..lane.clone() };
@@ -2809,7 +2819,7 @@ pub(super) fn comp_crossfade(
     }
 }
 
-/// A take lane's menu (#989): Recolor lane colours the whole take and its parts on the track;
+/// A take lane's menu (#989): Recolor lane colors the whole take and its parts on the track;
 /// Recolor only the piece of it the right-click was over (`piece`, from 0) and its parts; Add take,
 /// Delete take and the Arrangement's grid.
 #[allow(clippy::too_many_arguments)]
@@ -2823,8 +2833,8 @@ fn take_menu(
     actions: &mut Vec<Action>,
 ) {
     ui.menu_button("Recolor lane", |ui| {
-        if let Some(picked) = crate::interaction::colour_picker::swatch_row(ui, Some(take.color)) {
-            let hex = crate::interaction::colour_picker::hex(picked.colour);
+        if let Some(picked) = crate::interaction::color_picker::swatch_row(ui, Some(take.color)) {
+            let hex = crate::interaction::color_picker::hex(picked.color);
             actions.push(Action::new("take.setColor", json!({ "track": track.0, "take": take.number, "color": hex })));
             picked.close_menu(ui);
         }
@@ -2832,8 +2842,8 @@ fn take_menu(
     ui.add_enabled_ui(piece.is_some(), |ui| {
         ui.menu_button("Recolor", |ui| {
             let current = piece.and_then(|p| take.clips.get(p)).map(|c| c.color);
-            if let (Some(picked), Some(piece)) = (crate::interaction::colour_picker::swatch_row(ui, current), piece) {
-                let hex = crate::interaction::colour_picker::hex(picked.colour);
+            if let (Some(picked), Some(piece)) = (crate::interaction::color_picker::swatch_row(ui, current), piece) {
+                let hex = crate::interaction::color_picker::hex(picked.color);
                 let params = json!({ "track": track.0, "take": take.number, "color": hex, "piece": piece });
                 actions.push(Action::new("take.setColor", params));
                 picked.close_menu(ui);
@@ -2854,7 +2864,7 @@ fn take_menu(
 }
 
 /// Draws a take recording into the arrangement on its track's row (#909): from where its pass
-/// began to the playhead, its notes or its waveform as they come in, edged in the record colour.
+/// began to the playhead, its notes or its waveform as they come in, edged in the record color.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn paint_live_take(
     painter: &egui::Painter,

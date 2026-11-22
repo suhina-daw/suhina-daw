@@ -44,7 +44,7 @@ fn window_with_project(project: Project) -> (Harness<'static, App>, Renderer) {
 }
 
 #[test]
-fn focusing_the_colour_picker_releases_a_held_gate_launch() {
+fn focusing_the_color_picker_releases_a_held_gate_launch() {
     use serde_json::json;
     use suhina_ui::kit::widgets::Action;
 
@@ -57,9 +57,9 @@ fn focusing_the_colour_picker_releases_a_held_gate_launch() {
         target: MappingTarget::Slot { track: TrackId(1), scene: 0 },
     });
     let (mut h, mut renderer) = window_with_project(project);
-    h.state_mut().run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
+    h.state_mut().run(&Action::new("ui.colorPicker", json!({"tracks":[1]})));
     h.run();
-    h.get_by_label("› Fine adjustment").click();
+    h.get_by_label("View: Field").click();
     h.run();
     h.get_by_label("Track Drums").click();
     h.run();
@@ -71,7 +71,7 @@ fn focusing_the_colour_picker_releases_a_held_gate_launch() {
 
     // A non-text control takes the keys while Q is still physically held.
     // Playback keeps requesting repaints: advance fixed UI frames, never wait for it to settle.
-    h.get_by_label("Colour field").click();
+    h.get_by_label("Color field").click();
     h.run_steps(2);
     renderer.process(&mut samples);
     assert_eq!(renderer.monitor().column(0).unwrap().playing, None);

@@ -2,6 +2,6 @@
   "format": 1,
   "name": "See-through test",
   "author": "The Suhina contributors",
-  "description": "A test theme for suhina-theme-render: every colour is translucent, and buttons and faders have round artwork with transparent corners, so whatever a fill leaves unpainted shows the desktop.",
+  "description": "A test theme for suhina-theme-render: every color is translucent, and buttons and faders have round artwork with transparent corners, so whatever a fill leaves unpainted shows the desktop.",
   "swatch": "var(--window-background)"
 }

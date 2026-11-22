@@ -3,7 +3,7 @@ description: Source-owned settings help, its versioned website export and the co
 read_when: website settings, settings.json export, settings help, web guide, documentation synchronization, settings-guide CI
 type: spec
 status: current
-last_verified: 2026-11-15
+last_verified: 2026-11-23
 covers:
   - scripts/settings_guide.py
   - scripts/test_settings_guide.py
@@ -22,7 +22,7 @@ approval after the source review.
 `docs/guide-data/settings-help.json` contains the English descriptions, choice explanations,
 practical when-to-change guidance and implementation references keyed by setting ID. It was
 migrated from the Suhina website guide and covers the current native settings registry,
-including Arrangement colour and track-size controls, experimental liquid strengths and
+including Arrangement color and track-size controls, experimental liquid strengths and
 the theme editor. References name Suhina's own code and specs, not proprietary material.
 
 A description longer than a few sentences is split into paragraphs by topic, separated by a blank

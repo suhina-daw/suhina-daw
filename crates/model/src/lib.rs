@@ -29,8 +29,9 @@ pub use tempo::{
 
 pub use audio_data::{AudioData, AudioPool};
 pub use clip_audio::{
-    CLIP_GAIN_MAX_DB, CLIP_TEMPO_RANGE, ClipAudio, GAIN_POINT_RANGE, GainPoint, MAX_GAIN_POINTS, TRANSPOSE_RANGE,
-    TempoSource, db_to_gain, envelope_db_at, gain_to_db, max_clip_gain,
+    CLIP_GAIN_MAX_DB, CLIP_TEMPO_RANGE, ClipAudio, ENVELOPE_RANGE, GAIN_POINT_RANGE, GRAIN_RANGE, GainPoint,
+    MAX_GAIN_POINTS, SCATTER_RANGE, SliceAt, SliceTail, TRANSPOSE_RANGE, TempoSource, WarpSettings, db_to_gain,
+    envelope_db_at, gain_to_db, max_clip_gain,
 };
 pub use groups::{
     Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
@@ -263,24 +264,24 @@ pub enum MidiPort {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
-/// The colour a new MIDI track or clip gets (and every new track with *One colour*).
-pub const NEW_MIDI_COLOUR: Rgb = Rgb(0x4F, 0xC3, 0xF7);
+/// The color a new MIDI track or clip gets (and every new track with *One color*).
+pub const NEW_MIDI_COLOR: Rgb = Rgb(0x57, 0xC0, 0xFF);
 
-/// The colour a new audio track or clip gets.
-pub const NEW_AUDIO_COLOUR: Rgb = Rgb(0xFF, 0x9A, 0x3C);
+/// The color a new audio track or clip gets.
+pub const NEW_AUDIO_COLOR: Rgb = Rgb(0xFF, 0x99, 0x39);
 
-/// What a track saved without a colour of its own (a project from before tracks stored one)
+/// What a track saved without a color of its own (a project from before tracks stored one)
 /// shows, by its place among the tracks: these four in turn. Fixed, since it says what a saved
 /// file means: such a track looks the same in every theme and every version.
-pub const LEGACY_TRACK_COLOURS: [Rgb; 4] =
+pub const LEGACY_TRACK_COLORS: [Rgb; 4] =
     [Rgb(0xFF, 0x9A, 0x3C), Rgb(0xF2, 0xD5, 0x41), Rgb(0x4F, 0xC3, 0xF7), Rgb(0xB3, 0x8B, 0xFF)];
 
 impl Project {
-    /// Gives every track without a colour of its own the one it shows
-    /// ([`LEGACY_TRACK_COLOURS`] by its place), so every track has its own.
-    pub fn fill_track_colours(&mut self) {
+    /// Gives every track without a color of its own the one it shows
+    /// ([`LEGACY_TRACK_COLORS`] by its place), so every track has its own.
+    pub fn fill_track_colors(&mut self) {
         for (place, track) in self.tracks.iter_mut().enumerate() {
-            track.color.get_or_insert(LEGACY_TRACK_COLOURS[place % LEGACY_TRACK_COLOURS.len()]);
+            track.color.get_or_insert(LEGACY_TRACK_COLORS[place % LEGACY_TRACK_COLORS.len()]);
         }
     }
 }
@@ -303,7 +304,7 @@ pub struct Channel {
     pub role: ChannelRole,
     /// Linear gain; 1.0 is unity.
     pub volume: f64,
-    /// -1.0 is hard left, 0.0 centre, 1.0 hard right.
+    /// -1.0 is hard left, 0.0 center, 1.0 hard right.
     pub pan: f64,
     pub mute: bool,
     pub solo: bool,
@@ -797,8 +798,8 @@ pub struct Clip {
     pub follow_action: FollowAction,
     /// How the clip launches from a launcher slot: mode, legato and its own quantisation.
     pub launch: LaunchSettings,
-    /// The clip's own colour; `None` shows its track's, so a new clip takes the track's colour
-    /// and follows it. A clip moved to another track keeps the colour it had.
+    /// The clip's own color; `None` shows its track's, so a new clip takes the track's color
+    /// and follows it. A clip moved to another track keeps the color it had.
     pub color: Option<Rgb>,
     /// The clip plays through its channel's ARA plug-in, the clip host (ADR 0033 › 2, #990): its
     /// raw audio is edited there, then its gain and fades follow. Arrangement audio clips only.
@@ -891,7 +892,7 @@ impl FadeShape {
         // SPDX-License-Identifier: GPL-3.0-or-later
         // From Lemon Studio crates/os-model/src/lib.rs (fade_curve) at
         // 011a03f23d9db7f10f07cd7d165cc978a9dda263; the tension law written over Suhina's
-        // normalised curve, with bounded inputs.
+        // normalized curve, with bounded inputs.
         if self == Self::Cosine && exponent != 1.0 {
             let base = if exponent < 1.0 { 1.0 / exponent } else { exponent };
             let squared = base * base;
@@ -1143,7 +1144,7 @@ pub struct TakeLane {
     /// Its name, as the window shows it ("Take 3").
     pub name: String,
     pub clips: Vec<Clip>,
-    /// Its colour, set from its menu (Recolor lane, #989); `None` takes the palette's in turn.
+    /// Its color, set from its menu (Recolor lane, #989); `None` takes the palette's in turn.
     pub color: Option<Rgb>,
 }
 

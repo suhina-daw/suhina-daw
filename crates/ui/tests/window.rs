@@ -21,19 +21,20 @@ use suhina_ui::session::session_view::{self, SessionViewState};
 use suhina_ui::settings::themes::FileAction;
 use suhina_ui::{App, OpenAs, Status, View, kit::theme};
 
-/// The colour variable `variable` (a name without `--`) as the window's root resolved it in the
-/// last frame: the theme in use's colour.
+/// The color variable `variable` (a name without `--`) as the window's root resolved it in the
+/// last frame: the theme in use's color.
 #[allow(clippy::expect_used)] // a test helper outside #[test] functions
 fn live(variable: &str) -> egui::Color32 {
     suhina_ui::kit::native_css::root_color(&format!("--{variable}"))
         .or_else(|| suhina_ui::kit::theme::default_color(variable))
-        .expect("a colour variable")
+        .expect("a color variable")
 }
 
 mod arrangement;
+mod audio_editor_keys;
 mod bars;
-mod colours;
-mod colours_native;
+mod colors;
+mod colors_native;
 mod control_bar;
 mod detail;
 mod elements;
@@ -113,6 +114,9 @@ pub(super) fn window_with_step(mut app: App, step: f32) -> Harness<'static, App>
         .with_max_steps((1.0 / step).ceil() as u64)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
+    // An audio clip's note starts are found as the editor asks, not on a thread whose repaint
+    // could land in the middle of a test's run.
+    suhina_ui::detail::audio_editor::find_transients_in_place(&harness.ctx, true);
     // Frames, not a run to rest: a window that repaints every frame while it settles (the
     // sample map's grid building, an animation) would spend the run's max and fail, where
     // these frames advance the same second.

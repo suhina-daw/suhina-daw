@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Design tokens from `docs/design/brief.md` › Tokens and the sizes in
-//! `docs/design/components.md`. Views use these names, never raw colours or sizes.
+//! `docs/design/components.md`. Views use these names, never raw colors or sizes.
 //!
-//! Colours are the theme's variables ([`TOKENS`], held in a theme's [`Colors`]): the style
-//! sheet's rules read them, and the views read the computed colours of their elements. Nothing
-//! here names a colour a view paints. Sizes are fixed.
+//! Colors are the theme's variables ([`TOKENS`], held in a theme's [`Colors`]): the style
+//! sheet's rules read them, and the views read the computed colors of their elements. Nothing
+//! here names a color a view paints. Sizes are fixed.
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -15,7 +15,7 @@ use egui::{Color32, FontFamily, FontId, Stroke, TextStyle};
 use serde_json::{Map, Value};
 pub use suhina_theme_package::meta::{FILE as META, THUMBNAIL, ThemeMeta};
 
-/// Every colour token of a theme: its name in a theme file and what it is used for. Its custom
+/// Every color token of a theme: its name in a theme file and what it is used for. Its custom
 /// property is [`variable_name`] of the name, and Suhina Studio's value the one the core sheet
 /// (`suhina_theme_package::CORE_SHEET`) registers for it ([`default_color`]).
 pub const TOKENS: [(&str, &str); 38] = [
@@ -41,11 +41,11 @@ pub const TOKENS: [(&str, &str); 38] = [
     ("text.playing", "The name of a playing clip"),
     (
         "text.onColorLight",
-        "Light text on dark coloured tracks, returns and clips; paired with text.onColorDark for contrast",
+        "Light text on dark colored tracks, returns and clips; paired with text.onColorDark for contrast",
     ),
     (
         "text.onColorDark",
-        "Dark text on bright coloured tracks, returns and clips; paired with text.onColorLight for contrast",
+        "Dark text on bright colored tracks, returns and clips; paired with text.onColorLight for contrast",
     ),
     ("browser.text.primary", "Browser selection, search input and highlighted names"),
     ("browser.text.secondary", "Browser item names, categories and preview labels"),
@@ -65,25 +65,25 @@ pub const TOKENS: [(&str, &str); 38] = [
     ("slot.empty", "The mark in an empty clip slot"),
     ("track.mutedBackground", "The fills of a muted track"),
     ("pan.background", "Behind a track header's pan field"),
-    ("pan.centre", "The centre mark of a pan field"),
+    ("pan.center", "The center mark of a pan field"),
 ];
 
-/// Whether `key` names a colour token.
+/// Whether `key` names a color token.
 pub fn is_token(key: &str) -> bool {
     TOKENS.iter().any(|(token, _)| *token == key)
 }
 
-/// Suhina Studio's value of a colour variable: its initial value in the core sheet.
+/// Suhina Studio's value of a color variable: its initial value in the core sheet.
 pub use super::theme_vars::initial_color as default_color;
 
-/// The value of the colour variable `variable` in the colour map `colors`, else Suhina Studio's
+/// The value of the color variable `variable` in the color map `colors`, else Suhina Studio's
 /// ([`default_color`]); transparent for a name that is neither.
 pub fn color_in(colors: &Colors, variable: &str) -> Color32 {
     colors.get(variable).copied().or_else(|| default_color(variable)).unwrap_or(Color32::TRANSPARENT)
 }
 
 /// The name of the custom property that holds the token `key`, without its `--`: `accent` is
-/// `accent`, `window.background` is `window-background`. A theme's colours are kept by this name
+/// `accent`, `window.background` is `window-background`. A theme's colors are kept by this name
 /// ([`Colors`]).
 pub fn variable_name(key: &str) -> String {
     key.replace('.', "-")
@@ -95,7 +95,7 @@ pub fn token_key(variable: &str) -> String {
     variable.replace('-', ".")
 }
 
-/// Whether `variable` (a name without `--`) is the one name of a colour token's custom property:
+/// Whether `variable` (a name without `--`) is the one name of a color token's custom property:
 /// `window-background` is, `window.background` (a dot is not part of a custom property's name) is
 /// not.
 pub fn is_color_variable(variable: &str) -> bool {
@@ -103,21 +103,21 @@ pub fn is_color_variable(variable: &str) -> bool {
     is_token(&key) && variable_name(&key) == variable
 }
 
-/// The colours a theme sets: its colour variables by name without the `--`
-/// (`window-background`, `accent`), the names `:root { --… }` uses. A colour the theme does not
+/// The colors a theme sets: its color variables by name without the `--`
+/// (`window-background`, `accent`), the names `:root { --… }` uses. A color the theme does not
 /// set is Suhina Studio's ([`default_color`]).
 pub type Colors = std::collections::BTreeMap<String, Color32>;
 
 thread_local! {
     /// Whether the theme in use is light (its variant's declared `color-scheme`) and whether it
-    /// lets the desktop show through (the window's computed colours), as of the last style reset
+    /// lets the desktop show through (the window's computed colors), as of the last style reset
     /// (`sync_root_visuals`).
     static SCHEME: Cell<(bool, bool)> = const { Cell::new((false, false)) };
     /// The `window`'s computed background when the styles last reset.
     static WINDOW_FILL: Cell<Color32> = const { Cell::new(Color32::TRANSPARENT) };
 }
 
-/// The colour the window's own background is: the `window` element's computed
+/// The color the window's own background is: the `window` element's computed
 /// `background-color` (faded over a backdrop), as of the last time the styles reset. For what
 /// paints outside the style tree, such as the GPU pass that clears behind the live UI.
 pub fn window_fill() -> Color32 {
@@ -139,7 +139,7 @@ pub fn is_light() -> bool {
 }
 
 /// `colors` as the `:root` rule that sets them (`:root { --accent: #A6A3FF; }`), `None` when it
-/// sets none. A name that is not a colour variable is left out.
+/// sets none. A name that is not a color variable is left out.
 pub fn colors_rule(colors: &Colors) -> Option<String> {
     let set: Vec<String> = colors
         .iter()
@@ -149,8 +149,8 @@ pub fn colors_rule(colors: &Colors) -> Option<String> {
     (!set.is_empty()).then(|| format!(":root {{{} }}", set.concat()))
 }
 
-/// Draws with the colour map `colors` from the next frame on, as a theme whose colours they are
-/// (`native_css::set_colors`): for what draws without the app, which gives the theme's colours
+/// Draws with the color map `colors` from the next frame on, as a theme whose colors they are
+/// (`native_css::set_colors`): for what draws without the app, which gives the theme's colors
 /// itself each frame: tests, and tools that paint a widget alone.
 pub fn use_colors(ctx: &egui::Context, colors: &Colors) {
     super::native_css::set_colors(colors);
@@ -167,7 +167,7 @@ fn visuals_key() -> egui::Id {
 /// and its states ([`sheet_visuals`]), with what the rules for egui's widgets say over them
 /// ([`super::style_class::root_visuals`]). Run at the start of a frame, it works only when the
 /// engine's styles were reset since the last time (a theme, variant, `user.css`, width `@media`,
-/// contrast, a colour drag or the window's opacity), not on every frame; the change shows in every
+/// contrast, a color drag or the window's opacity), not on every frame; the change shows in every
 /// `Ui` made after it, and in the root's once it takes them ([`follow_root_visuals`]). Scoped
 /// styles (`style_class::ui_for`) apply over these. It also tells egui whether the theme is light
 /// or dark, which egui passes on to the native window (its title bar).
@@ -199,7 +199,7 @@ pub fn follow_root_visuals(ui: &mut egui::Ui) {
     }
 }
 
-/// egui's `Visuals` as the palette gave them before the sheet did, with the colours `color` gives
+/// egui's `Visuals` as the palette gave them before the sheet did, with the colors `color` gives
 /// by variable name: for the tests that check the sheet's `widget` gives the same, what the root
 /// has with no rule of a theme for egui's widgets.
 #[cfg(test)]
@@ -232,28 +232,28 @@ pub(super) fn palette_visuals_for(color: impl Fn(&str) -> Color32) -> egui::Visu
     visuals
 }
 
-/// Suhina Studio's value of the colour variable `variable`, for the tests.
+/// Suhina Studio's value of the color variable `variable`, for the tests.
 #[cfg(test)]
 pub(crate) fn studio(variable: &str) -> Color32 {
-    default_color(variable).unwrap_or_else(|| panic!("no core colour {variable}"))
+    default_color(variable).unwrap_or_else(|| panic!("no core color {variable}"))
 }
 
-/// The opaque colour `0xRRGGBB`, for the tests.
+/// The opaque color `0xRRGGBB`, for the tests.
 #[cfg(test)]
 pub(crate) const fn rgb(hex: u32) -> Color32 {
     Color32::from_rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
 }
 
-/// The colour variable `name` (with its `--`) as the root resolves it on `ctx` with the colours
+/// The color variable `name` (with its `--`) as the root resolves it on `ctx` with the colors
 /// set, after a frame: for the tests that check what a theme's variables come to.
 #[cfg(test)]
 pub(crate) fn root_in(ctx: &egui::Context, name: &str) -> Color32 {
     in_style_frame(ctx, |_| super::native_css::root_color(name))
-        .unwrap_or_else(|| panic!("the root resolves no colour {name}"))
+        .unwrap_or_else(|| panic!("the root resolves no color {name}"))
 }
 
-/// What `read` gives in a frame of the style engine on `ctx`, drawn with the colours set (a theme's
-/// colour map applies from the frame after it is set, so a frame runs first): for the tests that
+/// What `read` gives in a frame of the style engine on `ctx`, drawn with the colors set (a theme's
+/// color map applies from the frame after it is set, so a frame runs first): for the tests that
 /// read what elements say.
 #[cfg(test)]
 pub(crate) fn in_style_frame<R>(ctx: &egui::Context, read: impl Fn(&mut egui::Ui) -> R) -> R {
@@ -286,7 +286,7 @@ macro_rules! folder {
 }
 
 /// The themes that come with Suhina, Suhina Studio first. Nord and Catppuccin
-/// are popular open palettes (MIT, their licences in `themes/licenses/`), mapped onto Suhina's
+/// are popular open palettes (MIT, their licenses in `themes/licenses/`), mapped onto Suhina's
 /// tokens.
 const BUILT_IN_FOLDERS: [BuiltInFolder; 10] = [
     folder!("suhina-studio": "theme.json", "theme.css", "thumbnail.svg", "variants/blue.json", "variants/darker.json", "variants/darkest.json", "variants/forest.json", "variants/light.json"),
@@ -439,10 +439,10 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
         Err(error) => warnings.push(error),
     }
     warnings.extend(theme.vars.base.keys().filter_map(|name| former_kind_token(name.strip_prefix("--kind-")?)));
-    warnings.extend(former_track_colours_notice(theme.vars.base.keys().map(String::as_str)));
+    warnings.extend(former_track_colors_notice(theme.vars.base.keys().map(String::as_str)));
     warnings.extend(former_host_variables_notice(sheet));
     warnings.extend(super::theme_css::read_host_rules(&mut theme, sheet));
-    warnings.extend(former_colour_artwork_notice(theme.skin.assets.keys().cloned()));
+    warnings.extend(former_color_artwork_notice(theme.skin.assets.keys().cloned()));
     if let Some((toolbar, offsets)) = theme.meta.toolbar.as_ref().and_then(read_toolbar) {
         theme.skin.toolbar = Some(toolbar);
         theme.skin.toolbar_offsets = offsets;
@@ -451,34 +451,34 @@ pub fn from_folder(meta: ThemeMeta, sheet: &str) -> (Theme, Vec<String>) {
     (theme, warnings)
 }
 
-/// The notice for a sample-map colour a theme of an earlier version gives as a palette token
+/// The notice for a sample-map color a theme of an earlier version gives as a palette token
 /// (`--kind-kick`, `"kind.kick"`) for the sound kind `kind`: the `kind.*` tokens are gone, and a
-/// theme colours a kind with a rule for its `sample-point` (#1019). `None` for a name that is not
+/// theme colors a kind with a rule for its `sample-point` (#1019). `None` for a name that is not
 /// a kind.
 pub fn former_kind_token(kind: &str) -> Option<String> {
     suhina_soundmap::kinds::Kind::ALL.iter().find(|k| k.id() == kind)?;
     Some(format!(
-        "--kind-{kind} is no longer read: the sample map's colours are rules, \
+        "--kind-{kind} is no longer read: the sample map's colors are rules, \
          sample-point[kind=\"{kind}\"] {{ color: … }}"
     ))
 }
 
-/// Whether `name` (without its `--`) is a track colour a theme of an earlier version set:
+/// Whether `name` (without its `--`) is a track color a theme of an earlier version set:
 /// `track-1` to `track-8`, `clip-midiDefault`, `clip-audioDefault`. Tracks and clips keep their
-/// own colours, and the colour picker and new tracks take Suhina's, so a theme no longer sets
+/// own colors, and the color picker and new tracks take Suhina's, so a theme no longer sets
 /// them (#1020).
-pub fn is_former_track_colour(name: &str) -> bool {
+pub fn is_former_track_color(name: &str) -> bool {
     matches!(name, "clip-midiDefault" | "clip-audioDefault")
         || name.strip_prefix("track-").is_some_and(|n| matches!(n, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8"))
 }
 
-/// One notice naming the former track colours among a theme's `:root` variables `names`, if any.
-pub fn former_track_colours_notice<'a>(names: impl IntoIterator<Item = &'a str>) -> Option<String> {
+/// One notice naming the former track colors among a theme's `:root` variables `names`, if any.
+pub fn former_track_colors_notice<'a>(names: impl IntoIterator<Item = &'a str>) -> Option<String> {
     let former: Vec<_> =
-        names.into_iter().filter(|name| name.strip_prefix("--").is_some_and(is_former_track_colour)).collect();
+        names.into_iter().filter(|name| name.strip_prefix("--").is_some_and(is_former_track_color)).collect();
     (!former.is_empty()).then(|| {
         format!(
-            "{} no longer read: a track's or clip's colour is its own, and a theme draws it from \
+            "{} no longer read: a track's or clip's color is its own, and a theme draws it from \
              the element's color attribute, attr(color type(<color>))",
             former.join(", ")
         )
@@ -486,32 +486,32 @@ pub fn former_track_colours_notice<'a>(names: impl IntoIterator<Item = &'a str>)
 }
 
 /// The notice for a sheet that reads a variable the app set on tracks and clips in an earlier
-/// version (`--track-colour`, `--track-fill`, `--clip-colour`): the app sets none now, so a rule
+/// version (`--track-color`, `--track-fill`, `--clip-color`): the app sets none now, so a rule
 /// that reads one falls back without it.
 pub fn former_host_variables_notice(sheet: &str) -> Option<String> {
     let used: Vec<_> =
-        ["--track-colour", "--track-fill", "--clip-colour"].into_iter().filter(|name| sheet.contains(name)).collect();
+        ["--track-color", "--track-fill", "--clip-color"].into_iter().filter(|name| sheet.contains(name)).collect();
     (!used.is_empty()).then(|| {
         format!(
-            "{} no longer set: a track's or clip's colour is the element's color attribute, \
+            "{} no longer set: a track's or clip's color is the element's color attribute, \
              attr(color type(<color>))",
             used.join(", ")
         )
     })
 }
 
-/// The notice for artwork chosen by an exact track colour (`track.body.color-ff9a3c`), which no
-/// track picks any more: artwork takes a track's colour as `currentColor`.
-fn former_colour_artwork_notice(roles: impl IntoIterator<Item = String>) -> Option<String> {
-    let colour = |role: &str| {
+/// The notice for artwork chosen by an exact track color (`track.body.color-ff9a3c`), which no
+/// track picks any more: artwork takes a track's color as `currentColor`.
+fn former_color_artwork_notice(roles: impl IntoIterator<Item = String>) -> Option<String> {
+    let color = |role: &str| {
         role.split('.').any(|part| {
             part.strip_prefix("color-").is_some_and(|hex| hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
         })
     };
-    let used: Vec<_> = roles.into_iter().filter(|role| colour(role)).collect();
+    let used: Vec<_> = roles.into_iter().filter(|role| color(role)).collect();
     (!used.is_empty()).then(|| {
         format!(
-            "{} not used: artwork is not chosen by a track's colour; it takes the colour as currentColor",
+            "{} not used: artwork is not chosen by a track's color; it takes the color as currentColor",
             used.join(", ")
         )
     })
@@ -600,7 +600,7 @@ pub fn is_built_in(id: &str) -> bool {
     BUILT_IN_FOLDERS.iter().any(|(b, _)| id.eq_ignore_ascii_case(b))
 }
 
-/// The colours an older theme file may leave out that [`Theme::from_json`] copies from another,
+/// The colors an older theme file may leave out that [`Theme::from_json`] copies from another,
 /// each with the one it is copied from.
 const COPIED: [(&str, &str); 7] = [
     ("browser.text.primary", "text.primary"),
@@ -612,13 +612,13 @@ const COPIED: [(&str, &str); 7] = [
     ("automation.pin", "accent"),
 ];
 
-/// Every colour an older theme file may leave out, which [`Theme::from_json`] works out from
-/// others: [`COPIED`]'s, and two it works out from a background and a text colour.
+/// Every color an older theme file may leave out, which [`Theme::from_json`] works out from
+/// others: [`COPIED`]'s, and two it works out from a background and a text color.
 fn derived() -> impl Iterator<Item = &'static str> {
     ["text.inverse", "control.selectedBackground"].into_iter().chain(COPIED.iter().map(|(key, _)| *key))
 }
 
-/// A named set of colours, kept in a theme file:
+/// A named set of colors, kept in a theme file:
 ///
 /// ```json
 /// { "name": "Night", "colors": { "window.background": "#1D1C1A", "accent": "#A6A3FF" } }
@@ -626,10 +626,10 @@ fn derived() -> impl Iterator<Item = &'static str> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Theme {
     pub skin: super::skin::Skin,
-    /// The rgb of each colour in [`Theme::colors`] that is fully transparent, by the same names.
+    /// The rgb of each color in [`Theme::colors`] that is fully transparent, by the same names.
     pub transparent_rgb: std::collections::BTreeMap<String, [u8; 3]>,
     pub name: String,
-    /// The colours the theme sets; any other is Suhina Studio's ([`Theme::color`]).
+    /// The colors the theme sets; any other is Suhina Studio's ([`Theme::color`]).
     pub colors: Colors,
     /// None inherits the application's global material strengths.
     pub liquid: Option<super::liquid::Options>,
@@ -642,7 +642,7 @@ pub struct Theme {
     pub thumbnail: Option<Arc<str>>,
     /// The thumbnail for the variant chosen, its `var()` values substituted.
     pub picture: Option<Arc<str>>,
-    /// The swatch's colour for the variant chosen, `None` when it does not resolve.
+    /// The swatch's color for the variant chosen, `None` when it does not resolve.
     pub swatch: Option<Color32>,
 }
 
@@ -685,14 +685,14 @@ impl Theme {
         self.vars.light.unwrap_or(self.meta.light)
     }
 
-    /// The colour variable `variable` (a name without `--`) as the theme sets it, else Suhina
+    /// The color variable `variable` (a name without `--`) as the theme sets it, else Suhina
     /// Studio's ([`color_in`]).
     pub fn color(&self, variable: &str) -> Color32 {
         color_in(&self.colors, variable)
     }
 
-    /// `color`, the value of the colour variable `variable` (a name without `--`), as four bytes:
-    /// a fully transparent colour keeps the rgb it was written with.
+    /// `color`, the value of the color variable `variable` (a name without `--`), as four bytes:
+    /// a fully transparent color keeps the rgb it was written with.
     pub fn rgba(&self, variable: &str, color: Color32) -> [u8; 4] {
         let mut rgba = color.to_srgba_unmultiplied();
         if color.a() == 0
@@ -703,7 +703,7 @@ impl Theme {
         rgba
     }
 
-    /// Sets the colour variable `variable` (a name without `--`) to `rgba`.
+    /// Sets the color variable `variable` (a name without `--`) to `rgba`.
     pub fn set_color(&mut self, variable: &str, [r, g, b, a]: [u8; 4]) {
         self.colors.insert(variable.to_owned(), Color32::from_rgba_unmultiplied(r, g, b, a));
         self.transparent_rgb.remove(variable);
@@ -712,7 +712,7 @@ impl Theme {
         }
     }
 
-    /// Sets the colour variable `variable` to `rgba` as read from a file or a sheet: a colour that
+    /// Sets the color variable `variable` to `rgba` as read from a file or a sheet: a color that
     /// is Suhina Studio's own is not one the theme sets, so it is left out of the map.
     pub fn read_color(&mut self, variable: &str, [r, g, b, a]: [u8; 4]) {
         let color = Color32::from_rgba_unmultiplied(r, g, b, a);
@@ -723,7 +723,7 @@ impl Theme {
         }
     }
 
-    /// Sets the token `key` to `color`, a colour worked out from the theme's others. One that is
+    /// Sets the token `key` to `color`, a color worked out from the theme's others. One that is
     /// Suhina Studio's own is not kept, so the theme sets only what differs.
     fn derive(&mut self, key: &str, color: Color32, transparent_rgb: Option<[u8; 3]>) {
         let variable = variable_name(key);
@@ -737,14 +737,14 @@ impl Theme {
         }
     }
 
-    /// Makes the colour variable `variable` Suhina Studio's again: the theme no longer sets it.
+    /// Makes the color variable `variable` Suhina Studio's again: the theme no longer sets it.
     pub fn reset_color(&mut self, variable: &str) {
         self.colors.remove(variable);
         self.transparent_rgb.remove(variable);
     }
 
-    /// Reads a theme file. Tokens it leaves out keep Suhina Studio's colour, so a file only needs
-    /// the colours it changes; unknown tokens and values that are not `#RRGGBB` or `#RRGGBBAA` are skipped with
+    /// Reads a theme file. Tokens it leaves out keep Suhina Studio's color, so a file only needs
+    /// the colors it changes; unknown tokens and values that are not `#RRGGBB` or `#RRGGBBAA` are skipped with
     /// a warning. A `"$schema"` or `"description"` is allowed and ignored.
     pub fn from_json(text: &str) -> (Self, Vec<String>) {
         let mut theme = Self::default();
@@ -762,9 +762,9 @@ impl Theme {
         match root.get("colors") {
             Some(Value::Object(colors)) => {
                 for (key, value) in colors {
-                    // A track colour an earlier version kept in every theme file: tracks keep their
+                    // A track color an earlier version kept in every theme file: tracks keep their
                     // own now, so it is left behind without a word, and the file still converts.
-                    if is_former_track_colour(&key.replace('.', "-")) {
+                    if is_former_track_color(&key.replace('.', "-")) {
                         continue;
                     }
                     match (is_token(key), value.as_str().and_then(parse_rgba)) {
@@ -772,19 +772,19 @@ impl Theme {
                         (false, _) => warnings.push(
                             key.strip_prefix("kind.")
                                 .and_then(former_kind_token)
-                                .unwrap_or_else(|| format!("{key} is not a colour token")),
+                                .unwrap_or_else(|| format!("{key} is not a color token")),
                         ),
-                        (true, None) => warnings.push(format!("{key}: {value} is not a #RRGGBB or #RRGGBBAA colour")),
+                        (true, None) => warnings.push(format!("{key}: {value} is not a #RRGGBB or #RRGGBBAA color")),
                     }
                 }
-                // A colour an older file leaves out is worked out from the ones it sets, so the
-                // file keeps looking as it did until the colour is edited. It counts as set.
+                // A color an older file leaves out is worked out from the ones it sets, so the
+                // file keeps looking as it did until the color is edited. It counts as set.
                 let has = |key: &str| colors.contains_key(key) && is_token(key);
                 let rgb_of = |theme: &Theme, key: &str, color: Color32| -> [u8; 3] {
                     let [r, g, b, _] = color.to_srgba_unmultiplied();
                     theme.transparent_rgb.get(&variable_name(key)).copied().unwrap_or([r, g, b])
                 };
-                // Older files drew these with a background and a text colour.
+                // Older files drew these with a background and a text color.
                 if !has("text.inverse") {
                     let [r, g, b] = rgb_of(&theme, "window.background", theme.color("window-background"));
                     theme.derive("text.inverse", Color32::from_rgb(r, g, b), None);
@@ -853,9 +853,9 @@ impl Theme {
         (theme, warnings)
     }
 
-    /// The theme as a file: the colours it sets, and nothing for a colour it leaves to Suhina Studio.
-    /// A file that leaves out a colour [`Theme::from_json`] works out from others (older files'
-    /// text roles) gets that colour written when working it out would change it, so reading the
+    /// The theme as a file: the colors it sets, and nothing for a color it leaves to Suhina Studio.
+    /// A file that leaves out a color [`Theme::from_json`] works out from others (older files'
+    /// text roles) gets that color written when working it out would change it, so reading the
     /// file gives the same theme back.
     pub fn to_json(&self) -> String {
         let mut colors: Map<String, Value> = self
@@ -925,13 +925,13 @@ pub fn parse_rgba(text: &str) -> Option<[u8; 4]> {
     })
 }
 
-/// Text drawn on `fill`: the light or the dark ink for text on a colour, whichever stands out more
-/// from it, so a name stays readable on any track colour of any theme. The two inks are the
+/// Text drawn on `fill`: the light or the dark ink for text on a color, whichever stands out more
+/// from it, so a name stays readable on any track color of any theme. The two inks are the
 /// `color`s of `label[kind="on-light"]` and `label[kind="on-dark"]` where the text is drawn.
 /// If neither reaches 4.5:1 on the composited fill, use black or white. Mid-lightness custom
-/// colours must stay readable too; the track's stored RGB is never changed for contrast.
+/// colors must stay readable too; the track's stored RGB is never changed for contrast.
 pub fn text_on(fill: Color32) -> Color32 {
-    let (light, dark) = on_colour_inks();
+    let (light, dark) = on_color_inks();
     let chosen = if text_contrast(light, fill) >= text_contrast(dark, fill) { light } else { dark };
     if text_contrast(chosen, fill) >= 4.5 {
         chosen
@@ -946,21 +946,21 @@ thread_local! {
     /// The inks [`text_on`] read last, with the style engine's frame and the custom properties in
     /// scope they were read with (held, so the map is not freed and its address taken by another).
     #[allow(clippy::type_complexity)]
-    static ON_COLOUR: std::cell::RefCell<Option<(u64, Arc<std::collections::BTreeMap<String, String>>, (Color32, Color32))>> =
+    static ON_COLOR: std::cell::RefCell<Option<(u64, Arc<std::collections::BTreeMap<String, String>>, (Color32, Color32))>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// The light and the dark ink for text on a colour where the text is drawn: the `color`s of
+/// The light and the dark ink for text on a color where the text is drawn: the `color`s of
 /// `label[kind="on-light"]` and `label[kind="on-dark"]`. Looked up again only when the custom
 /// properties in scope changed since the last time in the same frame, so a view that names many
 /// clips adds two elements to the style tree, not two a clip; each frame looks them up afresh, so
 /// every frame's tree holds the same elements.
-fn on_colour_inks() -> (Color32, Color32) {
+fn on_color_inks() -> (Color32, Color32) {
     use super::element::LABEL;
     let epoch = super::native_css::frame_number();
     let variables = super::style_class::with_inherited(|style| style.map(|style| style.shared_variables()))
         .unwrap_or_else(super::native_css::root_variables);
-    let kept = ON_COLOUR.with(|kept| {
+    let kept = ON_COLOR.with(|kept| {
         kept.borrow()
             .as_ref()
             .filter(|(at, held, _)| *at == epoch && Arc::ptr_eq(held, &variables))
@@ -969,12 +969,12 @@ fn on_colour_inks() -> (Color32, Color32) {
     kept.unwrap_or_else(|| {
         let inks =
             (LABEL.attribute("kind", "on-light").look().color(), LABEL.attribute("kind", "on-dark").look().color());
-        ON_COLOUR.with(|kept| *kept.borrow_mut() = Some((epoch, variables, inks)));
+        ON_COLOR.with(|kept| *kept.borrow_mut() = Some((epoch, variables, inks)));
         inks
     })
 }
 
-/// The contrast ratio of two colours, 1 … 21 (WCAG 2's relative luminance).
+/// The contrast ratio of two colors, 1 … 21 (WCAG 2's relative luminance).
 pub fn contrast(a: Color32, b: Color32) -> f32 {
     let (a, b) = (luminance(a), luminance(b));
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
@@ -1168,7 +1168,7 @@ fn sheet_visuals() -> Option<(egui::Visuals, bool, bool)> {
 /// makes them fully transparent, are width 0 in egui's `visuals`: egui reserves a line's width
 /// whether or not it is seen (a panel's separator), so a hidden line would still leave a gap of
 /// its width (#1487). Called once every rule is written over them (`root_visuals`): a later rule
-/// that gives only a colour keeps the width it finds, so a line zeroed earlier would stay unseen.
+/// that gives only a color keeps the width it finds, so a line zeroed earlier would stay unseen.
 /// A widget's outline takes no room and keeps its width.
 pub(super) fn unseen_strokes_take_no_room(visuals: &mut egui::Visuals) {
     for stroke in [&mut visuals.widgets.noninteractive.bg_stroke, &mut visuals.window_stroke] {

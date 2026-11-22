@@ -100,7 +100,7 @@ fn editing_the_model_writes_only_the_values_that_differ_from_the_theme() {
 }
 
 #[test]
-fn a_colour_derived_from_a_setting_follows_every_change_of_the_setting() {
+fn a_color_derived_from_a_setting_follows_every_change_of_the_setting() {
     let (mut theme, _) = from_sheet(
         "@property --tint { syntax: \"<color>\"; initial-value: #112233; label: \"Accent\"; }\n\
          :root { --accent: var(--tint); --selection: color-mix(in srgb, var(--tint), white 50%); }",
@@ -118,7 +118,7 @@ fn a_colour_derived_from_a_setting_follows_every_change_of_the_setting() {
     assert_eq!(second.0, parse_hex("#00FF00").unwrap());
     assert_ne!(first.1, second.1);
 
-    // A colour edited by hand is still the variant's, over what the setting gives.
+    // A color edited by hand is still the variant's, over what the setting gives.
     theme.colors.insert("accent".into(), parse_hex("#ABCDEF").unwrap());
     sync(&mut theme);
     assert_eq!(theme.vars.values.keys().map(String::as_str).collect::<Vec<_>>(), ["--accent", "--tint"]);
@@ -261,7 +261,7 @@ fn studio_accent() -> String {
 }
 
 #[test]
-fn a_variant_that_sets_a_colour_back_to_studios_value_paints_and_saves_it() {
+fn a_variant_that_sets_a_color_back_to_studios_value_paints_and_saves_it() {
     let (theme, _) = from_sheet(":root { --accent: #5E81AC; }");
     let studio = studio_accent();
     let (variant, _) =
@@ -271,7 +271,7 @@ fn a_variant_that_sets_a_colour_back_to_studios_value_paints_and_saves_it() {
     assert!(warnings.is_empty(), "{warnings:?}");
     // Painted: Studio's accent, not the theme's.
     assert_eq!(chosen.color("accent"), crate::kit::theme::studio("accent"));
-    // Saved: the variant keeps the value, so reading it back gives the same colour.
+    // Saved: the variant keeps the value, so reading it back gives the same color.
     sync(&mut chosen);
     assert_eq!(chosen.vars.values.get("--accent").map(String::as_str), Some(studio.as_str()));
     let saved = Variant::of(&chosen).unwrap();
@@ -283,7 +283,7 @@ fn a_variant_that_sets_a_colour_back_to_studios_value_paints_and_saves_it() {
 }
 
 #[test]
-fn a_later_root_rule_that_sets_a_colour_back_to_studios_value_wins_over_an_earlier_one() {
+fn a_later_root_rule_that_sets_a_color_back_to_studios_value_wins_over_an_earlier_one() {
     let studio = studio_accent();
     let (theme, _) = from_sheet(&format!(":root {{ --accent: #5E81AC; }}\n:root {{ --accent: {studio}; }}"));
     assert_eq!(theme.color("accent"), crate::kit::theme::studio("accent"));

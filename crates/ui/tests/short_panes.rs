@@ -130,7 +130,7 @@ fn shapes(h: &Harness<'static, App>) -> Vec<(Rect, Shape)> {
     out
 }
 
-/// The note marks painted inside `clip` and seen there: 2 px lines under its 2 px colour strip.
+/// The note marks painted inside `clip` and seen there: 2 px lines under its 2 px color strip.
 fn note_marks(h: &Harness<'static, App>, clip: Rect) -> usize {
     shapes(h)
         .into_iter()
@@ -297,7 +297,7 @@ fn at_the_least_height_the_notes_are_in_view() {
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows at the default height");
     pull_to(&mut h, bottom - 130.0);
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows at the least height");
-    // Taller again, the notes are still centred.
+    // Taller again, the notes are still centered.
     pull_to(&mut h, bottom - 420.0);
     assert!(h.query_by_label(&middle).is_some(), "{middle} shows when taller");
 }

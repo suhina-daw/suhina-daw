@@ -100,7 +100,7 @@ impl Slot {
     }
 }
 
-/// Left and right gains for `pan` (-1 to 1): the far side falls, the centre is untouched.
+/// Left and right gains for `pan` (-1 to 1): the far side falls, the center is untouched.
 fn balance(pan: f32) -> [f32; 2] {
     let pan = pan.clamp(-1.0, 1.0);
     [(1.0 - pan).min(1.0), (1.0 + pan).min(1.0)]

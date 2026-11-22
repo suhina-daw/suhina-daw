@@ -3,7 +3,7 @@ description: Author data-only effects, MIDI effects and instruments in Rust or w
 read_when: make an effect, MIDI effect or instrument, SDK tutorial, .sd example, node discovery
 type: howto
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-23
 covers:
   - crates/device-sdk/src/author.rs
   - crates/device-sdk/src/ui/widgets.rs
@@ -237,7 +237,7 @@ a single-column canvas with styled controls sized for a narrow device panel. Exi
 the new file as a new device to use its changed layout. Agents can obtain defaults and enum
 choices from `device.sdNodes`.
 
-`background` colours widget bodies; `panel_color` colours the entire cell independently.
+`background` colors widget bodies; `panel_color` colors the entire cell independently.
 
 ## Custom panels, images and controls
 
@@ -254,7 +254,7 @@ parameters not hidden by the author. The canvas scrolls when larger than the dev
 
 ### Backgrounds and artwork
 
-Use `Draw::Rect` for panels, `Draw::Gradient` for colour transitions, and paths, circles, lines
+Use `Draw::Rect` for panels, `Draw::Gradient` for color transitions, and paths, circles, lines
 and arcs for vector icons. Images reference an `ImageAsset` id. Load your own file at authoring time:
 
 ```rust
@@ -323,7 +323,7 @@ Motion controls delay-time depth, filter-frequency depth, rate and morph towards
 The horizontal order is Time, Feedback, Tone, Motion, then Mix.
 The panel fits a 200-pixel slot including the host header and padding. The former
 `lfo_expanded` parameter is retained for compatibility but no longer hides controls.
-Widget colours follow the active Suhina theme, including number text and accents.
+Widget colors follow the active Suhina theme, including number text and accents.
 Motion has one speed control: frequency in Hz, period in milliseconds, or a rhythm menu.
 There are no duplicated Time or depth controls.
 The default waveform is Sine. Wave opens a menu of Sine, Triangle, Ramp Up, Ramp Down, Square, S&H and Wander.
@@ -364,7 +364,7 @@ Set gestures; Number and Knob use Drag with a Y binding; Disclosure uses Toggle;
 menus use Menu with a Choice X binding; FilterBand uses Position with X frequency
 and Y width bindings (logarithmic X, linear Y). WaveformMenu uses seven choices
 in order: sine, triangle, rising ramp, falling ramp, square, sample-and-hold and wander. Number supports precision, number/frequency/choice formatting,
-colour, alignment, border, prefix and suffix. The widget contains no device-specific
+color, alignment, border, prefix and suffix. The widget contains no device-specific
 parameter names. Custom drawings remain available for artwork and specialised controls.
 
 ## Layouts for built-in devices

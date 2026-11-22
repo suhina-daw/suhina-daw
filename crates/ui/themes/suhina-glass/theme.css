@@ -1,6 +1,6 @@
 /* Suhina Glass, reduced to a few settings: every token below follows them. Glassiness is how far the desktop shows through the bars, menus and dialogs, and half that through the rest of the window. */
-@property --ground { syntax: "<color>"; initial-value: #0B2638; label: "Background"; group: "Colours"; }
-@property --tint { syntax: "<color>"; initial-value: #8FE3FF; label: "Accent"; group: "Colours"; }
+@property --ground { syntax: "<color>"; initial-value: #0B2638; label: "Background"; group: "Colors"; }
+@property --tint { syntax: "<color>"; initial-value: #8FE3FF; label: "Accent"; group: "Colors"; }
 @property --glassiness { syntax: "<integer>"; initial-value: 18; label: "Glassiness"; group: "Material"; range: 0 60; step: 1; }
 @property --surface { syntax: "<color>"; initial-value: #000; }
 @property --ink { syntax: "<color>"; initial-value: #fff; }
@@ -29,7 +29,7 @@
   --grid-minor: color-mix(in oklab, var(--ground), var(--ink) 5%);
   --slot-empty: color-mix(in oklab, var(--surface), var(--ink) 20%);
   --pan-background: color-mix(in oklab, var(--ground), var(--surface) 30%);
-  --pan-centre: color-mix(in oklab, var(--ink), var(--surface) 50%);
+  --pan-center: color-mix(in oklab, var(--ink), var(--surface) 50%);
   --accent: var(--tint);
   --automation-pin: var(--tint);
   --selection: var(--highlight);
@@ -55,8 +55,8 @@ window { liquid: var(--glassiness) 0 0; panel-gradient: 90deg, #FFFFFF2E 0%, #FF
 
 /* Every background blends over what is under it, so the window itself is transparent and each
    view and panel carries its own alpha: the views paint at half the bars' strength. A panel inside
-   a view (a mixer strip, a device's panel) only tints the view's colour, whose alpha it already
-   has. Menus and dialogs float over the window, in the panel colour, at its full strength. */
+   a view (a mixer strip, a device's panel) only tints the view's color, whose alpha it already
+   has. Menus and dialogs float over the window, in the panel color, at its full strength. */
 @layer suhina-glass {
   window { background-color: transparent; }
   session, arrangement, start-page { background-color: var(--ground-half); }

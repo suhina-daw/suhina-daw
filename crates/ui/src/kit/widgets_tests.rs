@@ -384,7 +384,7 @@ fn a_silent_value_steps_up_from_the_scale_end_and_stays_when_stepped_down() {
     assert_eq!(stepped(5.5, range, 3.0), 6.0);
 }
 
-/// A lit toggle's colours, as the view takes them with a sheet that has no rule, are the palette's
+/// A lit toggle's colors, as the view takes them with a sheet that has no rule, are the palette's
 /// (`toggle_colors`): moving a switch onto its element changes nothing where no theme says so
 /// (#1440).
 #[test]
@@ -403,12 +403,12 @@ fn a_lit_toggle_is_the_palette_s_where_no_rule_reaches_it() {
     output.textures_delta.clear();
 }
 
-/// A flat button paints its fill and its words in the palette's colours where no rule reaches it,
-/// and the colours of a rule for `button` where one does.
+/// A flat button paints its fill and its words in the palette's colors where no rule reaches it,
+/// and the colors of a rule for `button` where one does.
 #[test]
 fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
     let rgb = egui::Color32::from_rgb;
-    let colours = |css: &str| {
+    let colors = |css: &str| {
         crate::kit::skin::configure(&crate::kit::skin::Skin {
             css: Some(std::sync::Arc::from(css)),
             ..Default::default()
@@ -435,19 +435,19 @@ fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
         found
     };
     assert_eq!(
-        colours(""),
+        colors(""),
         (crate::kit::theme::studio("control-background"), crate::kit::theme::studio("text-primary"))
     );
     assert_eq!(
-        colours("button { background-color: #102030; color: #405060; }"),
+        colors("button { background-color: #102030; color: #405060; }"),
         (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60))
     );
 }
 
 /// A drop-down draws its arrow in `dropdown-arrow { color }` as its scope sees it, as the painted
-/// drop-downs do, not in the theme's widget colour.
+/// drop-downs do, not in the theme's widget color.
 #[test]
-fn a_drop_downs_arrow_takes_the_sheets_dropdown_arrow_colour() {
+fn a_drop_downs_arrow_takes_the_sheets_dropdown_arrow_color() {
     let magenta = Color32::from_rgb(0xFF, 0x00, 0xFF);
     let painted = |css: &str| {
         crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
@@ -470,6 +470,6 @@ fn a_drop_downs_arrow_takes_the_sheets_dropdown_arrow_colour() {
             _ => false,
         })
     };
-    assert!(painted("dropdown-arrow { color: #FF00FF; }"), "the arrow takes the sheet's colour");
+    assert!(painted("dropdown-arrow { color: #FF00FF; }"), "the arrow takes the sheet's color");
     assert!(!painted("dropdown-arrow { color: #00FF00; }"), "and only that");
 }

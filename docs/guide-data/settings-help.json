@@ -885,14 +885,14 @@
       "docs/spec/arrangement-editing.md"
     ]
   },
-  "Arrangement/View/waveform_colour": {
-    "sourceFingerprint": "4f342068f87d8b6970c6a8ca1a589a61527cf9adef7dbd00568850e1135b3570",
-    "summary": "Choose the colour of Arrangement waveforms and note previews.",
+  "Arrangement/View/waveform_color": {
+    "sourceFingerprint": "6b6466ead857157205115c65ad9a48ddee3e8a9a54dbbc541ececdb2c21b5338",
+    "summary": "Choose the color of Arrangement waveforms and note previews.",
     "description": "Controls the ink used for audio waveforms, MIDI note previews and ARA note overlays in Arrangement. Changes apply immediately to existing clips. Clip names keep their automatic contrast; the sound and project data do not change. Only Theme lets the active theme choose the ink; the other choices override the theme.",
     "options": [
       {
         "name": "Theme",
-        "description": "Use the colour the active theme gives waveforms and notes (its .clip-waveform and .clip-notes colour), and dark ink when the theme gives none. This is the default."
+        "description": "Use the color the active theme gives waveforms and notes (its .clip-waveform and .clip-notes color), and dark ink when the theme gives none. This is the default."
       },
       {
         "name": "Auto",
@@ -908,10 +908,10 @@
       },
       {
         "name": "Custom",
-        "description": "Use Custom waveform and note colour; selecting this reveals its picker."
+        "description": "Use Custom waveform and note color; selecting this reveals its picker."
       }
     ],
-    "whenToChange": "Keep Theme to see waveforms and notes as the theme designed them; use Auto for contrasting ink on differently coloured clips, or select one ink colour of your own.",
+    "whenToChange": "Keep Theme to see waveforms and notes as the theme designed them; use Auto for contrasting ink on differently colored clips, or select one ink color of your own.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/view_settings.rs",
@@ -920,10 +920,10 @@
       "docs/spec/theme-skins.md"
     ]
   },
-  "Arrangement/View/waveform_custom_colour": {
-    "sourceFingerprint": "d8f06d7e95182e1e3f9363d5138397d51cf726a6904e80eb4c39ce7949cb5a3f",
+  "Arrangement/View/waveform_custom_color": {
+    "sourceFingerprint": "8a2bae7f62107f7e4ffc99893fbf36332ed8c1d659b77959a07a1caa16ae997b",
     "summary": "Choose the custom ink for waveforms and note previews.",
-    "description": "This opaque colour picker appears when Waveform and note colour is Custom. Choose an RGB colour with the picker; the hexadecimal value is displayed beside it. Changes apply immediately to Arrangement waveforms, MIDI previews and ARA notes. The saved colour has no effect in Auto, Light or Dark mode.",
+    "description": "This opaque color picker appears when Waveform and note color is Custom. Choose an RGB color with the picker; the hexadecimal value is displayed beside it. Changes apply immediately to Arrangement waveforms, MIDI previews and ARA notes. The saved color has no effect in Auto, Light or Dark mode.",
     "options": [],
     "whenToChange": "Select Custom first, then choose ink that is readable against your clip backgrounds.",
     "references": [
@@ -933,12 +933,12 @@
       "docs/spec/arrangement-editing.md"
     ]
   },
-  "Arrangement/View/audio_clip_colour_strength": {
-    "sourceFingerprint": "92227f6385aa098bf4762a20bf3af7c7e9627cd6e3c45e8e0fb9a360370958c3",
-    "summary": "Adjust how strongly audio clips show their assigned colour.",
-    "description": "A 0–100% slider mixes the theme surface with the audio clip colour: 0% uses the surface and 100% uses the full assigned colour. The default is 82%. Existing audio clip fills update immediately without changing their stored colours, MIDI clip strength or audio.",
+  "Arrangement/View/audio_clip_color_strength": {
+    "sourceFingerprint": "985ecccea624f75fd95387cfe903edca86ff6b7522a219a294f80ee0f052269e",
+    "summary": "Adjust how strongly audio clips show their assigned color.",
+    "description": "A 0–100% slider mixes the theme surface with the audio clip color: 0% uses the surface and 100% uses the full assigned color. The default is 82%. Existing audio clip fills update immediately without changing their stored colors, MIDI clip strength or audio.",
     "options": [],
-    "whenToChange": "Lower this for softer audio clip fills, or raise it to make their colours more prominent.",
+    "whenToChange": "Lower this for softer audio clip fills, or raise it to make their colors more prominent.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/view_settings.rs",
@@ -946,56 +946,56 @@
       "docs/spec/arrangement-editing.md"
     ]
   },
-  "Arrangement/Tracks/new_track_colour": {
-    "sourceFingerprint": "45ba5221d8d92f559a1cc4d0f77e6dc21cf68aceb3113ca5fc6d679c70aa44e9",
-    "summary": "Choose whether new track colours follow their type or share one colour.",
-    "description": "Sets the initial colour of newly created tracks. MIDI tracks start light blue and audio tracks orange, in every theme. Existing tracks keep their stored colours when this setting or the theme changes, and each track can be coloured individually.",
+  "Arrangement/Tracks/new_track_color": {
+    "sourceFingerprint": "859119a0d9b41978f7979966588b77b5102b4b00728cb4fd0346e461ec8fefa5",
+    "summary": "Choose whether new track colors follow their type or share one color.",
+    "description": "Sets the initial color of newly created tracks. MIDI tracks start light blue and audio tracks orange, in every theme. Existing tracks keep their stored colors when this setting or the theme changes, and each track can be colored individually.",
     "options": [
       {
         "name": "By clip type",
-        "description": "Give MIDI tracks the MIDI colour (light blue) and audio tracks the audio colour (orange). This is the default."
+        "description": "Give MIDI tracks the MIDI color (light blue) and audio tracks the audio color (orange). This is the default."
       },
       {
-        "name": "One colour",
-        "description": "Give every new track the MIDI colour (light blue)."
+        "name": "One color",
+        "description": "Give every new track the MIDI color (light blue)."
       }
     ],
-    "whenToChange": "Use By clip type to distinguish MIDI and audio tracks, or One colour for a uniform starting colour.",
+    "whenToChange": "Use By clip type to distinguish MIDI and audio tracks, or One color for a uniform starting color.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/app.rs",
       "docs/spec/ui-settings.md",
-      "crates/session/src/colours.rs"
+      "crates/session/src/colors.rs"
     ]
   },
-  "Arrangement/Tracks/new_clip_colour": {
-    "sourceFingerprint": "50881751a69cada41d32da1aa96e05435a190bd9acf1c76cc5a25829fb094fe4",
-    "summary": "Choose whether a new clip takes its track's colour or the colour for its kind.",
-    "description": "Sets the colour a newly made clip starts with: one drawn with a double-click, recorded, or made from a file. Existing clips keep their stored colours when this setting, a track's colour or the theme changes, and copies and pasted clips keep the colour they had. Clips can still be coloured individually.",
+  "Arrangement/Tracks/new_clip_color": {
+    "sourceFingerprint": "e73f61a846bfe9d9ebee5170218286c049de7fa2a2fa723156532db84e630658",
+    "summary": "Choose whether a new clip takes its track's color or the color for its kind.",
+    "description": "Sets the color a newly made clip starts with: one drawn with a double-click, recorded, or made from a file. Existing clips keep their stored colors when this setting, a track's color or the theme changes, and copies and pasted clips keep the color they had. Clips can still be colored individually.",
     "options": [
       {
-        "name": "Track colour",
-        "description": "Give a new clip the colour its track has at that moment. This is the default."
+        "name": "Track color",
+        "description": "Give a new clip the color its track has at that moment. This is the default."
       },
       {
         "name": "By clip type",
-        "description": "Give a new MIDI clip the MIDI colour (light blue) and a new audio clip the audio colour (orange), whatever the track's colour."
+        "description": "Give a new MIDI clip the MIDI color (light blue) and a new audio clip the audio color (orange), whatever the track's color."
       }
     ],
-    "whenToChange": "Keep Track colour so clips match the track they are on; choose By clip type when every new clip should start in the MIDI or audio colour.",
+    "whenToChange": "Keep Track color so clips match the track they are on; choose By clip type when every new clip should start in the MIDI or audio color.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/view_settings.rs",
       "crates/ui/src/app.rs",
       "crates/session/src/lib.rs",
       "docs/spec/theme-skins.md",
-      "crates/session/src/colours.rs"
+      "crates/session/src/colors.rs"
     ]
   },
-  "Arrangement/Tracks/track_header_colour_strength": {
-    "sourceFingerprint": "09c72529dcc590fb863b4c5395694a2893383bc74d4028b9665c225ae73e9b9c",
-    "summary": "Adjust how strongly track headers show their assigned colour.",
-    "description": "A 0–100% slider mixes the theme surface with each track header colour. At 0% the surface dominates; at 100% the full assigned colour is used. The default is 82%. Changes apply immediately without recolouring stored tracks or changing clip strength.",
+  "Arrangement/Tracks/track_header_color_strength": {
+    "sourceFingerprint": "9561acc94e6f606206441aecb1648553fd71f28a136a7adc17c6945da7bee620",
+    "summary": "Adjust how strongly track headers show their assigned color.",
+    "description": "A 0–100% slider mixes the theme surface with each track header color. At 0% the surface dominates; at 100% the full assigned color is used. The default is 82%. Changes apply immediately without recoloring stored tracks or changing clip strength.",
     "options": [],
     "whenToChange": "Lower this to soften headers, or raise it to make tracks easier to distinguish.",
     "references": [
@@ -1240,7 +1240,7 @@
   "Arrangement/Tools/arrangement_toolbar": {
     "sourceFingerprint": "dfbb527972fe530e0f7873b810a0cc3a2824a3eeddebb9dafaa6640b320d085d",
     "summary": "Show a row of tools over the Arrangement and let the number keys choose them.",
-    "description": "With this on, a toolbar runs along the top of the Arrangement with six tools: Select (moves, trims and selects clips, as without the toolbar), Range (a drag selects time anywhere), Split (a click cuts a clip where you click), Erase (a click deletes a clip), Draw (a drag on a lane makes an empty clip as long as the drag) and Mute (a click mutes or unmutes a clip).\n\nThe keys 1 to 6 choose them while the Arrangement was clicked last; when the piano roll was clicked last, the same keys choose its own tools. The Arrangement is outlined in the accent colour while it has the keys.",
+    "description": "With this on, a toolbar runs along the top of the Arrangement with six tools: Select (moves, trims and selects clips, as without the toolbar), Range (a drag selects time anywhere), Split (a click cuts a clip where you click), Erase (a click deletes a clip), Draw (a drag on a lane makes an empty clip as long as the drag) and Mute (a click mutes or unmutes a clip).\n\nThe keys 1 to 6 choose them while the Arrangement was clicked last; when the piano roll was clicked last, the same keys choose its own tools. The Arrangement is outlined in the accent color while it has the keys.",
     "options": [
       {
         "name": "Off",
@@ -1400,21 +1400,21 @@
       "docs/spec/automation.md"
     ]
   },
-  "Arrangement/Automation/automation_colour": {
-    "sourceFingerprint": "e70cb7e8e3c42733127a6be059c73210ef5aa3a1ccf63a6337f3cc116e2a197a",
-    "summary": "Choose whether automation lines and points take their track's colour or one colour on every track.",
-    "description": "An automation lane draws a line, the envelope, through the points that set a parameter over time. By default the line and its points are drawn in their track's colour, so a lane shows which track it belongs to. On tracks with dull colours, such as the grey tracks of many imported projects, those lines can be hard to see. Fixed draws every envelope in one line colour and every point in one point colour, whatever the track's colour. A picked point keeps its own highlight and a lane that is switched off stays greyed out in both modes. The curve handles and the faint line of a painted range follow the line's colour. The choice is saved with your settings, not in the project, and applies at once.",
+  "Arrangement/Automation/automation_color": {
+    "sourceFingerprint": "e650bcaa27bb4e0785ce874d0f6ea8a6cdd024c221d712eeb3ba23209ed42225",
+    "summary": "Choose whether automation lines and points take their track's color or one color on every track.",
+    "description": "An automation lane draws a line, the envelope, through the points that set a parameter over time. By default the line and its points are drawn in their track's color, so a lane shows which track it belongs to. On tracks with dull colors, such as the gray tracks of many imported projects, those lines can be hard to see. Fixed draws every envelope in one line color and every point in one point color, whatever the track's color. A picked point keeps its own highlight and a lane that is switched off stays grayed out in both modes. The curve handles and the faint line of a painted range follow the line's color. The choice is saved with your settings, not in the project, and applies at once.",
     "options": [
       {
-        "name": "Track colour",
-        "description": "Each envelope's line and points take their track's colour. This is the default."
+        "name": "Track color",
+        "description": "Each envelope's line and points take their track's color. This is the default."
       },
       {
         "name": "Fixed",
-        "description": "Every envelope's line takes Automation line colour and every point Automation point colour; selecting this reveals their pickers."
+        "description": "Every envelope's line takes Automation line color and every point Automation point color; selecting this reveals their pickers."
       }
     ],
-    "whenToChange": "Choose Fixed when envelopes are hard to read on your tracks' colours, for example on a project whose tracks are all grey.",
+    "whenToChange": "Choose Fixed when envelopes are hard to read on your tracks' colors, for example on a project whose tracks are all gray.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/view_settings.rs",
@@ -1424,12 +1424,12 @@
       "docs/spec/automation.md"
     ]
   },
-  "Arrangement/Automation/automation_line_colour": {
-    "sourceFingerprint": "e68ad5bb77b844e83898661f89e43328ec2a78641b6547df699a3a84e9d87076",
-    "summary": "Choose the colour of every automation line when Automation colour is Fixed.",
-    "description": "This colour picker appears when Automation colour is Fixed. Until you pick a colour, the line takes the colour the active theme gives fixed automation lines, which is the theme's accent unless the theme sets its own; the picker shows that colour. Once you pick one, every envelope line uses it in every theme, and the Theme button beside the picker gives the theme's colour back. A lane that is switched off keeps its grey line. The colour has no effect with Track colour.",
+  "Arrangement/Automation/automation_line_color": {
+    "sourceFingerprint": "27733f5b080e8cd47e02f95d009d31bf10b78c86541b601d8ae054c5e5eb43a5",
+    "summary": "Choose the color of every automation line when Automation color is Fixed.",
+    "description": "This color picker appears when Automation color is Fixed. Until you pick a color, the line takes the color the active theme gives fixed automation lines, which is the theme's accent unless the theme sets its own; the picker shows that color. Once you pick one, every envelope line uses it in every theme, and the Theme button beside the picker gives the theme's color back. A lane that is switched off keeps its gray line. The color has no effect with Track color.",
     "options": [],
-    "whenToChange": "Pick a colour that stands out from the lanes' background and from your clips, if the theme's does not.",
+    "whenToChange": "Pick a color that stands out from the lanes' background and from your clips, if the theme's does not.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/view_settings.rs",
@@ -1439,12 +1439,12 @@
       "docs/spec/automation.md"
     ]
   },
-  "Arrangement/Automation/automation_point_colour": {
-    "sourceFingerprint": "1ce3faae16a0b15f3a33a488bdf6b577e04ee17a5ab7d39b9d507bd2258d60f3",
-    "summary": "Choose the colour of every automation point when Automation colour is Fixed.",
-    "description": "This colour picker appears when Automation colour is Fixed. Until you pick a colour, points take the colour the active theme gives fixed automation points, which is the theme's accent unless the theme sets its own; the picker shows that colour. Once you pick one, every point that is not picked uses it in every theme, and the Theme button beside the picker gives the theme's colour back. Picked points keep their own highlight, so they still stand out, and the points of a lane that is switched off stay grey. The colour has no effect with Track colour.",
+  "Arrangement/Automation/automation_point_color": {
+    "sourceFingerprint": "14942119cf60ea4db3daeb9664716ec07b21091929a12dd7a2a00a8354da13cc",
+    "summary": "Choose the color of every automation point when Automation color is Fixed.",
+    "description": "This color picker appears when Automation color is Fixed. Until you pick a color, points take the color the active theme gives fixed automation points, which is the theme's accent unless the theme sets its own; the picker shows that color. Once you pick one, every point that is not picked uses it in every theme, and the Theme button beside the picker gives the theme's color back. Picked points keep their own highlight, so they still stand out, and the points of a lane that is switched off stay gray. The color has no effect with Track color.",
     "options": [],
-    "whenToChange": "Pick a colour different from the line's when you want points to stand out on it.",
+    "whenToChange": "Pick a color different from the line's when you want points to stand out on it.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/view_settings.rs",
@@ -1598,6 +1598,41 @@
       "docs/spec/ui-session-view.md"
     ]
   },
+  "ClipEditor/Audio editor/audio_editor_waveform_color": {
+    "sourceFingerprint": "d761d9fe6f0d1f24d07edf8614167172b659eb9666c473dcd8b0f2bdd045623c",
+    "summary": "Choose the color of the waveform in the audio editor.",
+    "description": "The audio editor is the detail area's view of an audio clip, where its warp markers are placed. This preference decides the color its large waveform is drawn in. The sound and the project do not change.",
+    "options": [
+      {
+        "name": "Track color",
+        "description": "Draw the waveform in the clip's color: its own when it has one, otherwise its track's, as the Arrangement colors the clip. This is the default."
+      },
+      {
+        "name": "Theme",
+        "description": "Draw the waveform in the color the active theme gives waveforms (its .clip-waveform color), and in a neutral ink that reads on the editor when the theme gives none."
+      }
+    ],
+    "whenToChange": "Keep Track color to tell clips apart by color while editing; choose Theme to see the waveform as the theme designed it.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/detail/audio_editor.rs",
+      "docs/spec/ui-audio-editor.md"
+    ]
+  },
+  "ClipEditor/Audio editor/audio_editor_marker_line_drag": {
+    "sourceFingerprint": "565e9788deef2d32affaa7fa2237bb6f2419fe937a46f85b3d1b7c13f7d235a6",
+    "summary": "Choose whether a warp marker can be dragged by its line in the audio editor.",
+    "description": "Each warp marker in the audio editor has a flag on the marker lane under the ruler and a line down the waveform. Off, only the flag takes hold of the marker, and a drag anywhere on the waveform paints a time selection, beside a marker's line too. On, the line can be dragged as the flag can.",
+    "options": [],
+    "whenToChange": "Turn it on if you would rather grab warp markers anywhere along their line; leave it off to paint time selections freely across the waveform.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/detail/audio_editor.rs",
+      "docs/spec/ui-audio-editor.md"
+    ]
+  },
   "ClipEditor/Piano roll/piano_roll_top": {
     "sourceFingerprint": "8720a624fd734467058d63f061368bb35ebbe526ebaeffaad8fcadded3a93e78",
     "summary": "Choose what remains visible when the clip editor is pulled to the top.",
@@ -1743,7 +1778,7 @@
   "Browser/Browser/browser_folder_drop": {
     "sourceFingerprint": "15bd78b04b1425e655480f656db49531ee802447d76b1dc7bb07ea08d0f4b209",
     "summary": "Choose what dragging samples onto a folder in the browser does.",
-    "description": "Samples dragged in the browser and dropped on one of its folders go into that folder.\n\nAsk shows a question with Move, Copy and Cancel, and a Remember my choice box that sets this setting. Move takes the files out of where they were; their pins, recent places and colour tags go with them, and a file an open project plays is left where it is. Copy leaves the originals.\n\nA name already taken in the folder gets a number (Kick 2.wav); nothing is overwritten. Holding Ctrl while dropping always copies, Shift always moves.",
+    "description": "Samples dragged in the browser and dropped on one of its folders go into that folder.\n\nAsk shows a question with Move, Copy and Cancel, and a Remember my choice box that sets this setting. Move takes the files out of where they were; their pins, recent places and color tags go with them, and a file an open project plays is left where it is. Copy leaves the originals.\n\nA name already taken in the folder gets a number (Kick 2.wav); nothing is overwritten. Holding Ctrl while dropping always copies, Shift always moves.",
     "options": [
       {
         "name": "Ask",
@@ -1935,8 +1970,8 @@
       "docs/spec/sample-map.md"
     ]
   },
-  "Browser/Tags/Colour tag limit": {
-    "sourceFingerprint": "863b35885e11712f55a9e13369f31d5144f68f6f1d658ac4b848a6b058efe676",
+  "Browser/Tags/Color tag limit": {
+    "sourceFingerprint": "c510cb5e68bbad36906a6a39533593b9394644e49563c475276022f3055ad648",
     "summary": "Set the maximum number of color tags in the browser library.",
     "description": "A color tag is a named label you assign to library items for filtering and organization. This limits the total number of distinct tags, not the number of files in your library. It is stored with browser library data rather than as a key in settings.txt. Suhina refuses to lower the limit below the number of tags already present; remove unused tags first if needed.",
     "options": [
@@ -1967,8 +2002,8 @@
       "crates/library/src/store.rs"
     ]
   },
-  "Keys/Mouse and key behaviour/keymap.json": {
-    "sourceFingerprint": "ab2e8d03a6fe8c47ae502d7b59a8da639c2915f5f2e7134bf08b8450d0e391ae",
+  "Keys/Mouse and key behavior/keymap.json": {
+    "sourceFingerprint": "669f4aa0dcf2ff59e9a2281674a87f7d62fbac9deceef7815e3f60cee44dad29",
     "summary": "Choose what clicks and right-clicks do to notes in the piano roll.",
     "description": "These four switches set how the mouse edits notes in the piano roll: whether a left click in Select draws a note, whether a right click deletes the note under the pointer, whether Shift with a right click splits a note, and whether Alt with a right click plays from the pointer.\n\nEach is On or Off. Changing any of them makes the keyboard preset Custom, because a preset is a set of these choices together with its keys. They are saved in keymap.json with the keys.",
     "options": [
@@ -2133,25 +2168,25 @@
       "docs/spec/waveforms.md"
     ]
   },
-  "Appearance/Selection/selection_colour": {
-    "sourceFingerprint": "678e47ae5499c1ff4c3d64fd706feb1f5271df17efe7b9a3ea256499dd53616a",
-    "summary": "Choose the colour selected tracks and clips are filled with.",
-    "description": "When you select tracks or clips, in the Arrangement or the Launcher, their headers and clips are filled with one shared selection colour, so several selected items read as one selection even when their own colours differ. The track's or clip's own colour stays in a band at the header's edge and down the clip's leading edge, and an Arrangement clip's name bar keeps its own colour. A clip is filled however you picked it, by its name bar or by a click in its body. The selected tracks' lanes, and their columns in the Launcher, take a faint tint of the same colour. Names, waveforms and notes switch to an ink that reads on the selection colour. A track or clip that is switched off stays grey. The choice is saved with your settings, not in the project, and applies at once.",
+  "Appearance/Selection/selection_color": {
+    "sourceFingerprint": "edf4a1daaa1d91c7918139e8eb9cf8e046ce0bacd4d53a756d6ab921e13c12a2",
+    "summary": "Choose the color selected tracks and clips are filled with.",
+    "description": "When you select tracks or clips, in the Arrangement or the Launcher, their headers and clips are filled with one shared selection color, so several selected items read as one selection even when their own colors differ. The track's or clip's own color stays in a band at the header's edge and down the clip's leading edge, and an Arrangement clip's name bar keeps its own color. A clip is filled however you picked it, by its name bar or by a click in its body. The selected tracks' lanes, and their columns in the Launcher, take a faint tint of the same color. Names, waveforms and notes switch to an ink that reads on the selection color. A track or clip that is switched off stays gray. The choice is saved with your settings, not in the project, and applies at once.",
     "options": [
       {
         "name": "From theme",
-        "description": "Use the active theme's selection colour (its selection.background). This is the default."
+        "description": "Use the active theme's selection color (its selection.background). This is the default."
       },
       {
-        "name": "Clip's own colour",
-        "description": "Keep each selected header and clip in its own colour, a little brighter and outlined, so the selection still shows which track each clip is on."
+        "name": "Clip's own color",
+        "description": "Keep each selected header and clip in its own color, a little brighter and outlined, so the selection still shows which track each clip is on."
       },
       {
         "name": "Custom",
-        "description": "Use one colour you choose for every selected header and clip, in every theme; selecting this reveals Custom selection colour."
+        "description": "Use one color you choose for every selected header and clip, in every theme; selecting this reveals Custom selection color."
       }
     ],
-    "whenToChange": "Choose Custom when the theme's selection colour is too close to your track colours or too bright, or Clip's own colour when you prefer selected clips to keep their colours.",
+    "whenToChange": "Choose Custom when the theme's selection color is too close to your track colors or too bright, or Clip's own color when you prefer selected clips to keep their colors.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/view_settings.rs",
@@ -2163,12 +2198,12 @@
       "docs/spec/arrangement-editing.md"
     ]
   },
-  "Appearance/Selection/selection_custom_colour": {
-    "sourceFingerprint": "ed71a5f714f37950b9440a0d29abb7327b7f2de4e2dfbb403ea13dc99670ff47",
-    "summary": "Choose the colour selected tracks and clips take when Selection colour is Custom.",
-    "description": "This colour picker appears when Selection colour is Custom. Choose an RGB colour and its opacity with the picker; the hexadecimal value is displayed beside it, with the opacity as its last two digits when the colour is see-through. A see-through colour lets the lanes, the grid and the clips' own colours show through what is selected. It fills selected track headers and clips in both views and tints the selected tracks' lanes and Launcher columns, in every theme, replacing the theme's selection colour. Text, waveforms and notes on it switch to an ink that reads on it, so a dark colour works too. The saved colour has no effect with From theme or Clip's own colour.",
+  "Appearance/Selection/selection_custom_color": {
+    "sourceFingerprint": "266baee261a891e2154af4ebaf03417d048e65ba214afae9b97eff7e5e9629f6",
+    "summary": "Choose the color selected tracks and clips take when Selection color is Custom.",
+    "description": "This color picker appears when Selection color is Custom. Choose an RGB color and its opacity with the picker; the hexadecimal value is displayed beside it, with the opacity as its last two digits when the color is see-through. A see-through color lets the lanes, the grid and the clips' own colors show through what is selected. It fills selected track headers and clips in both views and tints the selected tracks' lanes and Launcher columns, in every theme, replacing the theme's selection color. Text, waveforms and notes on it switch to an ink that reads on it, so a dark color works too. The saved color has no effect with From theme or Clip's own color.",
     "options": [],
-    "whenToChange": "Select Custom first, then choose a colour that stands apart from your track and clip colours.",
+    "whenToChange": "Select Custom first, then choose a color that stands apart from your track and clip colors.",
     "references": [
       "crates/ui/src/settings/settings_rows.rs",
       "crates/ui/src/settings/view_settings.rs",
@@ -2193,7 +2228,7 @@
   },
   "Appearance/Background/background_tint": {
     "sourceFingerprint": "669d1c68e2b56d4c1bb9b320b77769ad4e690fdb3eaad43c244ff51c15b5819c",
-    "description": "Set neutral main-window surface opacity over the selected background image, from 0 to 100 percent. At 100 percent opaque theme surfaces cover the image; lower values reveal the selected image rather than the desktop, including on transparent GPU hosts.\n\nSettings uses its original theme surface with Panel liquid independently. Text, controls, track and clip colours are unchanged. Has no effect without a loaded image.",
+    "description": "Set neutral main-window surface opacity over the selected background image, from 0 to 100 percent. At 100 percent opaque theme surfaces cover the image; lower values reveal the selected image rather than the desktop, including on transparent GPU hosts.\n\nSettings uses its original theme surface with Panel liquid independently. Text, controls, track and clip colors are unchanged. Has no effect without a loaded image.",
     "whenToChange": "Increase for stronger separation and readability, or decrease to reveal more of your image.",
     "options": [],
     "references": [
@@ -2215,7 +2250,7 @@
   },
   "Appearance/Application bar/app_name_centered": {
     "sourceFingerprint": "8e110af7a171571b9f33134c82e4049a9edb1fe78eee884063b187efcaedba7b",
-    "description": "Place the always-visible Suhina name at the left or centre of the application bar. Project fields have their own position; fields sharing a position appear together. Long project names are clipped before they overlap controls. The bar shows on Windows only, where it is the window's title bar; Linux and macOS keep the system's title bar.",
+    "description": "Place the always-visible Suhina name at the left or center of the application bar. Project fields have their own position; fields sharing a position appear together. Long project names are clipped before they overlap controls. The bar shows on Windows only, where it is the window's title bar; Linux and macOS keep the system's title bar.",
     "whenToChange": "Choose the location you find easiest to identify when switching windows.",
     "options": [
       {
@@ -2223,8 +2258,8 @@
         "description": "Show Suhina on the left."
       },
       {
-        "name": "Centre",
-        "description": "Show Suhina in the centre."
+        "name": "Center",
+        "description": "Show Suhina in the center."
       }
     ],
     "references": [
@@ -2275,16 +2310,16 @@
   },
   "Appearance/Application bar/bar_project_centered": {
     "sourceFingerprint": "dae266646000145f29c6683f0006a43e574fe208f9eb77c42703f45e28f6d9b3",
-    "description": "Place enabled project fields at the left or centre, independently of the application name. Fields placed together share a single group and long names are clipped inside it.",
-    "whenToChange": "Choose Centre to separate project information from a left-aligned Suhina name.",
+    "description": "Place enabled project fields at the left or center, independently of the application name. Fields placed together share a single group and long names are clipped inside it.",
+    "whenToChange": "Choose Center to separate project information from a left-aligned Suhina name.",
     "options": [
       {
         "name": "Left",
         "description": "Show project fields on the left."
       },
       {
-        "name": "Centre",
-        "description": "Show project fields in the centre."
+        "name": "Center",
+        "description": "Show project fields in the center."
       }
     ],
     "references": [
@@ -2360,7 +2395,7 @@
   "Theme/Theme/theme": {
     "sourceFingerprint": "97029a5ae55e2fa09b1059f56800a7b0f19cb8637cd00bb0b8aae731b5def9f7",
     "summary": "Choose an interface theme and variant, edit a variant's settings, and make, share or delete themes.",
-    "description": "## Choosing a theme\n\nThe theme in use shows as a large card at the top: its name, and under it the name of the variant in use (Default for the theme's own values). Every theme, the one in use too, is in the list under All themes. Click a card to use that theme. Search themes finds a theme by its name, its folder name or the name of one of its variants.\n\nA theme with variants has a row of swatches under its card, the theme's own values first; click a swatch to use that variant. A card says whether its theme is Built-in or Custom, or Not converted for a theme from an earlier version that could not be converted (point at the card to see why). A warning badge on a card means its theme.css has notices: point at it to read them; the rest of the sheet still applies.\n\nA theme changes only the interface: existing tracks and clips keep their colours, and the colour picker and new tracks and clips use Suhina's own colours in every theme. A theme draws a track's or clip's colour from its color attribute.\n\n## Variants\n\nThe + box at the end of the large card's swatches opens the editor on a new variant of the theme in use, starting from the values in use: Save keeps it, Cancel leaves nothing behind. It is greyed when the theme offers no settings, since a variant of it could hold nothing.\n\nRight-click a swatch to use, edit, duplicate or delete that variant; rename it in the editor. The default variant is the theme's own values: it is renamed in Theme info… and cannot be deleted. The variants a built-in theme comes with cannot be changed: edit one and use Save as new variant. A variant you edited in an earlier version of Suhina offers Revert to built-in… instead of Delete.\n\n## Editing a variant\n\nEdit current variant opens the editor for the variant in use, and Back to themes returns to the list. It shows the variant's name and the settings the theme offers itself, written in its theme.css with @property and a label, in the groups the theme gives them. Each has a control for its type: a colour, a slider for a number in its range, a choice of words, or a field whose text is checked against the type. A theme that offers none says so.\n\nChanges show at once everywhere in Suhina but are not saved until you press Save; Edited beside the name says there are unsaved changes. Save as new variant keeps the changes as a new variant and uses it, and Discard changes puts back the saved values after asking. Save is greyed for the default variant and for a built-in theme's own variants. Leaving the editor with unsaved changes (Back to themes, another page, closing Settings) asks first: Save, Don't save or Cancel. Quitting Suhina drops unsaved changes.\n\n## New themes and sharing\n\nMore, beside Edit current variant, holds New theme…, Import theme…, Export theme…, Open the themes folder, Back up themes and Delete variant….\n\nNew theme… asks what to start from (Suhina's defaults, or any theme, built-in or yours), the theme's name, author and description, and whether to include the default artwork: the built-in control images, copied into the theme's assets folder with a rule for each in its theme.css, so you can edit them. Right-clicking a card offers New theme from this…, which starts from that theme.\n\nRight-click a card of your own theme for Theme info… (its name, author, description and the default variant's name), Show in folder, Add default artwork (the control images it does not have yet) and Delete theme…. Built-in themes cannot be changed or deleted: their items are greyed and say why.\n\nExport theme… writes a theme as one .theme.suhina file to share. Back up themes writes every theme into one zip. Import theme…, or dropping a .theme.suhina file, a theme's .css or .json, or a zip of themes on the window, brings it in. When that theme is here already, Suhina asks whether to replace it or bring it in as a copy.\n\nDeleting a variant or a theme asks first, then moves its file or folder to the system's Trash, from which it can be taken out again. If it cannot be moved, the status bar says why and nothing is deleted.\n\n## Moving toolbar controls\n\nRight-click the top control bar and choose Edit toolbar to move its controls: drag the outlined controls on an 8 point grid, then Done saves the positions in the theme, Cancel or Escape discards them, and Reset positions puts the controls back.\n\n## Theme files\n\nA theme is a folder in the themes folder: theme.json holds its name, swatch and description, theme.css its look, layout and settings (variables, selectors, @media, gradients, shadows, transitions, Flex and Grid; meter style, segments and intensity on the meter element), variants/NAME.json its variants, and assets/ its artwork. Edit them in any text editor; Suhina reads them again within a second. Suhina's editors change only the rules they write, such as moved controls, and leave the rest of theme.css as it is. The theme author guide in Suhina's documentation (docs/guide/theme-authoring.md) describes the format, the elements and selectors a theme can style, and what a theme can do.",
+    "description": "## Choosing a theme\n\nThe theme in use shows as a large card at the top: its name, and under it the name of the variant in use (Default for the theme's own values). Every theme, the one in use too, is in the list under All themes. Click a card to use that theme. Search themes finds a theme by its name, its folder name or the name of one of its variants.\n\nA theme with variants has a row of swatches under its card, the theme's own values first; click a swatch to use that variant. A card says whether its theme is Built-in or Custom, or Not converted for a theme from an earlier version that could not be converted (point at the card to see why). A warning badge on a card means its theme.css has notices: point at it to read them; the rest of the sheet still applies.\n\nA theme changes only the interface: existing tracks and clips keep their colors, and the color picker and new tracks and clips use Suhina's own colors in every theme. A theme draws a track's or clip's color from its color attribute.\n\n## Variants\n\nThe + box at the end of the large card's swatches opens the editor on a new variant of the theme in use, starting from the values in use: Save keeps it, Cancel leaves nothing behind. It is grayed when the theme offers no settings, since a variant of it could hold nothing.\n\nRight-click a swatch to use, edit, duplicate or delete that variant; rename it in the editor. The default variant is the theme's own values: it is renamed in Theme info… and cannot be deleted. The variants a built-in theme comes with cannot be changed: edit one and use Save as new variant. A variant you edited in an earlier version of Suhina offers Revert to built-in… instead of Delete.\n\n## Editing a variant\n\nEdit current variant opens the editor for the variant in use, and Back to themes returns to the list. It shows the variant's name and the settings the theme offers itself, written in its theme.css with @property and a label, in the groups the theme gives them. Each has a control for its type: a color, a slider for a number in its range, a choice of words, or a field whose text is checked against the type. A theme that offers none says so.\n\nChanges show at once everywhere in Suhina but are not saved until you press Save; Edited beside the name says there are unsaved changes. Save as new variant keeps the changes as a new variant and uses it, and Discard changes puts back the saved values after asking. Save is grayed for the default variant and for a built-in theme's own variants. Leaving the editor with unsaved changes (Back to themes, another page, closing Settings) asks first: Save, Don't save or Cancel. Quitting Suhina drops unsaved changes.\n\n## New themes and sharing\n\nMore, beside Edit current variant, holds New theme…, Import theme…, Export theme…, Open the themes folder, Back up themes and Delete variant….\n\nNew theme… asks what to start from (Suhina's defaults, or any theme, built-in or yours), the theme's name, author and description, and whether to include the default artwork: the built-in control images, copied into the theme's assets folder with a rule for each in its theme.css, so you can edit them. Right-clicking a card offers New theme from this…, which starts from that theme.\n\nRight-click a card of your own theme for Theme info… (its name, author, description and the default variant's name), Show in folder, Add default artwork (the control images it does not have yet) and Delete theme…. Built-in themes cannot be changed or deleted: their items are grayed and say why.\n\nExport theme… writes a theme as one .theme.suhina file to share. Back up themes writes every theme into one zip. Import theme…, or dropping a .theme.suhina file, a theme's .css or .json, or a zip of themes on the window, brings it in. When that theme is here already, Suhina asks whether to replace it or bring it in as a copy.\n\nDeleting a variant or a theme asks first, then moves its file or folder to the system's Trash, from which it can be taken out again. If it cannot be moved, the status bar says why and nothing is deleted.\n\n## Moving toolbar controls\n\nRight-click the top control bar and choose Edit toolbar to move its controls: drag the outlined controls on an 8 point grid, then Done saves the positions in the theme, Cancel or Escape discards them, and Reset positions puts the controls back.\n\n## Theme files\n\nA theme is a folder in the themes folder: theme.json holds its name, swatch and description, theme.css its look, layout and settings (variables, selectors, @media, gradients, shadows, transitions, Flex and Grid; meter style, segments and intensity on the meter element), variants/NAME.json its variants, and assets/ its artwork. Edit them in any text editor; Suhina reads them again within a second. Suhina's editors change only the rules they write, such as moved controls, and leave the rest of theme.css as it is. The theme author guide in Suhina's documentation (docs/guide/theme-authoring.md) describes the format, the elements and selectors a theme can style, and what a theme can do.",
     "options": [],
     "whenToChange": "Choose a comfortable theme and, when it has them, a variant. Use Edit current variant to tailor the settings the theme offers and save them in a variant of your own; make a new theme from one you like to change its theme.css.",
     "references": [
@@ -2632,7 +2667,7 @@
   "ClipEditor/Piano roll/piano_key_style": {
     "sourceFingerprint": "cfc5e326e24d1f1db40416e096ae0a2c6d9f90756452f3bc54f3e56207b6f5ab",
     "summary": "Choose how light the piano roll's keys are drawn.",
-    "description": "The keys at the left of the piano roll, the grid where MIDI notes are edited, are drawn like a keyboard in one of three styles. A theme can set anything about the keys in its sheet, and what it sets wins: when it sets their colours, this choice has no effect and the View menu in the piano roll's top left corner shows Theme. The same choice is in that menu.",
+    "description": "The keys at the left of the piano roll, the grid where MIDI notes are edited, are drawn like a keyboard in one of three styles. A theme can set anything about the keys in its sheet, and what it sets wins: when it sets their colors, this choice has no effect and the View menu in the piano roll's top left corner shows Theme. The same choice is in that menu.",
     "options": [
       {
         "name": "Bone",
