@@ -135,9 +135,9 @@ pub(super) fn colour_band(
     id: Id,
     actions: &mut Vec<Action>,
 ) {
-    painter.rect_filled(band, 0.0, colour_picker::fill(lane.color, false));
+    painter.rect_filled(band, 0.0, color_picker::fill(lane.color, false));
     if band.intersects(clip) {
-        colour_picker::area(ui, band.intersect(clip), id.with("colour"), lane.track, &lane.name, lane.color, actions);
+        color_picker::area(ui, band.intersect(clip), id.with("colour"), lane.track, &lane.name, lane.color, actions);
     }
 }
 
@@ -214,11 +214,14 @@ pub(super) fn track_header(
     {
         state.track_drop = Some((dragged, pointer.y));
     }
+    // While the color tool edits the track, its header is styled as neither selected nor muted,
+    // so a sheet's selected or muted background never hides the color being chosen.
+    let preview = crate::kit::selection::previews_track(ui.ctx(), lane.track);
     let own = crate::kit::element::TRACK_HEADER
         .id(&format!("track-{}", lane.track.0))
         .color(rgb(lane.color))
-        .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track))
-        .attr(crate::kit::element::Muted, lane.mute)
+        .attr(crate::kit::element::Selected, state.selected_tracks.contains(&lane.track) && !preview)
+        .attr(crate::kit::element::Muted, lane.mute && !preview)
         .attr(crate::kit::element::Armed, lane.armed)
         .enter();
     work_trace.mark("style");
@@ -286,7 +289,6 @@ pub(super) fn track_header(
     });
     work_trace.mark("interaction");
     let selected = state.selected_tracks.contains(&lane.track) || state.focus == Some(lane.track);
-    let preview = crate::kit::selection::previews_track(ui.ctx(), lane.track);
     // A selected track's header is filled with the one selection colour every selected header
     // and clip shares (Settings › Appearance › Selection colour); its own colour stays in its band.
     // With Clip's own colour, and for the track the piano roll edits without its being selected,
@@ -296,10 +298,12 @@ pub(super) fn track_header(
         .flatten();
     // The theme's header colours (`--track-headerBackground`, `--track-headerSelectedBackground`),
     // which the track's colour is worked into; a rule for `track-header` paints over the result.
+    // While the color tool edits the track, the unselected one, so the header shows the color
+    // with the shading it will have.
     let background = own
         .style()
         .and_then(|style| {
-            style.colour_variable(if selected {
+            style.colour_variable(if selected && !preview {
                 "--track-headerSelectedBackground"
             } else {
                 "--track-headerBackground"
@@ -311,7 +315,7 @@ pub(super) fn track_header(
     // shade of its colour (#1393); its colour stays in the band down its edge. The gray is the
     // computed background, so `--track-headerMutedBackground` reaches it.
     let header_fill = if preview {
-        rgb(lane.color)
+        colour_surface(background, rgb(lane.color), strength)
     } else if lane.mute {
         own.computed_background_or(muted_header_gray(selected))
     } else if let Some(fill) = selection_fill {
@@ -332,9 +336,7 @@ pub(super) fn track_header(
     {
         painter.rect_filled(rect, 0.0, header_fill);
     }
-    if !preview {
-        crate::kit::liquid::paint(painter, rect, &own, header_fill, crate::kit::liquid::Surface::Track);
-    }
+    crate::kit::liquid::paint(painter, rect, &own, header_fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`arrangement track-header`) over the native one.
     if preview {
         own.paint_over(

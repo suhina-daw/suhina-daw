@@ -7,7 +7,7 @@
 
 use super::*;
 use crate::arrangement::Dragged;
-use crate::interaction::colour_picker;
+use crate::interaction::color_picker;
 use crate::kit::widgets::Drag;
 use suhina_engine::model::{CLIP_TEMPO_RANGE, ROOT_NAMES, ScaleMode, TempoSource};
 
@@ -683,19 +683,15 @@ pub(super) fn title_row(
     let swatch = Rect::from_center_size(Pos2::new(rect.left() + 8.0 + 6.0, rect.center().y), Vec2::splat(12.0));
     // `icon[kind="swatch"]`: its `color` where the clip has none, its `border-color` round it.
     let look = crate::kit::element::ICON.attribute("kind", "swatch").look();
-    let colour = panel.color.map_or_else(|| look.color(), colour_picker::color32);
+    let colour = panel.color.map_or_else(|| look.color(), color_picker::color32);
     painter.rect_filled(swatch, 2.0, colour);
     painter.rect_stroke(swatch, 2.0, theme::hairline(look.border()), egui::StrokeKind::Inside);
-    // `clip.setColor` names arrangement clips: a slot's clip shows its colour without the palette.
-    if matches!(at, ClipRef::Arrangement(..)) {
-        let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-colour", panel.clip.0)), "Clip colour");
+    // An arrangement clip's or a slot's: `clip.setColor` and `clip.setColorMany` take either.
+    {
+        let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-color", panel.clip.0)), "Clip color");
         egui::Popup::menu(&response).show(|ui| {
-            if let Some(picked) = colour_picker::swatch_row(ui, panel.color) {
-                let params = json!({ "clip": panel.clip.0, "color": colour_picker::hex(picked.colour) });
-                actions.push(Action::new("clip.setColor", params));
-                picked.close_menu(ui);
-            }
-            if ui.button("Track colour").clicked() {
+            color_picker::clip_row(ui, panel.color, &[panel.clip], actions);
+            if ui.button("Track color").clicked() {
                 actions.push(Action::new("clip.setColor", json!({ "clip": panel.clip.0, "color": "none" })));
                 ui.close();
             }

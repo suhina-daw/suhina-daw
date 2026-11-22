@@ -3,10 +3,10 @@ description: How arrangement clips behave when moved (along a lane, to another t
 read_when: start marker, clip offset, loop start, moving clips, clip.move, overlapping clips, clip stacking, trimming, splitting, clip.split, split at playhead, cut a clip, consolidate, clip.consolidate, join clips, render a range, bounce, allow sample stacking, allow MIDI stacking, fades, fade-in, fade-out, clip.setFades, fade handles, fade shape, fade curve, curve handle, inShape, outShape, inCurve, outCurve, linear, equal_power, fast, slow, s_curve, FadeShape, FadeCurve, play position, play start marker, ruler click, transport.setPosition, stop returns, playhead, grid, grid lines, snapping, snap to grid, launcher.setQuantization, quantisation, Alt, off the grid, markers, locators, marker row, marker.add, marker.move, marker.rename, marker.delete, marker.jump, project.markers, fold, folded group, unfold, group triangle, group lane, volume, pan, mute, solo, mixer controls, knob, the wheel over a value, deselect, click on empty space, clip note preview, short lane
 type: spec
 status: draft
-last_verified: 2026-11-20
+last_verified: 2026-11-23
 covers:
   - crates/session/src/commands.rs
-  - crates/session/src/colours.rs
+  - crates/session/src/colors.rs
   - crates/ui/src/arrangement/timeline.rs
   - crates/ui/src/arrangement/arrangement_view.rs
   - crates/ui/src/arrangement/automation_lanes.rs
@@ -20,7 +20,7 @@ covers:
   - crates/engine/src/loop_tests.rs
   - apps/suhina-cli/src/play.rs
   - crates/ui/src/interaction/menus.rs
-  - crates/ui/src/interaction/colour_picker.rs
+  - crates/ui/src/interaction/color_picker.rs
   - crates/ui/src/interaction/drop.rs
   - crates/session/src/files.rs
   - crates/project-file/src/lib.rs
@@ -210,8 +210,8 @@ the project is opened (orange, yellow, light blue, violet in turn, the same in e
 which is not an edit, so a copy of it, a group's colour and every view show the same. A track
 keeps its colour when tracks are added, removed or moved. A new
 track gets a colour stored as it is made, by Settings › Arrangement › Tracks › **New track
-colour**: *By clip type* gives an audio track Suhina's audio colour (orange `#FF9A3C`) and every
-other track its MIDI colour (light blue `#4FC3F7`); *One colour* gives every new track the MIDI
+colour**: *By clip type* gives an audio track Suhina's audio colour (orange `#FF9939`) and every
+other track its MIDI colour (light blue `#57C0FF`); *One colour* gives every new track the MIDI
 colour. A new clip takes its track's colour, or with **New clip colour** › *By clip type* the
 MIDI or audio colour for its content. These colours are Suhina's own, never the theme's, and the
 CLI and MCP give them too. A track's colour is saved as `"color": "#RRGGBB"`, the final colour.
@@ -936,8 +936,8 @@ A header's left edge is a 6 px band of the track's colour, the header's full hei
 have one too. While the track is off its header is grey, the user-agent sheet's
 `arrangement track-header[muted]` background (`#A9A6A0`, `#B5B2AC` while selected), as its clips are, and the
 band keeps the track's colour at full strength (#1393). A click on the band opens the colour palette under
-it, the same three rows of eight swatches as the menu's. A swatch sets the colour of the
-selected tracks atomically (`track.setColor`, one undo step). **+ More colours** and **F2**
+it, the same palette grid as the menu's, with its arrows to the saved colours. A swatch sets the colour of the
+selected tracks atomically (`track.setColor`, one undo step). **More colors** and **F2**
 open the persistent, non-modal [colour window](colour-picker.md), whose changes appear live.
 A press on the band that drags still resizes the header column where the band meets its inner
 edge ([Launcher view](ui-session-view.md) › Track colour).

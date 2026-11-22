@@ -3,7 +3,7 @@ description: Suhina's visual language: principles, what stays familiar and what 
 read_when: UI design, colours, tokens, typography, theme, accent, track colours, browser design, squint test, reference mockups
 type: spec
 status: draft
-last_verified: 2026-11-21
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/settings/themes.rs
@@ -197,7 +197,7 @@ the first token names (`surface.0`, `line`, `text.tertiary` …) still read. Onl
 a theme: sizes, spacing and type stay the design's. Track and clip colours are
 not the theme's: a track's or clip's colour comes from the project, and the colour picker's 24
 curated suggestions ([Colour palette](components.md#colour-palette)) and
-the colours new tracks and clips get (MIDI `#4FC3F7`, audio `#FF9A3C`) are Suhina's own, the same
+the colours new tracks and clips get (MIDI `#57C0FF`, audio `#FF9939`) are Suhina's own, the same
 in every theme. A theme draws them from the element's `color` attribute.
 
 

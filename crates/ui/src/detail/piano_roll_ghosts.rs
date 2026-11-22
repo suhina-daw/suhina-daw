@@ -324,7 +324,7 @@ fn ghost_colour(project: &Project, position: usize, clip: &Clip) -> Color32 {
         let gray = crate::arrangement::arrangement_view::muted_clip_gray(false);
         return CLIP.attr(Muted, true).probe_in(ARRANGEMENT).computed_background_or(gray);
     }
-    let rgb = track.map(|track| track_colour(track, position)).unwrap_or(suhina_session::colours::MIDI);
+    let rgb = track.map(|track| track_colour(track, position)).unwrap_or(suhina_session::colors::MIDI);
     Color32::from_rgb(rgb.0, rgb.1, rgb.2)
 }
 

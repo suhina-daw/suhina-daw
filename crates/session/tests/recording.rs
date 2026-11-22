@@ -228,7 +228,7 @@ fn the_arrangement_records_after_the_count_in() {
     assert_eq!(lane.clips.len(), 1);
     let clip = &lane.clips[0];
     assert_ne!(clip.id.0, 0, "the take's clip has an id the clip commands take");
-    assert_eq!(clip.color, Some(suhina_session::colours::MIDI));
+    assert_eq!(clip.color, Some(suhina_session::colors::MIDI));
     // It ends where the playhead was when asked: within a block of beat 3.
     assert!(close(clip.start, 0.0) && (clip.length - 3.0).abs() < 0.02, "{clip:?}");
     let got = notes(p.content(clip.content).unwrap());

@@ -3,13 +3,13 @@ description: Measurements, states and tokens of every UI component, from the min
 read_when: widget sizes, marker row, clip slot states, value field, slider, knob, toggle, meter, track header levels, device panel, piano roll layout, audition button, velocity lane top edge, ghost menu, ghost notes look, Scale menu, scale rows, key column mark, folded rows
 type: spec
 status: draft
-last_verified: 2026-11-21
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
-  - crates/ui/src/interaction/colour_picker.rs
-  - crates/ui/tests/track_colour.rs
+  - crates/ui/src/interaction/color_picker.rs
+  - crates/ui/tests/track_color.rs
   - crates/ui/src/settings/view_settings.rs
   - crates/ui/tests/open_recent.rs
   - crates/ui/src/kit/widgets.rs
@@ -178,26 +178,37 @@ independent of the theme. The track menu uses 14 px swatches with 3 px gaps and 
 outlined current colour. A swatch applies the colour to the selected tracks as one undo step
 and closes the menu. A choice matching every target's current colour makes no edit.
 
-The **+ More colours** row shows the configured shortcut (F2 by default) and opens a separate
+A track's or a clip's menu (an arrangement or a launcher clip's) shows the palette as an evenly
+spaced grid of twelve columns, square swatches 3 points apart across and down (`color-swatch`),
+as large as fills the menu's width that its other entries set, 14 points at least. Under it two
+arrow buttons (`button[kind="entry"]`, as the menu's entries) turn the grid to the saved colours
+and back, the page's name beside them; the saved colours take the palette's 36 cells, past 35 the
+last a `button` cell, **...**, that opens the colour window. The **More colors** button
+(`button`) ends that row; its tooltip shows the configured shortcut (F2 by default), and it opens a separate
 non-modal colour window. It is 340 points wide, initially centred, movable and kept open while
 the DAW is used. It is a dialog, `dialog[name="color-picker"]`: its surface, text, border and
-padding are the dialog's, its field and swatches `colour-field` and `colour-swatch`; its other
+padding are the dialog's, its field and swatches `color-field` and `color-swatch`; its other
 controls are the kit's flow controls
 (`kit::controls`), the same elements as Settings and the dialogs: Copy, Random and Default are
-`button`s, Field/Wheel `button[kind="option"]` parts, Steps and Soft colours tick boxes
-(`button[kind="check"]`), the Fine adjustment row a `button[kind="entry"]`, Hue and Value
-`slider`s, the headings `label[kind="caption"]` and the lines `separator[kind="row"]`. Swatches are 18 points tall, up to 30 wide;
-the twelve-column palette fits the available width without widening the window:
-Palette, Related shades, Recent colours, current swatch/hex/copy, collapsed Fine adjustment,
-then Random and Default. There is no per-track list; Recent colours is bounded to eight.
-Fine adjustment reveals Field/Wheel, hue/value selection, RGB/HSL and Steps/Soft colours.
+`button`s, Steps/Field `button[kind="option"]` parts, the Hue steps and Soft colors tick boxes
+(`button[kind="check"]`), and the Hue sliders colour bands (`controls::band` and
+`controls::stepped_band`, `slider[kind="band"]`: a 14-point band, a row of the Steps grid, of the hues at full saturation
+and value, cut into its 36 steps in Steps, under a 7 × 18 rounded handle filled with the chosen
+hue, stroked in the `slider-handle`'s colour inside a `slider-rail` hairline), the headings
+`label[kind="caption"]` and the lines `separator[kind="row"]`. The window's palette and saved
+swatches are 18 points tall and up to 30 wide, so the twelve columns fit the available width
+without widening the window; the + after the saved colours is `color-swatch[kind="add"]`. Its
+order is Palette, Saved colors, current swatch/hex/copy, the view (Steps or Field) with its Hue
+slider, RGB/HSL and Hue steps or Soft colors, then Random and Default. There is no per-track
+list. Steps' grid is 7 × 7 swatches 2 points apart, as tall as Field's plane, and both are as
+wide as the window.
 A short screen scrolls the contents. Exact values and keyboard behaviour are specified in
 [Track colours](../spec/colour-picker.md). Every pointer adjustment appears live, with one
 Undo step per complete drag; closing the window keeps completed edits.
 
-Clip and browser colour controls share the 36 suggestions and retain their inline custom
-field. Track and clip colours are exact project data. Themes never provide a palette, and a
-user palette editor remains deferred by #1025.
+The clip panel's colour control uses the same menu; browser colour controls share the 36
+suggestions and retain their inline custom field. Track and clip colours are exact project data. Themes never provide a palette; the user's own colours are the Saved colors list of the colour
+window (#1025).
 
 The colour areas, each a button named "<track> colour" that opens the popup on a click:
 

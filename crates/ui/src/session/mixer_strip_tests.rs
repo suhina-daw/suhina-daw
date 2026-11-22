@@ -62,7 +62,7 @@ fn mixer_and_name_css_materials_override_native_tint_and_paint_gradients() {
         });
         let grid = TrackGrid::build(&crate::demo::demo_project(), None);
         let name_fill = if name_gradient {
-            colour_picker::fill(grid.columns[0].color, false)
+            color_picker::fill(grid.columns[0].color, false)
         } else {
             Color32::from_rgb(0x20, 0x30, 0x40)
         };

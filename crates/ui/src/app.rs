@@ -12,7 +12,7 @@ mod audio_settings;
 mod background;
 mod browser_panel;
 pub mod closing_dialog;
-mod colour_window;
+mod color_window;
 mod control_bar;
 mod detail_area;
 use detail_area::DetailInsets;
@@ -418,7 +418,7 @@ struct AutoArm {
 }
 
 pub struct App {
-    colour_window: colour_window::ColourWindow,
+    color_window: color_window::ColorWindow,
     background: background::Background,
     /// When the level meters last showed something new (`ui.input` time).
     meters_moved_at: f64,
@@ -791,7 +791,7 @@ impl App {
         projects.read_local_audio(true);
         Self {
             projects,
-            colour_window: Default::default(),
+            color_window: Default::default(),
             background: background::Background::default(),
             shown_project: None,
             stashes: HashMap::new(),
@@ -2918,7 +2918,7 @@ impl App {
 
     /// Runs one command and shows its outcome in the status bar.
     pub fn run(&mut self, action: &Action) {
-        if self.run_colour_window_action(action) {
+        if self.run_color_window_action(action) {
             return;
         }
         if let Some(gesture) = action.params.get("gesture").and_then(serde_json::Value::as_str) {
@@ -2939,7 +2939,7 @@ impl App {
         // of what was there before, so it lets go.
         if matches!(action.id, "edit.undo" | "edit.redo") {
             self.carry = None;
-            self.colour_history_changed();
+            self.color_history_changed();
         }
         if action.id == "ui.renameClip" {
             let mut target = action.params.clone();
@@ -3030,16 +3030,12 @@ impl App {
                 self.status = Status::Hint(format!("Armed, hearing In {input}: change it under Audio From"));
             }
             Ok(result) => {
-                if action.id == "track.setColor"
-                    && result["changed"].as_bool() == Some(true)
-                    && let Some(colour) = action.params["color"].as_str().and_then(suhina_session::colours::parse_hex)
+                let colored = (action.id == "track.setColor" && result["changed"].as_bool() == Some(true))
+                    || action.id == "clip.setColorMany";
+                if colored
+                    && action.params["gesture"].as_str() == Some(crate::interaction::color_picker::panel::GESTURE)
                 {
-                    if action.params["gesture"].as_str() == Some(crate::interaction::colour_picker::panel::GESTURE) {
-                        self.colour_window.pending_recent = Some(colour);
-                    } else {
-                        crate::interaction::colour_picker::panel::remember(&mut self.settings.recent_colours, colour);
-                        self.settings_changed = true;
-                    }
+                    self.color_window.gesture_pending = true;
                 }
                 if action.id == "edit.undo" {
                     self.piano_roll.undo_ran();
@@ -3404,7 +3400,7 @@ impl App {
         self.frame_trace.mark("sample map analysis");
         let dropped = self.dropped_files(ui);
         let device_keyboard = crate::detail::device_canvas::owns_keyboard(ui.ctx());
-        if !self.colour_window_owns_keyboard(ui.ctx()) && !device_keyboard {
+        if !self.color_window_owns_keyboard(ui.ctx()) && !device_keyboard {
             keys_for_shortcuts(ui.ctx());
         }
         if !device_keyboard {
@@ -3422,8 +3418,8 @@ impl App {
             }
         }
         // The floating colour tool owns Escape while a text draft or drag is active.
-        self.show_colour_window(ui.ctx(), &mut actions);
-        self.preview_colour_targets(ui.ctx());
+        self.show_color_window(ui.ctx(), &mut actions);
+        self.preview_color_targets(ui.ctx());
         self.shortcuts(ui, &mut actions);
         self.apply_zoom(ui.ctx());
         self.frame_trace.mark("keys");

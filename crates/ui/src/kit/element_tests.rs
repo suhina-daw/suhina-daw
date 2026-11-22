@@ -1030,7 +1030,7 @@ fn a_list_row_and_a_dialog_title_take_their_own_background() {
                 LIST_ROW.look().background_or(token),
                 LIST_ROW.attr(Selected, true).look().color_or(token),
                 DIALOG_TITLE.look().background_or(token),
-                COLOUR_SWATCH.look().border_or(token),
+                COLOR_SWATCH.look().border_or(token),
             )
         },
     );

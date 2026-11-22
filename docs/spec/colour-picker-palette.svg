@@ -7,738 +7,738 @@
 <text x="24" y="71" font-family="Arial, sans-serif" font-size="16" fill="#222222">Design check: colour is an aid; names, order and selection outlines must remain usable.</text>
 <text x="24" y="111" font-family="Arial, sans-serif" font-size="16" fill="#222222">Original sRGB</text>
 <rect x="24" y="124" width="490" height="137" fill="#23221f"/>
-<rect x="34" y="134" width="34" height="33" fill="#ff9a3c"/>
+<rect x="34" y="134" width="34" height="33" fill="#ff9939"/>
 <text x="38" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="73" y="134" width="34" height="33" fill="#f2d541"/>
+<rect x="73" y="134" width="34" height="33" fill="#ffee42"/>
 <text x="77" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="112" y="134" width="34" height="33" fill="#4fc3f7"/>
+<rect x="112" y="134" width="34" height="33" fill="#57c0ff"/>
 <text x="116" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="151" y="134" width="34" height="33" fill="#b38bff"/>
+<rect x="151" y="134" width="34" height="33" fill="#ac91ff"/>
 <text x="155" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="190" y="134" width="34" height="33" fill="#7fdb5a"/>
+<rect x="190" y="134" width="34" height="33" fill="#3bd080"/>
 <text x="194" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="229" y="134" width="34" height="33" fill="#ff6fa8"/>
+<rect x="229" y="134" width="34" height="33" fill="#ff73a7"/>
 <text x="233" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="268" y="134" width="34" height="33" fill="#5c8dff"/>
+<rect x="268" y="134" width="34" height="33" fill="#1ed0c2"/>
 <text x="272" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="307" y="134" width="34" height="33" fill="#2fd9c4"/>
+<rect x="307" y="134" width="34" height="33" fill="#ff5333"/>
 <text x="311" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="346" y="134" width="34" height="33" fill="#f27262"/>
+<rect x="346" y="134" width="34" height="33" fill="#709eff"/>
 <text x="350" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="385" y="134" width="34" height="33" fill="#c5df55"/>
+<rect x="385" y="134" width="34" height="33" fill="#a9e16d"/>
 <text x="389" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="424" y="134" width="34" height="33" fill="#40b885"/>
+<rect x="424" y="134" width="34" height="33" fill="#f184e6"/>
 <text x="428" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="463" y="134" width="34" height="33" fill="#d761d1"/>
+<rect x="463" y="134" width="34" height="33" fill="#a2a2a2"/>
 <text x="467" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="34" y="173" width="34" height="33" fill="#e85454"/>
+<rect x="34" y="173" width="34" height="33" fill="#ffdcc2"/>
 <text x="38" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
-<rect x="73" y="173" width="34" height="33" fill="#d4783b"/>
+<rect x="73" y="173" width="34" height="33" fill="#fef7a9"/>
 <text x="77" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="112" y="173" width="34" height="33" fill="#b8a432"/>
+<rect x="112" y="173" width="34" height="33" fill="#c3e6ff"/>
 <text x="116" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="151" y="173" width="34" height="33" fill="#599b51"/>
+<rect x="151" y="173" width="34" height="33" fill="#e6e1ff"/>
 <text x="155" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="190" y="173" width="34" height="33" fill="#369b91"/>
+<rect x="190" y="173" width="34" height="33" fill="#ade1bd"/>
 <text x="194" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="229" y="173" width="34" height="33" fill="#427caa"/>
+<rect x="229" y="173" width="34" height="33" fill="#ffc7d7"/>
 <text x="233" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
-<rect x="268" y="173" width="34" height="33" fill="#7c62aa"/>
-<text x="272" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="307" y="173" width="34" height="33" fill="#b55483"/>
-<text x="311" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">20</text>
-<rect x="346" y="173" width="34" height="33" fill="#a54a40"/>
-<text x="350" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="385" y="173" width="34" height="33" fill="#7f863d"/>
+<rect x="268" y="173" width="34" height="33" fill="#8cf0e5"/>
+<text x="272" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="307" y="173" width="34" height="33" fill="#ffcabe"/>
+<text x="311" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
+<rect x="346" y="173" width="34" height="33" fill="#d6e4ff"/>
+<text x="350" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="385" y="173" width="34" height="33" fill="#e5ffcf"/>
 <text x="389" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="424" y="173" width="34" height="33" fill="#387060"/>
-<text x="428" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="463" y="173" width="34" height="33" fill="#8b4f88"/>
-<text x="467" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="34" y="212" width="34" height="33" fill="#edb4a0"/>
-<text x="38" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="73" y="212" width="34" height="33" fill="#d3cf96"/>
+<rect x="424" y="173" width="34" height="33" fill="#ffcaf7"/>
+<text x="428" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="463" y="173" width="34" height="33" fill="#d0d0d0"/>
+<text x="467" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="34" y="212" width="34" height="33" fill="#a35d19"/>
+<text x="38" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="73" y="212" width="34" height="33" fill="#a29721"/>
 <text x="77" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="112" y="212" width="34" height="33" fill="#a8cec2"/>
-<text x="116" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="151" y="212" width="34" height="33" fill="#b8bcde"/>
-<text x="155" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="190" y="212" width="34" height="33" fill="#f0c7dc"/>
+<rect x="112" y="212" width="34" height="33" fill="#2d77a3"/>
+<text x="116" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">27</text>
+<rect x="151" y="212" width="34" height="33" fill="#775dbd"/>
+<text x="155" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="190" y="212" width="34" height="33" fill="#248c54"/>
 <text x="194" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="229" y="212" width="34" height="33" fill="#c7dfb4"/>
-<text x="233" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="268" y="212" width="34" height="33" fill="#a9d5e6"/>
+<rect x="229" y="212" width="34" height="33" fill="#a8486c"/>
+<text x="233" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="268" y="212" width="34" height="33" fill="#258c83"/>
 <text x="272" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="307" y="212" width="34" height="33" fill="#d7c2e8"/>
-<text x="311" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="346" y="212" width="34" height="33" fill="#ededed"/>
-<text x="350" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="385" y="212" width="34" height="33" fill="#b5b5b5"/>
+<rect x="307" y="212" width="34" height="33" fill="#bd4933"/>
+<text x="311" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">32</text>
+<rect x="346" y="212" width="34" height="33" fill="#4269bd"/>
+<text x="350" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="385" y="212" width="34" height="33" fill="#658d38"/>
 <text x="389" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="424" y="212" width="34" height="33" fill="#7b7b7b"/>
-<text x="428" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="463" y="212" width="34" height="33" fill="#434343"/>
+<rect x="424" y="212" width="34" height="33" fill="#a64b9e"/>
+<text x="428" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="463" y="212" width="34" height="33" fill="#4e4e4e"/>
 <text x="467" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <rect x="526" y="124" width="490" height="137" fill="#ffffff"/>
-<rect x="536" y="134" width="34" height="33" fill="#ff9a3c"/>
+<rect x="536" y="134" width="34" height="33" fill="#ff9939"/>
 <text x="540" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="575" y="134" width="34" height="33" fill="#f2d541"/>
+<rect x="575" y="134" width="34" height="33" fill="#ffee42"/>
 <text x="579" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="614" y="134" width="34" height="33" fill="#4fc3f7"/>
+<rect x="614" y="134" width="34" height="33" fill="#57c0ff"/>
 <text x="618" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="653" y="134" width="34" height="33" fill="#b38bff"/>
+<rect x="653" y="134" width="34" height="33" fill="#ac91ff"/>
 <text x="657" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="692" y="134" width="34" height="33" fill="#7fdb5a"/>
+<rect x="692" y="134" width="34" height="33" fill="#3bd080"/>
 <text x="696" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="731" y="134" width="34" height="33" fill="#ff6fa8"/>
+<rect x="731" y="134" width="34" height="33" fill="#ff73a7"/>
 <text x="735" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="770" y="134" width="34" height="33" fill="#5c8dff"/>
+<rect x="770" y="134" width="34" height="33" fill="#1ed0c2"/>
 <text x="774" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="809" y="134" width="34" height="33" fill="#2fd9c4"/>
+<rect x="809" y="134" width="34" height="33" fill="#ff5333"/>
 <text x="813" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="848" y="134" width="34" height="33" fill="#f27262"/>
+<rect x="848" y="134" width="34" height="33" fill="#709eff"/>
 <text x="852" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="887" y="134" width="34" height="33" fill="#c5df55"/>
+<rect x="887" y="134" width="34" height="33" fill="#a9e16d"/>
 <text x="891" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="926" y="134" width="34" height="33" fill="#40b885"/>
+<rect x="926" y="134" width="34" height="33" fill="#f184e6"/>
 <text x="930" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="965" y="134" width="34" height="33" fill="#d761d1"/>
+<rect x="965" y="134" width="34" height="33" fill="#a2a2a2"/>
 <text x="969" y="153" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="536" y="173" width="34" height="33" fill="#e85454"/>
+<rect x="536" y="173" width="34" height="33" fill="#ffdcc2"/>
 <text x="540" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
-<rect x="575" y="173" width="34" height="33" fill="#d4783b"/>
+<rect x="575" y="173" width="34" height="33" fill="#fef7a9"/>
 <text x="579" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="614" y="173" width="34" height="33" fill="#b8a432"/>
+<rect x="614" y="173" width="34" height="33" fill="#c3e6ff"/>
 <text x="618" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="653" y="173" width="34" height="33" fill="#599b51"/>
+<rect x="653" y="173" width="34" height="33" fill="#e6e1ff"/>
 <text x="657" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="692" y="173" width="34" height="33" fill="#369b91"/>
+<rect x="692" y="173" width="34" height="33" fill="#ade1bd"/>
 <text x="696" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="731" y="173" width="34" height="33" fill="#427caa"/>
+<rect x="731" y="173" width="34" height="33" fill="#ffc7d7"/>
 <text x="735" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
-<rect x="770" y="173" width="34" height="33" fill="#7c62aa"/>
-<text x="774" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="809" y="173" width="34" height="33" fill="#b55483"/>
-<text x="813" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">20</text>
-<rect x="848" y="173" width="34" height="33" fill="#a54a40"/>
-<text x="852" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="887" y="173" width="34" height="33" fill="#7f863d"/>
+<rect x="770" y="173" width="34" height="33" fill="#8cf0e5"/>
+<text x="774" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="809" y="173" width="34" height="33" fill="#ffcabe"/>
+<text x="813" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
+<rect x="848" y="173" width="34" height="33" fill="#d6e4ff"/>
+<text x="852" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="887" y="173" width="34" height="33" fill="#e5ffcf"/>
 <text x="891" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="926" y="173" width="34" height="33" fill="#387060"/>
-<text x="930" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="965" y="173" width="34" height="33" fill="#8b4f88"/>
-<text x="969" y="192" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="536" y="212" width="34" height="33" fill="#edb4a0"/>
-<text x="540" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="575" y="212" width="34" height="33" fill="#d3cf96"/>
+<rect x="926" y="173" width="34" height="33" fill="#ffcaf7"/>
+<text x="930" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="965" y="173" width="34" height="33" fill="#d0d0d0"/>
+<text x="969" y="192" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="536" y="212" width="34" height="33" fill="#a35d19"/>
+<text x="540" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="575" y="212" width="34" height="33" fill="#a29721"/>
 <text x="579" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="614" y="212" width="34" height="33" fill="#a8cec2"/>
-<text x="618" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="653" y="212" width="34" height="33" fill="#b8bcde"/>
-<text x="657" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="692" y="212" width="34" height="33" fill="#f0c7dc"/>
+<rect x="614" y="212" width="34" height="33" fill="#2d77a3"/>
+<text x="618" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">27</text>
+<rect x="653" y="212" width="34" height="33" fill="#775dbd"/>
+<text x="657" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="692" y="212" width="34" height="33" fill="#248c54"/>
 <text x="696" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="731" y="212" width="34" height="33" fill="#c7dfb4"/>
-<text x="735" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="770" y="212" width="34" height="33" fill="#a9d5e6"/>
+<rect x="731" y="212" width="34" height="33" fill="#a8486c"/>
+<text x="735" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="770" y="212" width="34" height="33" fill="#258c83"/>
 <text x="774" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="809" y="212" width="34" height="33" fill="#d7c2e8"/>
-<text x="813" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="848" y="212" width="34" height="33" fill="#ededed"/>
-<text x="852" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="887" y="212" width="34" height="33" fill="#b5b5b5"/>
+<rect x="809" y="212" width="34" height="33" fill="#bd4933"/>
+<text x="813" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">32</text>
+<rect x="848" y="212" width="34" height="33" fill="#4269bd"/>
+<text x="852" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="887" y="212" width="34" height="33" fill="#658d38"/>
 <text x="891" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="926" y="212" width="34" height="33" fill="#7b7b7b"/>
-<text x="930" y="231" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="965" y="212" width="34" height="33" fill="#434343"/>
+<rect x="926" y="212" width="34" height="33" fill="#a64b9e"/>
+<text x="930" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="965" y="212" width="34" height="33" fill="#4e4e4e"/>
 <text x="969" y="231" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <text x="24" y="301" font-family="Arial, sans-serif" font-size="16" fill="#222222">Relative-luminance greyscale</text>
 <rect x="24" y="314" width="490" height="137" fill="#23221f"/>
 <rect x="34" y="324" width="34" height="33" fill="#b2b2b2"/>
 <text x="38" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="73" y="324" width="34" height="33" fill="#d5d5d5"/>
+<rect x="73" y="324" width="34" height="33" fill="#ebebeb"/>
 <text x="77" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="112" y="324" width="34" height="33" fill="#b7b7b7"/>
+<rect x="112" y="324" width="34" height="33" fill="#b6b6b6"/>
 <text x="116" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="151" y="324" width="34" height="33" fill="#a0a0a0"/>
+<rect x="151" y="324" width="34" height="33" fill="#a2a2a2"/>
 <text x="155" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="190" y="324" width="34" height="33" fill="#c5c5c5"/>
+<rect x="190" y="324" width="34" height="33" fill="#b7b7b7"/>
 <text x="194" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="229" y="324" width="34" height="33" fill="#a1a1a1"/>
+<rect x="229" y="324" width="34" height="33" fill="#a2a2a2"/>
 <text x="233" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="268" y="324" width="34" height="33" fill="#929292"/>
+<rect x="268" y="324" width="34" height="33" fill="#bababa"/>
 <text x="272" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="307" y="324" width="34" height="33" fill="#c2c2c2"/>
+<rect x="307" y="324" width="34" height="33" fill="#909090"/>
 <text x="311" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="346" y="324" width="34" height="33" fill="#999999"/>
+<rect x="346" y="324" width="34" height="33" fill="#a0a0a0"/>
 <text x="350" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="385" y="324" width="34" height="33" fill="#d3d3d3"/>
+<rect x="385" y="324" width="34" height="33" fill="#d0d0d0"/>
 <text x="389" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="424" y="324" width="34" height="33" fill="#a4a4a4"/>
+<rect x="424" y="324" width="34" height="33" fill="#ababab"/>
 <text x="428" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="463" y="324" width="34" height="33" fill="#8f8f8f"/>
+<rect x="463" y="324" width="34" height="33" fill="#a2a2a2"/>
 <text x="467" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="34" y="363" width="34" height="33" fill="#878787"/>
+<rect x="34" y="363" width="34" height="33" fill="#e2e2e2"/>
 <text x="38" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
-<rect x="73" y="363" width="34" height="33" fill="#909090"/>
+<rect x="73" y="363" width="34" height="33" fill="#f4f4f4"/>
 <text x="77" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="112" y="363" width="34" height="33" fill="#a4a4a4"/>
+<rect x="112" y="363" width="34" height="33" fill="#e1e1e1"/>
 <text x="116" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="151" y="363" width="34" height="33" fill="#8c8c8c"/>
+<rect x="151" y="363" width="34" height="33" fill="#e4e4e4"/>
 <text x="155" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="190" y="363" width="34" height="33" fill="#8c8c8c"/>
+<rect x="190" y="363" width="34" height="33" fill="#d5d5d5"/>
 <text x="194" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="229" y="363" width="34" height="33" fill="#777777"/>
+<rect x="229" y="363" width="34" height="33" fill="#d6d6d6"/>
 <text x="233" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
-<rect x="268" y="363" width="34" height="33" fill="#6f6f6f"/>
-<text x="272" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="307" y="363" width="34" height="33" fill="#757575"/>
-<text x="311" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">20</text>
-<rect x="346" y="363" width="34" height="33" fill="#666666"/>
-<text x="350" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="385" y="363" width="34" height="33" fill="#818181"/>
+<rect x="268" y="363" width="34" height="33" fill="#dfdfdf"/>
+<text x="272" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="307" y="363" width="34" height="33" fill="#d6d6d6"/>
+<text x="311" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
+<rect x="346" y="363" width="34" height="33" fill="#e3e3e3"/>
+<text x="350" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="385" y="363" width="34" height="33" fill="#f7f7f7"/>
 <text x="389" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="424" y="363" width="34" height="33" fill="#666666"/>
-<text x="428" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="463" y="363" width="34" height="33" fill="#646464"/>
-<text x="467" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="34" y="402" width="34" height="33" fill="#c1c1c1"/>
-<text x="38" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="73" y="402" width="34" height="33" fill="#cccccc"/>
+<rect x="424" y="363" width="34" height="33" fill="#dadada"/>
+<text x="428" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="463" y="363" width="34" height="33" fill="#d0d0d0"/>
+<text x="467" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="34" y="402" width="34" height="33" fill="#6e6e6e"/>
+<text x="38" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="73" y="402" width="34" height="33" fill="#959595"/>
 <text x="77" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="112" y="402" width="34" height="33" fill="#c6c6c6"/>
-<text x="116" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="151" y="402" width="34" height="33" fill="#bebebe"/>
-<text x="155" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="190" y="402" width="34" height="33" fill="#d2d2d2"/>
+<rect x="112" y="402" width="34" height="33" fill="#717171"/>
+<text x="116" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">27</text>
+<rect x="151" y="402" width="34" height="33" fill="#6d6d6d"/>
+<text x="155" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="190" y="402" width="34" height="33" fill="#7b7b7b"/>
 <text x="194" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="229" y="402" width="34" height="33" fill="#d7d7d7"/>
-<text x="233" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="268" y="402" width="34" height="33" fill="#cecece"/>
+<rect x="229" y="402" width="34" height="33" fill="#696969"/>
+<text x="233" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="268" y="402" width="34" height="33" fill="#7e7e7e"/>
 <text x="272" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="307" y="402" width="34" height="33" fill="#cacaca"/>
-<text x="311" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="346" y="402" width="34" height="33" fill="#ededed"/>
-<text x="350" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="385" y="402" width="34" height="33" fill="#b5b5b5"/>
+<rect x="307" y="402" width="34" height="33" fill="#6f6f6f"/>
+<text x="311" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">32</text>
+<rect x="346" y="402" width="34" height="33" fill="#6c6c6c"/>
+<text x="350" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="385" y="402" width="34" height="33" fill="#818181"/>
 <text x="389" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="424" y="402" width="34" height="33" fill="#7b7b7b"/>
-<text x="428" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="463" y="402" width="34" height="33" fill="#434343"/>
+<rect x="424" y="402" width="34" height="33" fill="#6e6e6e"/>
+<text x="428" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="463" y="402" width="34" height="33" fill="#4e4e4e"/>
 <text x="467" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <rect x="526" y="314" width="490" height="137" fill="#ffffff"/>
 <rect x="536" y="324" width="34" height="33" fill="#b2b2b2"/>
 <text x="540" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="575" y="324" width="34" height="33" fill="#d5d5d5"/>
+<rect x="575" y="324" width="34" height="33" fill="#ebebeb"/>
 <text x="579" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="614" y="324" width="34" height="33" fill="#b7b7b7"/>
+<rect x="614" y="324" width="34" height="33" fill="#b6b6b6"/>
 <text x="618" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="653" y="324" width="34" height="33" fill="#a0a0a0"/>
+<rect x="653" y="324" width="34" height="33" fill="#a2a2a2"/>
 <text x="657" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="692" y="324" width="34" height="33" fill="#c5c5c5"/>
+<rect x="692" y="324" width="34" height="33" fill="#b7b7b7"/>
 <text x="696" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="731" y="324" width="34" height="33" fill="#a1a1a1"/>
+<rect x="731" y="324" width="34" height="33" fill="#a2a2a2"/>
 <text x="735" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="770" y="324" width="34" height="33" fill="#929292"/>
+<rect x="770" y="324" width="34" height="33" fill="#bababa"/>
 <text x="774" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="809" y="324" width="34" height="33" fill="#c2c2c2"/>
+<rect x="809" y="324" width="34" height="33" fill="#909090"/>
 <text x="813" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="848" y="324" width="34" height="33" fill="#999999"/>
+<rect x="848" y="324" width="34" height="33" fill="#a0a0a0"/>
 <text x="852" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="887" y="324" width="34" height="33" fill="#d3d3d3"/>
+<rect x="887" y="324" width="34" height="33" fill="#d0d0d0"/>
 <text x="891" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="926" y="324" width="34" height="33" fill="#a4a4a4"/>
+<rect x="926" y="324" width="34" height="33" fill="#ababab"/>
 <text x="930" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="965" y="324" width="34" height="33" fill="#8f8f8f"/>
+<rect x="965" y="324" width="34" height="33" fill="#a2a2a2"/>
 <text x="969" y="343" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="536" y="363" width="34" height="33" fill="#878787"/>
+<rect x="536" y="363" width="34" height="33" fill="#e2e2e2"/>
 <text x="540" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
-<rect x="575" y="363" width="34" height="33" fill="#909090"/>
+<rect x="575" y="363" width="34" height="33" fill="#f4f4f4"/>
 <text x="579" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="614" y="363" width="34" height="33" fill="#a4a4a4"/>
+<rect x="614" y="363" width="34" height="33" fill="#e1e1e1"/>
 <text x="618" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="653" y="363" width="34" height="33" fill="#8c8c8c"/>
+<rect x="653" y="363" width="34" height="33" fill="#e4e4e4"/>
 <text x="657" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="692" y="363" width="34" height="33" fill="#8c8c8c"/>
+<rect x="692" y="363" width="34" height="33" fill="#d5d5d5"/>
 <text x="696" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="731" y="363" width="34" height="33" fill="#777777"/>
+<rect x="731" y="363" width="34" height="33" fill="#d6d6d6"/>
 <text x="735" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
-<rect x="770" y="363" width="34" height="33" fill="#6f6f6f"/>
-<text x="774" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="809" y="363" width="34" height="33" fill="#757575"/>
-<text x="813" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">20</text>
-<rect x="848" y="363" width="34" height="33" fill="#666666"/>
-<text x="852" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="887" y="363" width="34" height="33" fill="#818181"/>
+<rect x="770" y="363" width="34" height="33" fill="#dfdfdf"/>
+<text x="774" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="809" y="363" width="34" height="33" fill="#d6d6d6"/>
+<text x="813" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
+<rect x="848" y="363" width="34" height="33" fill="#e3e3e3"/>
+<text x="852" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="887" y="363" width="34" height="33" fill="#f7f7f7"/>
 <text x="891" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="926" y="363" width="34" height="33" fill="#666666"/>
-<text x="930" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="965" y="363" width="34" height="33" fill="#646464"/>
-<text x="969" y="382" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="536" y="402" width="34" height="33" fill="#c1c1c1"/>
-<text x="540" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="575" y="402" width="34" height="33" fill="#cccccc"/>
+<rect x="926" y="363" width="34" height="33" fill="#dadada"/>
+<text x="930" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="965" y="363" width="34" height="33" fill="#d0d0d0"/>
+<text x="969" y="382" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="536" y="402" width="34" height="33" fill="#6e6e6e"/>
+<text x="540" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="575" y="402" width="34" height="33" fill="#959595"/>
 <text x="579" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="614" y="402" width="34" height="33" fill="#c6c6c6"/>
-<text x="618" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="653" y="402" width="34" height="33" fill="#bebebe"/>
-<text x="657" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="692" y="402" width="34" height="33" fill="#d2d2d2"/>
+<rect x="614" y="402" width="34" height="33" fill="#717171"/>
+<text x="618" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">27</text>
+<rect x="653" y="402" width="34" height="33" fill="#6d6d6d"/>
+<text x="657" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="692" y="402" width="34" height="33" fill="#7b7b7b"/>
 <text x="696" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="731" y="402" width="34" height="33" fill="#d7d7d7"/>
-<text x="735" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="770" y="402" width="34" height="33" fill="#cecece"/>
+<rect x="731" y="402" width="34" height="33" fill="#696969"/>
+<text x="735" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="770" y="402" width="34" height="33" fill="#7e7e7e"/>
 <text x="774" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="809" y="402" width="34" height="33" fill="#cacaca"/>
-<text x="813" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="848" y="402" width="34" height="33" fill="#ededed"/>
-<text x="852" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="887" y="402" width="34" height="33" fill="#b5b5b5"/>
+<rect x="809" y="402" width="34" height="33" fill="#6f6f6f"/>
+<text x="813" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">32</text>
+<rect x="848" y="402" width="34" height="33" fill="#6c6c6c"/>
+<text x="852" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="887" y="402" width="34" height="33" fill="#818181"/>
 <text x="891" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="926" y="402" width="34" height="33" fill="#7b7b7b"/>
-<text x="930" y="421" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="965" y="402" width="34" height="33" fill="#434343"/>
+<rect x="926" y="402" width="34" height="33" fill="#6e6e6e"/>
+<text x="930" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="965" y="402" width="34" height="33" fill="#4e4e4e"/>
 <text x="969" y="421" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <text x="24" y="491" font-family="Arial, sans-serif" font-size="16" fill="#222222">Protan simulation (severity 1)</text>
 <rect x="24" y="504" width="490" height="137" fill="#23221f"/>
-<rect x="34" y="514" width="34" height="33" fill="#b9a42f"/>
+<rect x="34" y="514" width="34" height="33" fill="#b8a42b"/>
 <text x="38" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="73" y="514" width="34" height="33" fill="#ead027"/>
+<rect x="73" y="514" width="34" height="33" fill="#ffe61d"/>
 <text x="77" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="112" y="514" width="34" height="33" fill="#a9c1fa"/>
+<rect x="112" y="514" width="34" height="33" fill="#a3c0ff"/>
 <text x="116" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="151" y="514" width="34" height="33" fill="#67a0ff"/>
+<rect x="151" y="514" width="34" height="33" fill="#6ea4ff"/>
 <text x="155" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="190" y="514" width="34" height="33" fill="#e2ca4c"/>
+<rect x="190" y="514" width="34" height="33" fill="#cfbf7b"/>
 <text x="194" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="229" y="514" width="34" height="33" fill="#8690aa"/>
+<rect x="229" y="514" width="34" height="33" fill="#8a92a9"/>
 <text x="233" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="268" y="514" width="34" height="33" fill="#559aff"/>
+<rect x="268" y="514" width="34" height="33" fill="#c5c4c2"/>
 <text x="272" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="307" y="514" width="34" height="33" fill="#cfccc3"/>
+<rect x="307" y="514" width="34" height="33" fill="#86772e"/>
 <text x="311" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="346" y="514" width="34" height="33" fill="#928860"/>
+<rect x="346" y="514" width="34" height="33" fill="#76a7ff"/>
 <text x="350" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="385" y="514" width="34" height="33" fill="#edd344"/>
+<rect x="385" y="514" width="34" height="33" fill="#ead362"/>
 <text x="389" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="424" y="514" width="34" height="33" fill="#b5ab82"/>
+<rect x="424" y="514" width="34" height="33" fill="#80a2e9"/>
 <text x="428" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="463" y="514" width="34" height="33" fill="#5885d5"/>
+<rect x="463" y="514" width="34" height="33" fill="#a2a2a2"/>
 <text x="467" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="34" y="553" width="34" height="33" fill="#7b7353"/>
-<text x="38" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">13</text>
-<rect x="73" y="553" width="34" height="33" fill="#928334"/>
+<rect x="34" y="553" width="34" height="33" fill="#e6dec0"/>
+<text x="38" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
+<rect x="73" y="553" width="34" height="33" fill="#fff2a4"/>
 <text x="77" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="112" y="553" width="34" height="33" fill="#b4a01f"/>
+<rect x="112" y="553" width="34" height="33" fill="#dbe5ff"/>
 <text x="116" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="151" y="553" width="34" height="33" fill="#9e904b"/>
+<rect x="151" y="553" width="34" height="33" fill="#dbe5ff"/>
 <text x="155" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="190" y="553" width="34" height="33" fill="#939391"/>
+<rect x="190" y="553" width="34" height="33" fill="#e1d9bb"/>
 <text x="194" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="229" y="553" width="34" height="33" fill="#687dac"/>
+<rect x="229" y="553" width="34" height="33" fill="#ced0d8"/>
 <text x="233" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
-<rect x="268" y="553" width="34" height="33" fill="#4e6fad"/>
-<text x="272" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="307" y="553" width="34" height="33" fill="#606a85"/>
-<text x="311" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">20</text>
-<rect x="346" y="553" width="34" height="33" fill="#615a3f"/>
-<text x="350" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="385" y="553" width="34" height="33" fill="#8f8036"/>
+<rect x="268" y="553" width="34" height="33" fill="#e7e6e5"/>
+<text x="272" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="307" y="553" width="34" height="33" fill="#d5d0bd"/>
+<text x="311" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
+<rect x="346" y="553" width="34" height="33" fill="#dce5ff"/>
+<text x="350" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="385" y="553" width="34" height="33" fill="#fff8cc"/>
 <text x="389" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="424" y="553" width="34" height="33" fill="#6d6a5f"/>
-<text x="428" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="463" y="553" width="34" height="33" fill="#4b5f8a"/>
-<text x="467" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="34" y="592" width="34" height="33" fill="#c2ba9f"/>
-<text x="38" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="73" y="592" width="34" height="33" fill="#d9cb92"/>
+<rect x="424" y="553" width="34" height="33" fill="#c9d6f9"/>
+<text x="428" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="463" y="553" width="34" height="33" fill="#d0d0d0"/>
+<text x="467" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="34" y="592" width="34" height="33" fill="#72650c"/>
+<text x="38" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="73" y="592" width="34" height="33" fill="#a59200"/>
 <text x="77" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="112" y="592" width="34" height="33" fill="#cbc9c1"/>
+<rect x="112" y="592" width="34" height="33" fill="#6277a5"/>
 <text x="116" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="151" y="592" width="34" height="33" fill="#b3bfe0"/>
-<text x="155" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="190" y="592" width="34" height="33" fill="#c9cedd"/>
+<rect x="151" y="592" width="34" height="33" fill="#386fc0"/>
+<text x="155" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="190" y="592" width="34" height="33" fill="#8c8050"/>
 <text x="194" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="229" y="592" width="34" height="33" fill="#e3d9b1"/>
-<text x="233" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="268" y="592" width="34" height="33" fill="#cbd2e7"/>
+<rect x="229" y="592" width="34" height="33" fill="#585d6d"/>
+<text x="233" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="268" y="592" width="34" height="33" fill="#848483"/>
 <text x="272" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="307" y="592" width="34" height="33" fill="#bdc9ea"/>
-<text x="311" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="346" y="592" width="34" height="33" fill="#ededed"/>
-<text x="350" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="385" y="592" width="34" height="33" fill="#b5b5b5"/>
+<rect x="307" y="592" width="34" height="33" fill="#695f30"/>
+<text x="311" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">32</text>
+<rect x="346" y="592" width="34" height="33" fill="#4172c0"/>
+<text x="350" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="385" y="592" width="34" height="33" fill="#93832f"/>
 <text x="389" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="424" y="592" width="34" height="33" fill="#7b7b7b"/>
-<text x="428" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="463" y="592" width="34" height="33" fill="#434343"/>
+<rect x="424" y="592" width="34" height="33" fill="#4666a1"/>
+<text x="428" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="463" y="592" width="34" height="33" fill="#4e4e4e"/>
 <text x="467" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <rect x="526" y="504" width="490" height="137" fill="#ffffff"/>
-<rect x="536" y="514" width="34" height="33" fill="#b9a42f"/>
+<rect x="536" y="514" width="34" height="33" fill="#b8a42b"/>
 <text x="540" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="575" y="514" width="34" height="33" fill="#ead027"/>
+<rect x="575" y="514" width="34" height="33" fill="#ffe61d"/>
 <text x="579" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="614" y="514" width="34" height="33" fill="#a9c1fa"/>
+<rect x="614" y="514" width="34" height="33" fill="#a3c0ff"/>
 <text x="618" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="653" y="514" width="34" height="33" fill="#67a0ff"/>
+<rect x="653" y="514" width="34" height="33" fill="#6ea4ff"/>
 <text x="657" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="692" y="514" width="34" height="33" fill="#e2ca4c"/>
+<rect x="692" y="514" width="34" height="33" fill="#cfbf7b"/>
 <text x="696" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="731" y="514" width="34" height="33" fill="#8690aa"/>
+<rect x="731" y="514" width="34" height="33" fill="#8a92a9"/>
 <text x="735" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="770" y="514" width="34" height="33" fill="#559aff"/>
+<rect x="770" y="514" width="34" height="33" fill="#c5c4c2"/>
 <text x="774" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="809" y="514" width="34" height="33" fill="#cfccc3"/>
+<rect x="809" y="514" width="34" height="33" fill="#86772e"/>
 <text x="813" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="848" y="514" width="34" height="33" fill="#928860"/>
+<rect x="848" y="514" width="34" height="33" fill="#76a7ff"/>
 <text x="852" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="887" y="514" width="34" height="33" fill="#edd344"/>
+<rect x="887" y="514" width="34" height="33" fill="#ead362"/>
 <text x="891" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="926" y="514" width="34" height="33" fill="#b5ab82"/>
+<rect x="926" y="514" width="34" height="33" fill="#80a2e9"/>
 <text x="930" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="965" y="514" width="34" height="33" fill="#5885d5"/>
+<rect x="965" y="514" width="34" height="33" fill="#a2a2a2"/>
 <text x="969" y="533" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="536" y="553" width="34" height="33" fill="#7b7353"/>
-<text x="540" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">13</text>
-<rect x="575" y="553" width="34" height="33" fill="#928334"/>
+<rect x="536" y="553" width="34" height="33" fill="#e6dec0"/>
+<text x="540" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
+<rect x="575" y="553" width="34" height="33" fill="#fff2a4"/>
 <text x="579" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="614" y="553" width="34" height="33" fill="#b4a01f"/>
+<rect x="614" y="553" width="34" height="33" fill="#dbe5ff"/>
 <text x="618" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="653" y="553" width="34" height="33" fill="#9e904b"/>
+<rect x="653" y="553" width="34" height="33" fill="#dbe5ff"/>
 <text x="657" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="692" y="553" width="34" height="33" fill="#939391"/>
+<rect x="692" y="553" width="34" height="33" fill="#e1d9bb"/>
 <text x="696" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="731" y="553" width="34" height="33" fill="#687dac"/>
+<rect x="731" y="553" width="34" height="33" fill="#ced0d8"/>
 <text x="735" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
-<rect x="770" y="553" width="34" height="33" fill="#4e6fad"/>
-<text x="774" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="809" y="553" width="34" height="33" fill="#606a85"/>
-<text x="813" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">20</text>
-<rect x="848" y="553" width="34" height="33" fill="#615a3f"/>
-<text x="852" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="887" y="553" width="34" height="33" fill="#8f8036"/>
+<rect x="770" y="553" width="34" height="33" fill="#e7e6e5"/>
+<text x="774" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="809" y="553" width="34" height="33" fill="#d5d0bd"/>
+<text x="813" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
+<rect x="848" y="553" width="34" height="33" fill="#dce5ff"/>
+<text x="852" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="887" y="553" width="34" height="33" fill="#fff8cc"/>
 <text x="891" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="926" y="553" width="34" height="33" fill="#6d6a5f"/>
-<text x="930" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="965" y="553" width="34" height="33" fill="#4b5f8a"/>
-<text x="969" y="572" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="536" y="592" width="34" height="33" fill="#c2ba9f"/>
-<text x="540" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="575" y="592" width="34" height="33" fill="#d9cb92"/>
+<rect x="926" y="553" width="34" height="33" fill="#c9d6f9"/>
+<text x="930" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="965" y="553" width="34" height="33" fill="#d0d0d0"/>
+<text x="969" y="572" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="536" y="592" width="34" height="33" fill="#72650c"/>
+<text x="540" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="575" y="592" width="34" height="33" fill="#a59200"/>
 <text x="579" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="614" y="592" width="34" height="33" fill="#cbc9c1"/>
+<rect x="614" y="592" width="34" height="33" fill="#6277a5"/>
 <text x="618" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="653" y="592" width="34" height="33" fill="#b3bfe0"/>
-<text x="657" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="692" y="592" width="34" height="33" fill="#c9cedd"/>
+<rect x="653" y="592" width="34" height="33" fill="#386fc0"/>
+<text x="657" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="692" y="592" width="34" height="33" fill="#8c8050"/>
 <text x="696" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="731" y="592" width="34" height="33" fill="#e3d9b1"/>
-<text x="735" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="770" y="592" width="34" height="33" fill="#cbd2e7"/>
+<rect x="731" y="592" width="34" height="33" fill="#585d6d"/>
+<text x="735" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="770" y="592" width="34" height="33" fill="#848483"/>
 <text x="774" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="809" y="592" width="34" height="33" fill="#bdc9ea"/>
-<text x="813" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="848" y="592" width="34" height="33" fill="#ededed"/>
-<text x="852" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="887" y="592" width="34" height="33" fill="#b5b5b5"/>
+<rect x="809" y="592" width="34" height="33" fill="#695f30"/>
+<text x="813" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">32</text>
+<rect x="848" y="592" width="34" height="33" fill="#4172c0"/>
+<text x="852" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="887" y="592" width="34" height="33" fill="#93832f"/>
 <text x="891" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="926" y="592" width="34" height="33" fill="#7b7b7b"/>
-<text x="930" y="611" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="965" y="592" width="34" height="33" fill="#434343"/>
+<rect x="926" y="592" width="34" height="33" fill="#4666a1"/>
+<text x="930" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="965" y="592" width="34" height="33" fill="#4e4e4e"/>
 <text x="969" y="611" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <text x="24" y="681" font-family="Arial, sans-serif" font-size="16" fill="#222222">Deutan simulation (severity 1)</text>
 <rect x="24" y="694" width="490" height="137" fill="#23221f"/>
-<rect x="34" y="704" width="34" height="33" fill="#d1bb3c"/>
+<rect x="34" y="704" width="34" height="33" fill="#d0bb39"/>
 <text x="38" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="73" y="704" width="34" height="33" fill="#f2da4a"/>
+<rect x="73" y="704" width="34" height="33" fill="#ffee4f"/>
 <text x="77" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="112" y="704" width="34" height="33" fill="#92b0f6"/>
+<rect x="112" y="704" width="34" height="33" fill="#8caffe"/>
 <text x="116" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="151" y="704" width="34" height="33" fill="#6f9ffc"/>
+<rect x="151" y="704" width="34" height="33" fill="#72a0fc"/>
 <text x="155" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="190" y="704" width="34" height="33" fill="#d5c264"/>
+<rect x="190" y="704" width="34" height="33" fill="#bdb285"/>
 <text x="194" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="229" y="704" width="34" height="33" fill="#acaba5"/>
+<rect x="229" y="704" width="34" height="33" fill="#afaca4"/>
 <text x="233" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="268" y="704" width="34" height="33" fill="#398bfd"/>
+<rect x="268" y="704" width="34" height="33" fill="#aeb3c4"/>
 <text x="272" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="307" y="704" width="34" height="33" fill="#b8bcc6"/>
+<rect x="307" y="704" width="34" height="33" fill="#b09e2b"/>
 <text x="311" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="346" y="704" width="34" height="33" fill="#b2a35f"/>
+<rect x="346" y="704" width="34" height="33" fill="#639afd"/>
 <text x="350" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="385" y="704" width="34" height="33" fill="#ead45e"/>
+<rect x="385" y="704" width="34" height="33" fill="#e2cf74"/>
 <text x="389" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="424" y="704" width="34" height="33" fill="#a59f88"/>
+<rect x="424" y="704" width="34" height="33" fill="#9eb1e3"/>
 <text x="428" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="463" y="704" width="34" height="33" fill="#7e95ce"/>
+<rect x="463" y="704" width="34" height="33" fill="#a2a2a2"/>
 <text x="467" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="34" y="743" width="34" height="33" fill="#a09350"/>
+<rect x="34" y="743" width="34" height="33" fill="#efe5c2"/>
 <text x="38" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
-<rect x="73" y="743" width="34" height="33" fill="#a8983a"/>
+<rect x="73" y="743" width="34" height="33" fill="#fff6ac"/>
 <text x="77" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="112" y="743" width="34" height="33" fill="#baa739"/>
+<rect x="112" y="743" width="34" height="33" fill="#d3deff"/>
 <text x="116" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="151" y="743" width="34" height="33" fill="#958a56"/>
+<rect x="151" y="743" width="34" height="33" fill="#dbe4fe"/>
 <text x="155" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="190" y="743" width="34" height="33" fill="#848792"/>
+<rect x="190" y="743" width="34" height="33" fill="#d8d2bf"/>
 <text x="194" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="229" y="743" width="34" height="33" fill="#5a73a9"/>
-<text x="233" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">18</text>
-<rect x="268" y="743" width="34" height="33" fill="#536fa8"/>
-<text x="272" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="307" y="743" width="34" height="33" fill="#7a7b81"/>
+<rect x="229" y="743" width="34" height="33" fill="#dad9d6"/>
+<text x="233" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
+<rect x="268" y="743" width="34" height="33" fill="#d5d9e6"/>
+<text x="272" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="307" y="743" width="34" height="33" fill="#e2dabe"/>
 <text x="311" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
-<rect x="346" y="743" width="34" height="33" fill="#776d3e"/>
-<text x="350" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="385" y="743" width="34" height="33" fill="#8e8241"/>
+<rect x="346" y="743" width="34" height="33" fill="#d8e2fe"/>
+<text x="350" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="385" y="743" width="34" height="33" fill="#fff6d1"/>
 <text x="389" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="424" y="743" width="34" height="33" fill="#646361"/>
-<text x="428" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="463" y="743" width="34" height="33" fill="#5c6786"/>
-<text x="467" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="34" y="782" width="34" height="33" fill="#cfc5a0"/>
-<text x="38" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="73" y="782" width="34" height="33" fill="#dbce98"/>
+<rect x="424" y="743" width="34" height="33" fill="#d5ddf5"/>
+<text x="428" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="463" y="743" width="34" height="33" fill="#d0d0d0"/>
+<text x="467" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="34" y="782" width="34" height="33" fill="#837519"/>
+<text x="38" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="73" y="782" width="34" height="33" fill="#a9972b"/>
 <text x="77" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="112" y="782" width="34" height="33" fill="#c4c4c3"/>
-<text x="116" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="151" y="782" width="34" height="33" fill="#b1bddd"/>
-<text x="155" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="190" y="782" width="34" height="33" fill="#d3d5db"/>
+<rect x="112" y="782" width="34" height="33" fill="#526ca2"/>
+<text x="116" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">27</text>
+<rect x="151" y="782" width="34" height="33" fill="#3d6cbb"/>
+<text x="155" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="190" y="782" width="34" height="33" fill="#7f7758"/>
 <text x="194" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="229" y="782" width="34" height="33" fill="#dfd7b6"/>
-<text x="233" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="268" y="782" width="34" height="33" fill="#c2cbe6"/>
+<rect x="229" y="782" width="34" height="33" fill="#716f6a"/>
+<text x="233" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="268" y="782" width="34" height="33" fill="#767984"/>
 <text x="272" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="307" y="782" width="34" height="33" fill="#c0cae7"/>
+<rect x="307" y="782" width="34" height="33" fill="#86782f"/>
 <text x="311" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="346" y="782" width="34" height="33" fill="#ededed"/>
-<text x="350" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="385" y="782" width="34" height="33" fill="#b5b5b5"/>
+<rect x="346" y="782" width="34" height="33" fill="#2c67bb"/>
+<text x="350" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="385" y="782" width="34" height="33" fill="#8d803e"/>
 <text x="389" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="424" y="782" width="34" height="33" fill="#7b7b7b"/>
-<text x="428" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="463" y="782" width="34" height="33" fill="#434343"/>
+<rect x="424" y="782" width="34" height="33" fill="#62739b"/>
+<text x="428" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="463" y="782" width="34" height="33" fill="#4e4e4e"/>
 <text x="467" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <rect x="526" y="694" width="490" height="137" fill="#ffffff"/>
-<rect x="536" y="704" width="34" height="33" fill="#d1bb3c"/>
+<rect x="536" y="704" width="34" height="33" fill="#d0bb39"/>
 <text x="540" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="575" y="704" width="34" height="33" fill="#f2da4a"/>
+<rect x="575" y="704" width="34" height="33" fill="#ffee4f"/>
 <text x="579" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="614" y="704" width="34" height="33" fill="#92b0f6"/>
+<rect x="614" y="704" width="34" height="33" fill="#8caffe"/>
 <text x="618" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="653" y="704" width="34" height="33" fill="#6f9ffc"/>
+<rect x="653" y="704" width="34" height="33" fill="#72a0fc"/>
 <text x="657" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="692" y="704" width="34" height="33" fill="#d5c264"/>
+<rect x="692" y="704" width="34" height="33" fill="#bdb285"/>
 <text x="696" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="731" y="704" width="34" height="33" fill="#acaba5"/>
+<rect x="731" y="704" width="34" height="33" fill="#afaca4"/>
 <text x="735" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="770" y="704" width="34" height="33" fill="#398bfd"/>
+<rect x="770" y="704" width="34" height="33" fill="#aeb3c4"/>
 <text x="774" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="809" y="704" width="34" height="33" fill="#b8bcc6"/>
+<rect x="809" y="704" width="34" height="33" fill="#b09e2b"/>
 <text x="813" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="848" y="704" width="34" height="33" fill="#b2a35f"/>
+<rect x="848" y="704" width="34" height="33" fill="#639afd"/>
 <text x="852" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="887" y="704" width="34" height="33" fill="#ead45e"/>
+<rect x="887" y="704" width="34" height="33" fill="#e2cf74"/>
 <text x="891" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="926" y="704" width="34" height="33" fill="#a59f88"/>
+<rect x="926" y="704" width="34" height="33" fill="#9eb1e3"/>
 <text x="930" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="965" y="704" width="34" height="33" fill="#7e95ce"/>
+<rect x="965" y="704" width="34" height="33" fill="#a2a2a2"/>
 <text x="969" y="723" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="536" y="743" width="34" height="33" fill="#a09350"/>
+<rect x="536" y="743" width="34" height="33" fill="#efe5c2"/>
 <text x="540" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
-<rect x="575" y="743" width="34" height="33" fill="#a8983a"/>
+<rect x="575" y="743" width="34" height="33" fill="#fff6ac"/>
 <text x="579" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="614" y="743" width="34" height="33" fill="#baa739"/>
+<rect x="614" y="743" width="34" height="33" fill="#d3deff"/>
 <text x="618" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="653" y="743" width="34" height="33" fill="#958a56"/>
+<rect x="653" y="743" width="34" height="33" fill="#dbe4fe"/>
 <text x="657" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="692" y="743" width="34" height="33" fill="#848792"/>
+<rect x="692" y="743" width="34" height="33" fill="#d8d2bf"/>
 <text x="696" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="731" y="743" width="34" height="33" fill="#5a73a9"/>
-<text x="735" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">18</text>
-<rect x="770" y="743" width="34" height="33" fill="#536fa8"/>
-<text x="774" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="809" y="743" width="34" height="33" fill="#7a7b81"/>
+<rect x="731" y="743" width="34" height="33" fill="#dad9d6"/>
+<text x="735" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
+<rect x="770" y="743" width="34" height="33" fill="#d5d9e6"/>
+<text x="774" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="809" y="743" width="34" height="33" fill="#e2dabe"/>
 <text x="813" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
-<rect x="848" y="743" width="34" height="33" fill="#776d3e"/>
-<text x="852" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="887" y="743" width="34" height="33" fill="#8e8241"/>
+<rect x="848" y="743" width="34" height="33" fill="#d8e2fe"/>
+<text x="852" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="887" y="743" width="34" height="33" fill="#fff6d1"/>
 <text x="891" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="926" y="743" width="34" height="33" fill="#646361"/>
-<text x="930" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="965" y="743" width="34" height="33" fill="#5c6786"/>
-<text x="969" y="762" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="536" y="782" width="34" height="33" fill="#cfc5a0"/>
-<text x="540" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="575" y="782" width="34" height="33" fill="#dbce98"/>
+<rect x="926" y="743" width="34" height="33" fill="#d5ddf5"/>
+<text x="930" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="965" y="743" width="34" height="33" fill="#d0d0d0"/>
+<text x="969" y="762" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="536" y="782" width="34" height="33" fill="#837519"/>
+<text x="540" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="575" y="782" width="34" height="33" fill="#a9972b"/>
 <text x="579" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="614" y="782" width="34" height="33" fill="#c4c4c3"/>
-<text x="618" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="653" y="782" width="34" height="33" fill="#b1bddd"/>
-<text x="657" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="692" y="782" width="34" height="33" fill="#d3d5db"/>
+<rect x="614" y="782" width="34" height="33" fill="#526ca2"/>
+<text x="618" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">27</text>
+<rect x="653" y="782" width="34" height="33" fill="#3d6cbb"/>
+<text x="657" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="692" y="782" width="34" height="33" fill="#7f7758"/>
 <text x="696" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="731" y="782" width="34" height="33" fill="#dfd7b6"/>
-<text x="735" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="770" y="782" width="34" height="33" fill="#c2cbe6"/>
+<rect x="731" y="782" width="34" height="33" fill="#716f6a"/>
+<text x="735" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="770" y="782" width="34" height="33" fill="#767984"/>
 <text x="774" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="809" y="782" width="34" height="33" fill="#c0cae7"/>
+<rect x="809" y="782" width="34" height="33" fill="#86782f"/>
 <text x="813" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="848" y="782" width="34" height="33" fill="#ededed"/>
-<text x="852" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="887" y="782" width="34" height="33" fill="#b5b5b5"/>
+<rect x="848" y="782" width="34" height="33" fill="#2c67bb"/>
+<text x="852" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="887" y="782" width="34" height="33" fill="#8d803e"/>
 <text x="891" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="926" y="782" width="34" height="33" fill="#7b7b7b"/>
-<text x="930" y="801" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="965" y="782" width="34" height="33" fill="#434343"/>
+<rect x="926" y="782" width="34" height="33" fill="#62739b"/>
+<text x="930" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="965" y="782" width="34" height="33" fill="#4e4e4e"/>
 <text x="969" y="801" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <text x="24" y="871" font-family="Arial, sans-serif" font-size="16" fill="#222222">Tritan approximation (severity 1)</text>
 <rect x="24" y="884" width="490" height="137" fill="#23221f"/>
-<rect x="34" y="894" width="34" height="33" fill="#ff8487"/>
+<rect x="34" y="894" width="34" height="33" fill="#ff8286"/>
 <text x="38" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="73" y="894" width="34" height="33" fill="#ffc5b8"/>
+<rect x="73" y="894" width="34" height="33" fill="#ffddcd"/>
 <text x="77" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="112" y="894" width="34" height="33" fill="#00d1d4"/>
+<rect x="112" y="894" width="34" height="33" fill="#00d0d5"/>
 <text x="116" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="151" y="894" width="34" height="33" fill="#a3a0b9"/>
+<rect x="151" y="894" width="34" height="33" fill="#99a6bc"/>
 <text x="155" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="190" y="894" width="34" height="33" fill="#7ad4bf"/>
+<rect x="190" y="894" width="34" height="33" fill="#00cebc"/>
 <text x="194" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="229" y="894" width="34" height="33" fill="#ff6485"/>
+<rect x="229" y="894" width="34" height="33" fill="#ff6887"/>
 <text x="233" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="268" y="894" width="34" height="33" fill="#00a7ba"/>
+<rect x="268" y="894" width="34" height="33" fill="#00d5cb"/>
 <text x="272" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="307" y="894" width="34" height="33" fill="#00ddd2"/>
+<rect x="307" y="894" width="34" height="33" fill="#ff144d"/>
 <text x="311" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="346" y="894" width="34" height="33" fill="#ff5b6f"/>
+<rect x="346" y="894" width="34" height="33" fill="#00b3c2"/>
 <text x="350" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="385" y="894" width="34" height="33" fill="#d0d4c2"/>
+<rect x="385" y="894" width="34" height="33" fill="#acd9c7"/>
 <text x="389" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="424" y="894" width="34" height="33" fill="#00b8aa"/>
+<rect x="424" y="894" width="34" height="33" fill="#f98caa"/>
 <text x="428" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="463" y="894" width="34" height="33" fill="#de6d90"/>
+<rect x="463" y="894" width="34" height="33" fill="#a2a2a2"/>
 <text x="467" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="34" y="933" width="34" height="33" fill="#fe3256"/>
+<rect x="34" y="933" width="34" height="33" fill="#ffd5d5"/>
 <text x="38" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
-<rect x="73" y="933" width="34" height="33" fill="#e8656b"/>
+<rect x="73" y="933" width="34" height="33" fill="#ffede3"/>
 <text x="77" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="112" y="933" width="34" height="33" fill="#c6988e"/>
+<rect x="112" y="933" width="34" height="33" fill="#b2ecee"/>
 <text x="116" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="151" y="933" width="34" height="33" fill="#539789"/>
+<rect x="151" y="933" width="34" height="33" fill="#e2e5eb"/>
 <text x="155" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="190" y="933" width="34" height="33" fill="#009e98"/>
+<rect x="190" y="933" width="34" height="33" fill="#a5e0d7"/>
 <text x="194" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="229" y="933" width="34" height="33" fill="#00878c"/>
+<rect x="229" y="933" width="34" height="33" fill="#ffc4cc"/>
 <text x="233" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
-<rect x="268" y="933" width="34" height="33" fill="#736e7e"/>
-<text x="272" y="952" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="307" y="933" width="34" height="33" fill="#c15066"/>
+<rect x="268" y="933" width="34" height="33" fill="#62f4ec"/>
+<text x="272" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="307" y="933" width="34" height="33" fill="#ffc3c7"/>
 <text x="311" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
-<rect x="346" y="933" width="34" height="33" fill="#b43a48"/>
-<text x="350" y="952" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="385" y="933" width="34" height="33" fill="#867f76"/>
+<rect x="346" y="933" width="34" height="33" fill="#cce9ed"/>
+<text x="350" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="385" y="933" width="34" height="33" fill="#e7fbf2"/>
 <text x="389" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="424" y="933" width="34" height="33" fill="#22716b"/>
-<text x="428" y="952" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="463" y="933" width="34" height="33" fill="#8f5465"/>
-<text x="467" y="952" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="34" y="972" width="34" height="33" fill="#fbacaf"/>
-<text x="38" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="73" y="972" width="34" height="33" fill="#dcc8c0"/>
+<rect x="424" y="933" width="34" height="33" fill="#ffcdd9"/>
+<text x="428" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="463" y="933" width="34" height="33" fill="#d0d0d0"/>
+<text x="467" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="34" y="972" width="34" height="33" fill="#b34d50"/>
+<text x="38" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="73" y="972" width="34" height="33" fill="#af8c81"/>
 <text x="77" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="112" y="972" width="34" height="33" fill="#9fcfca"/>
-<text x="116" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="151" y="972" width="34" height="33" fill="#b0c2c7"/>
-<text x="155" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="190" y="972" width="34" height="33" fill="#f6c7ce"/>
+<rect x="112" y="972" width="34" height="33" fill="#008286"/>
+<text x="116" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">27</text>
+<rect x="151" y="972" width="34" height="33" fill="#667084"/>
+<text x="155" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="190" y="972" width="34" height="33" fill="#008a7e"/>
 <text x="194" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="229" y="972" width="34" height="33" fill="#c8dbd3"/>
-<text x="233" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="268" y="972" width="34" height="33" fill="#96dbda"/>
+<rect x="229" y="972" width="34" height="33" fill="#b54056"/>
+<text x="233" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="268" y="972" width="34" height="33" fill="#008f89"/>
 <text x="272" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="307" y="972" width="34" height="33" fill="#d5c7cf"/>
-<text x="311" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="346" y="972" width="34" height="33" fill="#ededed"/>
-<text x="350" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="385" y="972" width="34" height="33" fill="#b5b5b5"/>
+<rect x="307" y="972" width="34" height="33" fill="#d02e44"/>
+<text x="311" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">32</text>
+<rect x="346" y="972" width="34" height="33" fill="#007c8a"/>
+<text x="350" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="385" y="972" width="34" height="33" fill="#67877b"/>
 <text x="389" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="424" y="972" width="34" height="33" fill="#7b7b7b"/>
-<text x="428" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="463" y="972" width="34" height="33" fill="#434343"/>
+<rect x="424" y="972" width="34" height="33" fill="#ac536d"/>
+<text x="428" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="463" y="972" width="34" height="33" fill="#4e4e4e"/>
 <text x="467" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <rect x="526" y="884" width="490" height="137" fill="#ffffff"/>
-<rect x="536" y="894" width="34" height="33" fill="#ff8487"/>
+<rect x="536" y="894" width="34" height="33" fill="#ff8286"/>
 <text x="540" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">1</text>
-<rect x="575" y="894" width="34" height="33" fill="#ffc5b8"/>
+<rect x="575" y="894" width="34" height="33" fill="#ffddcd"/>
 <text x="579" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">2</text>
-<rect x="614" y="894" width="34" height="33" fill="#00d1d4"/>
+<rect x="614" y="894" width="34" height="33" fill="#00d0d5"/>
 <text x="618" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">3</text>
-<rect x="653" y="894" width="34" height="33" fill="#a3a0b9"/>
+<rect x="653" y="894" width="34" height="33" fill="#99a6bc"/>
 <text x="657" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">4</text>
-<rect x="692" y="894" width="34" height="33" fill="#7ad4bf"/>
+<rect x="692" y="894" width="34" height="33" fill="#00cebc"/>
 <text x="696" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">5</text>
-<rect x="731" y="894" width="34" height="33" fill="#ff6485"/>
+<rect x="731" y="894" width="34" height="33" fill="#ff6887"/>
 <text x="735" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">6</text>
-<rect x="770" y="894" width="34" height="33" fill="#00a7ba"/>
+<rect x="770" y="894" width="34" height="33" fill="#00d5cb"/>
 <text x="774" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">7</text>
-<rect x="809" y="894" width="34" height="33" fill="#00ddd2"/>
+<rect x="809" y="894" width="34" height="33" fill="#ff144d"/>
 <text x="813" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">8</text>
-<rect x="848" y="894" width="34" height="33" fill="#ff5b6f"/>
+<rect x="848" y="894" width="34" height="33" fill="#00b3c2"/>
 <text x="852" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">9</text>
-<rect x="887" y="894" width="34" height="33" fill="#d0d4c2"/>
+<rect x="887" y="894" width="34" height="33" fill="#acd9c7"/>
 <text x="891" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">10</text>
-<rect x="926" y="894" width="34" height="33" fill="#00b8aa"/>
+<rect x="926" y="894" width="34" height="33" fill="#f98caa"/>
 <text x="930" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">11</text>
-<rect x="965" y="894" width="34" height="33" fill="#de6d90"/>
+<rect x="965" y="894" width="34" height="33" fill="#a2a2a2"/>
 <text x="969" y="913" font-family="Arial, sans-serif" font-size="12" fill="#000000">12</text>
-<rect x="536" y="933" width="34" height="33" fill="#fe3256"/>
+<rect x="536" y="933" width="34" height="33" fill="#ffd5d5"/>
 <text x="540" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">13</text>
-<rect x="575" y="933" width="34" height="33" fill="#e8656b"/>
+<rect x="575" y="933" width="34" height="33" fill="#ffede3"/>
 <text x="579" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">14</text>
-<rect x="614" y="933" width="34" height="33" fill="#c6988e"/>
+<rect x="614" y="933" width="34" height="33" fill="#b2ecee"/>
 <text x="618" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">15</text>
-<rect x="653" y="933" width="34" height="33" fill="#539789"/>
+<rect x="653" y="933" width="34" height="33" fill="#e2e5eb"/>
 <text x="657" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">16</text>
-<rect x="692" y="933" width="34" height="33" fill="#009e98"/>
+<rect x="692" y="933" width="34" height="33" fill="#a5e0d7"/>
 <text x="696" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">17</text>
-<rect x="731" y="933" width="34" height="33" fill="#00878c"/>
+<rect x="731" y="933" width="34" height="33" fill="#ffc4cc"/>
 <text x="735" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">18</text>
-<rect x="770" y="933" width="34" height="33" fill="#736e7e"/>
-<text x="774" y="952" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">19</text>
-<rect x="809" y="933" width="34" height="33" fill="#c15066"/>
+<rect x="770" y="933" width="34" height="33" fill="#62f4ec"/>
+<text x="774" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">19</text>
+<rect x="809" y="933" width="34" height="33" fill="#ffc3c7"/>
 <text x="813" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">20</text>
-<rect x="848" y="933" width="34" height="33" fill="#b43a48"/>
-<text x="852" y="952" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">21</text>
-<rect x="887" y="933" width="34" height="33" fill="#867f76"/>
+<rect x="848" y="933" width="34" height="33" fill="#cce9ed"/>
+<text x="852" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">21</text>
+<rect x="887" y="933" width="34" height="33" fill="#e7fbf2"/>
 <text x="891" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">22</text>
-<rect x="926" y="933" width="34" height="33" fill="#22716b"/>
-<text x="930" y="952" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">23</text>
-<rect x="965" y="933" width="34" height="33" fill="#8f5465"/>
-<text x="969" y="952" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">24</text>
-<rect x="536" y="972" width="34" height="33" fill="#fbacaf"/>
-<text x="540" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">25</text>
-<rect x="575" y="972" width="34" height="33" fill="#dcc8c0"/>
+<rect x="926" y="933" width="34" height="33" fill="#ffcdd9"/>
+<text x="930" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">23</text>
+<rect x="965" y="933" width="34" height="33" fill="#d0d0d0"/>
+<text x="969" y="952" font-family="Arial, sans-serif" font-size="12" fill="#000000">24</text>
+<rect x="536" y="972" width="34" height="33" fill="#b34d50"/>
+<text x="540" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">25</text>
+<rect x="575" y="972" width="34" height="33" fill="#af8c81"/>
 <text x="579" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">26</text>
-<rect x="614" y="972" width="34" height="33" fill="#9fcfca"/>
-<text x="618" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">27</text>
-<rect x="653" y="972" width="34" height="33" fill="#b0c2c7"/>
-<text x="657" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">28</text>
-<rect x="692" y="972" width="34" height="33" fill="#f6c7ce"/>
+<rect x="614" y="972" width="34" height="33" fill="#008286"/>
+<text x="618" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">27</text>
+<rect x="653" y="972" width="34" height="33" fill="#667084"/>
+<text x="657" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">28</text>
+<rect x="692" y="972" width="34" height="33" fill="#008a7e"/>
 <text x="696" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">29</text>
-<rect x="731" y="972" width="34" height="33" fill="#c8dbd3"/>
-<text x="735" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">30</text>
-<rect x="770" y="972" width="34" height="33" fill="#96dbda"/>
+<rect x="731" y="972" width="34" height="33" fill="#b54056"/>
+<text x="735" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">30</text>
+<rect x="770" y="972" width="34" height="33" fill="#008f89"/>
 <text x="774" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">31</text>
-<rect x="809" y="972" width="34" height="33" fill="#d5c7cf"/>
-<text x="813" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">32</text>
-<rect x="848" y="972" width="34" height="33" fill="#ededed"/>
-<text x="852" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">33</text>
-<rect x="887" y="972" width="34" height="33" fill="#b5b5b5"/>
+<rect x="809" y="972" width="34" height="33" fill="#d02e44"/>
+<text x="813" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">32</text>
+<rect x="848" y="972" width="34" height="33" fill="#007c8a"/>
+<text x="852" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">33</text>
+<rect x="887" y="972" width="34" height="33" fill="#67877b"/>
 <text x="891" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">34</text>
-<rect x="926" y="972" width="34" height="33" fill="#7b7b7b"/>
-<text x="930" y="991" font-family="Arial, sans-serif" font-size="12" fill="#000000">35</text>
-<rect x="965" y="972" width="34" height="33" fill="#434343"/>
+<rect x="926" y="972" width="34" height="33" fill="#ac536d"/>
+<text x="930" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
+<rect x="965" y="972" width="34" height="33" fill="#4e4e4e"/>
 <text x="969" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
 <text x="24" y="1062" font-family="Arial, sans-serif" font-size="14" fill="#222222">sRGB transfer + published Machado matrices; gamut-clamped. Scientific sources: colour-picker.md.</text>
 </svg>

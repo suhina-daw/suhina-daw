@@ -747,8 +747,8 @@ fn groups_nest_fold_and_take_tracks_from_the_menu_and_by_dragging() {
     assert_eq!(parent_name(&harness, "Drums").as_deref(), Some("Group"));
 
     // Ancestor bands stay aligned while each deeper level becomes thinner.
-    let groups: Vec<_> = harness.get_all_by_label("Group colour").map(|node| node.rect()).collect();
-    let drums = harness.get_by_label("Drums colour").rect();
+    let groups: Vec<_> = harness.get_all_by_label("Group color").map(|node| node.rect()).collect();
+    let drums = harness.get_by_label("Drums color").rect();
     assert_eq!(groups.len(), 2);
     assert_eq!((groups[0].width(), groups[1].width(), drums.width()), (6.0, 4.0, 3.0));
     let inward = |rect: egui::Rect| {
@@ -956,7 +956,7 @@ fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_sepa
             harness.run();
             let header = harness.get_by_label("Track Container").rect();
             let target = harness.get_by_label("Fold Container").rect();
-            let colour = harness.get_by_label("Container colour").rect();
+            let colour = harness.get_by_label("Container color").rect();
             assert!((target.top() - header.top()).abs() <= 1.0, "{target:?} / {header:?}");
             assert!((target.bottom() - header.bottom()).abs() <= 1.0, "{target:?} / {header:?}");
             assert_eq!(target.center().x > header.center().x, headers_left);
@@ -974,9 +974,9 @@ fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_sepa
                 }
             }
             assert!(harness.state().actions.is_empty(), "folding is view state");
-            harness.get_by_label("Container colour").click();
+            harness.get_by_label("Container color").click();
             harness.run();
-            assert!(harness.query_by_label("+ More colours").is_some(), "the strip opens the colour menu");
+            assert!(harness.query_by_label("More colors").is_some(), "the strip opens the colour menu");
             assert!(harness.query_by_label("Track Drums").is_some(), "colour selection does not fold");
         }
     }

@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 #[test]
-fn native_colour_window_paints_its_dark_background_and_settles_after_a_native_drag() {
+fn native_color_window_paints_its_dark_background_and_settles_after_a_native_drag() {
     let ctx = egui::Context::default();
     theme::install(&ctx);
     ctx.set_embed_viewports(false);
@@ -63,7 +63,7 @@ fn native_colour_window_paints_its_dark_background_and_settles_after_a_native_dr
     });
     let mut app = demo_app();
     app.use_theme(&ctx, "suhina-studio");
-    app.run(&Action::new("ui.colourPicker", json!({"tracks":[1]})));
+    app.run(&Action::new("ui.colorPicker", json!({"tracks":[1]})));
     let root = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(SIZE.0, SIZE.1));
     for step in 0..24 {
         let mut input = egui::RawInput {

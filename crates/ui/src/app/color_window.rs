@@ -1,25 +1,28 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The owned colour tool window. Commands remain on the active project's main action path;
+//! The owned color tool window. Commands remain on the active project's main action path;
 //! the native viewport has its own pointer, keyboard and close lifetime.
 
 use super::*;
-use crate::interaction::colour_picker::{
+use crate::interaction::color_picker::{
     hex,
     panel::{self, Edit, Panel},
 };
-use suhina_engine::model::Rgb;
+use suhina_engine::model::{ClipId, ClipPlace, Project, Rgb};
 
 const WIDTH: f32 = 340.0;
 /// How tall the system's title bar is taken to be over a window whose content starts under it.
 const SYSTEM_TITLE_BAR: f32 = 32.0;
 
 #[derive(Default)]
-pub(super) struct ColourWindow {
+pub(super) struct ColorWindow {
     open: bool,
     project: Option<ProjectId>,
     tracks: Vec<TrackId>,
+    /// Arrangement clips the window colors instead of `tracks`, opened from a clip's menu; it
+    /// keeps them while the track selection changes, until it is opened again.
+    clips: Vec<ClipId>,
     selection_seen: Vec<TrackId>,
     panel: Panel,
     // A stable opening position, not the last reported native position. eframe reads geometry
@@ -32,15 +35,19 @@ pub(super) struct ColourWindow {
     chrome: f32,
     focus_requested: bool,
     focused: bool,
-    minimised: bool,
+    minimized: bool,
     embedded_layer: Option<egui::LayerId>,
-    pub pending_recent: Option<Rgb>,
+    /// A drag in the picker has changed a color under a history gesture not yet ended.
+    pub gesture_pending: bool,
 }
 
 impl App {
-    pub(super) fn preview_colour_targets(&self, ctx: &egui::Context) {
-        let tracks = if self.colour_window.open && self.projects.active() == self.colour_window.project {
-            self.colour_window.tracks.as_slice()
+    pub(super) fn preview_color_targets(&self, ctx: &egui::Context) {
+        let tracks = if self.color_window.open
+            && self.projects.active() == self.color_window.project
+            && self.color_window.clips.is_empty()
+        {
+            self.color_window.tracks.as_slice()
         } else {
             &[]
         };
@@ -49,124 +56,177 @@ impl App {
 
     /// Only the embedded tool's own controls keep normal widget keyboard navigation.
     /// The rest of the DAW continues to use its existing shortcut and launch-key rules.
-    pub(super) fn colour_window_owns_keyboard(&self, ctx: &egui::Context) -> bool {
-        self.colour_window.open && self.colour_window.embedded_layer.is_some_and(|layer| focused_in_layer(ctx, layer))
+    pub(super) fn color_window_owns_keyboard(&self, ctx: &egui::Context) -> bool {
+        self.color_window.open && self.color_window.embedded_layer.is_some_and(|layer| focused_in_layer(ctx, layer))
     }
 
-    pub(super) fn colour_history_changed(&mut self) {
-        if self.colour_window.pending_recent.take().is_some() {
-            self.colour_window.panel.cancel_pointer();
+    pub(super) fn color_history_changed(&mut self) {
+        if std::mem::take(&mut self.color_window.gesture_pending) {
+            self.color_window.panel.cancel_pointer();
             if self.open_gesture.as_deref() == Some(panel::GESTURE) {
                 self.open_gesture = None;
             }
         }
     }
 
-    pub(super) fn open_colour_window(&mut self, tracks: Option<Vec<TrackId>>) {
+    pub(super) fn open_color_window(&mut self, tracks: Option<Vec<TrackId>>) {
         let selection = self.focused_tracks();
         let tracks = tracks.unwrap_or_else(|| selection.clone());
         let Some(session) = self.session() else { return };
         if tracks.is_empty() || tracks.iter().any(|t| session.project().track(*t).is_none()) {
-            self.status = Status::Hint("Select a track to choose its colour".into());
+            self.status = Status::Hint("Select a track to choose its color".into());
             return;
         }
-        self.finish_colour_gesture(false);
-        self.colour_window.panel.discard_drafts();
-        if !self.colour_window.open {
-            self.colour_window.initial_position = None;
-        }
-        self.colour_window.open = true;
-        self.colour_window.project = self.projects.active();
-        self.colour_window.tracks = tracks;
-        self.colour_window.selection_seen = selection;
-        self.colour_window.focus_requested = true;
+        self.open_color_window_on(tracks, Vec::new(), selection);
     }
 
-    pub(super) fn run_colour_window_action(&mut self, action: &Action) -> bool {
+    /// Open the window on clips, arrangement clips or slots', from a clip's menu.
+    pub(super) fn open_color_window_for_clips(&mut self, clips: Vec<ClipId>) {
+        let Some(session) = self.session() else { return };
+        if clips.is_empty() || clips.iter().any(|c| clip_color(session.project(), *c).is_none()) {
+            self.status = Status::Hint("Select a clip to choose its color".into());
+            return;
+        }
+        let selection = self.focused_tracks();
+        self.open_color_window_on(Vec::new(), clips, selection);
+    }
+
+    fn open_color_window_on(&mut self, tracks: Vec<TrackId>, clips: Vec<ClipId>, selection: Vec<TrackId>) {
+        self.finish_color_gesture(false);
+        let window = &mut self.color_window;
+        window.panel.discard_drafts();
+        if !window.open {
+            window.initial_position = None;
+        }
+        window.open = true;
+        window.project = self.projects.active();
+        window.tracks = tracks;
+        window.clips = clips;
+        window.selection_seen = selection;
+        window.focus_requested = true;
+    }
+
+    pub(super) fn run_color_window_action(&mut self, action: &Action) -> bool {
         match action.id {
-            "ui.colourPicker" => {
-                let tracks = action.params["tracks"].as_array().map(|list| {
-                    list.iter().filter_map(|v| v.as_u64().and_then(|n| u32::try_from(n).ok()).map(TrackId)).collect()
-                });
-                self.open_colour_window(tracks);
+            "ui.colorPicker" => {
+                let ids = |key: &str| {
+                    action.params[key].as_array().map(|list| {
+                        list.iter().filter_map(|v| v.as_u64().and_then(|n| u32::try_from(n).ok())).collect::<Vec<_>>()
+                    })
+                };
+                if let Some(clips) = ids("clips") {
+                    self.open_color_window_for_clips(clips.into_iter().map(ClipId).collect());
+                } else {
+                    self.open_color_window(ids("tracks").map(|list| list.into_iter().map(TrackId).collect()));
+                }
             }
-            "ui.finishColour" => self.finish_colour_gesture(false),
-            "ui.cancelColour" => self.finish_colour_gesture(true),
+            "ui.finishColor" => self.finish_color_gesture(false),
+            "ui.cancelColor" => self.finish_color_gesture(true),
             _ => return false,
         }
         true
     }
 
-    fn finish_colour_gesture(&mut self, cancel: bool) {
-        let project = self.colour_window.project;
+    /// Whether every target already has `color`: a clip only as its own, so choosing its track's
+    /// color still gives it one.
+    fn color_targets_have(&self, color: Rgb) -> bool {
+        let Some(project) = self.session().map(Session::project) else { return false };
+        let window = &self.color_window;
+        if window.clips.is_empty() {
+            project
+                .tracks
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| window.tracks.contains(&t.id))
+                .all(|(place, t)| suhina_session::colors::track_color(t.color, place) == color)
+        } else {
+            window.clips.iter().all(|c| {
+                project.clip_place(*c).and_then(|p| project.clip_at(p)).and_then(|clip| clip.color) == Some(color)
+            })
+        }
+    }
+
+    fn finish_color_gesture(&mut self, cancel: bool) {
+        let project = self.color_window.project;
         let ended = self
             .projects
             .session_mut(project)
             .ok()
             .and_then(|session| session.execute("history.endGesture", &json!({ "gesture": panel::GESTURE })).ok())
             .is_some_and(|value| value["ended"].as_bool() == Some(true));
-        self.colour_window.panel.dragging = false;
+        self.color_window.panel.dragging = false;
         if self.open_gesture.as_deref() == Some(panel::GESTURE) {
             self.open_gesture = None;
         }
-        let pending = self.colour_window.pending_recent.take();
+        self.color_window.gesture_pending = false;
         if cancel && ended && self.projects.active() == project {
             // endGesture is conditional on its id: an intervening edit is never undone.
             self.run(&Action::new("edit.undo", json!({})));
-        } else if let Some(colour) = pending {
-            panel::remember(&mut self.settings.recent_colours, colour);
-            self.settings_changed = true;
         }
     }
 
-    pub(super) fn show_colour_window(&mut self, ctx: &egui::Context, actions: &mut Vec<Action>) {
+    pub(super) fn show_color_window(&mut self, ctx: &egui::Context, actions: &mut Vec<Action>) {
         // Menus show the user's binding, including an unbound or reassigned F2.
         let shortcut = self.keymap.label("selection.colour").unwrap_or_default();
-        ctx.data_mut(|d| d.insert_temp(Id::unique("colour-picker-shortcut"), shortcut));
-        if !self.colour_window.open {
+        ctx.data_mut(|d| d.insert_temp(Id::unique("color-picker-shortcut"), shortcut));
+        crate::interaction::color_picker::set_menu_saved(ctx, &self.settings.saved_colors);
+        if !self.color_window.open {
             return;
         }
-        if self.projects.active() != self.colour_window.project {
-            self.finish_colour_gesture(false);
-            self.colour_window.open = false;
+        if self.projects.active() != self.color_window.project {
+            self.finish_color_gesture(false);
+            self.color_window.open = false;
             self.settings_changed = true;
             return;
         }
         let selection = self.focused_tracks();
+        if !self.color_window.clips.is_empty() {
+            // Clips stay the target as the track selection changes; it is seen, not followed.
+            self.color_window.selection_seen = selection.clone();
+        }
         let targets_removed = self.session().is_some_and(|s| {
-            !self.colour_window.tracks.is_empty()
-                && self.colour_window.tracks.iter().all(|id| s.project().track(*id).is_none())
+            !self.color_window.tracks.is_empty()
+                && self.color_window.tracks.iter().all(|id| s.project().track(*id).is_none())
         });
         if targets_removed {
-            // Deletion may automatically focus the next track. Do not silently colour it;
+            // Deletion may automatically focus the next track. Do not silently color it;
             // a subsequent header selection or reopening the picker chooses a new target.
-            self.finish_colour_gesture(false);
-            self.colour_window.tracks.clear();
-            self.colour_window.selection_seen = selection.clone();
-        } else if !selection.is_empty() && selection != self.colour_window.selection_seen {
-            self.finish_colour_gesture(false);
-            self.colour_window.panel.discard_drafts();
-            self.colour_window.selection_seen = selection.clone();
-            self.colour_window.tracks = selection;
+            self.finish_color_gesture(false);
+            self.color_window.tracks.clear();
+            self.color_window.selection_seen = selection.clone();
+        } else if !selection.is_empty() && selection != self.color_window.selection_seen {
+            self.finish_color_gesture(false);
+            self.color_window.panel.discard_drafts();
+            self.color_window.selection_seen = selection.clone();
+            self.color_window.tracks = selection;
         }
         let Some(session) = self.projects.active().and_then(|id| self.projects.get(id)) else { return };
         let project = session.project();
-        self.colour_window.tracks.retain(|t| project.track(*t).is_some());
+        self.color_window.tracks.retain(|t| project.track(*t).is_some());
+        self.color_window.clips.retain(|c| clip_color(project, *c).is_some());
+        self.color_window.panel.clips = !self.color_window.clips.is_empty();
         let first = self
-            .colour_window
+            .color_window
             .tracks
             .first()
             .and_then(|id| project.tracks.iter().enumerate().find(|(_, t)| t.id == *id));
-        let current = first.map(|(place, t)| suhina_session::colours::track_colour(t.color, place));
-        let title = match (self.colour_window.tracks.len(), first) {
-            (1, Some((_, track))) => format!("Track colour · {}", track.name),
-            (0, _) => "Track colour · Select a track".to_string(),
-            (count, _) => format!("Track colour · {count} tracks"),
+        let clips = &self.color_window.clips;
+        let current = if clips.is_empty() {
+            first.map(|(place, t)| suhina_session::colors::track_color(t.color, place))
+        } else {
+            clips.first().and_then(|c| clip_color(project, *c))
         };
-        if let Some(colour) = current {
-            self.colour_window.panel.sync(colour);
+        let title = match (clips.len(), self.color_window.tracks.len(), first) {
+            (1, ..) => "Clip color".to_string(),
+            (0, 1, Some((_, track))) => format!("Track color · {}", track.name),
+            (0, 0, _) => "Track color · Select a track".to_string(),
+            (0, count, _) => format!("Track color · {count} tracks"),
+            (count, ..) => format!("Clip color · {count} clips"),
+        };
+        if let Some(color) = current {
+            self.color_window.panel.sync(color);
         }
-        let (main_focused, main_minimised, main_rect) = ctx.input_for(egui::ViewportId::ROOT, |i| {
+        let (main_focused, main_minimized, main_rect) = ctx.input_for(egui::ViewportId::ROOT, |i| {
             (
                 i.viewport().focused.unwrap_or(false),
                 i.viewport().minimized.unwrap_or(false),
@@ -174,22 +234,22 @@ impl App {
             )
         });
         let bounds = main_rect.unwrap_or_else(|| Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0)));
-        let id = egui::ViewportId::from_hash_of("track-colour-window");
-        // As tall as the panel, measured as it was drawn. A layout the user asked for that needs
-        // more room (Fine adjustment opening, the wheel's Value row) is drawn once the window has
-        // grown to it; one that needs less is drawn at once and the window shrinks after.
+        let id = egui::ViewportId::from_hash_of("track-color-window");
+        // As tall as the panel, measured as it was drawn. A view the user asked for that needs more
+        // room is drawn once the window has grown to it; one that needs less is drawn at once and
+        // the window shrinks after.
         let room = (bounds.height() - 48.0).max(180.0);
         let fit = |content: Option<f32>| {
-            content.map_or(400.0, |content| (content + self.colour_window.chrome).ceil()).min(room)
+            content.map_or(400.0, |content| (content + self.color_window.chrome).ceil()).min(room)
         };
-        let panel = &mut self.colour_window.panel;
+        let panel = &mut self.color_window.panel;
         if panel.asks() {
             let (now, asked) = (panel.height(false), panel.height(true));
-            let grown = self.colour_window.height >= fit(asked) - 0.5;
+            let grown = self.color_window.height >= fit(asked) - 0.5;
             if grown || asked <= now {
                 panel.settle();
             } else {
-                ctx.request_repaint_of(egui::ViewportId::from_hash_of("track-colour-window"));
+                ctx.request_repaint_of(id);
             }
         }
         let height = fit(match (panel.height(false), panel.height(true)) {
@@ -198,12 +258,12 @@ impl App {
         });
         let own_frame = self.own_window_frame();
         let outer = outer_size(height, own_frame);
-        if self.colour_window.height != height {
+        if self.color_window.height != height {
             // Expanding near the bottom must keep the new controls on screen. Ordinary
             // moves are left alone; only a size change rechecks the available bounds.
-            if let Some(requested) = self.colour_window.initial_position {
+            if let Some(requested) = self.color_window.initial_position {
                 let observed =
-                    self.settings.colour_window_rect.map_or(requested, |[x, y, _, _]| Pos2::new(x as f32, y as f32));
+                    self.settings.color_window_rect.map_or(requested, |[x, y, _, _]| Pos2::new(x as f32, y as f32));
                 let adjusted = place(bounds, outer, Some(observed));
                 if adjusted != observed {
                     // An explicit one-shot move also works if the clamped position
@@ -211,10 +271,10 @@ impl App {
                     ctx.send_viewport_cmd_to(id, egui::ViewportCommand::OuterPosition(adjusted));
                 }
             }
-            self.colour_window.height = height;
+            self.color_window.height = height;
         }
-        let position = *self.colour_window.initial_position.get_or_insert_with(|| {
-            let proposed = self.settings.colour_window_rect.map(|[x, y, _, _]| Pos2::new(x as f32, y as f32));
+        let position = *self.color_window.initial_position.get_or_insert_with(|| {
+            let proposed = self.settings.color_window_rect.map(|[x, y, _, _]| Pos2::new(x as f32, y as f32));
             place(bounds, outer, proposed)
         });
         let builder = egui::ViewportBuilder::default()
@@ -224,11 +284,11 @@ impl App {
             .with_resizable(false)
             .with_minimize_button(false)
             .with_maximize_button(false)
-            .with_window_level(browser_panel::map_window_level(main_focused, self.colour_window.focused));
+            .with_window_level(browser_panel::map_window_level(main_focused, self.color_window.focused));
         let builder = crate::kit::own_window::builder(builder, own_frame);
         let enabled = current.is_some() && !self.dialog_holds_actions();
-        let recent = &self.settings.recent_colours;
-        let panel = &mut self.colour_window.panel;
+        let saved = &self.settings.saved_colors;
+        let panel = &mut self.color_window.panel;
         let keymap = &self.keymap;
         let mut edits = Vec::new();
         let mut keys = Vec::new();
@@ -245,7 +305,7 @@ impl App {
                 let style = crate::kit::dialog::enter("color-picker");
                 if !embedded && suhina_plugins::trace::on() {
                     suhina_plugins::trace::state(
-                        "colour window surface",
+                        "color window surface",
                         format!(
                             "rect {:?}, clip {:?}, scale {}, fill {:?}, authored {:?}, geometry {:?}",
                             ui.max_rect(),
@@ -265,7 +325,7 @@ impl App {
                     ui.allocate_rect(outer, egui::Sense::hover());
                     let painter = ui.painter().clone();
                     let (painted, title_row) = crate::kit::dialog::paint(&painter, &style, outer, Some(title.as_str()));
-                    let id = Id::unique("track-colour-window-close");
+                    let id = Id::unique("track-color-window-close");
                     let response = crate::kit::dialog::close_button(ui, &painter, painted.title, id, &title);
                     drop(title_row);
                     close |= response.clicked();
@@ -282,7 +342,7 @@ impl App {
                     let mut styled = style.ui(ui);
                     egui::ScrollArea::vertical().show(&mut styled, |ui| {
                         ui.add_enabled_ui(enabled, |ui| {
-                            edits.extend(panel.show(ui, recent));
+                            edits.extend(panel.show(ui, saved));
                         });
                     });
                 });
@@ -327,7 +387,7 @@ impl App {
         if ctx.embed_viewports() {
             // Where windows cannot open (the tests), the tool is a dialog over the window: one
             // box, the dialog's, not one in an egui Window's frame.
-            crate::kit::floating::area(ctx, Id::unique("track-colour-window"), crate::kit::floating::Kind::Own)
+            crate::kit::floating::area(ctx, Id::unique("track-color-window"), crate::kit::floating::Kind::Own)
                 .order(egui::Order::Middle)
                 .movable(true)
                 .default_pos(ctx.content_rect().center() - Vec2::new(WIDTH, height) * 0.5)
@@ -339,14 +399,14 @@ impl App {
         }
         if let Some(chrome) = chrome
             && chrome.is_finite()
-            && (chrome - self.colour_window.chrome).abs() > 0.5
+            && (chrome - self.color_window.chrome).abs() > 0.5
         {
-            self.colour_window.chrome = chrome.max(0.0);
+            self.color_window.chrome = chrome.max(0.0);
             ctx.request_repaint_of(id);
         }
-        self.colour_window.focused = focused;
-        self.colour_window.embedded_layer = embedded_layer;
-        if self.colour_window_owns_keyboard(ctx) || (!ctx.embed_viewports() && focused) {
+        self.color_window.focused = focused;
+        self.color_window.embedded_layer = embedded_layer;
+        if self.color_window_owns_keyboard(ctx) || (!ctx.embed_viewports() && focused) {
             // Key-up may go to this window instead of the DAW. End held notes and
             // Gate/Repeat launches at the ownership change, even before a key-up arrives.
             self.release_typing_keys();
@@ -355,54 +415,57 @@ impl App {
             }
         }
         if let Some(rect) = placement
-            && self.settings.colour_window_rect != Some(rect)
+            && self.settings.color_window_rect != Some(rect)
         {
-            self.settings.colour_window_rect = Some(rect);
+            self.settings.color_window_rect = Some(rect);
             // Observe native moves for reopening/expansion, but never replay them through
             // the viewport builder. Persist once on close, not on every move frame.
         }
-        if self.colour_window.focus_requested {
+        if self.color_window.focus_requested {
             ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Focus);
-            self.colour_window.focus_requested = false;
+            self.color_window.focus_requested = false;
         }
-        if let Some(minimise) = browser_panel::follow_main_minimised(main_minimised, self.colour_window.minimised) {
-            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Minimized(minimise));
-            self.colour_window.minimised = minimise;
+        if let Some(minimize) = browser_panel::follow_main_minimised(main_minimized, self.color_window.minimized) {
+            ctx.send_viewport_cmd_to(id, egui::ViewportCommand::Minimized(minimize));
+            self.color_window.minimized = minimize;
         }
-        let tracks: Vec<u32> = self.colour_window.tracks.iter().map(|t| t.0).collect();
+        // Clips, when the window was opened on them, else tracks: one command for them all.
+        let (command, key, targets) = if self.color_window.clips.is_empty() {
+            let tracks: Vec<u32> = self.color_window.tracks.iter().map(|t| t.0).collect();
+            ("track.setColor", "tracks", json!(tracks))
+        } else {
+            let clips: Vec<serde_json::Value> =
+                self.color_window.clips.iter().map(|c| json!({ "clip": c.0 })).collect();
+            ("clip.setColorMany", "clips", json!(clips))
+        };
         for edit in edits {
             match edit {
-                Edit::Colour(colour, dragging) => {
-                    let unchanged = self.session().is_some_and(|s| {
-                        s.project()
-                            .tracks
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, t)| tracks.contains(&t.id.0))
-                            .all(|(place, t)| suhina_session::colours::track_colour(t.color, place) == colour)
-                    });
-                    if unchanged {
+                Edit::Color(color, dragging) => {
+                    if self.color_targets_have(color) {
                         continue;
                     }
-                    let mut params = json!({ "tracks": tracks, "color": hex(colour) });
+                    let mut params = json!({ key: targets, "color": hex(color) });
                     if dragging {
                         params["gesture"] = json!(panel::GESTURE);
                     }
-                    actions.push(Action::new("track.setColor", params));
+                    actions.push(Action::new(command, params));
                 }
-                Edit::Default => {
-                    actions.push(Action::new("track.setColor", json!({ "tracks": tracks, "color": "none" })))
+                Edit::Default => actions.push(Action::new(command, json!({ key: targets, "color": "none" }))),
+                Edit::Saved(change) => {
+                    if panel::change_saved(&mut self.settings.saved_colors, change) {
+                        self.settings_changed = true;
+                    }
                 }
-                Edit::Finish => actions.push(Action::new("ui.finishColour", json!({}))),
-                Edit::Cancel => actions.push(Action::new("ui.cancelColour", json!({}))),
+                Edit::Finish => actions.push(Action::new("ui.finishColor", json!({}))),
+                Edit::Cancel => actions.push(Action::new("ui.cancelColor", json!({}))),
             }
         }
         for key in keys {
             self.do_action(&key, actions);
         }
         if close {
-            actions.push(Action::new("ui.finishColour", json!({})));
-            self.colour_window.open = false;
+            actions.push(Action::new("ui.finishColor", json!({})));
+            self.color_window.open = false;
             self.settings_changed = true;
         }
     }
@@ -427,6 +490,21 @@ fn place(bounds: Rect, size: Vec2, remembered: Option<Pos2>) -> Pos2 {
         proposed.x.clamp(bounds.left(), (bounds.right() - size.x).max(bounds.left())),
         proposed.y.clamp(bounds.top(), (bounds.bottom() - size.y).max(bounds.top())),
     )
+}
+
+/// The color a clip shows, an arrangement clip or a slot's: its own, else its track's; `None`
+/// when no clip is `id`.
+fn clip_color(project: &Project, id: ClipId) -> Option<Rgb> {
+    let place = project.clip_place(id)?;
+    let clip = project.clip_at(place)?;
+    clip.color.or_else(|| {
+        let track = match place {
+            ClipPlace::Lane { lane, .. } => project.arrangement.lanes.get(lane)?.track?,
+            ClipPlace::Slot { column, .. } => project.launcher.columns.get(column)?.track,
+        };
+        let (place, t) = project.tracks.iter().enumerate().find(|(_, t)| t.id == track)?;
+        Some(suhina_session::colors::track_color(t.color, place))
+    })
 }
 
 #[cfg(test)]

@@ -41,7 +41,7 @@ mod clip_edges;
 mod clip_edits;
 mod clip_shape;
 mod clipboards;
-pub mod colours;
+pub mod colors;
 mod commands;
 mod demo;
 mod device_files;
@@ -262,7 +262,7 @@ pub struct Session {
     /// How long the fades of a part comped from a take are, in milliseconds (Settings ›
     /// Arrangement › Take lanes, #1078): the crossfade where it meets a part of another take.
     take_crossfade_ms: f64,
-    /// Every new track gets [`colours::MIDI`] rather than the default for its kind
+    /// Every new track gets [`colors::MIDI`] rather than the default for its kind
     /// ([`Session::set_one_new_track_colour`]).
     one_new_track_colour: bool,
     /// A new clip takes its track's colour rather than the MIDI or audio default.
@@ -1565,7 +1565,7 @@ impl Session {
         (self.history.undo.len(), self.history.made)
     }
 
-    /// Whether every new track gets [`colours::MIDI`] (`true`, Settings › *One colour*) or the
+    /// Whether every new track gets [`colors::MIDI`] (`true`, Settings › *One colour*) or the
     /// MIDI or audio default for its kind (`false`, the default).
     pub fn set_one_new_track_colour(&mut self, on: bool) {
         self.one_new_track_colour = on;
@@ -1577,9 +1577,9 @@ impl Session {
     }
 
     /// After an edit that adds, removes or moves tracks: every track keeps the colour it showed
-    /// (#690, #709). A track without a colour of its own showed its place's [`colours::LEGACY`]
+    /// (#690, #709). A track without a colour of its own showed its place's [`colors::LEGACY`]
     /// colour, so it is given that colour now, before the places shift. A new track gets the MIDI
-    /// or audio default for its kind, or [`colours::MIDI`] with *One colour*. Part of the same
+    /// or audio default for its kind, or [`colors::MIDI`] with *One colour*. Part of the same
     /// undo step.
     fn keep_track_colours(&mut self, before: &Project) {
         let order = |p: &Project| p.tracks.iter().map(|t| t.id).collect::<Vec<_>>();
@@ -1591,14 +1591,14 @@ impl Session {
         // showed.
         for (place, track) in before.tracks.iter().enumerate().filter(|(_, t)| t.color.is_none()) {
             if let Some(now) = self.project.tracks.iter_mut().find(|t| t.id == track.id && t.color.is_none()) {
-                now.color = Some(colours::track_colour(None, place));
+                now.color = Some(colors::track_color(None, place));
             }
         }
         let one = self.one_new_track_colour;
         for track in self.project.tracks.iter_mut() {
             if track.color.is_none() && !was.contains(&track.id) {
                 let audio = !one && track.content.audio && !track.content.notes;
-                track.color = Some(if audio { colours::AUDIO } else { colours::MIDI });
+                track.color = Some(if audio { colors::AUDIO } else { colors::MIDI });
             }
         }
     }
@@ -1606,7 +1606,7 @@ impl Session {
     /// New content takes the creation default once. Existing clips, shared-content copies
     /// and explicit colours never follow later changes to that default.
     fn colour_new_clips(&mut self, before: &Project) {
-        let (midi, audio) = (colours::MIDI, colours::AUDIO);
+        let (midi, audio) = (colors::MIDI, colors::AUDIO);
         if self.project.contents.len() == before.contents.len() {
             return;
         }
@@ -1644,7 +1644,7 @@ impl Session {
             .tracks
             .iter()
             .enumerate()
-            .map(|(place, track)| (track.id, colours::track_colour(track.color, place)))
+            .map(|(place, track)| (track.id, colors::track_color(track.color, place)))
             .collect();
         let lanes = self.project.arrangement.lanes.iter_mut().flat_map(|lane| {
             let track = lane.track;
