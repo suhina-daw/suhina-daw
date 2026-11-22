@@ -625,6 +625,7 @@ fn delete_in_the_audio_editor_removes_the_marker_not_the_clip() {
     assert_eq!(loop_markers(&harness), [(0.0, 0.0), (4.0, 2.0)], "the picked marker is gone");
     assert_eq!(loop_clips(&harness), 1, "the clip is still there");
     // Two markers left: Delete does nothing, and still not to the clip.
+    let wave = harness.get_by_label("Audio editor").rect();
     let on_last = harness.get_by_label("Warp marker 2").rect().center();
     click_once_at(&mut harness, egui::pos2(on_last.x - 2.0, wave.center().y + 20.0));
     harness.key_press(Key::Delete);

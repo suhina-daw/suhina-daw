@@ -655,13 +655,13 @@ fn files_dropped_from_the_system_go_on_a_track_each_as_the_label_said() {
     let files = [folder.join("Loop 120bpm.wav"), folder.join("Drums").join("Snare.wav")];
     harness.hover_at(to);
     harness.run();
-    harness.input_mut().modifiers = egui::Modifiers::COMMAND;
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
     for file in &files {
         harness.input_mut().hovered_files.push(egui::HoveredFile { path: Some(file.clone()), ..Default::default() });
     }
     harness.step();
     harness.input_mut().hovered_files.clear();
-    harness.input_mut().modifiers = egui::Modifiers::NONE;
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
     for file in &files {
         harness.input_mut().dropped_files.push(std::sync::Arc::new(TestFile(file.clone())));
     }

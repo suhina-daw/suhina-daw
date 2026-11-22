@@ -58,6 +58,8 @@ fn view_settings_survive_a_round_trip_through_the_settings_file() {
         returns_hidden: true,
         new_returns: false,
         copy_wrapped: false,
+        audio_editor_theme_waveform: true,
+        audio_editor_line_drag: true,
         alt_wheel_one: true,
         folder_drop: FolderDrop::Copy,
         remove_group_processing: true,

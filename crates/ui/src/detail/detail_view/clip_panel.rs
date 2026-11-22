@@ -1337,9 +1337,6 @@ fn audio_part(
 /// The most the Warp part is tall: a caption and the settings of the mode with the most
 /// (Rhythmic's three).
 const WARP_HEIGHT: f32 = NAME + (NAME + FIELD + GAP) * 3.0;
-/// How tall the audio editor's part is: a caption, the grid list, Snap, then Fit and Reset, then
-/// Transients.
-
 /// What Rhythmic's Slice at list offers, and how each is shown.
 const SLICES: [(SliceAt, &str); 5] = [
     (SliceAt::Transients, "Transients"),

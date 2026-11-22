@@ -238,7 +238,7 @@ impl AudioClip {
     /// The arrangement beat at which content beat `beat` plays, held to the clip's span: where a
     /// click on the waveform puts the playhead. `None` for a slot's clip, or a clip with no rate.
     pub fn arrangement_beat(&self, beat: f64) -> Option<f64> {
-        if self.endless || !(self.view.rate > 0.0) {
+        if self.endless || self.view.rate.is_nan() || self.view.rate <= 0.0 {
             return None;
         }
         let at = self.start + (beat - self.view.offset) / self.view.rate;
