@@ -1355,8 +1355,8 @@ and the outline does not draw it. Rules are numbered by the line their selectors
 sheet as Suhina reads it: in a `theme.css` the file's own lines; in an older JSON theme, whose
 rules Suhina writes into a sheet, that sheet's.
 
-**Every built-in theme keeps its look unless a change means to change it.** The painted tests of
-`suhina-theme-render` draw each scene in every built-in theme and variant without a GPU, and list
+**The built-in themes keep their look unless a change means to change it.** The painted tests of
+`suhina-theme-render` draw each scene in seven built-in themes, one for each way a theme is made (Suhina Studio, its light variant, Nord, Suhina Glass, Suhina Blocks, Suhina Meadow and Suhina Sheet) without a GPU, and list
 what the last frame paints: each shape's place and size to a quarter point, its colours, its text
 and its texture by name. Each listing's digest is held in `apps/theme-render/tests/painted/`,
 one file per theme or variant, shared by every system: the scenes

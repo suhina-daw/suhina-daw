@@ -33,9 +33,9 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   Studio's values, and the base sheet (`crates/theme-package/src/base.css`) gives them to the
   elements; a view reads its colours from its element (`crate::kit::element`), so a theme's
   variable or its own rule reaches what it paints.
-- **A change to what the views paint is checked in every built-in theme.** `suhina-theme-render`'s
-  `painted` test digests what each scene paints in each built-in theme and variant
-  (`apps/theme-render/tests/painted/`, one file per theme or variant, shared by every system:
+- **A change to what the views paint is checked in the built-in themes.** `suhina-theme-render`'s
+  `painted` test digests what each scene paints in seven built-in themes, one for each way a theme
+  is made (`theme_tests!` lists them; `apps/theme-render/tests/painted/`, one file per theme, shared by every system:
   the scenes are drawn as on Linux wherever they run). A drawing that differs is flagged, not
   failed: the test prints it, and CI lists it in the job summary with a warning and a diff of
   each flagged scene's paint listing against the base commit. Moving a view onto

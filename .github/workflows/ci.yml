@@ -98,13 +98,16 @@ jobs:
       # docs/INDEX.md and docs/commands.md are generated on main (docs-generated.yml), not checked here.
       # The theme recordings are written there too: a pull request that edits them would conflict
       # with every other pull request that changes the views (apps/theme-render/tests/painted.rs).
+      # Deleting one is allowed: a theme taken out of the painted test's list takes its files along.
       - name: The theme recordings are left to the default branch
         if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
         run: |
-          edited=$(git diff --name-only HEAD^1 HEAD -- apps/theme-render/tests/painted apps/theme-render/tests/cut)
+          edited=$(git diff --name-only --diff-filter=d HEAD^1 HEAD -- apps/theme-render/tests/painted apps/theme-render/tests/cut)
           if [ -n "$edited" ]; then
             printf '%s\n' "$edited"
-            echo "::error::A pull request leaves apps/theme-render/tests/painted/ and cut/ alone: they are recorded on the default branch after the merge, and CI flags the looks that differ. Undo with: git checkout origin/main -- apps/theme-render/tests/painted apps/theme-render/tests/cut"
+            echo "::error::A pull request leaves apps/theme-render/tests/painted/ and cut/ alone: they are recorded on the default branch after the merge, and CI flags the looks that differ. Undo with: git checkout origin/$BASE -- apps/theme-render/tests/painted apps/theme-render/tests/cut"
             exit 1
           fi
       - name: Front matter and covered paths

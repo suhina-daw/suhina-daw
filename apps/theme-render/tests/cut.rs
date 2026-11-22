@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The texts each built-in theme and variant cuts off are those recorded in `cut/<theme>.txt` (#1548): a
+//! The texts each theme the painted test draws cuts off, against `cut/<theme>.txt` (#1548): a
 //! label shortened with "…", wrapped onto another line, or painted partly outside its clip
 //! ([`suhina_theme_render::cut`]). Headless, on the drawings the painted test makes
 //! ([`super::painted::Drawings`]), once per theme for both checks.

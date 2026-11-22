@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! What every built-in theme and variant paints in each scene, against what `painted/<theme>.txt`
+//! What the built-in themes in `theme_tests!` paint in each scene, against what `painted/<theme>.txt`
 //! records (#1023): what moves the views onto elements, or the colours into the sheet, shows which
 //! themes' looks it changes. Headless: the digest of [`painted::scene`]'s listing, no GPU.
 //!
@@ -118,40 +118,45 @@ macro_rules! theme_tests {
     };
 }
 
+// One theme for each way a theme is made, not every built-in one: most built-in themes are the same
+// sheet with other colour values (catppuccin, high contrast, Suhina Light), and a variant is a set
+// of colours over its theme, so drawing them all repeated the same shapes in other colours and
+// flagged one change twenty times. Kept: a dark and a second palette on the plain sheet, a variant
+// (light), the glass material, and the three themes drawn from their own artwork.
 theme_tests! {
-    catppuccin_latte => "catppuccin-latte",
-    catppuccin_mocha => "catppuccin-mocha",
-    catppuccin_macchiato => "catppuccin-mocha@macchiato",
-    high_contrast => "high-contrast",
-    high_contrast_light => "high-contrast@light",
     nord => "nord",
-    nord_snow_storm => "nord@snow-storm",
     suhina_blocks => "suhina-blocks",
     suhina_glass => "suhina-glass",
-    suhina_glass_frost => "suhina-glass@frost",
-    suhina_glass_midnight => "suhina-glass@midnight",
-    suhina_light => "suhina-light",
     suhina_meadow => "suhina-meadow",
     suhina_sheet => "suhina-sheet",
     suhina_studio => "suhina-studio",
-    suhina_studio_blue => "suhina-studio@blue",
-    suhina_studio_darker => "suhina-studio@darker",
-    suhina_studio_darkest => "suhina-studio@darkest",
-    suhina_studio_forest => "suhina-studio@forest",
     suhina_studio_light => "suhina-studio@light",
 }
 
+/// Each theme drawn is a built-in theme or variant, listed once, and the recordings hold the themes
+/// drawn and no others (a theme taken out of the list takes its files with it).
 #[test]
-fn every_built_in_theme_and_variant_has_one_painted_test() {
-    let mut available: Vec<String> = Subject::built_ins()
+fn the_themes_drawn_are_built_in_and_alone_recorded() {
+    let available: Vec<String> = Subject::built_ins()
         .into_iter()
         .map(|subject| subject.id)
         .chain(suhina_ui::kit::theme::built_in_variants().into_iter().map(|(id, _)| id))
         .collect();
-    let mut tested: Vec<String> = TESTED_THEMES.iter().map(|id| (*id).to_owned()).collect();
-    available.sort();
-    tested.sort();
-    assert_eq!(tested, available, "every built-in theme and variant has exactly one test in theme_tests!");
+    let missing: Vec<&&str> = TESTED_THEMES.iter().filter(|id| !available.iter().any(|a| a == **id)).collect();
+    assert!(missing.is_empty(), "not a built-in theme or variant: {missing:?}");
+    let mut tested: Vec<&str> = TESTED_THEMES.to_vec();
+    tested.sort_unstable();
+    tested.dedup();
+    assert_eq!(tested.len(), TESTED_THEMES.len(), "a theme is listed twice in theme_tests!");
+    for folder in ["painted", "cut"] {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(folder);
+        let stale: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .filter(|name| name.strip_suffix(".txt").is_none_or(|theme| !TESTED_THEMES.contains(&theme)))
+            .collect();
+        assert!(stale.is_empty(), "tests/{folder}/ holds files of themes not drawn: {stale:?}");
+    }
 }
 
 /// The drawings that differ from `painted/<theme>.txt`: a first line that counts them, then a line
