@@ -187,7 +187,9 @@ intent from a defect. Never run suspicious contributed code with privileged cred
 an untrusted pull request's workflows in a privileged context to determine whether they are safe.
 Inspect contributed tests without running them, following section 5. Check licences and
 provenance when dependencies or third-party material change, following the clean-room rules in
-[CONTRIBUTING.md](../CONTRIBUTING.md#clean-room).
+[CONTRIBUTING.md](../CONTRIBUTING.md#clean-room). Those rules cover the content of commercial
+DAWs, plug-ins and sound libraries; other third-party data (color names, scales, tunings) is
+checked for its licence and attribution only.
 
 ## 8. Use external references when needed
 
