@@ -89,15 +89,23 @@ fn a_marker_is_added_where_the_sound_is_then_moved_and_removed_one_undo_step_eac
 /// beat asked for, the first a hair outside it; the second is the one moved.
 #[test]
 fn a_marker_just_inside_the_tolerance_is_found_past_one_just_outside() {
-    let dir = TempDir::new("warp-markers-edge");
-    let (mut session, id) = tone(&dir);
-    run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": 1.0000985 })).unwrap();
-    run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": 1.0001005 })).unwrap();
-    let before = markers_of(&session);
-    run(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": [1.0001], "by": 0.5 })).unwrap();
-    let after = markers_of(&session);
-    assert_eq!(after.len(), before.len(), "{after:?}");
-    assert!(after.iter().any(|m| (m.0 - 1.5001005).abs() < 1e-6), "the marker within reach moved: {after:?}");
+    // (beat asked for, a marker just outside the tolerance before it, one inside it after it).
+    // In the second, the first marker is outside the tolerance by distance but not below
+    // `beat - SAME_MARKER` as floats round it: a search that stopped at the first marker not
+    // below that bound found it, failed the distance check and missed the second.
+    for (beat, outside, inside) in [(1.0001, 1.0000985, 1.0001005), (0.0003, 0.000_298_999_999_999_999_95, 0.0003005)] {
+        let dir = TempDir::new("warp-markers-edge");
+        let (mut session, id) = tone(&dir);
+        run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": outside })).unwrap();
+        run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": inside })).unwrap();
+        let before = markers_of(&session);
+        run(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": [beat], "by": 0.5 }))
+            .unwrap_or_else(|e| panic!("beat {beat}: {e:?}"));
+        let after = markers_of(&session);
+        assert_eq!(after.len(), before.len(), "{after:?}");
+        assert!(after.iter().any(|m| (m.0 - (inside + 0.5)).abs() < 1e-9), "the marker within reach moved: {after:?}");
+        assert!(after.iter().any(|m| m.0 == outside), "the one outside stayed: {after:?}");
+    }
 }
 
 #[test]
