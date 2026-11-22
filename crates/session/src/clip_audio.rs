@@ -313,12 +313,22 @@ pub(crate) fn follow_audio_end(
     let p = &mut session.project;
     let tempo = p.transport.tempo_bpm;
     let now = crate::notes::clip_at(p, at).ok_or("the clip is missing")?;
-    let (Some(old), Some(new)) =
-        (crate::audio_timing::Mapping::of(&before.audio, tempo), crate::audio_timing::Mapping::of(&now.audio, tempo))
-    else {
+    // Where the audio's end falls in content beats: by the warp markers when warped, else at the
+    // tempo where the clip plays, as `clip.setAudio` reads it (an arrangement clip on the song's
+    // tempo map from its content's beat 0, a slot's clip at the song's tempo): a clip in a slower
+    // section of the song does not grow by the song's main tempo.
+    let place = crate::clip_shape::Place::of(now, matches!(at, ClipAt::Slot(..)));
+    let end_of = |audio: &suhina_model::ClipAudio| {
+        if audio.warped {
+            crate::audio_timing::Mapping::of(audio, tempo).map(|m| m.beat(seconds))
+        } else {
+            Some(place.beats_for(&p.transport, seconds))
+        }
+    };
+    let (Some(old), Some(new)) = (end_of(&before.audio), end_of(&now.audio)) else {
         return Ok(());
     };
-    let moved = new.beat(seconds) - old.beat(seconds);
+    let moved = new - old;
     if !moved.is_finite() || moved.abs() < SAME_MARKER {
         return Ok(());
     }
@@ -439,6 +449,7 @@ pub(crate) fn add_warp_markers_at_transients(session: &mut Session, params: &Val
         return Err("the clip's audio has no sample rate".into());
     }
     let mut added = 0usize;
+    let existing = markers.clone();
     for seconds in transient_seconds(&data) {
         if markers.iter().any(|m| (m.audio_time - seconds).abs() < TRANSIENT_GAP_SECONDS) {
             continue;
@@ -448,6 +459,12 @@ pub(crate) fn add_warp_markers_at_transients(session: &mut Session, params: &Val
         }
         let beat = mapping.beat(seconds);
         if !beat.is_finite() {
+            continue;
+        }
+        // A pin the clip has keeps its place: a transient too close to one in beats (closer than
+        // a marker may be to its neighbour) gets none, rather than the merge below dropping the
+        // existing pin for it.
+        if existing.iter().any(|m| (m.time - beat).abs() <= SAME_MARKER) {
             continue;
         }
         markers.push(suhina_model::WarpMarker { time: beat, audio_time: seconds });
@@ -460,9 +477,16 @@ pub(crate) fn add_warp_markers_at_transients(session: &mut Session, params: &Val
     // Read back through the markers' own mapping, so they rise; one closer than a marker can be
     // to its neighbour in beats is left out rather than refusing the rest.
     let mut kept: Vec<suhina_model::WarpMarker> = Vec::with_capacity(markers.len());
+    let was_there =
+        |m: &suhina_model::WarpMarker| existing.iter().any(|e| e.time == m.time && e.audio_time == m.audio_time);
     for m in markers {
         match kept.last() {
             Some(last) if m.time - last.time <= SAME_MARKER || m.audio_time <= last.audio_time => {
+                // Of the two, the clip's own pin stays; the new one is left out.
+                if was_there(&m) && !was_there(last) {
+                    kept.pop();
+                    kept.push(m);
+                }
                 added = added.saturating_sub(1)
             }
             _ => kept.push(m),
@@ -510,12 +534,16 @@ fn marker_indices(
     if beats.is_empty() {
         return Err(format!("{name} names no warp marker").into());
     }
+    // The markers are in beat order (`marker_list`): each beat's first match is found by a binary
+    // search, not a scan from the start (a selection of every one of a long clip's markers).
     let mut indices = beats
         .iter()
         .map(|beat| {
+            let from = markers.partition_point(|m| m.time < beat - SAME_MARKER);
             markers
-                .iter()
-                .position(|m| (m.time - beat).abs() <= SAME_MARKER)
+                .get(from)
+                .filter(|m| (m.time - beat).abs() <= SAME_MARKER)
+                .map(|_| from)
                 .ok_or_else(|| CommandError::from(format!("there is no warp marker at beat {beat}")))
         })
         .collect::<Result<Vec<_>, _>>()?;

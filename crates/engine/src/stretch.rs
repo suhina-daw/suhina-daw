@@ -624,6 +624,33 @@ impl StretchVoice {
         piece.src_start + (at as f64 - piece.out_start * self.file_rate).max(0.0) * piece.rate
     }
 
+    /// Channel `c` of the input stream (the playlist, its loop passes one after another) at frame
+    /// `at`, between frames by a straight line: a grain that runs on past a loop's end reads the
+    /// next pass from the loop's start, as the spectral stretcher's input does, never the file past
+    /// the loop. Silence outside the file.
+    fn stream_sample(&self, at: f64, c: usize) -> f32 {
+        if at.is_nan() || at < 0.0 {
+            return 0.0;
+        }
+        let whole = at.floor();
+        let frac = (at - whole) as f32;
+        let (a, b) = (self.stream_frame(whole, c), self.stream_frame(whole + 1.0, c));
+        a + (b - a) * frac
+    }
+
+    /// Channel `c` of the input stream at whole frame `at`.
+    fn stream_frame(&self, at: f64, c: usize) -> f32 {
+        let Some(piece) = self.piece(self.piece_in_stream(at)) else { return 0.0 };
+        let file_frame = (piece.src_start + (at - piece.stream_start)).floor();
+        let channels = self.channels;
+        let c = c.min(channels.saturating_sub(1));
+        if file_frame >= 0.0 && (file_frame as usize) < self.data.frames() {
+            self.data.samples.get(file_frame as usize * channels + c).copied().unwrap_or(0.0)
+        } else {
+            0.0
+        }
+    }
+
     /// Channel `c` of the file at frame `at`, between frames by a straight line; silence outside it.
     fn sample_at(&self, at: f64, c: usize) -> f32 {
         if at.is_nan() || at < 0.0 {
@@ -823,8 +850,12 @@ impl StretchVoice {
         if let Some(out) = chunk.get_mut(..frames * channels) {
             let position = |f: u64| self.file_at(f);
             let sample = |at: f64, c: usize| self.sample_at(at, c);
+            // Grains read the input stream: one that runs past a loop's end goes on with the next
+            // pass, where reading the file played what lies past the loop.
+            let stream_position = |f: u64| self.stream_at(f);
+            let stream_sample = |at: f64, c: usize| self.stream_sample(at, c);
             match engine.as_mut() {
-                Some(Engine::Grains(grains)) => grains.render(self.produced, out, &position, &sample),
+                Some(Engine::Grains(grains)) => grains.render(self.produced, out, &stream_position, &stream_sample),
                 Some(Engine::Slices(slices)) => slices.render(self.produced, out, &position, &sample),
                 _ => out.fill(0.0),
             }

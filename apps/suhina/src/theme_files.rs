@@ -767,12 +767,23 @@ pub fn reveal(path: &Path, select: bool) -> Result<(), String> {
     } else {
         // The desktop's file manager selects the file when it offers the freedesktop
         // FileManager1 service (Nautilus, Dolphin, Nemo, Caja, Thunar and others do); where none
-        // answers, its folder is opened.
-        if select && show_items(path) {
-            return Ok(());
+        // answers, its folder is opened. Asked on a thread of its own: the answer can take a
+        // while (`dbus-send` waits for it), and the window goes on drawing meanwhile.
+        if select {
+            let file = path.to_path_buf();
+            return std::thread::Builder::new()
+                .name("suhina-reveal".into())
+                .spawn(move || {
+                    if !show_items(&file) {
+                        let folder = file.parent().unwrap_or(&file);
+                        let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                    }
+                })
+                .map(|_| ())
+                .map_err(|e| format!("could not show {}: {e}", path.display()));
         }
         let mut c = std::process::Command::new("xdg-open");
-        c.arg(if select { path.parent().unwrap_or(path) } else { path });
+        c.arg(path);
         c
     };
     command.spawn().map(|_| ()).map_err(|e| format!("could not show {}: {e}", path.display()))
@@ -788,6 +799,8 @@ fn show_items(path: &Path) -> bool {
         .args([
             "--session",
             "--print-reply",
+            // An answer within two seconds, or the folder is opened instead.
+            "--reply-timeout=2000",
             "--dest=org.freedesktop.FileManager1",
             "/org/freedesktop/FileManager1",
             "org.freedesktop.FileManager1.ShowItems",

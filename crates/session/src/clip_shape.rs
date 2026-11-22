@@ -379,18 +379,18 @@ fn warp_settings(
 /// Where a clip plays, as the tempo it plays its content at depends on it: an arrangement clip
 /// from where its content's beat 0 falls on the song's tempo map, a slot's clip at the song's tempo.
 #[derive(Clone, Copy)]
-enum Place {
+pub(crate) enum Place {
     Arranged { origin: f64 },
     Slot,
 }
 
 impl Place {
-    fn of(clip: &Clip, in_slot: bool) -> Self {
+    pub(crate) fn of(clip: &Clip, in_slot: bool) -> Self {
         if in_slot { Self::Slot } else { Self::Arranged { origin: clip.start - clip.offset } }
     }
 
     /// How many content beats `seconds` of audio take where the clip plays.
-    fn beats_for(self, transport: &suhina_model::Transport, seconds: f64) -> f64 {
+    pub(crate) fn beats_for(self, transport: &suhina_model::Transport, seconds: f64) -> f64 {
         match self {
             Self::Slot => seconds * transport.tempo_bpm / 60.0,
             Self::Arranged { origin } => {

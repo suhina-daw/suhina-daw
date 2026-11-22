@@ -191,6 +191,26 @@ fn an_offset_past_the_loop_end_starts_at_the_loop_start() {
     assert_eq!(summary, [(0.0, 1000.0, 2000.0), (1.0, 2000.0, 4000.0)]);
 }
 
+/// A grain that runs on past a loop pass's end reads the next pass from the loop's start, as the
+/// spectral stretcher's input does, never the file past the loop.
+#[test]
+fn grains_read_the_next_loop_pass_past_a_loop_end() {
+    // A ramp, each frame its own number, longer than the loop's end in the file.
+    let samples = (0..5_000).map(|i| i as f32 / 10_000.0).collect();
+    let data = Arc::new(AudioData { sample_rate: 1000, channels: 1, samples });
+    let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Texture);
+    let Some(voice) = StretchVoice::new(&with(&clip(8.0, 3.0, Some((2.0, 6.0))), &r), Arc::clone(&data), 120.0, 1000)
+    else {
+        panic!("no voice")
+    };
+    // The stream (as `playlist_follows_markers_and_loops` lays it out): its frame 2 499 is the
+    // file's 3 999, the loop's last; frame 2 500 is the loop's start again, file frame 1 000.
+    assert_eq!(voice.stream_frame(2_499.0, 0), 3_999.0 / 10_000.0);
+    assert_eq!(voice.stream_frame(2_500.0, 0), 1_000.0 / 10_000.0, "the next pass, not file frame 4 000");
+    let between = voice.stream_sample(2_499.5, 0);
+    assert!((between - (3_999.0 + 1_000.0) / 2.0 / 10_000.0).abs() < 1e-6, "{between}");
+}
+
 /// Clicks every `every` seconds: a 2 ms burst at full scale, silence between.
 fn clicks(every: f64, seconds: f64, sample_rate: u32) -> Arc<AudioData> {
     let frames = (seconds * f64::from(sample_rate)) as usize;

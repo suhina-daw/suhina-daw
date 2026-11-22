@@ -238,6 +238,26 @@ fn warp_turned_on_in_a_slot_marks_the_audio_s_end_at_the_song_s_tempo_not_the_ar
     assert!(!first(&session, 3).audio.warped, "the arrangement's clip of the same audio is as it was");
 }
 
+/// Warp turned on and off again in a slower section (the song at 120, 60 from its start): the 4 s
+/// are 4 beats there both ways, so the content keeps its length; counted at the song's main tempo
+/// the unwarped audio was 8 beats, and turning Warp on shrank the content by 4.
+#[test]
+fn warp_turned_off_in_a_slower_section_keeps_the_audio_s_end() {
+    let mut p = project();
+    p.transport.tempo_bpm = 120.0;
+    p.transport.tempo_changes = vec![TempoPoint { beat: 0.0, bpm: 60.0, ramp: false }].into();
+    let mut session = Session::new(p);
+    let clip = first(&session, 3).id.0;
+    let length = |session: &Session| session.project().content(first(session, 3).content).map_or(0.0, |c| c.length);
+    let before = length(&session);
+    // On: the markers pin the audio where it plays, so its end does not move.
+    run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": true })).unwrap();
+    assert!((length(&session) - before).abs() < 1e-9, "{} after {before}", length(&session));
+    // Off again: the same.
+    run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": false })).unwrap();
+    assert!((length(&session) - before).abs() < 1e-9, "{} after {before}", length(&session));
+}
+
 /// The clip properties' audio controls (#699): warp on gives the audio two warp markers and
 /// keeps them when turned off again; the mode and transpose are set; one undo step each.
 #[test]

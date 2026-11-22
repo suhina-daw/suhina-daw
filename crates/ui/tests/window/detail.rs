@@ -677,8 +677,9 @@ fn ctrl_click_picks_several_warp_markers_and_delete_removes_them_in_one_step() {
 fn a_marker_dragged_past_the_editors_edge_still_moves() {
     let mut harness = opened_audio_editor();
     let wave = harness.get_by_label("Audio editor").rect();
-    let from = harness.get_by_label("Warp marker 2").rect().center();
-    let from = egui::pos2(from.x - 2.0, wave.center().y + 20.0);
+    // From its flag on the marker lane: its line takes the pointer only with the setting on.
+    let flag = harness.get_by_label("Warp marker 2").rect().center();
+    let from = egui::pos2(flag.x - 2.0, flag.y);
     drag_from_to(&mut harness, from, egui::pos2(wave.right() + 60.0, from.y));
     let markers = loop_markers(&harness);
     assert_eq!(markers.len(), 2);

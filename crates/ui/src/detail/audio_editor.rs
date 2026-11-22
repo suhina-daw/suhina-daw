@@ -59,6 +59,8 @@ const GRAB: f32 = 5.0;
 const MARKER_GAP: f64 = 1.0 / 64.0;
 /// How close to a transient, in points, a new marker goes onto it instead of onto the grid.
 const TRANSIENT_GRAB: f32 = 8.0;
+/// Files whose transients are found at once, each on a thread of its own.
+const TRANSIENT_JOBS: usize = 2;
 /// The least the transients on show may be apart on average, in points, for the marker lane to
 /// show them.
 const TRANSIENT_LEAST: f32 = 12.0;
@@ -948,6 +950,11 @@ fn transients(ctx: &egui::Context, file: &str, peaks: &waveform::Peaks) -> std::
         None => {}
     }
     let Some(data) = peaks.data().cloned() else { return std::sync::Arc::default() };
+    // At most a couple found at once: browsing long clips quickly started a thread and kept an
+    // audio buffer for each. A file over the limit is asked for again when it is next drawn.
+    if known.values().filter(|seconds| seconds.is_none()).count() >= TRANSIENT_JOBS {
+        return std::sync::Arc::default();
+    }
     // A few files' worth: the editor shows one clip at a time.
     if known.len() >= 32 {
         known.retain(|_, seconds| seconds.is_none());
@@ -1282,6 +1289,16 @@ fn show_one(
                 drag.to = drag.from + (wanted - drag.from).clamp(low, high);
             }
             // Only the drag this marker started: one kept from another clip or project is dropped.
+            // The release frame's own move counts: the pointer can go on moving as the button comes
+            // up, and the drag above saw it only while the button was down.
+            if marker.drag_stopped_by(egui::PointerButton::Primary)
+                && let Some(drag) = state.drag.as_mut().filter(|_| dragged)
+                && let Some(p) = marker.interact_pointer_pos()
+            {
+                let (low, high) = group_bounds(markers, &drag.moved());
+                let wanted = snap(beat_at_x(p.x) - drag.grab, step, free);
+                drag.to = drag.from + (wanted - drag.from).clamp(low, high);
+            }
             if marker.drag_stopped_by(egui::PointerButton::Primary)
                 && let Some(drag) = state.drag.take()
                 && dragged
