@@ -299,6 +299,9 @@ jobs:
       # (.config/nextest.toml › ci-pr); the merge queue and main run them.
       # The theme drawings that differ from the recordings are written to SUHINA_PAINTED_REPORT
       # rather than failing (apps/theme-render/tests/painted.rs); the step after this flags them.
+      # After the run's summary nextest lists the slow tests (.config/nextest.toml); it has no
+      # level that lists the leaky ones (a test that left a process or handle open) without every
+      # skipped test too, so the step lists their LEAK lines itself, after nextest's list.
       - name: Tests (partition ${{ matrix.partition }} of 3)
         shell: bash
         env:
@@ -306,11 +309,18 @@ jobs:
           SUHINA_PAINTED_REPORT: ${{ runner.temp }}/painted-report
         run: |
           run=(cargo nextest run --workspace --profile "$PROFILE" --partition "slice:${{ matrix.partition }}/3")
+          log="$RUNNER_TEMP/nextest.log"
+          status=0
           if [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" "${run[@]}"
+            xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" "${run[@]}" 2>&1 | tee "$log" || status=$?
           else
-            "${run[@]}"
+            "${run[@]}" 2>&1 | tee "$log" || status=$?
           fi
+          leaks=$(sed 's/\x1b\[[0-9;]*m//g' "$log" | grep -E '^ *LEAK(-FAIL)? \[' || true)
+          if [ -n "$leaks" ]; then
+            printf '%s\n' "$leaks"
+          fi
+          exit "$status"
       # The engine's tests again with renderers on 4 threads (ADR 0038 › 16): a render on several
       # threads must equal the render on one, bit for bit. A renderer that finds no free lane of
       # the process's pool (past 16 at once) renders alone, and a block with fewer than 4 chains
