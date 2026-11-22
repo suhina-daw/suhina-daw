@@ -520,7 +520,8 @@ impl StretchThread {
         if self.lanes.iter().any(|lane| lane.inbox.is_full()) {
             return Err(crate::ControlError::StretchBusy);
         }
-        for (lane, shard) in self.lanes.iter_mut().zip(worker.split(self.lanes.len())) {
+        let shards = worker.split(self.lanes.len());
+        for (lane, shard) in self.lanes.iter_mut().zip(shards) {
             lane.inbox.push(shard).map_err(|_| crate::ControlError::StretchBusy)?;
         }
         Ok(())
