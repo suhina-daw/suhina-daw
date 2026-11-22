@@ -584,7 +584,14 @@ fn watch(
     let mut deferred: Vec<ToProgram> = Vec::new();
     // A stop that arrived before there is a process: nothing to end.
     match from.try_recv() {
-        Ok(ToProgram::Stop) | Err(TryRecvError::Disconnected) => return Ok(()),
+        Ok(ToProgram::Stop) => {
+            suhina_plugins::trace!("surface stop before the process");
+            return Ok(());
+        }
+        Err(TryRecvError::Disconnected) => {
+            suhina_plugins::trace!("surface order channel disconnected before the process");
+            return Ok(());
+        }
         Ok(order) => deferred.push(order),
         Err(TryRecvError::Empty) => {}
     }
@@ -602,7 +609,13 @@ fn watch(
         // so the process is ended and reaped — the watch is over the `Ok` way, not a
         // crash — and the caller's join is not held through the connection's timeout.
         match from.try_recv() {
-            Ok(ToProgram::Stop) | Err(TryRecvError::Disconnected) => {
+            Ok(ToProgram::Stop) => {
+                suhina_plugins::trace!("surface stop while the runner connects");
+                child.stop();
+                return Ok(());
+            }
+            Err(TryRecvError::Disconnected) => {
+                suhina_plugins::trace!("surface order channel disconnected while the runner connects");
                 child.stop();
                 return Ok(());
             }
@@ -701,6 +714,12 @@ fn watch(
             }
             Err(TryRecvError::Empty) => {}
         }
+        // The process's own end is what says the load will never finish — a read that
+        // answers with nothing is not it (see [`Link::read`]).
+        if child.try_wait().is_some() {
+            let reason = child.wait().map(|s| s.to_string()).unwrap_or_else(|_| "it exited".into());
+            return Err(format!("the runner exited while starting: {reason}"));
+        }
         if Instant::now() >= deadline {
             return Err(child.end("the script did not load in 30 s".into()));
         }
@@ -723,7 +742,7 @@ fn watch(
 
     // Running: pings out at the health rhythm, everything the script says taken down. A script
     // stopped at its boundary keeps its process, so this loop keeps watching it too.
-    let mut last_pong = Instant::now();
+    let mut last_heard = Instant::now();
     let mut last_ping = Instant::now();
     let mut ping = 0u64;
     let mut dropped = 0usize;
@@ -755,27 +774,33 @@ fn watch(
         // Everything the script has sent, drained the same way.
         loop {
             match link.read() {
-                Ok(Some(line)) => match Message::decode(&line) {
-                    Some(Message::Pong { .. }) => last_pong = Instant::now(),
-                    Some(Message::Send { port, bytes }) => {
-                        enqueue_send_back(events, port, bytes, &mut dropped);
+                Ok(Some(line)) => {
+                    // Any word from the runner is liveness, not only the ping's own answer: a
+                    // pong can sit behind megabytes of send-backs while a loaded machine
+                    // drains them, and the runner streaming them is the opposite of a hang.
+                    last_heard = Instant::now();
+                    match Message::decode(&line) {
+                        Some(Message::Pong { .. }) => {}
+                        Some(Message::Send { port, bytes }) => {
+                            enqueue_send_back(events, port, bytes, &mut dropped);
+                        }
+                        Some(Message::ScriptError { handler, message }) => {
+                            report(events, Event::ScriptError(format!("{handler}: {message}")));
+                        }
+                        Some(Message::Hello { .. }) | Some(Message::Ready) => {}
+                        Some(message) if is_request(&message, events, pending) => {}
+                        Some(Message::Error { message }) => {
+                            return Err(child.end(format!("the runner sent an error: {message}")));
+                        }
+                        Some(other) => {
+                            suhina_plugins::trace!("programs refused {other:?}");
+                            let _ = link.send(&Message::Error { message: "not a message for the host".into() });
+                        }
+                        None => {
+                            let _ = link.send(&Message::Error { message: "not a message the host knows".into() });
+                        }
                     }
-                    Some(Message::ScriptError { handler, message }) => {
-                        report(events, Event::ScriptError(format!("{handler}: {message}")));
-                    }
-                    Some(Message::Hello { .. }) | Some(Message::Ready) => {}
-                    Some(message) if is_request(&message, events, pending) => {}
-                    Some(Message::Error { message }) => {
-                        return Err(child.end(format!("the runner sent an error: {message}")));
-                    }
-                    Some(other) => {
-                        suhina_plugins::trace!("programs refused {other:?}");
-                        let _ = link.send(&Message::Error { message: "not a message for the host".into() });
-                    }
-                    None => {
-                        let _ = link.send(&Message::Error { message: "not a message the host knows".into() });
-                    }
-                },
+                }
                 Ok(None) => break,
                 Err(reason) => return Err(child.end(reason)),
             }
@@ -784,8 +809,8 @@ fn watch(
             let reason = child.wait().map(|s| s.to_string()).unwrap_or_else(|_| "it exited".into());
             return Err(child.end(format!("the runner exited: {reason}")));
         }
-        if last_pong.elapsed() >= HUNG_AFTER {
-            return Err(child.end("the runner did not answer a ping for 5 s".into()));
+        if last_heard.elapsed() >= HUNG_AFTER {
+            return Err(child.end("the runner said nothing for 5 s".into()));
         }
         if last_ping.elapsed() >= HEALTH_EVERY {
             ping += 1;
@@ -876,7 +901,17 @@ impl Link {
         let mut written = 0;
         while written < line.len() {
             match self.writer.write(&line.as_bytes()[written..]) {
-                Ok(0) => return Err("the connection took no bytes".into()),
+                Ok(0) => {
+                    // A write that took no bytes is no room yet, not a refusal: Windows'
+                    // nonblocking pipes answer a full buffer with a zero-byte success rather
+                    // than WouldBlock, and a peer that is gone errors instead. The deadline
+                    // below is the judge, as it is for WouldBlock.
+                    if Instant::now() >= deadline {
+                        self.dead = true;
+                        return Err("the runner stopped reading: the write did not complete in time".into());
+                    }
+                    std::thread::sleep(POLL);
+                }
                 Ok(n) => written += n,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     if Instant::now() >= deadline {
@@ -895,17 +930,22 @@ impl Link {
     }
 
     /// One complete line already readable, without waiting: `None` when nothing whole is there
-    /// yet. A partial line stays put until its end arrives.
-    /// One complete line already readable, without waiting: `None` when nothing whole is there
     /// yet. A partial line stays put until its end arrives — and what is already readable is
     /// taken whole in one call, so a big line (a one-MiB send-back's) is not paid one poll
     /// breath per bufferful, which a healthy runner could not outpace.
+    ///
+    /// An empty read is "nothing now", never a close: the two cannot be told apart on every
+    /// platform. On Windows a named pipe in nonblocking mode — which the host's socket is —
+    /// answers a read with no data as `ERROR_NO_DATA`, a "nothing yet" whose error kind is
+    /// `BrokenPipe`, and the socket layer answers that with the same zero-byte read a closed
+    /// connection gives. What ends the watch is the process's own end (the loops' `try_wait`)
+    /// or a write that fails, so silence is never taken for a goodbye.
     fn read(&mut self) -> Result<Option<String>, String> {
         loop {
             match self.reader.fill_buf() {
                 Ok(available) => {
                     if available.is_empty() {
-                        return Err("the connection closed".into());
+                        return Ok(None);
                     }
                     if let Some(end) = available.iter().position(|b| *b == b'\n') {
                         let mut line = std::mem::take(&mut self.partial);
@@ -1024,5 +1064,43 @@ mod tests {
         let queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         assert!(!queue.iter().any(|event| matches!(event, Event::Crashed(_))), "{queue:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An empty read is "nothing now", never a close: an idle connection and one whose peer
+    /// has gone answer `None` alike — on Windows they cannot be told apart, a nonblocking
+    /// pipe with no data answering with the same zero-byte read a close gives — and what
+    /// ends a program whose process is over is the watch's `try_wait`, not the read. What a
+    /// live peer sends still comes back whole.
+    #[test]
+    fn an_empty_read_is_nothing_now_and_never_a_close() {
+        let (address, name) = control_name().expect("the socket's name");
+        let listener = ListenerOptions::new().name(name).create_sync().expect("the listener");
+        // The peer holds the connection open until the test lets it go; its line is written
+        // before any read, so what waits is only the line's travel.
+        let (may_close, close_ok) = channel::<()>();
+        let peer = std::thread::spawn(move || {
+            let mut stream = suhina_plugins::connect(&address).expect("the peer connects");
+            stream.write_all(b"hello\n").expect("the line goes");
+            stream.flush().expect("the writer flushes");
+            close_ok.recv().expect("the test allows the close");
+        });
+        let stream = listener.accept().expect("the peer connects");
+        let mut link = Link::new(stream).expect("the link is made");
+        // The line that is there comes back whole.
+        assert_eq!(link.read().expect("a read").as_deref(), Some("hello"));
+        // Idle: nothing whole is there, and that answers `None`, not an error.
+        link.reader.get_mut().set_nonblocking(true).expect("the socket is nonblocking");
+        for _ in 0..10 {
+            assert_eq!(link.read().expect("an idle read"), None);
+            std::thread::sleep(POLL);
+        }
+        // The peer goes: the reads answer the same, never a "closed" error — the process's
+        // own end is the signal the watch runs on.
+        may_close.send(()).expect("the close is allowed");
+        peer.join().expect("the peer ends");
+        for _ in 0..10 {
+            assert_eq!(link.read().expect("a closed read"), None);
+            std::thread::sleep(POLL);
+        }
     }
 }

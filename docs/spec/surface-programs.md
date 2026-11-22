@@ -163,13 +163,23 @@ number, true and false themselves, and null `suhina.null` (a value that is neith
   pings and honours `quit`. Suhina shows the error in the extension's state and puts the
   program's ports on their profiles; `extensions.restart` starts the program again.
 - **A crash or a hang is the process's.** The runner process ending, or five seconds passing
-  with no answer to a ping (Suhina pings a running program at the plug-in host's health rhythm,
-  every 250 ms), is a hang: Suhina ends the process and restarts the program, its ports on their
-  profiles meanwhile. A handler that runs longer than the deadline is such a hang — the
+  with nothing heard from it (Suhina pings a running program at the plug-in host's health
+  rhythm, every 250 ms, and any message from it counts — a ping's answer, a send-back, a
+  command or a read: a runner streaming megabytes of send-backs is alive even while its pong
+  sits behind them), is a hang: Suhina ends the process and restarts the program, its ports on
+  their profiles meanwhile. A handler that runs longer than the deadline is such a hang — the
   amendment's price for a script whose stopping nobody can know in advance.
+- **The process's end, not the socket's silence, is the crash signal.** The host's reads take
+  the control socket nonblocking, and a read that answers at once with nothing is "nothing now",
+  never a goodbye: on Windows a nonblocking pipe with no data in it answers `ERROR_NO_DATA` —
+  "nothing yet" — and the socket layer reports that as the same zero-byte read a closed
+  connection gives, so the two cannot be told apart at the read. The watch ends a program by
+  the process's own end (`try_wait` in the start-up and running loops) or by a message that
+  cannot be written, and silence alone never restarts a healthy one.
 - **A message to the runner is written whole, or the process is ended.** The control socket is
   read nonblocking, so its writes wait in the drabs the runner's reads make room for — a small
-  pipe buffer is never a lost port message, `state` or answer. A runner that stops taking the
+  pipe buffer is never a lost port message, `state` or answer. A write that takes no bytes is
+  no room yet, not a refusal, and waits the same way. A runner that stops taking the
   host's messages for two seconds is ended the way a hung one is: no wait of the script's
   outlives the answer it waits on, and a restart takes over.
 
@@ -181,7 +191,10 @@ A value over its cap is refused with the reason, and input is hostile as everywh
   `2 * MAX_MESSAGE_BYTES + 64 KiB`, `suhina_plugins::surface::MAX_LINE`. Longest one port
   message's or send-back's bytes: 1 MiB.
 - The runner's send-back queue holds at most 4096 messages or 8 MiB of bytes; past it
-  `suhina.send` says false and sends nothing.
+  `suhina.send` says false and sends nothing. Suhina's side of a send-back — the write to the
+  program's output port, which the router's own worker of the port does — holds the same caps:
+  one look's whole drain fits, and past them the oldest goes, the newest beating the oldest, so
+  a wedged driver is never waited on and never holds the session's look.
 - At most 1024 messages queue while a handler waits on an answer. Past it, the droppable ones
   — `port_message` and `state`, which a storm of control messages arrives faster than the
   answers — are dropped and counted; a stream's newest value is not the drop: it takes the
