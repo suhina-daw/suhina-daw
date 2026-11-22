@@ -1,6 +1,6 @@
 ---
 description: How Suhina ships a surface program's script inside the app — where it unpacks, how the port scan runs it, and what happens to the user's copy
-read_when: shipped script, bundled script, Suhina scripts folder, Scripts folder, unpack, starter script, controller script on first launch, APC40
+read_when: shipped script, bundled script, Suhina scripts folder, Scripts folder, Scripts/MIDI, unpack, starter script, controller script on first launch, APC40
 type: spec
 status: planned
 last_verified: 2026-11-21
@@ -20,7 +20,7 @@ covers:
   into the library (ADR 0036 › 2 and 3), and the command registry ([ADR 0002](../decisions/0002-commands.md)).
 - **Status:** planned ([#1676](https://github.com/suhina-daw/suhina-daw/issues/1676)). Built so
   far: the clean-room script in `packs/apc40-mkii/` (#1677), the unpack into the library's
-  `Scripts/` folder at every start — each file only when it is missing — and the store
+  `Scripts/MIDI/` folder at every start — each file only when it is missing — and the store
   install, with its tests: the shipped content installs when the store does not hold it, a
   removal is remembered, and only a copy still carrying exactly the recorded content is
   updated. The script's end-to-end run through the supervisor follows.
@@ -47,24 +47,24 @@ one; ADR 0019 › 10).
 
 ## Where it lands, and what runs
 
-- At start, each shipped script unpacks into the library's `Scripts/` folder
-  (`Documents/Suhina/Scripts/<id>/`), **each file only when it is missing**: a file the user
-  carries is theirs, never overwritten, never moved (ADR 0036 › 3, the pack's own rule). A
+- At start, each shipped script unpacks into the library's `Scripts/MIDI/` folder
+  (`Documents/Suhina/Scripts/MIDI/<id>/`), **each file only when it is missing**: a file the
+  user carries is theirs, never overwritten, never moved (ADR 0036 › 3, the pack's own rule). A
   write failure is said in the start-up warnings, one line per script, and the next start
   tries again.
 - What runs is the **store's copy**, as for any surface program: the app installs the script into
   the extensions store the way `extensions.add` does, and the store's port scan starts it for the
   device the manifest names ([extensions](extensions.md) › Running one). The folder in
-  `Scripts/` is the user's to read and edit; what runs is the store's copy, so editing the folder
-  does not change the running program. To run an edited script, remove the extension and add the
-  folder back (extensions › Adding, listing, removing).
+  `Scripts/MIDI/` is the user's to read and edit; what runs is the store's copy, so editing the
+  folder does not change the running program. To run an edited script, remove the extension and
+  add the folder back (extensions › Adding, listing, removing).
 - **A removal is remembered.** `extensions.remove` on a shipped script stops it and forgets it,
   and later starts do not install it again; adding it back from the folder is the way to want it
   again.
 - **An update never overwrites the user's work.** Suhina keeps a record of the content it
   installed for each shipped script. When the app carries a newer version, the store's copy is
   replaced only while it still carries exactly the recorded content; a copy whose files the user
-  has changed is left alone, and the `Scripts/` folder copy is never overwritten either —
+  has changed is left alone, and the `Scripts/MIDI/` folder copy is never overwritten either —
   deleting a file unpacks the shipped version again.
 
 ## Testing
@@ -81,7 +81,7 @@ one; ADR 0019 › 10).
   (`crates/lua-runner/tests/programs.rs`), run against the pack's files — it starts, the mode
   message goes out when the ports open, a press of each strip button sends its command, and the
   LEDs follow the project.
-- The start: a fresh library gets the `Scripts/` folder and the store entry, and a removed
+- The start: a fresh library gets the `Scripts/MIDI/` folder and the store entry, and a removed
   shipped script stays removed on the next start.
 
 ## Not yet

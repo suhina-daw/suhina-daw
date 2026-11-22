@@ -6,7 +6,7 @@ metronome buttons, and the mixer — the eight track faders, the master fader an
 encoders with their LED rings — with feedback on every button.
 
 Suhina ships it: the files ride inside the executable and unpack into the library's
-`Scripts/apc40-mkii/` folder, and the app installs the program into its extensions store so
+`Scripts/MIDI/apc40-mkii/` folder, and the app installs the program into its extensions store so
 the port scan starts it for the device it names (`docs/spec/shipped-scripts.md`).
 
 ## Where the knowledge comes from

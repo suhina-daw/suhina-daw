@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The shipped scripts' unpack (docs/spec/shipped-scripts.md, #1676): every file lands in a
-//! fresh `Scripts/` folder once, a file that is there is never touched, a deleted file comes
-//! back, the manifest passes the store's own checks as it lands, and a folder that cannot be
-//! written is said without stopping the start.
+//! fresh `Scripts/MIDI/` folder once, a file that is there is never touched, a deleted file
+//! comes back, the manifest passes the store's own checks as it lands, and a folder that
+//! cannot be written is said without stopping the start.
 
 use super::*;
 
@@ -69,8 +69,10 @@ fn an_existing_file_is_never_overwritten() {
 fn a_blocked_folder_is_said_and_harmless() {
     let dir = temp("blocked");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("Scripts"), b"a file where the folder should go").unwrap();
-    let (written, warnings) = unpack(&dir.join("Scripts"));
+    let midi = dir.join("Scripts").join("MIDI");
+    std::fs::create_dir_all(&midi).unwrap();
+    std::fs::write(midi.join("apc40-mkii"), b"a file where the folder should go").unwrap();
+    let (written, warnings) = unpack(&midi);
     assert_eq!(written, 0);
     assert_eq!(warnings.len(), scripts().len(), "{warnings:?}");
     assert!(warnings.iter().all(|line| line.contains("tries again")), "{warnings:?}");

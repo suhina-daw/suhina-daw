@@ -283,10 +283,10 @@ fn main() -> ExitCode {
     let keep = [window.app.nam_models_folder(), window.app.ir_folder()];
     let old_warnings = pack_materialize::migrate_old_folders(&nam_base, &nam_sounds, &keep);
     pack_materialize::unpack_pack(&nam_sounds);
-    // The shipped surface programs unpack into the library's Scripts folder beside the pack's
-    // files: each file only when it is missing, and a script that could not be written joins
-    // the start-up warnings (docs/spec/shipped-scripts.md, issue 1676).
-    let (_, script_warnings) = suhina_session::shipped_scripts::unpack(&nam_base.join("Scripts"));
+    // The shipped surface programs unpack into the library's Scripts/MIDI folder beside the
+    // pack's files: each file only when it is missing, and a script that could not be written
+    // joins the start-up warnings (docs/spec/shipped-scripts.md, issue 1676).
+    let (_, script_warnings) = suhina_session::shipped_scripts::unpack(&nam_base.join("Scripts").join("MIDI"));
     if let Some(start_up) = window.start_up.as_mut() {
         start_up.warnings.extend(old_warnings);
         start_up.warnings.extend(script_warnings);

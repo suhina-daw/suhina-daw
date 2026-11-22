@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The shipped surface programs (docs/spec/shipped-scripts.md, #1676): the scripts Suhina
-//! carries inside the executable, unpacks into the library's `Scripts/` folder at start — the
-//! pack's own rule ([ADR 0036] › 3): each file written only when it is not there, a file the
-//! user carries never overwritten, never moved — and installs into the extensions store,
+//! carries inside the executable, unpacks into the library's `Scripts/MIDI/` folder at start —
+//! the pack's own rule ([ADR 0036] › 3): each file written only when it is not there, a file
+//! the user carries never overwritten, never moved — and installs into the extensions store,
 //! where the store's port scan runs them ([`install`]). A script that could not be written or
 //! installed is said in the start-up warnings while the next start tries again.
 
@@ -13,8 +13,8 @@ use std::path::Path;
 
 use crate::extensions::{Extensions, Manifest};
 
-/// One shipped script: its manifest's `id` — the folder it unpacks into under `Scripts/` — and
-/// its files as `(name, bytes)`, embedded from the tree's `packs/<id>/` ([ADR 0036] › 3).
+/// One shipped script: its manifest's `id` — the folder it unpacks into under `Scripts/MIDI/` —
+/// and its files as `(name, bytes)`, embedded from the tree's `packs/<id>/` ([ADR 0036] › 3).
 /// Beside the script ride its manifest and a README carrying where the script's knowledge
 /// comes from and its licence ([ADR 0036] › 1 and 6).
 pub struct ShippedScript {
@@ -36,8 +36,8 @@ pub fn scripts() -> &'static [ShippedScript] {
     SCRIPTS
 }
 
-/// Unpacks every shipped script into `scripts_root` — the library's `Scripts/` folder
-/// (`Documents/Suhina/Scripts`, [ADR 0036] › 2) — each file only when it is missing: a file
+/// Unpacks every shipped script into `scripts_root` — the library's `Scripts/MIDI/` folder
+/// (`Documents/Suhina/Scripts/MIDI`, [ADR 0036] › 2) — each file only when it is missing: a file
 /// the user carries is theirs, never overwritten, never moved. Returns how many files were
 /// written and the lines a script that could not be written should say, one per script — the
 /// next start tries again. `SUHINA_PACK_DEBUG=1` prints the walk to stderr, like the NAM

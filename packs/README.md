@@ -6,7 +6,7 @@ these files by its library key, and the panels list them as the **Suhina** pack 
 device, before the user's own packs. At app start the pack unpacks into the library's
 `Suhina` folders when a file is not there; a file the user carries is never overwritten. A
 surface program's script is a pack too: `packs/apc40-mkii/` unpacks into the library's
-`Scripts/apc40-mkii/`, and the app installs it into the extensions store so the port scan runs
+`Scripts/MIDI/apc40-mkii/`, and the app installs it into the extensions store so the port scan runs
 it for the device it names ([shipped scripts](../docs/spec/shipped-scripts.md)).
 
 | Folder | What | Files |
