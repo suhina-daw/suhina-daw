@@ -315,7 +315,7 @@ impl Projects {
     /// Looks at the MIDI ports again — the rescan the `midi.*` commands and the frame call —
     /// with the running programs' claims: claimed ports open raw for their programs, their
     /// output ports open for their send-backs. The scan also starts the surface programs
-    /// whose device is here ([`Extensions::start_for_ports`]), so a controller's script runs
+    /// whose device is here (`Extensions::start_for_ports`), so a controller's script runs
     /// when the device for it is connected, and its ports open in the same look.
     pub(crate) fn midi_sync(&mut self) -> Vec<String> {
         self.look_at_ports()
