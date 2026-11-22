@@ -175,9 +175,13 @@ Suhina reimplements the *behaviour* of commercial DAWs, Ableton Live in particul
 using any of their code or content. This rule outranks feature work: one contaminated change can
 force a rewrite of everything built on it, so it is not something we clean up later.
 
-The rule guards against proprietary binaries, leaked code and the content of commercial
-products. Open-source code is none of those: whether it may be used is a licence question, with
-the checks in [Taking code from open-source projects](#taking-code-from-open-source-projects).
+The rule guards against proprietary binaries, leaked code and the content of commercial DAWs,
+plug-ins and sound libraries, as the lists below name it. Open-source code is none of those:
+whether it may be used is a licence question, with the checks in
+[Taking code from open-source projects](#taking-code-from-open-source-projects). So are facts and
+descriptive data from other sources, such as color names, scales, tunings and published
+standards: a list of color names whose values a crayon maker or a paint company first published
+is not a DAW's content, and its licence (rule 10 of AGENTS.md) decides whether it may ship.
 
 **Allowed sources:**
 
