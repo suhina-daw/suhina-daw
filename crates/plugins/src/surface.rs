@@ -191,11 +191,13 @@ impl Message {
         let bytes = |key: &str| {
             value.get(key).and_then(Value::as_str).filter(|s| s.len() <= 2 * MAX_MESSAGE_BYTES).and_then(unhex)
         };
-        // Absent is no parameters; present, an object: a command's parameters are its object.
+        // Absent is no parameters; present, an object, within the depth cap like every value
+        // the protocol carries: a command's parameters reach the session.
         let params = |key: &str| match value.get(key) {
             None => Some(Value::Null),
+            Some(Value::Null) => Some(Value::Null),
             Some(v) => match v {
-                Value::Null | Value::Object(_) => Some(v.clone()),
+                Value::Object(_) => depth_ok(v).cloned(),
                 _ => None,
             },
         };

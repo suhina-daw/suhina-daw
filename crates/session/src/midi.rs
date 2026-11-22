@@ -122,6 +122,12 @@ struct ProgramSink {
 
 impl RawSink for ProgramSink {
     fn message(&self, stamp: u64, bytes: &[u8]) {
+        // An input-sized message past the protocol's cap is not the runner's to receive — the
+        // decoder would refuse it after the copy — so it is refused before one.
+        if bytes.len() > suhina_plugins::surface::MAX_MESSAGE_BYTES {
+            suhina_plugins::trace!("midi in {}: {} bytes, past the cap", self.port, bytes.len());
+            return;
+        }
         // What the controller plays into the program, next to the session's "midi out": the
         // pair answers why a ring or a pad shows what it shows (docs/debugging.md).
         suhina_plugins::trace!("midi in {port}: {bytes:02x?}", port = self.port);
@@ -326,6 +332,10 @@ impl MidiInputs {
         // now can be opened for it.
         self.raw.retain(|(_, id, _, _)| matched.iter().any(|(id2, _, _)| id2 == id));
         self.outs.retain(|(_, id, _, _)| matched.iter().any(|(id2, _, _)| id2 == id));
+        // A claimed port's ordinary connection goes before the claim's raw open: a driver
+        // that takes one connection to a port refuses the second, and the displaced
+        // connection's close must not come after the open it displaced.
+        self.open.retain(|(name, _)| !taken.contains(name));
         // The claim pass: open what a running program claims and does not hold yet, and drop
         // what it no longer claims or what a restart's new handle must hear again.
         for (id, inputs, outs) in &matched {

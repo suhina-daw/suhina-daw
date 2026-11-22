@@ -217,10 +217,7 @@ socket, and nothing waits a wall-clock while.
 
 - The helper library's exact shape and its caps — the usual modes, layers and session, mixer and
   device components, and how they version with the runner (ADR 0019 › Amendment leaves it open
-  while the protocol is open).
-- The manifest side (`extension.json` with `runner`, the ports patterns, the SHA-256) and the
-  session's supervision: starting, restarting, the extensions' state and `extensions.restart`.
-  `docs/spec/extensions.md` › Running one and `docs/spec/midi-mapping.md` › Surface programs
-  describe the behaviour; their code is a later slice.
+  while the protocol is open). What ships with version 1 is the table this document describes
+  (`suhina`'s members) and nothing more.
 - A diagnostics channel (`log`) is not in version 1; the amendment's list is the whole list, and
   adding one is a version bump with a reason.

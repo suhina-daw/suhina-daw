@@ -429,6 +429,10 @@ impl Extensions {
                 })
                 .collect();
         self.known.clear();
+        // The claims may have moved whatever the read says: the handles were taken, so the
+        // router looks again even when the root is gone or unreadable (the programs are not
+        // running, and their ports must fall back, not keep a dead program's route).
+        self.claims_epoch += 1;
         let Some(root) = &self.root else { return };
         let Ok(entries) = std::fs::read_dir(root) else { return };
         let mut folders: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
@@ -503,8 +507,6 @@ impl Extensions {
     /// the events through the same drain.
     pub fn drain_events(&mut self) -> Vec<(String, programs::Event)> {
         let mut drained = Vec::new();
-        let mut subscribing = Vec::new();
-        let mut unsubscribed = Vec::new();
         for extension in &mut self.known {
             let Some(program) = &mut extension.program else { continue };
             for event in program.drain() {
@@ -545,37 +547,45 @@ impl Extensions {
                     }
                     // The session runs these and answers; they pass through.
                     programs::Event::Command { .. } | programs::Event::Read { .. } => {}
-                    // A subscription the store keeps; a live one the store takes out.
+                    // A subscription the store keeps, in the order the script made them: a
+                    // live one is taken out before the count, a new one counted against the
+                    // live set as it is at that event — an unsubscribe before its
+                    // replacement's subscribe leaves the replacement room.
                     programs::Event::Subscribe { token, id, params } => {
-                        subscribing.push((extension.id.clone(), *token, id.clone(), params.clone()));
+                        let program = extension.id.clone();
+                        // The subscribe binds to the handle that is running now; an older
+                        // generation's records go before the count — a restart's fresh
+                        // script re-subscribes with the same script tokens, and the old
+                        // `last` values would swallow its first push (the controller dark)
+                        // until something moved. Their number must not fill the cap the
+                        // fresh ones are counted against, or a full old script would leave
+                        // the new one no subscription.
+                        let handle = extension.program.as_ref().map(|h| h.token()).unwrap_or(0);
+                        self.subs.retain(|sub| !(sub.program == program && sub.handle != handle));
+                        // At most the protocol's 64 live subscriptions per program; the
+                        // runner refuses a subscribe past it, so this one only guards what
+                        // crosses the wire.
+                        let live = self.subs.iter().filter(|sub| sub.program == program).count();
+                        if live < programs::MAX_SUBSCRIPTIONS {
+                            self.subs.push(Sub {
+                                program,
+                                token: *token,
+                                handle,
+                                cmd: id.clone(),
+                                params: params.clone(),
+                                last: None,
+                            });
+                        }
                         continue;
                     }
                     programs::Event::Unsubscribe { token } => {
-                        unsubscribed.push((extension.id.clone(), *token));
+                        let program = extension.id.clone();
+                        self.subs.retain(|sub| !(sub.program == program && sub.token == *token));
                         continue;
                     }
                 }
                 drained.push((extension.id.clone(), event));
             }
-        }
-        for (program, token, cmd, params) in subscribing {
-            // The subscribe binds to the handle that is running now; an older generation's
-            // records go before the count — a restart's fresh script re-subscribes with the
-            // same script tokens, and the old `last` values would swallow its first push
-            // (the controller dark) until something moved. Their number must not fill the
-            // cap the fresh ones are counted against, or a full old script would leave the
-            // new one no subscription.
-            let handle = self.program(&program).map(|h| h.token()).unwrap_or(0);
-            self.subs.retain(|sub| !(sub.program == program && sub.handle != handle));
-            // At most the protocol's 64 live subscriptions per program; the runner refuses a
-            // subscribe past it, so this one only guards what crosses the wire.
-            let live = self.subs.iter().filter(|sub| sub.program == program).count();
-            if live < programs::MAX_SUBSCRIPTIONS {
-                self.subs.push(Sub { program, token, handle, cmd, params, last: None });
-            }
-        }
-        for (program, token) in unsubscribed {
-            self.subs.retain(|sub| !(sub.program == program && sub.token == token));
         }
         // A program whose handle is gone — stopped, crashed past its restarts, removed — takes
         // its subscriptions with it.
@@ -1035,10 +1045,20 @@ fn remove(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
     if let Some(program) = program {
         program.stop();
     }
-    if let Some(root) = &projects.extensions.root
+    // The store's copy goes: a folder that cannot be taken out is said, not a success that
+    // lists the extension again. The program is stopped either way — the store says so, and
+    // the router looks again.
+    let removed = if let Some(root) = &projects.extensions.root
         && folder.starts_with(root)
     {
-        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::remove_dir_all(&folder)
+    } else {
+        Ok(())
+    };
+    if let Err(e) = removed {
+        projects.extensions.reload();
+        projects.poll_plugins();
+        return Err(format!("the extension's folder cannot be removed: {e}").into());
     }
     projects.extensions.reload();
     // The program's ports go back to the usual path at once: this look syncs the claims.

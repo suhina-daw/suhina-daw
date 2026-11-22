@@ -13,7 +13,7 @@
 use serde_json::Value;
 use suhina_plugins::surface::MAX_DEPTH;
 
-use mlua::{Function, LightUserData, Lua, Table, Value as LuaValue};
+use mlua::{Function, LightUserData, Lua, MultiValue as LuaMultiValue, Table, Value as LuaValue};
 
 /// The name the null sentinel is kept under in the registry; `suhina.null` is it, and a JSON
 /// null arrives as it, so an array keeps its places.
@@ -51,7 +51,13 @@ pub fn environment() -> mlua::Result<Lua> {
                 _ => return Err(mlua::Error::runtime("load's fourth argument must be a table or nil")),
             };
             let text_only = lua.create_string("t")?;
-            real_load.call::<LuaValue>((chunk, name, text_only, env))
+            // The nil environment is left out, not passed: Lua takes an explicit nil as the
+            // environment, and the chunk would lose the globals (math among them).
+            if env == LuaValue::Nil {
+                real_load.call::<LuaMultiValue>((chunk, name, text_only))
+            } else {
+                real_load.call::<LuaMultiValue>((chunk, name, text_only, env))
+            }
         })?,
     )?;
     Ok(lua)
@@ -99,9 +105,11 @@ fn number_to_lua(number: serde_json::Number) -> mlua::Result<LuaValue> {
     if let Some(i) = number.as_i64() {
         Ok(LuaValue::Integer(i))
     } else if let Some(i) = number.as_u64() {
-        // Past i64's range: kept as a number, refused when the trip would not be exact.
+        // Past i64's range: kept as a number, refused when the trip would not be exact. The
+        // round trip is checked wide: `u64::MAX` rounds up to 2^64 as a number, and a cast
+        // back saturates to it, which would pass a value Lua cannot carry exactly.
         let as_f64 = i as f64;
-        if as_f64 as u64 == i {
+        if as_f64 as i128 == i as i128 {
             Ok(LuaValue::Number(as_f64))
         } else {
             Err(mlua::Error::runtime("the number is too large to carry exactly"))
@@ -160,6 +168,12 @@ fn table_to_json(table: &Table, depth: usize) -> Result<Value, String> {
         return Err("a table is either an array or an object with string keys".into());
     }
     if object.is_empty() {
+        // A table with nothing in it at all is an empty object: the parameters are named
+        // values, and `suhina.read(id, {})` is a call with none. A nonempty sequence — holes
+        // and all — is an array, in the places the protocol carries arrays.
+        if sequence.is_empty() {
+            return Ok(Value::Object(object));
+        }
         let mut ordered = vec![Value::Null; sequence.iter().map(|(index, _)| *index).max().unwrap_or(0) as usize];
         for (index, value) in sequence {
             ordered[index as usize - 1] = value;
@@ -209,6 +223,11 @@ pub fn midi_table(lua: &Lua) -> mlua::Result<Table> {
             let data_bytes = &data.as_bytes()[..];
             if data_bytes.iter().any(|b| *b >= 0x80) {
                 return Err(mlua::Error::runtime("a system exclusive's data bytes are 7-bit"));
+            }
+            // The framing bytes are part of the message: a payload at the cap's edge with
+            // them past it would be built whole and then refused by the length check.
+            if data_bytes.len() > suhina_plugins::surface::MAX_MESSAGE_BYTES - 2 {
+                return Err(mlua::Error::runtime("the message is longer than the protocol allows"));
             }
             let mut message = Vec::with_capacity(data_bytes.len() + 2);
             message.push(0xf0);

@@ -234,14 +234,12 @@ fn the_caps_hold() {
 
 #[test]
 fn add_list_info_remove_round_trip() {
+    use crate::temp_dir::TempDir;
     let fixture = Fixture::new("round-trip", |id| manifest_for(id, SCRIPT));
-    // A store of its own: the fixture only makes the folder `add` copies from.
-    let root = std::env::temp_dir().join(format!("suhina-extensions-store-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("made");
-    let source = std::env::temp_dir().join(format!("suhina-extensions-source-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&source);
-    std::fs::create_dir_all(&source).expect("made");
+    // A store of its own: the fixture only makes the folder `add` copies from. Both are the
+    // tests' guard's, cleaned up while a failed test unwinds too.
+    let root = TempDir::new("extensions-store");
+    let source = TempDir::new("extensions-source");
     for entry in ["extension.json", "script.lua", "LICENCE.txt"] {
         std::fs::copy(fixture.folder().join(entry), source.join(entry)).expect("copied");
     }
@@ -252,7 +250,6 @@ fn add_list_info_remove_round_trip() {
     assert_eq!(added["id"], "round-trip");
     assert_eq!(added["license"], "MIT");
     assert_eq!(added["permissions"], json!(["project.read"]));
-    let _ = std::fs::remove_dir_all(&source);
 
     let listed = run(&mut projects, "extensions.list", json!({})).expect("listed");
     let entry = listed["extensions"]
@@ -273,13 +270,8 @@ fn add_list_info_remove_round_trip() {
 
     // A second add of the same id is refused while it is in the store, whatever folder it
     // comes from.
-    std::fs::create_dir_all(&source).expect("made");
-    for entry in ["extension.json", "script.lua", "LICENCE.txt"] {
-        std::fs::copy(fixture.folder().join(entry), source.join(entry)).expect("copied");
-    }
     let again = run(&mut projects, "extensions.add", json!({ "folder": source.display().to_string() }));
     assert!(again.is_err(), "an id already in the store is refused");
-    let _ = std::fs::remove_dir_all(&source);
 
     let removed = run(&mut projects, "extensions.remove", json!({ "id": "round-trip" })).expect("removed");
     assert_eq!(removed["removed"], true);
@@ -295,12 +287,8 @@ fn a_failed_add_leaves_the_destination_clear() {
     let fixture = Fixture::new("retry", |id| manifest_for(id, SCRIPT));
     // A store of its own, and a source whose folder nests past the depth limit: the copy
     // fails partway.
-    let root = std::env::temp_dir().join(format!("suhina-extensions-retry-store-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("made");
-    let source = std::env::temp_dir().join(format!("suhina-extensions-retry-source-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&source);
-    std::fs::create_dir_all(&source).expect("made");
+    let root = crate::temp_dir::TempDir::new("extensions-retry-store");
+    let source = crate::temp_dir::TempDir::new("extensions-retry-source");
     for entry in ["extension.json", "script.lua", "LICENCE.txt"] {
         std::fs::copy(fixture.folder().join(entry), source.join(entry)).expect("copied");
     }
@@ -319,8 +307,6 @@ fn a_failed_add_leaves_the_destination_clear() {
     let _ = std::fs::remove_dir_all(source.join("d0"));
     let added = run(&mut projects, "extensions.add", json!({ "folder": source.display().to_string() })).expect("added");
     assert_eq!(added["id"], "retry");
-    let _ = std::fs::remove_dir_all(&root);
-    let _ = std::fs::remove_dir_all(&source);
 }
 
 #[test]

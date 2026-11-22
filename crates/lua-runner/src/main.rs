@@ -286,6 +286,15 @@ fn run(address: &str, script: &str) -> Result<(), String> {
     }
     trace!("script loaded, ready");
 
+    // What queued while the chunk waited on its answer runs before the next socket read: a
+    // `state` that arrived ahead of the chunk's reply would otherwise wait for another frame,
+    // and a port message after it would run ahead of the older callback.
+    loop {
+        let next = runner.borrow_mut().queued.pop_front();
+        let Some(message) = next else { break };
+        step_message(&link, &runner, &lua, &message)?;
+    }
+
     loop {
         let Some(line) = link.borrow_mut().next_line(&mut runner.borrow_mut())? else {
             return Ok(());

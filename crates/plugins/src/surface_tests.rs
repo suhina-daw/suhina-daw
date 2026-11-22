@@ -25,6 +25,7 @@ fn every_message_round_trips() {
         Message::ReadResult { token: 9, ok: true, value: Some(value()), error: None },
         Message::ReadResult { token: 10, ok: false, value: None, error: Some("not a reading command".into()) },
         Message::Ping { id: 42 },
+        Message::Tick,
         Message::Quit,
         Message::Ready,
         Message::Send { port: "Launchpad Pro 16".into(), bytes: vec![0xf0, 0x7e, 0xf7] },

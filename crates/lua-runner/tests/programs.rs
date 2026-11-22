@@ -252,6 +252,10 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
+        // The programs stop before their script's folder goes — the drop body runs before
+        // the fields drop, and a starting or respawning runner can still need the script.
+        let projects = std::mem::take(&mut self.projects);
+        drop(projects);
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }
@@ -1023,12 +1027,19 @@ fn toggle_presses_are_not_coalesced_away() {
     let mut fixture = Fixture::claiming("toggles", SCRIPT_TOGGLE);
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
-    // Two presses inside one look; the wait is on the second press's marker (its command
-    // came back with the solo off), not a frame count. The looks service the commands on
-    // the way.
+    // Two presses inside one look; the wait is on both presses' markers — the first's says
+    // the true transition ran (only the final value's marker would hide a dropped first
+    // command), the second's that the false one did — not a frame count. The looks service
+    // the commands on the way.
     fixture.midi.play("APC in", 1, &[0x90, 49, 127]);
     fixture.midi.play("APC in", 1, &[0x90, 49, 127]);
-    fixture.pump_until(|f| written_contains(f, [0xB1, 0, 1]), "the second press's marker");
+    fixture.pump_until(
+        |f| {
+            let written = f.midi.written_for("APC out");
+            written.iter().any(|m| m.as_slice() == [0xB1, 1, 1]) && written.iter().any(|m| m.as_slice() == [0xB1, 0, 1])
+        },
+        "both presses' markers",
+    );
     // Both dispatched: the session ends at the second press's value, false.
     let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("read");
     assert_eq!(tracks[0]["solo"], json!(false), "{tracks}");

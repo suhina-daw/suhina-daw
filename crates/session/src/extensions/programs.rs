@@ -429,7 +429,14 @@ fn enqueue_send_back(events: &Shared, port: String, bytes: Vec<u8>, dropped: &mu
             queue.push_back(Event::Dropped(*dropped));
         }
     }
+    drop(queue);
+    // The queue's signal is for the store's blocking drain: a push without it leaves a waiter
+    // hanging however many send-backs come. The window is woken too, not at its next frame:
+    // while nothing plays, its meters ask for no frames, and a controller's lights (a tick or
+    // a port handler's send-back) would wait for the background repaints. The same wake the
+    // plug-in host gives its unasked news (#714).
     events.signal.notify_one();
+    suhina_plugins::wake();
 }
 
 /// The requests the process now running has made, per kind: each token with the command it
@@ -833,12 +840,16 @@ struct Link {
     reader: BufReader<Stream>,
     writer: Stream,
     partial: Vec<u8>,
+    /// A write that did not complete: the line is on the wire unfinished, and anything
+    /// appended to it would be read as part of it. No further writes go out; the caller
+    /// ends the process and the restart takes over.
+    dead: bool,
 }
 
 impl Link {
     fn new(stream: Stream) -> Result<Self, String> {
         let writer = TryClone::try_clone(&stream).map_err(|e| format!("the socket's halves cannot split: {e}"))?;
-        Ok(Self { reader: BufReader::new(stream), writer, partial: Vec::new() })
+        Ok(Self { reader: BufReader::new(stream), writer, partial: Vec::new(), dead: false })
     }
 
     /// Sends one message, the whole line or nothing less than the process's end: the
@@ -848,8 +859,12 @@ impl Link {
     /// `state` or a port message whole (a controller dark, a test's marker never sent)
     /// wherever the pipe's buffer ran small. Past [`WRITE_TIMEOUT`] the runner has
     /// stopped reading: the error ends the process, so no wait of the script's outlives
-    /// the answer it waits on.
+    /// the answer it waits on, and the link is marked dead — a line left unfinished on
+    /// the wire must not have the next one appended to it.
     fn send(&mut self, message: &Message) -> Result<(), String> {
+        if self.dead {
+            return Err("the link is dead: a write did not complete".into());
+        }
         let line = format!("{}\n", message.encode());
         let deadline = Instant::now() + WRITE_TIMEOUT;
         let mut written = 0;
@@ -859,11 +874,15 @@ impl Link {
                 Ok(n) => written += n,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     if Instant::now() >= deadline {
+                        self.dead = true;
                         return Err("the runner stopped reading: the write did not complete in time".into());
                     }
                     std::thread::sleep(POLL);
                 }
-                Err(e) => return Err(format!("cannot write: {e}")),
+                Err(e) => {
+                    self.dead = true;
+                    return Err(format!("cannot write: {e}"));
+                }
             }
         }
         Ok(())

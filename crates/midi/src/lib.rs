@@ -229,9 +229,9 @@ impl MidiSystem for Midi {
 
     fn open_raw(&self, name: &str, sink: Arc<dyn RawSink>) -> Result<Box<dyn std::any::Any + Send>, String> {
         let mut input = MidiInput::new(CLIENT).map_err(|e| e.to_string())?;
-        // A claimed port gets every message whole: only timing and active sensing are skipped,
-        // so system exclusive reaches the script.
-        input.ignore(Ignore::TimeAndActiveSense);
+        // A claimed port gets every message whole: nothing is filtered ahead of the sink, so
+        // a script's behavior can depend on the clock and the active sensing too.
+        input.ignore(Ignore::None);
         let port = input
             .ports()
             .into_iter()
