@@ -131,9 +131,6 @@ const MIN_HOLD_SECONDS: f64 = 0.2;
 /// After a glide into the note, the held part starts at least this long after the pitch is
 /// reached (it settles).
 const HOLD_SETTLE_SECONDS: f64 = 0.1;
-/// The held part starts where the level has come within this many decibels of the held part's
-/// median, so a swell into the held level is not looped over and over.
-const HOLD_LEVEL_DB: f64 = 1.5;
 /// A loose mode of a single note off its series and weaker than this share of the strongest mode
 /// (-20 dB) is left out.
 const STRAY_SHARE: f64 = 0.1;
@@ -267,7 +264,7 @@ pub struct Report {
     /// A chord split into one recording per note (version 4); empty for fewer than two notes.
     pub notes: Vec<ModelRecording>,
     /// Which engine plays this sound best: its resonances, or the recording itself held in
-    /// a loop (a held tone), with the held part in source frames.
+    /// segments (a held tone), with the held part in source frames.
     pub engine: Engine,
     pub hold: Option<Range<usize>>,
     /// Where the recording engine plays the note from (source frames): the fitted range's start,
@@ -281,7 +278,7 @@ pub enum Engine {
     /// The fitted model's resonances: a struck or plucked sound.
     #[default]
     Resonance,
-    /// The recording itself, its held part sustained in a loop: a bowed, blown or sung tone.
+    /// The recording itself, its held part sustained in segments: a bowed, blown or sung tone.
     Recording,
 }
 
@@ -711,16 +708,13 @@ fn fit_range(
         let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
         let held_sum: f64 = accepted.iter().filter(|f| f.evidence.sustained).map(Fitted::magnitude).sum();
         let held = held_note || (sum > 0.0 && held_sum >= 0.5 * sum);
-        // A held tone plays best from the recording itself, held in a loop of its held part
-        // (after the attack and any swell into the held level, before the release); a decaying
-        // one on its resonances.
+        // A held tone plays best from the recording itself, held in segments over its held part
+        // (after the attack, before the release); a decaying one on its resonances.
         if held {
             let recorded = mono.len() as f64 / f64::from(RATE);
             let (from, until) = level.part.unwrap_or((HOLD_FROM_SECONDS, recorded));
             let from = from.max(HOLD_FROM_SECONDS).max(pitched_from + HOLD_SETTLE_SECONDS);
             let until = until.min(recorded);
-            let settled = settled_from(&mono, from, until);
-            let from = if until - settled >= MIN_HOLD_SECONDS { settled } else { from };
             let frame = |seconds: f64| report.range.start + (seconds * f64::from(sample_rate)) as usize;
             if until - from >= MIN_HOLD_SECONDS {
                 report.engine = Engine::Recording;
@@ -2366,30 +2360,6 @@ fn liveliness<F: FnMut(usize, usize) -> bool>(
         })
         .map_or(0.0, |b| b.0);
     Ok((shimmer, (hz as f32).clamp(MIN_SHIMMER_HZ, MAX_SHIMMER_HZ)))
-}
-
-/// Where the held part from `from` to `until` (seconds) has reached its held level: the start of
-/// the first `HELD_LEVEL_FRAME`-sample window within `HOLD_LEVEL_DB` of the windows' median.
-fn settled_from(mono: &[f64], from: f64, until: f64) -> f64 {
-    let rate = f64::from(RATE);
-    let first = (from.max(0.0) * rate) as usize;
-    let last = ((until.max(0.0) * rate) as usize).min(mono.len());
-    let levels: Vec<(f64, f64)> = mono
-        .get(first..last.max(first))
-        .unwrap_or_default()
-        .chunks_exact(HELD_LEVEL_FRAME)
-        .enumerate()
-        .map(|(index, window)| {
-            let power = window.iter().map(|x| x * x).sum::<f64>() / HELD_LEVEL_FRAME as f64;
-            (from + (index * HELD_LEVEL_FRAME) as f64 / rate, 0.5 * power.max(1e-300).ln() * DB)
-        })
-        .collect();
-    let mut sorted: Vec<f64> = levels.iter().map(|v| v.1).collect();
-    if sorted.is_empty() {
-        return from;
-    }
-    let held = median(&mut sorted);
-    levels.iter().find(|v| v.1 >= held - HOLD_LEVEL_DB).map_or(from, |v| v.0)
 }
 
 /// Whether a recording's whole level holds after its attack (a release may follow), by the

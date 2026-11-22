@@ -253,45 +253,39 @@ never changes project data. The host resets the view when source audio changes.
 bowed, blown or sung tone, a pad or a texture keeps its real sound (its noise, its highs, its
 stereo and its own movement), which no model of sines gives back. In Sample mode, playing
 forward, the note plays from Start like Gate until it reaches Loop start; from there it holds in
-a **loop** of the loop region, the way a sampled instrument's sustain loop is made: the region
-plays forward from its start to its end, and its end is joined to its start by a short crossfade
-(a **seam**), the same on every pass. Most of the time the recording plays as it was recorded, and
-only the seam mixes its two ends. Heard on a cello, a whistle and a trombone, earlier versions
-each failed:
+long **segments** of the loop region, joined by short crossfades (**seams**), the way a sampled
+instrument's sustain loop is made: most of the time one stretch of the recording plays as it was
+recorded, and only a seam mixes two. Grains overlapping by half all the time (0.12..0.6 s, in
+earlier versions) fluttered like an LFO however they were lined up: two takes of a cello's vibrato
+and bow summed at every moment.
 
-- grains overlapping by half all the time (0.12..0.6 s) fluttered like an LFO however they were
-  lined up: two takes of a cello's vibrato and bow summed at every moment;
-- stretches of random length from random points of the region, joined by seams, played a held
-  part's distinct moments (a bow's rough spot) again at uneven intervals, heard as stutter in a
-  0.6 s held part;
-- playing the region forward and backward in turn (a ping-pong loop) moved the level up and down
-  and clicked at the turns, where a waveform's partials do not all turn smoothly at once.
-
-The rules:
-
-- The first pass is the direct playback itself: the note plays on from Loop start, nothing is
-  cut or faded, until the seam.
-- The seam starts at the last point that still ends it a period before Loop end, on every pass.
+- The first segment is the direct playback itself: the note plays on from Loop start, nothing is
+  cut or faded.
+- A segment plays from its start to a random point at least a third of the loop region on (but
+  early enough that its seam ends a period before Loop end), so the stretches and their order
+  vary and no loop repeats as one.
 - A seam is 50 ms (at least four periods of the root key's pitch, at most a sixth of the loop
-  region). The loop starts again at Loop start moved by up to one period of the root key to where
-  its waveform best continues the ending one there: the normalized correlation over 128 points of
-  the mono sum an eighth of a period apart, spanning at least 0.12 s (so the vibrato's phase and
-  the pitch match too, not only one cycle's shape), less a quarter of the absolute log of their
-  energy ratio. The shift is searched every 1/32 period, then sample by sample around the best.
-  The seam's end is the same on every pass, so its start is too, and every pass plays the same.
+  region). The next segment starts at the best of eight random points of the loop region (leaving
+  room for a third of the region and a seam), each moved by up to one period of the root key to
+  where its waveform best continues the playing one there: the normalized correlation over 128
+  points of the mono sum an eighth of a period apart, spanning at least 0.12 s (so the vibrato's
+  phase and the pitch match too, not only one cycle's shape), less a quarter of the absolute log
+  of their energy ratio. The shift is searched every 1/32 period, then sample by sample around
+  the best.
 - The seam is a raised cosine (the two gains `cos²` and `sin²`) scaled so that the sum keeps unit
-  power for the two ends' correlation `r` there (`1 / sqrt(out² + in² + 2 r out in)`): two
+  power for the two segments' correlation `r` there (`1 / sqrt(out² + in² + 2 r out in)`): two
   waveforms that match sum like one, two that do not like an equal-power crossfade, so a seam
-  neither dips nor bulges. The incoming start's gain matches its level at the seam to the ending
-  one's (the RMS over the seam, every fourth sample), by at most 12 dB either way.
+  neither dips nor bulges. The incoming segment's gain matches its level at the seam to the
+  playing one's (the RMS over the seam, every fourth sample), by at most 12 dB either way.
 - A slow level follower (0.5 s) keeps the level where the hold took over, by at most 12 dB
   either way: a held part that swells (a crescendo) would otherwise rise again at every seam,
   while a tremolo or a bow's movement, faster than the follower, stays.
-- Note-off releases the envelope as for Gate; the loop goes on through the release.
+- Note-off releases the envelope as for Gate; the segments go on through the release.
 - A loop region too short for a third of itself, a seam and a period plays as Gate. Reverse
   turns Sustain off.
 
-The per-sample counters make a render the same for every block split.
+The seeded random points and the per-sample counters make a render the same for every block
+split.
 
 ## LFO destinations and waveform handles
 

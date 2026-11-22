@@ -655,7 +655,7 @@ pub(crate) fn accept_fit(session: &mut Session, params: &Value) -> Result<Value,
     }
     let chord = notes.then(|| report.notes.clone());
     let recording = report.recording.clone();
-    // A held tone plays from the recording itself, held in a loop of its held part.
+    // A held tone plays from the recording itself, held in segments over its held part.
     let frames = job.source.pcm.frames().max(1) as f64;
     let hold = (report.engine == modal::Engine::Recording && !notes)
         .then(|| report.hold.clone())
