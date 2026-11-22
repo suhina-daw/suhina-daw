@@ -880,16 +880,18 @@ fn clip_box(project: &Project, track: TrackId, clip: &Clip, index: usize, track_
 /// engine and the session's commands choose it, so the waveform and the note starts found in it
 /// are the file the clip plays.
 pub(crate) fn audio_view(content: &ClipContent, track: TrackId, clip: &Clip, tempo_bpm: f64) -> Option<AudioView> {
-    let audio = |l: &suhina_engine::model::ContentLane| match &l.data {
-        LaneData::Audio(region) => Some(region),
-        LaneData::Notes(_) => None,
-    };
+    fn lane_audio(lane: &suhina_engine::model::ContentLane) -> Option<&suhina_engine::model::AudioRegion> {
+        match &lane.data {
+            LaneData::Audio(region) => Some(region),
+            LaneData::Notes(_) => None,
+        }
+    }
     let region = content
         .lanes
         .iter()
         .filter(|l| l.target.is_none_or(|t| t == track))
-        .find_map(audio)
-        .or_else(|| content.lanes.iter().find_map(audio))?;
+        .find_map(lane_audio)
+        .or_else(|| content.lanes.iter().find_map(lane_audio))?;
     let audio = &clip.audio;
     let mut markers: Vec<(f64, f64)> = audio
         .warp_markers
