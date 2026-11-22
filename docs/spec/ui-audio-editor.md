@@ -274,7 +274,7 @@ own sound.
 
 | Gesture | Effect |
 |---|---|
-| A click on the waveform or the marker lane (not on a marker) | An arrangement clip: the play start marker moves there, on the grid (Alt: free), as a click in a clip's body in the Arrangement does: the next start begins there, and while playing, playback goes on where it is (`transport.setStart`, #657). The time selection goes |
+| A click on the waveform or the marker lane (not on a marker) | An arrangement clip: the play start marker moves there, on the grid (Alt: free), as a click in a clip's body in the Arrangement does: the next start begins there, and while playing, playback goes on where it is (`transport.setStart`, #657). At once, as there: a double-click's first click moves it too. The time selection goes |
 | A drag on the waveform or the marker lane (not on a marker) | Paints the time selection, on the grid (Alt: free) |
 | Shift and a click | Carries the time selection's nearer end to the point |
 | **Ctrl+A** | Select all, the piano roll's key: the time selection becomes the whole file, every warp marker picked with it |
@@ -333,7 +333,7 @@ audio into MIDI need commands of their own and are not in the menu yet.
 | The wheel | Scroll along the file |
 | A drag with the middle button held | Drags the view along the file, as in the piano roll and the other views |
 | **Fit** in the header, or a double-click on the ruler | Fit the file again |
-| A click on the ruler | Playback jumps there, as a click on the Arrangement's ruler does: to where that point first plays in the arrangement (in a looping clip, a beat of the loop before the start marker where the loop comes round to it; one the clip never plays, its start or end), on the grid (Alt: free), while playing at the next launch boundary (`transport.jump`); an arrangement clip only |
+| A click on the ruler | Playback jumps there, as a click on the Arrangement's ruler does: to where that point first plays in the arrangement (in a looping clip, a beat of the loop before the start marker where the loop comes round to it; one the clip never plays, its start or end), on the grid (Alt: free), while playing at the next launch boundary (`transport.jump`); an arrangement clip only. At once, with no wait for a second click: a double-click's first click jumps too |
 | A drag on the ruler | Up zooms in and down zooms out, the beat where the drag began staying put; sideways scrolls. The pointer is a magnifier over the ruler and hidden while the button is held, as on the piano roll's ruler |
 
 Zoom stays between 0.05 and 20 000 points per beat, scroll between the file's two ends. Another

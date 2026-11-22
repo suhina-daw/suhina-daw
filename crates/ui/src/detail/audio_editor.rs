@@ -424,8 +424,6 @@ pub struct AudioEditorState {
     /// Pressed last: the grid keys are the editor's, as the piano roll's are while it has the
     /// keyboard.
     focused: bool,
-    /// A click's seek on the ruler or the waveform, waiting out the double-click time.
-    waiting: WaitingClick,
 }
 
 impl Default for AudioEditorState {
@@ -452,46 +450,6 @@ impl Default for AudioEditorState {
             quantize_amount: 100.0,
             file_span: None,
             focused: false,
-            waiting: WaitingClick::default(),
-        }
-    }
-}
-
-/// A single click's action held back for the double-click time, so a click that turns out to be
-/// the first of a double-click does not do it: egui reports a click on both presses of a
-/// double-click, and a double-click on the ruler fits the file and one on the waveform adds a
-/// warp marker, neither of which seeks.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct WaitingClick(Option<(f64, Action)>);
-
-impl WaitingClick {
-    /// A click at `now`, `count` presses in a row (2 for a double-click, 3 for a triple one): a
-    /// single click waits with its action (if any), the one waiting before it sent first; a double
-    /// or triple click drops what waits.
-    pub(crate) fn click(&mut self, now: f64, count: u32, action: Option<Action>, out: &mut Vec<Action>) {
-        if count > 1 {
-            self.0 = None;
-            return;
-        }
-        if let Some((_, before)) = self.0.take() {
-            out.push(before);
-        }
-        self.0 = action.map(|action| (now, action));
-    }
-
-    /// Sends what waits once `delay` seconds have passed since its click with no second press;
-    /// true while something still waits.
-    pub(crate) fn tick(&mut self, now: f64, delay: f64, out: &mut Vec<Action>) -> bool {
-        match self.0.take() {
-            Some((at, action)) if now - at >= delay => {
-                out.push(action);
-                false
-            }
-            Some(waiting) => {
-                self.0 = Some(waiting);
-                true
-            }
-            None => false,
         }
     }
 }
@@ -811,8 +769,7 @@ impl AudioEditorState {
     }
 
     /// Lets go of the clip shown: a marker drag ends without a move, the reset dialog closes, the
-    /// editor gives up the keyboard, a click waiting out the double-click time is dropped, and the
-    /// next clip shown starts fitted. The grid stays.
+    /// editor gives up the keyboard, and the next clip shown starts fitted. The grid stays.
     pub fn forget_clip(&mut self) {
         self.shown = None;
         self.shown_id = None;
@@ -826,7 +783,6 @@ impl AudioEditorState {
         self.loop_drag = None;
         self.file_span = None;
         self.focused = false;
-        self.waiting = WaitingClick::default();
     }
 
     /// What the loop key (Ctrl+L, the piano roll's) does while the editor has the keyboard: loops
@@ -946,7 +902,7 @@ impl AudioEditorState {
     /// Starts on `clip` when it is not the one shown (another address, or another clip in the same
     /// launcher slot) or nothing is fitted yet: its file of `beats` fitted to `width` points, and
     /// nothing of the clip before kept (a drag, the picked markers, the time selection, the reset
-    /// dialog, a click waiting out the double-click time, whose seek was a place in that clip).
+    /// dialog).
     fn show_clip(&mut self, clip: &AudioClip, beats: f64, width: f32) {
         if self.shown.as_ref() == Some(&clip.address) && self.shown_id == Some(clip.id) && self.beat_width > 0.0 {
             return;
@@ -962,7 +918,6 @@ impl AudioEditorState {
         self.painting = None;
         self.loop_drag = None;
         self.menu_at = None;
-        self.waiting = WaitingClick::default();
     }
 
     /// Zooms and scrolls so that the file fills `width` points.
@@ -1673,7 +1628,7 @@ fn show_one(
         state.painting = None;
     }
     // Shift and a click carries the time selection to the clicked point.
-    let (shift, now) = ui.input(|i| (i.modifiers.shift, i.time));
+    let shift = ui.input(|i| i.modifiers.shift);
     if response.clicked()
         && hot.is_none()
         && shift
@@ -1694,34 +1649,28 @@ fn show_one(
         // a click in a clip's body in the Arrangement does: the next start begins there, and
         // while playing, playback goes on where it is (#657). A slot's clip plays from its launch
         // and has no such place.
-        // It waits out the double-click time: a double-click adds a warp marker instead.
+        // At once, as there: a double-click's first press moves it too, and its second adds a
+        // warp marker.
         let start = response
             .interact_pointer_pos()
             .filter(|p| !clip.endless && takes(*p))
             .and_then(|p| clip.arrangement_beat(snap(beat_at_x(p.x), step, free)))
             .map(|at| Action::new("transport.setStart", json!({ "beats": round_beat(at) })));
-        state.waiting.click(now, presses(&response), start, actions);
-    } else if response.double_clicked() || response.triple_clicked() {
-        // The second press of a double-click on a marker or with Shift held: no seek either.
-        state.waiting.click(now, 2, None, actions);
+        // egui reports a click on each press of a double-click: the second moves nothing again.
+        actions.extend(start.filter(|_| presses(&response) == 1));
     }
     // A click on the ruler is the deliberate seek, as on the Arrangement's ruler: playback jumps
     // to where it plays in the arrangement, on the grid (Alt: free), while playing at the next
     // launch boundary (`transport.jump`). A slot's clip plays from its launch and has no such
-    // place. It waits out the double-click time: a double-click fits the file instead.
-    if ruler_response.clicked() {
+    // place. At once, as the Arrangement's ruler: a double-click's first press jumps too, and its
+    // second fits the file.
+    if ruler_response.clicked() && presses(&ruler_response) == 1 {
         let jump = ruler_response
             .interact_pointer_pos()
             .filter(|_| !clip.endless)
             .and_then(|p| clip.arrangement_beat(snap(beat_at_x(p.x), step, free)))
             .map(|at| Action::new("transport.jump", json!({ "beats": round_beat(at) })));
-        state.waiting.click(now, presses(&ruler_response), jump, actions);
-    }
-    // A click left alone for the double-click time does what it waited to do; the window is
-    // drawn again until then.
-    let delay = ui.ctx().options(|o| o.input_options.max_double_click_delay);
-    if state.waiting.tick(now, delay, actions) {
-        ui.ctx().request_repaint();
+        actions.extend(jump);
     }
     // Picked markers that are gone (removed, or the project changed under them) are no longer
     // picked; not while moved ones are on their way to where they were let go.

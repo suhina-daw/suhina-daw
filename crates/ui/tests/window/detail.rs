@@ -689,6 +689,21 @@ fn with_the_devices_stacked_the_audio_editor_stays_along_the_bottom() {
 
 /// Presses and lets go once at `at`, a second after anything before it, so it is a click and not
 /// part of a double-click.
+/// A click at `at` long after any other, with only the frame of its release run after it: what
+/// it does is done in that frame, with no wait.
+fn click_in_one_frame(harness: &mut Harness<'static, App>, at: egui::Pos2) {
+    harness.hover_at(at);
+    harness.run();
+    let ready = harness.ctx.input(|i| i.time) + 1.0;
+    while harness.ctx.input(|i| i.time) < ready {
+        harness.step();
+    }
+    harness.hover_at(at);
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.step();
+}
+
 fn click_once_at(harness: &mut Harness<'static, App>, at: egui::Pos2) {
     harness.hover_at(at);
     harness.run();
@@ -913,11 +928,11 @@ fn the_audio_clips_panel_narrows_and_folds_its_parts() {
     assert_eq!(harness.get_by_label("Audio editor").rect().left(), wide.left());
 }
 
-/// A double-click on the audio editor's ruler fits the file again and does not seek (neither of
-/// its clicks moves playback); a click alone on the ruler still does
+/// A double-click on the audio editor's ruler fits the file again; a click on the ruler seeks at
+/// once, in the frame it is made, as on the Arrangement's ruler, with no wait for a second click
 /// (`docs/spec/ui-audio-editor.md` › Zoom and scroll).
 #[test]
-fn a_double_click_on_the_audio_editors_ruler_fits_without_a_seek() {
+fn a_click_on_the_audio_editors_ruler_seeks_at_once_and_a_double_click_fits() {
     let (project, _) = super::project_with_audio();
     let mut renderer =
         suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
@@ -938,16 +953,20 @@ fn a_double_click_on_the_audio_editors_ruler_fits_without_a_seek() {
     double_click_at(&mut harness, on_ruler);
     renderer.process(&mut [0.0f32; 2 * 64]);
     assert!((harness.state().audio_editor().beat_width() - fitted).abs() < 1e-3, "fitted again");
-    assert_eq!(monitor.start_beat(), 40.0, "no seek from either click of the double-click");
-    click_once_at(&mut harness, on_ruler);
+    // The playback marker far away again, then one click: it is there after that frame alone.
+    harness.state_mut().run(&Action::new("transport.setStart", json!({ "beats": 40.0 })));
+    harness.run();
     renderer.process(&mut [0.0f32; 2 * 64]);
-    assert!(monitor.start_beat() < 40.0, "a click alone seeks: {}", monitor.start_beat());
+    assert_eq!(monitor.start_beat(), 40.0);
+    click_in_one_frame(&mut harness, on_ruler);
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert!(monitor.start_beat() < 40.0, "a click seeks at once: {}", monitor.start_beat());
 }
 
-/// A double-click on the waveform adds a warp marker and does not move the play start marker;
-/// a click alone there still does (`docs/spec/ui-audio-editor.md`).
+/// A double-click on the waveform adds a warp marker; a click there moves the play start marker at
+/// once, as a click in a clip's body in the Arrangement does (`docs/spec/ui-audio-editor.md`).
 #[test]
-fn a_double_click_on_the_waveform_adds_a_marker_without_moving_the_play_start() {
+fn a_double_click_on_the_waveform_adds_a_marker_and_a_click_moves_the_play_start_at_once() {
     let (project, _) = super::project_with_audio();
     let mut renderer =
         suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
@@ -963,10 +982,13 @@ fn a_double_click_on_the_waveform_adds_a_marker_without_moving_the_play_start() 
     double_click_at(&mut harness, at);
     renderer.process(&mut [0.0f32; 2 * 64]);
     assert_eq!(loop_markers(&harness).len(), 3, "a marker was added");
-    assert_eq!(monitor.start_beat(), 40.0, "the double-click did not move the play start marker");
-    click_once_at(&mut harness, egui::pos2((first + at.x) / 2.0, at.y));
+    harness.state_mut().run(&Action::new("transport.setStart", json!({ "beats": 40.0 })));
+    harness.run();
     renderer.process(&mut [0.0f32; 2 * 64]);
-    assert!(monitor.start_beat() < 40.0, "a click alone moves it: {}", monitor.start_beat());
+    assert_eq!(monitor.start_beat(), 40.0);
+    click_in_one_frame(&mut harness, egui::pos2((first + at.x) / 2.0, at.y));
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert!(monitor.start_beat() < 40.0, "a click moves it at once: {}", monitor.start_beat());
 }
 
 /// The commands that place markers on note starts take those the editor found in the background

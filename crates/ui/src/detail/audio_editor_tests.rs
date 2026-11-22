@@ -138,35 +138,6 @@ fn the_editor_starts_again_when_a_slot_gets_another_clip() {
     assert_eq!(state.shown_id, None);
 }
 
-/// A click waiting out the double-click time (a ruler click's jump) belongs to the clip it was
-/// made on: the same clip shown again keeps it, another clip or letting go of the clip drops it,
-/// so the jump never lands while another clip is shown.
-#[test]
-fn a_waiting_click_goes_with_the_clip_it_was_made_on() {
-    let jump = Action::new("transport.jump", json!({ "beats": 4.0 }));
-    let wait = |state: &mut AudioEditorState| {
-        let mut out = Vec::new();
-        state.waiting.click(1.0, 1, Some(jump.clone()), &mut out);
-        assert!(out.is_empty());
-    };
-    let sent = |state: &mut AudioEditorState| {
-        let mut out = Vec::new();
-        state.waiting.tick(2.0, 0.3, &mut out);
-        out.iter().map(|a| a.id).collect::<Vec<_>>()
-    };
-    let mut state = AudioEditorState::default();
-    state.show_clip(&clip_with(1, 8.0, &[(0.0, 0.0), (8.0, 4.0)]), 8.0, 400.0);
-    wait(&mut state);
-    state.show_clip(&clip_with(1, 8.0, &[(0.0, 0.0), (8.0, 4.0)]), 8.0, 400.0);
-    assert_eq!(sent(&mut state), ["transport.jump"], "the same clip: the single click completes");
-    wait(&mut state);
-    state.show_clip(&clip_with(2, 8.0, &[(0.0, 0.0), (8.0, 4.0)]), 8.0, 400.0);
-    assert!(sent(&mut state).is_empty(), "another clip shown: the jump is dropped");
-    wait(&mut state);
-    state.forget_clip();
-    assert!(sent(&mut state).is_empty(), "the clip let go: the jump is dropped");
-}
-
 #[test]
 fn markers_that_stand_still_in_the_file_still_give_the_file_a_length() {
     // Every marker on one second: the way back reads a steady rate, not one beat for the file.
@@ -442,50 +413,6 @@ fn the_waveform_color_setting_says_what_ink_the_waveform_is_drawn_in() {
 fn a_marker_command_names_the_clip_and_adds_its_own_params() {
     let params = with_address(&json!({ "track": 3, "clip": 7 }), json!({ "beat": 2.5 }));
     assert_eq!(params, json!({ "track": 3, "clip": 7, "beat": 2.5 }));
-}
-
-#[test]
-fn a_single_click_acts_once_the_double_click_time_has_passed() {
-    let mut waiting = WaitingClick::default();
-    let mut out = Vec::new();
-    let jump = Action::new("transport.jump", json!({ "beats": 8.0 }));
-    waiting.click(1.0, 1, Some(jump.clone()), &mut out);
-    assert!(out.is_empty(), "it waits");
-    assert!(waiting.tick(1.2, 0.3, &mut out), "still within the double-click time");
-    assert!(out.is_empty());
-    assert!(!waiting.tick(1.3, 0.3, &mut out));
-    assert_eq!(out, [jump]);
-    assert!(!waiting.tick(2.0, 0.3, &mut out), "sent once");
-    assert_eq!(out.len(), 1);
-}
-
-#[test]
-fn a_double_click_drops_the_first_clicks_action() {
-    let mut waiting = WaitingClick::default();
-    let mut out = Vec::new();
-    waiting.click(1.0, 1, Some(Action::new("transport.setStart", json!({ "beats": 2.0 }))), &mut out);
-    waiting.click(1.1, 2, None, &mut out);
-    assert!(!waiting.tick(5.0, 0.3, &mut out));
-    assert!(out.is_empty(), "the double-click does its own thing, no seek");
-    // A triple click as well.
-    waiting.click(6.0, 1, Some(Action::new("transport.jump", json!({ "beats": 4.0 }))), &mut out);
-    waiting.click(6.1, 2, None, &mut out);
-    waiting.click(6.2, 3, None, &mut out);
-    assert!(!waiting.tick(9.0, 0.3, &mut out));
-    assert!(out.is_empty());
-}
-
-#[test]
-fn a_new_single_click_sends_the_one_waiting_before_it() {
-    let mut waiting = WaitingClick::default();
-    let mut out = Vec::new();
-    let first = Action::new("transport.jump", json!({ "beats": 1.0 }));
-    let second = Action::new("transport.jump", json!({ "beats": 3.0 }));
-    waiting.click(1.0, 1, Some(first.clone()), &mut out);
-    waiting.click(1.1, 1, Some(second.clone()), &mut out);
-    assert_eq!(out, std::slice::from_ref(&first));
-    waiting.tick(2.0, 0.3, &mut out);
-    assert_eq!(out, [first, second]);
 }
 
 /// A content whose audio lanes are meant for different tracks: the editor draws, and finds note
