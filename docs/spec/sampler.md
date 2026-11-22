@@ -255,9 +255,25 @@ stereo and its own movement), which no model of sines gives back. In Sample mode
 forward, the note plays from Start like Gate until it reaches Loop start; from there it holds in
 long **segments** of the loop region, joined by short crossfades (**seams**), the way a sampled
 instrument's sustain loop is made: most of the time one stretch of the recording plays as it was
-recorded, and only a seam mixes two. Grains overlapping by half all the time (0.12..0.6 s, in
-earlier versions) fluttered like an LFO however they were lined up: two takes of a cello's vibrato
-and bow summed at every moment.
+recorded, and only a seam mixes two. Segments held a cello's G4 (a 1 s held part), a whistle and a
+trombone convincingly. Other holds were heard on the same four sounds and set aside:
+
+- grains overlapping by half all the time (0.12..0.6 s) fluttered like an LFO however they were
+  lined up: two takes of a cello's vibrato and bow summed at every moment;
+- one loop from the region's start to its end, joined by a crossfade, was heard as a loop;
+- playing the region forward and backward in turn (a ping-pong loop) moved the level up and down
+  and clicked at the turns, where a waveform's partials do not all turn at once;
+- playing it on ever more slowly (waveform-similarity overlap and add at a third of the speed)
+  slowed the vibrato and the bow's movement with it, heard as a brake;
+- taking the pitch and level from a second pointer at full speed (the vibrato kept at its rate,
+  the timbre stretched, as in published vibrato-preserving time-stretching) sounded worse than
+  any of them.
+
+No hold made a cello's C convincing whose held part is the 0.4..0.6 s end of a slide: segments
+there play its distinct moments (a bow's rough spot) again at uneven intervals, heard as stutter.
+A short held part is the material's limit, not the hold's: a note recorded long enough holds, and
+a held tone beyond its recording is the work of a modelled excitation (a bow driving the fitted
+resonances), not of a hold.
 
 - The first segment is the direct playback itself: the note plays on from Loop start, nothing is
   cut or faded.
