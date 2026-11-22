@@ -871,6 +871,9 @@ struct Link {
     reader: BufReader<Stream>,
     writer: Stream,
     partial: Vec<u8>,
+    /// Lines read while a write waited for room (see [`Link::send`]): the main loop takes
+    /// them before the socket, so nothing read to unjam the peer is lost or reordered.
+    parked: VecDeque<String>,
     /// A write that did not complete: the line is on the wire unfinished, and anything
     /// appended to it would be read as part of it. No further writes go out; the caller
     /// ends the process and the restart takes over.
@@ -880,7 +883,7 @@ struct Link {
 impl Link {
     fn new(stream: Stream) -> Result<Self, String> {
         let writer = TryClone::try_clone(&stream).map_err(|e| format!("the socket's halves cannot split: {e}"))?;
-        Ok(Self { reader: BufReader::new(stream), writer, partial: Vec::new(), dead: false })
+        Ok(Self { reader: BufReader::new(stream), writer, partial: Vec::new(), parked: VecDeque::new(), dead: false })
     }
 
     /// Sends one message, the whole line or nothing less than the process's end: the
@@ -888,10 +891,14 @@ impl Link {
     /// `WouldBlock` and the line waits in the drabs the runner's reads make room for,
     /// continuing from where it stopped. Discarding such a write silently dropped a
     /// `state` or a port message whole (a controller dark, a test's marker never sent)
-    /// wherever the pipe's buffer ran small. Past [`WRITE_TIMEOUT`] the runner has
-    /// stopped reading: the error ends the process, so no wait of the script's outlives
-    /// the answer it waits on, and the link is marked dead — a line left unfinished on
-    /// the wire must not have the next one appended to it.
+    /// wherever the pipe's buffer ran small. While it waits, readable lines are read and
+    /// parked ([`Link::wait_for_room`]): a full duplex pair whose buffers both run small
+    /// jams — the peer blocked on a write that needs our reads, our write blocked on its
+    /// reads — and retrying without reading wedged both for the whole deadline and killed
+    /// a healthy runner (#1670; Windows' pipes are a few KiB). Past [`WRITE_TIMEOUT`] the
+    /// runner has stopped reading: the error ends the process, so no wait of the script's
+    /// outlives the answer it waits on, and the link is marked dead — a line left
+    /// unfinished on the wire must not have the next one appended to it.
     fn send(&mut self, message: &Message) -> Result<(), String> {
         if self.dead {
             return Err("the link is dead: a write did not complete".into());
@@ -899,26 +906,42 @@ impl Link {
         let line = format!("{}\n", message.encode());
         let deadline = Instant::now() + WRITE_TIMEOUT;
         let mut written = 0;
+        let started = Instant::now();
+        let mut waited = false;
         while written < line.len() {
             match self.writer.write(&line.as_bytes()[written..]) {
                 Ok(0) => {
                     // A write that took no bytes is no room yet, not a refusal: Windows'
                     // nonblocking pipes answer a full buffer with a zero-byte success rather
                     // than WouldBlock, and a peer that is gone errors instead. The deadline
-                    // below is the judge, as it is for WouldBlock.
-                    if Instant::now() >= deadline {
-                        self.dead = true;
-                        return Err("the runner stopped reading: the write did not complete in time".into());
+                    // is the judge, as it is for WouldBlock.
+                    waited = true;
+                    match self.wait_for_room(deadline) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            self.dead = true;
+                            return Err("the runner stopped reading: the write did not complete in time".into());
+                        }
+                        Err(reason) => {
+                            self.dead = true;
+                            return Err(reason);
+                        }
                     }
-                    std::thread::sleep(POLL);
                 }
                 Ok(n) => written += n,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    if Instant::now() >= deadline {
-                        self.dead = true;
-                        return Err("the runner stopped reading: the write did not complete in time".into());
+                    waited = true;
+                    match self.wait_for_room(deadline) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            self.dead = true;
+                            return Err("the runner stopped reading: the write did not complete in time".into());
+                        }
+                        Err(reason) => {
+                            self.dead = true;
+                            return Err(reason);
+                        }
                     }
-                    std::thread::sleep(POLL);
                 }
                 Err(e) => {
                     self.dead = true;
@@ -926,13 +949,38 @@ impl Link {
                 }
             }
         }
+        let spent = started.elapsed();
+        if waited && spent.as_millis() >= 50 {
+            // A write that had to wait names itself: it is the picture of a jammed pair,
+            // and after its wait the queue's order is what keeps the protocol whole.
+            suhina_plugins::trace!("surface write done: waited {} ms for {} bytes", spent.as_millis(), line.len());
+        }
         Ok(())
     }
 
+    /// One wait for room to write: a readable line goes to `parked` — that read is what
+    /// lets a peer blocked on its own write finish — and with nothing to read the poll
+    /// breathes. `Ok(false)` when the deadline passed before waiting again: the runner has
+    /// stopped reading. A read that fails fails the write too, the way the main loop's own
+    /// read would.
+    fn wait_for_room(&mut self, deadline: Instant) -> Result<bool, String> {
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        match self.read_socket() {
+            Ok(Some(line)) => self.parked.push_back(line),
+            Ok(None) => std::thread::sleep(POLL),
+            Err(reason) => return Err(reason),
+        }
+        Ok(true)
+    }
+
     /// One complete line already readable, without waiting: `None` when nothing whole is there
-    /// yet. A partial line stays put until its end arrives — and what is already readable is
-    /// taken whole in one call, so a big line (a one-MiB send-back's) is not paid one poll
-    /// breath per bufferful, which a healthy runner could not outpace.
+    /// yet. Lines parked while a write waited ([`Link::send`]) come first, in their order — they
+    /// were read earlier, and the main loop's order is the protocol's. A partial line stays put
+    /// until its end arrives — and what is already readable is taken whole in one call, so a big
+    /// line (a one-MiB send-back's) is not paid one poll breath per bufferful, which a healthy
+    /// runner could not outpace.
     ///
     /// An empty read is "nothing now", never a close: the two cannot be told apart on every
     /// platform. On Windows a named pipe in nonblocking mode — which the host's socket is —
@@ -941,6 +989,17 @@ impl Link {
     /// connection gives. What ends the watch is the process's own end (the loops' `try_wait`)
     /// or a write that fails, so silence is never taken for a goodbye.
     fn read(&mut self) -> Result<Option<String>, String> {
+        if let Some(line) = self.parked.pop_front() {
+            return Ok(Some(line));
+        }
+        self.read_socket()
+    }
+
+    /// One complete line from the socket itself, parked lines aside: the loop
+    /// [`Link::wait_for_room`] drains with — going through [`Link::read`] there would serve a
+    /// line it just parked back to itself and never touch the socket, which is exactly the jam
+    /// it exists to break.
+    fn read_socket(&mut self) -> Result<Option<String>, String> {
         loop {
             match self.reader.fill_buf() {
                 Ok(available) => {
@@ -1102,5 +1161,51 @@ mod tests {
             assert_eq!(link.read().expect("a closed read"), None);
             std::thread::sleep(POLL);
         }
+    }
+
+    /// A write that waits keeps reading: a full duplex pair whose buffers both run small can
+    /// jam — the peer blocked on a write that needs our reads, our write blocked on the
+    /// peer's reads — and a send that only retried without reading left both wedged for the
+    /// whole deadline and killed a healthy runner (#1670; Windows' pipes are a few KiB, and
+    /// CI caught it there). What waits parks the peer's lines, the peer's write drains, room
+    /// opens both ways, and the parked lines come back first, whole and in their order.
+    #[test]
+    fn a_write_that_waits_keeps_reading_and_parks_the_peers_lines() {
+        let (address, name) = control_name().expect("the socket's name");
+        let listener = ListenerOptions::new().name(name).create_sync().expect("the listener");
+        // The peer jams its direction first: lines past any socket buffer, whose write
+        // cannot finish until the host reads — the state a real runner is in when a
+        // send-back blocks it.
+        let peer = std::thread::spawn(move || {
+            let mut stream = suhina_plugins::connect(&address).expect("the peer connects");
+            stream.write_all(b"one\ntwo\nthree\n").expect("the lines go");
+            for n in 0..64 {
+                let jam = format!("jam{n} {}\n", "x".repeat(64 * 1024));
+                stream.write_all(jam.as_bytes()).expect("the jam goes");
+            }
+            stream.flush().expect("the writer flushes");
+            // Only the host's parking can reach this read, and the host's blocked write
+            // only finishes once it does.
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("the message arrives");
+            assert!(line.ends_with('\n'), "a whole line");
+        });
+        let stream = listener.accept().expect("the peer connects");
+        stream.set_nonblocking(true).expect("the socket is nonblocking");
+        let mut link = Link::new(stream).expect("the link is made");
+        // A message past any socket buffer: the send cannot finish until the peer reads.
+        let big = Message::Send { port: "APC out".into(), bytes: vec![b'a'; 1024 * 1024] };
+        link.send(&big).expect("the send completes while the peer is jammed");
+        // The parked lines came first, whole and in their order.
+        assert_eq!(link.read().expect("a read").as_deref(), Some("one"));
+        assert_eq!(link.read().expect("a read").as_deref(), Some("two"));
+        assert_eq!(link.read().expect("a read").as_deref(), Some("three"));
+        for n in 0..64 {
+            let line = link.read().expect("a jam line").expect("the jam line is there");
+            assert!(line.starts_with(&format!("jam{n} ")), "{line:.16}");
+        }
+        assert_eq!(link.read().expect("a read"), None, "nothing else came");
+        peer.join().expect("the peer ends");
     }
 }

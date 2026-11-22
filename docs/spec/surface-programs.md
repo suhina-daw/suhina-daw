@@ -179,9 +179,12 @@ number, true and false themselves, and null `suhina.null` (a value that is neith
 - **A message to the runner is written whole, or the process is ended.** The control socket is
   read nonblocking, so its writes wait in the drabs the runner's reads make room for — a small
   pipe buffer is never a lost port message, `state` or answer. A write that takes no bytes is
-  no room yet, not a refusal, and waits the same way. A runner that stops taking the
-  host's messages for two seconds is ended the way a hung one is: no wait of the script's
-  outlives the answer it waits on, and a restart takes over.
+  no room yet, not a refusal, and waits the same way. While a write waits, incoming lines are
+  read and parked for the next look: a full duplex pair whose buffers both run small unjams
+  itself this way — the peer blocked on a send-back is heard while the host's port message
+  waits — where retrying the write alone wedged both for the whole deadline (#1670). A runner
+  that stops taking the host's messages for two seconds is ended the way a hung one is: no wait
+  of the script's outlives the answer it waits on, and a restart takes over.
 
 ## Caps
 
