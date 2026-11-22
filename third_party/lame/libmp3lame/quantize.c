@@ -1009,7 +1009,7 @@ balance_noise(lame_internal_flags * gfc,
 
 static int
 outer_loop(lame_internal_flags * gfc, gr_info * const cod_info, const FLOAT * const l3_xmin, /* allowed distortion */
-           FLOAT xrpow[576], /* colored magnitudes of spectral */
+           FLOAT xrpow[576], /* coloured magnitudes of spectral */
            const int ch, const int targ_bits)
 {                       /* maximum allowed bits */
     SessionConfig_t const *const cfg = &gfc->cfg;
@@ -1243,7 +1243,7 @@ iteration_finish_one(lame_internal_flags * gfc, int gr, int ch)
 
 static void
 VBR_encode_granule(lame_internal_flags * gfc, gr_info * const cod_info, const FLOAT * const l3_xmin, /* allowed distortion of the scalefactor */
-                   FLOAT xrpow[576], /* colored magnitudes of spectral values */
+                   FLOAT xrpow[576], /* coloured magnitudes of spectral values */
                    const int ch, int min_bits, int max_bits)
 {
     gr_info bst_cod_info;
