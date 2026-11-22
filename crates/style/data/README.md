@@ -18,7 +18,7 @@ spelling, so the omitted list below keeps the source file's spellings.
 
 Omitted source names (89): nasty green, really light blue, blue blue, booger, bland, egg shell, baby shit brown, liliac, ugly brown, kelley green, darkgreen, light light green, toupe, light lavendar, baby puke green, burnt siena, terracota, ugly blue, booger green, greenblue, icky green, golden rod, gross green, light light blue, shit green, darkblue, orangered, poop green, dark, piss yellow, bluegrey, royal, barf green, pale, greyblue, baby shit green, diarrhea, ugly purple, puke brown, bile, yellowgreen, baby poo, vomit yellow, lightgreen, baby poop green, fluro green, perrywinkle, light urple, ugly pink, ocher, lightblue, ugly yellow, poo, snot, baby poop, poo brown, poop brown, ocre, aqua marine, shit brown, shit, snot green, bluegreen, puke yellow, terra cotta, poop, vomit green, ugly green, vomit, forrest green, puke, puke green, bluish, brownish, greenish, greyish, orangeish, orangish, pinkish, pinky, purpleish, purpley, purplish, purply, reddish, tealish, yellowish, nice blue, pale peach.
 
-Renamed source entries: vermillion → vermilion; every spelling of the first word in the grey family (grey, greyish) became gray (gray, grayish) in the retained names.
+Renamed source entries: vermillion → vermilion; the first word grey became gray in the retained names (greyish is omitted).
 
 The app embeds this bounded table, builds its CIELAB lookup once (matched by CIEDE2000),
 and computes a name only when the selected RGB changes or a swatch tooltip opens. There is

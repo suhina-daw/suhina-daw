@@ -207,8 +207,8 @@ A short screen scrolls the contents. Exact values and keyboard behaviour are spe
 Undo step per complete drag; closing the window keeps completed edits.
 
 The clip panel's colour control uses the same menu; browser colour controls share the 36
-suggestions and retain their inline custom field. Track and clip colours are exact project data. Themes never provide a palette, and a
-user palette editor remains deferred by #1025.
+suggestions and retain their inline custom field. Track and clip colours are exact project data. Themes never provide a palette; the user's own colours are the Saved colors list of the colour
+window (#1025).
 
 The colour areas, each a button named "<track> colour" that opens the popup on a click:
 

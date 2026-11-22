@@ -107,7 +107,7 @@ each with its hue control, then numeric RGB and HSL. The numeric HSL controls us
 lightness, not perceptual lightness. Switching views or toggling an aid does not change the
 stored colour.
 
-**Steps** shows a 7 × 7 grid of swatches for one hue, 268 × 110 points and centred in the window: the hue at full HSV saturation and
+**Steps** shows a 7 × 7 grid of swatches for one hue, 154 × 110 points and centred in the window: the hue at full HSV saturation and
 value in the middle of the top row, white bottom left and black bottom right. Colours are laid out
 in Oklab with its lightness replaced by Lr, Björn Ottosson's toe-corrected lightness (an estimate
 of CIELAB L\*; `Lr = (k3·L − k1 + √((k3·L − k1)² + 4·k2·k3·L)) / 2` with k1 = 0.206, k2 = 0.03,
@@ -144,8 +144,8 @@ and black keep the step too. **Hue steps**, shown in Steps only and on by defaul
 steps off: the slider then moves to any hue as Field's does (the arrows move a degree), and the
 grid is drawn for that hue.
 
-**Field** selects HSV saturation (across) and value (up) on a plane of the current hue, the
-size of the Steps grid and centred like it. Its Hue slider is a band of the hues at full
+**Field** selects HSV saturation (across) and value (up) on a plane of the current hue, 198 × 110
+points and centred like the Steps grid. Its Hue slider is a band of the hues at full
 saturation and value, as tall as a row of the grid like Steps' Hue band; its handle is a thin rounded
 rectangle with a stroke, filled with the chosen hue. **Soft colours**, shown in Field only,
 constrains pointer selection to HSV saturation 0.25–0.7 and value 0.45–0.9; the field indicates
