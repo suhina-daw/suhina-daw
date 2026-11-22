@@ -156,21 +156,25 @@ struct Grain {
     step: f64,
     pan: f64,
 }
-/// Sustain playback's hold: the held part played on ever more slowly, without a repeat or a
-/// jump. Grains half a grain apart overlap by half; each new one is taken near a pointer that
-/// moves through the loop region at a third of the speed and turns at its ends, moved within one
-/// period to where its waveform best continues the grain before it (waveform-similarity overlap
-/// and add). Every grain plays forward at the note's pitch (`docs/spec/sampler.md` › Sustain).
+/// Sustain playback's hold: the loop region played forward from its start to its end over and
+/// over, the end joined to the start with a short crossfade (a seam) where the start's waveform
+/// continues it, the same on every pass
+/// (`docs/spec/sampler.md` › Sustain).
 #[derive(Clone, Copy, Default)]
 struct Hold {
     active: bool,
-    /// The two grains sounding: where each starts (source frames) and the output samples into it.
-    grains: [(f64, usize); 2],
-    /// Output samples until the next grain starts.
-    until_next: usize,
-    /// Where in the loop region the hold is (source frames) and which way it moves (1 or -1).
-    pointer: f64,
-    direction: f64,
+    /// The pass playing and, during a seam, the next one fading in: read position (source
+    /// frames) and the gain that keeps the seam's level.
+    current: (f64, f64),
+    incoming: (f64, f64),
+    /// Where the current pass's seam starts (source frames).
+    seam_at: f64,
+    /// During a seam: output samples into it, its length, and the two ends' correlation
+    /// there (0..1), which sets the crossfade's power law.
+    in_seam: bool,
+    seam: usize,
+    seam_length: usize,
+    correlation: f64,
     /// The level the hold keeps: the mean square where it took over, the output's running mean
     /// square, and the follower's coefficient per sample.
     target: f64,
@@ -178,37 +182,35 @@ struct Hold {
     follow: f64,
 }
 
-/// Points a grain is compared over: an eighth of a period apart, spanning at least
-/// `HOLD_REFERENCE` seconds, so a grain matches the vibrato's phase and the pitch too.
+/// Points the loop's start is compared over: an eighth of a period apart, spanning at least
+/// `HOLD_REFERENCE` seconds, so the start matches the vibrato's phase and the pitch too.
 const HOLD_POINTS: usize = 128;
 const HOLD_REFERENCE: f64 = 0.12;
-/// A grain (seconds); at least four periods, at most a sixth of the loop region.
-const HOLD_GRAIN: f64 = 0.05;
-/// How fast the hold moves through the loop region, as a share of the recording's own speed.
-const HOLD_SPEED: f64 = 1. / 3.;
+/// A seam's crossfade (seconds); at least four periods, at most a sixth of the loop region.
+const HOLD_SEAM: f64 = 0.05;
 /// The level a hold keeps is measured over this share of the loop region where it takes over,
-/// and a loop region shorter than a grain and this share plays no hold.
+/// and a loop region shorter than its seam and this share plays no hold.
 const HOLD_SHORTEST: f64 = 1. / 3.;
 /// The level follower's time (seconds): slow, so a tremolo or a bow's swell stays and only a
-/// drift (a crescendo held on) is taken out.
+/// drift (a crescendo looped over and over) is taken out.
 const HOLD_FOLLOW: f64 = 0.5;
-/// The gains the follower may apply: at most 12 dB either way.
+/// The gains a seam or the follower may apply: at most 12 dB either way.
 const HOLD_GAIN: (f64, f64) = (0.25, 4.0);
-/// The sound's period in source frames, for lining up grains.
+/// The sound's period in source frames, for lining up a seam's ends.
 fn hold_period(source_rate: f64, root: f64) -> f64 {
     (source_rate / (440. * 2f64.powf((root - 69.) / 12.))).clamp(16., 2048.)
 }
 
-/// What a hold reads: the source, where a grain may start (`low..high`), the sound's period, the
-/// read step, and a grain's length and the level's measuring length in output samples.
+/// What a hold reads: the source, the loop region (`low..end`), the sound's period, the read
+/// step, and the seam's and the shortest loop's length in output samples.
 struct HoldSource<'a> {
     source: &'a [f32],
     channels: usize,
     low: f64,
-    high: f64,
+    end: f64,
     period: f64,
     step: f64,
-    grain: usize,
+    seam: usize,
     shortest: usize,
 }
 
@@ -220,17 +222,25 @@ impl HoldSource<'_> {
         (sum / points as f64).sqrt().max(1e-9)
     }
 
-    /// Mono level at `position`, for lining up grains.
+    /// Mono level at `position`, for lining up a seam's ends.
     fn mono(&self, position: f64) -> f64 {
         let [left, right] = read(self.source, self.channels, position);
         left + right
     }
 
-    /// Where the next grain starts: within one period of `around`, where its waveform best
-    /// continues the one at `follow` (the grain before it, read on). The score is the normalized
-    /// correlation over `HOLD_POINTS` points, less a quarter of the absolute log of their energy
-    /// ratio. The shift is searched every 1/32 period, then sample by sample around the best.
-    fn grain_start(&self, follow: f64, around: f64, source_rate: f64) -> f64 {
+    /// Where the loop's seam starts: the last point that still ends the seam inside the loop
+    /// region, the same on every pass.
+    fn seam_at(&self) -> f64 {
+        self.end - self.seam as f64 * self.step - self.period - 2.
+    }
+
+    /// Where the loop starts again and its correlation with the end now at `follow`: the loop
+    /// region's start moved within one period to where its waveform best continues the one at
+    /// `follow`. The score is the normalized correlation over `HOLD_POINTS` points, less a
+    /// quarter of the absolute log of their energy ratio. The shift is searched every 1/32
+    /// period, then sample by sample around the best. The same `follow` gives the same start, so
+    /// every pass of the loop is the same.
+    fn start(&self, follow: f64, source_rate: f64) -> (f64, f64) {
         let spacing = (self.period / 8.).max(HOLD_REFERENCE * source_rate / HOLD_POINTS as f64).max(1.) * self.step;
         let reference: [f64; HOLD_POINTS] = std::array::from_fn(|n| self.mono(follow + n as f64 * spacing));
         let reference_energy = reference.iter().map(|r| r * r).sum::<f64>() + 1e-12;
@@ -241,81 +251,89 @@ impl HoldSource<'_> {
                 dot += x * r;
                 energy += x * x;
             }
-            dot / (energy * reference_energy).sqrt() - 0.25 * (energy / reference_energy).ln().abs()
+            let correlation = dot / (energy * reference_energy).sqrt();
+            (correlation - 0.25 * (energy / reference_energy).ln().abs(), correlation)
         };
-        let (first, last) = (self.low, self.high + self.period);
         let coarse = (self.period / 32.).max(1.) as usize;
-        let span = (self.period as usize).clamp(1, 2048);
-        let mut best = (f64::NEG_INFINITY, around.clamp(first, last));
-        for shift in (0..=2 * span).step_by(coarse) {
-            let start = (around - span as f64 + shift as f64).clamp(first, last);
-            let value = score(start);
+        let mut best = (f64::NEG_INFINITY, self.low, 0.);
+        for shift in (0..(self.period as usize).clamp(1, 2048)).step_by(coarse) {
+            let (value, correlation) = score(self.low + shift as f64);
             if value > best.0 {
-                best = (value, start);
+                best = (value, self.low + shift as f64, correlation);
             }
         }
-        let centre = best.1;
+        let around = best.1;
         for offset in 1..coarse {
-            for start in [centre - offset as f64, centre + offset as f64] {
-                let start = start.clamp(first, last);
-                let value = score(start);
+            for start in [around - offset as f64, around + offset as f64] {
+                let (value, correlation) = score(start);
                 if value > best.0 {
-                    best = (value, start);
+                    best = (value, start, correlation);
                 }
             }
         }
-        best.1
+        (best.1.clamp(self.low, self.low + self.period), best.2.clamp(0., 1.))
     }
 }
 
 impl Hold {
-    /// Takes over from direct playback at `position`: a grain at its peak plays on from there, so
-    /// nothing is cut, and the hold keeps the level it has there.
+    /// Takes over from direct playback at `position`: the recording plays on from there to the
+    /// loop's seam, at the level it has there.
     fn enter(&mut self, from: &HoldSource<'_>, position: f64, rate: f64) {
-        let half = from.grain / 2;
         let target = from.level(position, from.shortest).powi(2);
         *self = Self {
             active: true,
-            grains: [(position, from.grain), (position - half as f64 * from.step, half)],
-            until_next: 0,
-            pointer: position,
-            direction: 1.,
+            current: (position, 1.),
+            incoming: (position, 1.),
+            seam_at: from.seam_at(),
+            in_seam: false,
+            seam: 0,
+            seam_length: from.seam.max(4),
+            correlation: 1.,
             target,
             running: target,
             follow: 1. / (HOLD_FOLLOW * rate).max(1.),
         };
     }
 
-    /// The next output frame: the two grains under their windows (`sin²`, which sum to one at
-    /// half overlap); a slow follower keeps the level the hold took over at.
+    /// The next output frame. The recording plays until the loop's seam, where the loop's start
+    /// fades in over a raised cosine whose sum is kept at unit power for the two ends'
+    /// correlation; a slow follower keeps the level the hold took over at.
     fn next(&mut self, from: &HoldSource<'_>, source_rate: f64) -> [f64; 2] {
-        let half = (from.grain / 2).max(1);
-        let length = 2 * half;
-        if self.until_next == 0 {
-            let newer = self.grains[1];
-            let follow = newer.0 + newer.1 as f64 * from.step;
-            self.pointer += self.direction * HOLD_SPEED * half as f64 * from.step;
-            if self.pointer > from.high {
-                self.pointer = (2. * from.high - self.pointer).max(from.low);
-                self.direction = -1.;
-            } else if self.pointer < from.low {
-                self.pointer = (2. * from.low - self.pointer).min(from.high);
-                self.direction = 1.;
-            }
-            self.grains = [newer, (from.grain_start(follow, self.pointer, source_rate), 0)];
-            self.until_next = half;
-        }
         let mut out = [0.; 2];
-        for (start, age) in &mut self.grains {
-            if *age < length {
-                let window = (std::f64::consts::PI * *age as f64 / length as f64).sin().powi(2);
-                let data = read(from.source, from.channels, *start + *age as f64 * from.step);
-                out[0] += data[0] * window;
-                out[1] += data[1] * window;
+        let (fade_out, fade_in) = if self.in_seam {
+            let angle = self.seam as f64 / self.seam_length as f64 * std::f64::consts::FRAC_PI_2;
+            let (fade_out, fade_in) = (angle.cos().powi(2), angle.sin().powi(2));
+            let power = fade_out * fade_out + fade_in * fade_in + 2. * self.correlation * fade_out * fade_in;
+            let norm = 1. / power.max(1e-6).sqrt();
+            (fade_out * norm, fade_in * norm)
+        } else {
+            (1., 0.)
+        };
+        let data = read(from.source, from.channels, self.current.0);
+        out[0] += data[0] * self.current.1 * fade_out;
+        out[1] += data[1] * self.current.1 * fade_out;
+        self.current.0 += from.step;
+        if self.in_seam {
+            let data = read(from.source, from.channels, self.incoming.0);
+            out[0] += data[0] * self.incoming.1 * fade_in;
+            out[1] += data[1] * self.incoming.1 * fade_in;
+            self.incoming.0 += from.step;
+            self.seam += 1;
+            if self.seam >= self.seam_length {
+                self.current = self.incoming;
+                self.in_seam = false;
+                self.seam_at = from.seam_at();
             }
-            *age += 1;
+        } else if self.current.0 >= self.seam_at {
+            let (start, correlation) = from.start(self.current.0, source_rate);
+            let gain = (self.current.1 * from.level(self.current.0, self.seam_length)
+                / from.level(start, self.seam_length))
+            .clamp(HOLD_GAIN.0, HOLD_GAIN.1);
+            self.incoming = (start, gain);
+            self.correlation = correlation;
+            self.in_seam = true;
+            self.seam = 0;
         }
-        self.until_next -= 1;
         let mono = out[0] + out[1];
         self.running += (mono * mono - self.running) * self.follow;
         let gain = (self.target / self.running.max(1e-18)).sqrt().clamp(HOLD_GAIN.0, HOLD_GAIN.1);
@@ -326,7 +344,7 @@ impl Hold {
 #[derive(Clone, Copy)]
 struct Voice {
     active: bool,
-    /// Sustain playback: the hold playing the note on once it reaches the loop region.
+    /// Sustain playback: the loop holding the note once it reaches the loop region.
     hold: Hold,
     deferred_release: bool,
     age: f64,
@@ -1017,7 +1035,7 @@ impl Sampler {
         let lo = (p[3] * total).max(start);
         let hi = (p[4] * total).min(end);
         let looping = p[0] != 2. && p[8] == 2. && hi > lo + 1.;
-        // Sustain: the note plays from its start, then holds on through the loop region.
+        // Sustain: the note plays from its start, then holds in a loop of the loop region.
         let sustaining = p[0] == 0. && p[8] == 4. && p[10] == 0.;
         let period = hold_period(self.source_rate, p[30]);
         let grain_limit = self.block_grain_limit;
@@ -1082,24 +1100,23 @@ impl Sampler {
                     / self.rate;
                 v.step += (target_step - v.step) / (p[29] * self.rate).max(1.);
                 let mut signal = [0.; 2];
-                // The hold's grains: 50 ms (at least four periods, at most a sixth of the loop
-                // region), the last one starting a grain and a period before its end.
+                // The hold's seam: 50 ms (at least four periods, at most a sixth of the loop
+                // region).
                 let region = (hi - lo) / v.step.max(1e-6);
-                let grain = (HOLD_GRAIN * self.rate).max(4. * period / v.step.max(1e-6)).min(region / 6.) as usize;
+                let seam = (HOLD_SEAM * self.rate).max(4. * period / v.step.max(1e-6)).min(region / 6.) as usize;
                 let shortest = (region * HOLD_SHORTEST) as usize;
-                let high = hi - grain as f64 * v.step - period - 2.;
+                // A loop region too short for a third of it and the seam plays no hold.
+                let hold_high = hi - (shortest + seam) as f64 * v.step - period - 2.;
                 let from = HoldSource {
                     source: self.source.as_ref().as_ref(),
                     channels: self.channels,
                     low: lo,
-                    high: high.max(lo),
+                    end: hi,
                     period,
                     step: v.step,
-                    grain,
+                    seam,
                     shortest,
                 };
-                // A loop region too short for a third of it and a grain plays no hold.
-                let hold_high = high - shortest as f64 * v.step;
                 if sustaining && !v.hold.active && hold_high > lo && v.position >= lo {
                     v.hold.enter(&from, v.position, self.rate);
                 }

@@ -474,16 +474,16 @@ band-limited and in the end like a bell, whatever was added. So a fit names the 
 plays the sound best (algorithm version 4):
 
 - **Recording** for a held recording (a held note, or sustained modes holding half the
-  magnitude): the sample itself, its **held part** played on by the Sample layer's
+  magnitude): the sample itself, its **held part** sustained in a loop by the Sample layer's
   Sustain playback ([sampler](sampler.md) › Sustain playback). The held part runs from the held
   rule's first window (at least 0.25 s, after the attack) to its last (before the release), on the
   whole prepared recording, at least 0.2 s long; the report gives it in source frames (`hold`).
   It starts at the first 1024-sample window within 1.5 dB of the median level of its windows, when
-  that leaves 0.2 s: a swell into the held level (a cello's crescendo after its slide) held on
-  would swell again and again.
+  that leaves 0.2 s: a swell into the held level (a cello's crescendo after its slide) looped
+  would swell again at every pass.
   After a glide into the note it starts at least 0.1 s after the pitch is reached, and the note
   plays from there (`start`): a plain note plays no glide (a legato one does, on the model), and
-  a held part with the glide in it bent the pitch as it was held.
+  a held part with the glide in it bent the pitch at every seam.
 - **Resonance** otherwise: the fitted model.
 
 `instrument.acceptFit` adopts the fitted model as before and, for a Recording fit (not a chord's

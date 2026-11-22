@@ -207,7 +207,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                                     .on_hover_text(format!("Octave bands after level matching, fitted minus original: {}. Smaller is closer; this measures the same recording, not realism.", bands.join(", ")));
                         }
                         ui.label(match report.engine {
-                            ModalFitEngine::Recording => "Engine: Recording (a held tone). Accept plays the sample itself, its held part played on as long as the key is down; Source Modal plays the fitted resonances instead.",
+                            ModalFitEngine::Recording => "Engine: Recording (a held tone). Accept plays the sample itself, its held part sustained in a loop; Source Modal plays the fitted resonances instead.",
                             ModalFitEngine::Resonance => "Engine: Resonance (a struck or plucked sound). Accept plays the fitted resonances; Source Sample plays the recording instead.",
                         });
                         ui.label("Accept replaces the model; Add joins it by note and velocity. One undo step each. Set Root first.");

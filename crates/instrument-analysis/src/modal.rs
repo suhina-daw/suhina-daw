@@ -267,7 +267,7 @@ pub struct Report {
     /// A chord split into one recording per note (version 4); empty for fewer than two notes.
     pub notes: Vec<ModelRecording>,
     /// Which engine plays this sound best: its resonances, or the recording itself held in
-    /// on (a held tone), with the held part in source frames.
+    /// a loop (a held tone), with the held part in source frames.
     pub engine: Engine,
     pub hold: Option<Range<usize>>,
     /// Where the recording engine plays the note from (source frames): the fitted range's start,
@@ -281,7 +281,7 @@ pub enum Engine {
     /// The fitted model's resonances: a struck or plucked sound.
     #[default]
     Resonance,
-    /// The recording itself, its held part played on: a bowed, blown or sung tone.
+    /// The recording itself, its held part sustained in a loop: a bowed, blown or sung tone.
     Recording,
 }
 
@@ -711,7 +711,7 @@ fn fit_range(
         let sum: f64 = accepted.iter().map(Fitted::magnitude).sum();
         let held_sum: f64 = accepted.iter().filter(|f| f.evidence.sustained).map(Fitted::magnitude).sum();
         let held = held_note || (sum > 0.0 && held_sum >= 0.5 * sum);
-        // A held tone plays best from the recording itself, held on through its held part
+        // A held tone plays best from the recording itself, held in a loop of its held part
         // (after the attack and any swell into the held level, before the release); a decaying
         // one on its resonances.
         if held {

@@ -252,44 +252,43 @@ never changes project data. The host resets the view when source audio changes.
 **Sustain**, its value 3) holds a note with the recording itself, as long as the key is down: a
 bowed, blown or sung tone, a pad or a texture keeps its real sound (its noise, its highs, its
 stereo and its own movement), which no model of sines gives back. In Sample mode, playing
-forward, the note plays from Start like Gate until it reaches Loop start; from there it plays
-**on through the loop region ever more slowly**, as if the player kept the bow or the breath
-going: short grains of the recording, each played forward at the note's pitch, are taken from a
-pointer that moves through the region at a third of the recording's speed and turns at its ends
-(waveform-similarity overlap and add, the way a time-stretch keeps a sound's pitch and
-timbre). Nothing repeats and nothing plays backward; the held part's own movement (its vibrato,
-its bow's swell) goes on at a third of its speed. Heard on a cello, a whistle and a trombone,
-earlier versions each failed:
+forward, the note plays from Start like Gate until it reaches Loop start; from there it holds in
+a **loop** of the loop region, the way a sampled instrument's sustain loop is made: the region
+plays forward from its start to its end, and its end is joined to its start by a short crossfade
+(a **seam**), the same on every pass. Most of the time the recording plays as it was recorded, and
+only the seam mixes its two ends. Heard on a cello, a whistle and a trombone, earlier versions
+each failed:
 
-- grains from random points overlapping by half all the time (0.12..0.6 s) fluttered like an LFO
-  however they were lined up: two takes of a cello's vibrato and bow summed at every moment;
-- stretches of random length from random points of the region, joined by crossfades, played a
-  held part's distinct moments (a bow's rough spot) again at uneven intervals, heard as stutter
-  in a 0.6 s held part;
+- grains overlapping by half all the time (0.12..0.6 s) fluttered like an LFO however they were
+  lined up: two takes of a cello's vibrato and bow summed at every moment;
+- stretches of random length from random points of the region, joined by seams, played a held
+  part's distinct moments (a bow's rough spot) again at uneven intervals, heard as stutter in a
+  0.6 s held part;
 - playing the region forward and backward in turn (a ping-pong loop) moved the level up and down
-  and clicked at the turns, where a waveform's partials do not all turn smoothly at once;
-- one loop from the region's start to its end, joined by a crossfade, was heard as a loop: the
-  same 0.4 s again and again, not a note held on.
+  and clicked at the turns, where a waveform's partials do not all turn smoothly at once.
 
 The rules:
 
-- A grain is 50 ms (at least four periods of the root key's pitch, at most a sixth of the loop
-  region) under a `sin²` window; grains start half a grain apart, so two always sound and their
-  windows sum to one.
-- The hold takes over where direct playback reaches Loop start, with a grain at its window's peak
-  reading on from there: nothing is cut or faded.
-- At each grain's start the pointer moves on by a third of half a grain, turning back at Loop
-  start and at a grain and a period before Loop end. The new grain starts within one period of the
-  pointer, where its waveform best continues the grain before it (read on from where that one
-  now is): the normalized correlation over 128 points of the mono sum an eighth of a period apart,
-  spanning at least 0.12 s (so the vibrato's phase and the pitch match too, not only one cycle's
-  shape), less a quarter of the absolute log of their energy ratio. The shift is searched every
-  1/32 period, then sample by sample around the best.
+- The first pass is the direct playback itself: the note plays on from Loop start, nothing is
+  cut or faded, until the seam.
+- The seam starts at the last point that still ends it a period before Loop end, on every pass.
+- A seam is 50 ms (at least four periods of the root key's pitch, at most a sixth of the loop
+  region). The loop starts again at Loop start moved by up to one period of the root key to where
+  its waveform best continues the ending one there: the normalized correlation over 128 points of
+  the mono sum an eighth of a period apart, spanning at least 0.12 s (so the vibrato's phase and
+  the pitch match too, not only one cycle's shape), less a quarter of the absolute log of their
+  energy ratio. The shift is searched every 1/32 period, then sample by sample around the best.
+  The seam's end is the same on every pass, so its start is too, and every pass plays the same.
+- The seam is a raised cosine (the two gains `cos²` and `sin²`) scaled so that the sum keeps unit
+  power for the two ends' correlation `r` there (`1 / sqrt(out² + in² + 2 r out in)`): two
+  waveforms that match sum like one, two that do not like an equal-power crossfade, so a seam
+  neither dips nor bulges. The incoming start's gain matches its level at the seam to the ending
+  one's (the RMS over the seam, every fourth sample), by at most 12 dB either way.
 - A slow level follower (0.5 s) keeps the level where the hold took over, by at most 12 dB
-  either way: a held part that swells (a crescendo) would otherwise swell on, while a tremolo or
-  a bow's movement, faster than the follower, stays.
-- Note-off releases the envelope as for Gate; the hold goes on through the release.
-- A loop region too short for a third of itself, a grain and a period plays as Gate. Reverse
+  either way: a held part that swells (a crescendo) would otherwise rise again at every seam,
+  while a tremolo or a bow's movement, faster than the follower, stays.
+- Note-off releases the envelope as for Gate; the loop goes on through the release.
+- A loop region too short for a third of itself, a seam and a period plays as Gate. Reverse
   turns Sustain off.
 
 The per-sample counters make a render the same for every block split.
