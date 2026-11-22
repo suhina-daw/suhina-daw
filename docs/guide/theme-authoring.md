@@ -750,7 +750,7 @@ Elements, by name:
 | `clip-fade`, `clip-envelope`, `take-header` | a fade's line (`kind="crossfade"` between takes), a clip's gain envelope while it is edited, a take lane's header |
 | `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin` | an automation lane's header (`kind="group"` for a group's), a group's time, the envelope (`[muted]` while off), its points (`[selected]`) and the pin; the line and points are `[kind="fixed"]` while Settings › Arrangement › Automation colour is Fixed, which the base sheet colours with `var(--accent)` |
 | `device-list`, `device-row`, `scroll-bar`, `pan-center`, `meter-clip`, `arrangement-tool` | a mixer strip's device list and its rows, how far its sends (or the device chain) are scrolled, a pan field's centre ticks, a meter's clip light, the Arrangement's own tool buttons |
-| `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles; `clip-waveform`'s `color` also draws the audio editor's waveform in the detail area (Settings › Waveform colour on Theme; with no rule, in the clip's own colour) |
+| `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade-handle` | an arrangement clip's name bar, waveform, notes, gain field and fade handles; `clip-waveform`'s `color` also draws the audio editor's waveform in the detail area (Settings › Clip editor › Audio editor waveform colour on Theme; with no rule, in a neutral ink that reads on the editor's panel) |
 | `value-handle`, `fader-rail` | the handle where a level bar's fill ends; a fader's rail (the mixer's and the clip gain fader's) |
 | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-note`, `velocity` | the piano roll's grid (`kind="strong"` on an octave and a bar), its rows (`kind="hover"` under the pointer), its keys (with `[selected]` and `[playing]`), the notes (`kind="draft"` while a drag makes them; their own inks `kind="outline"`, `"dashes"` and `"name"`, `[checked]` on a strong note) and their velocity stems (`[selected]`, `[muted]`; `kind="line"` for a velocity drag's line) |
 | `piano-slice` | a slice drag's line (`kind="cut"`, `kind="delete"` for the right button's, with a `background-color` over what it deletes) |
@@ -1017,7 +1017,8 @@ text-input { background-color: #15171A; }
 Every dialog is one element, `dialog`, told apart by its `name` attribute: `about`, `agent`,
 `ara-edits`, `backup`, `closing`, `color-picker` (the track colour window), `export`,
 `folder-drop`, `group-removal`, `loading`, `missing-files`, `move-folder`, `name-clash`,
-`project` (New or open), `save`, `splash`, `theme-exists`, `unsaved` and `updates`. One rule
+`project` (New or open), `reset-warp` (the audio editor's Reset warp), `save`, `splash`,
+`theme-exists`, `unsaved` and `updates`. One rule
 styles them all, and one more styles one:
 
 ```css

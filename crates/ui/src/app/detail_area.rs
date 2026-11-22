@@ -55,7 +55,10 @@ impl App {
     /// The Clip / Devices switch's key and menu entry, for a clip with an editor: the other part,
     /// or the devices when the detail area is hidden, which opens it.
     pub(super) fn toggle_devices(&mut self) {
-        if self.piano_clip(self.shown_clip()).is_none() && self.ara_clip().is_none() {
+        if self.piano_clip(self.shown_clip()).is_none()
+            && self.ara_clip().is_none()
+            && self.audio_clip(self.shown_clip()).is_none()
+        {
             return;
         }
         self.detail_showing = match self.detail_showing {
@@ -1000,11 +1003,13 @@ impl App {
     }
 
     /// Whether the detail area lies along the bottom: in a row, or with the devices stacked
-    /// while the shown clip has an editor (the piano roll, an ARA plug-in's), which stays there.
+    /// while the shown clip has an editor (the piano roll, an ARA plug-in's, the audio editor),
+    /// which stays there, as the area lays it out.
     pub(super) fn editor_along_bottom(&self) -> bool {
         self.settings.device_layout != DeviceLayout::Stack
             || self.piano_clip(self.shown_clip()).is_some()
             || matches!(self.shown_clip(), Some(ClipRef::Arrangement(t, c)) if self.clip_uses_ara(t, c))
+            || self.audio_clip(self.shown_clip()).is_some()
     }
 
     /// The splitter of the closed detail area, in the gap the grid keeps between the `main` view
@@ -1292,7 +1297,70 @@ impl App {
         self.audio_clip(self.shown_clip()).map(|audio| self.audio_editor.loop_key(&audio)).unwrap_or_default()
     }
 
-    /// What Quantize (Ctrl+U) does while an audio clip's editor is on show: quantises its
+    /// `actions` with the transients the window found in the background given to the commands
+    /// that look for them in a clip's file (`clip.addWarpMarkersAtTransients`,
+    /// `clip.quantizeWarpMarkers`, as `transients`), so the analysis never runs on the window's
+    /// thread. One whose file's transients are still being found waits, with the commands that
+    /// waited before, and goes once they are (the analysis draws the window again then), in the
+    /// project it was made in only. One for a file the window holds no samples of goes as it is.
+    /// Each frame runs it on the actions the views made; public for tests.
+    pub fn with_transients(&mut self, ctx: &egui::Context, actions: Vec<Action>) -> Vec<Action> {
+        const LOOKS: [&str; 2] = ["clip.addWarpMarkersAtTransients", "clip.quantizeWarpMarkers"];
+        use crate::detail::audio_editor::Transients;
+        let project = self.projects.active();
+        let waited: Vec<Action> = std::mem::take(&mut self.transients_waiting)
+            .into_iter()
+            .filter(|(made_in, _)| *made_in == project)
+            .map(|(_, action)| action)
+            .collect();
+        let mut out = Vec::with_capacity(actions.len());
+        for mut action in waited.into_iter().chain(actions) {
+            if !LOOKS.contains(&action.id) || action.params.get("transients").is_some() {
+                out.push(action);
+                continue;
+            }
+            match self.clip_transients(ctx, &action.params) {
+                Transients::Ready(seconds) => {
+                    if let Some(params) = action.params.as_object_mut() {
+                        params.insert("transients".into(), json!(seconds.as_slice()));
+                    }
+                    out.push(action);
+                }
+                Transients::Waiting => self.transients_waiting.push((project, action)),
+                Transients::Unavailable => out.push(action),
+            }
+        }
+        if !self.transients_waiting.is_empty() {
+            self.status = Status::Hint("Finding where the notes start…".into());
+        }
+        out
+    }
+
+    /// Where the transients of the file of the clip `params` names (`track` and `clip`, or `track`
+    /// and `scene`) stand in the window's background analysis.
+    fn clip_transients(&self, ctx: &egui::Context, params: &Value) -> crate::detail::audio_editor::Transients {
+        use crate::detail::audio_editor::{self as editor, Transients};
+        let Some(session) = self.session() else { return Transients::Unavailable };
+        let project = session.project();
+        let number = |key: &str| params.get(key).and_then(Value::as_u64);
+        let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId);
+        let clip = match (track, number("clip"), number("scene")) {
+            (Some(track), Some(id), _) => {
+                u32::try_from(id).ok().and_then(|id| editor::arrangement_clip(project, track, ClipId(id)))
+            }
+            (Some(track), None, Some(scene)) => {
+                usize::try_from(scene).ok().and_then(|scene| editor::launcher_clip(project, track, scene))
+            }
+            _ => None,
+        };
+        let Some(file) = clip.map(|clip| clip.view.file) else { return Transients::Unavailable };
+        match self.waveforms.get(&file) {
+            Some(peaks) => editor::file_transients(ctx, &file, peaks),
+            None => Transients::Unavailable,
+        }
+    }
+
+    /// What Quantize (Ctrl+U) does while an audio clip's editor is on show: quantizes its
     /// transients in the time selection, or the whole clip (`AudioEditorState::quantize_key`).
     /// `None` when no audio clip is on show.
     pub(super) fn audio_editor_quantize(&self) -> Option<Option<Action>> {

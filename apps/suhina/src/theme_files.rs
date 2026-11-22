@@ -748,6 +748,23 @@ fn select_in_explorer(command: &mut std::process::Command, path: &Path) {
     command.arg(format!("/select,{}", path.display()));
 }
 
+/// What went wrong showing a file on a thread of its own (the file manager could not be started),
+/// for the window to report on its next frame: the thread cannot reach it, and the frame does
+/// not wait for the thread.
+static REVEAL_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Keeps `error` for [`take_reveal_error`].
+fn report_reveal_error(error: String) {
+    if let Ok(mut slot) = REVEAL_ERROR.lock() {
+        *slot = Some(error);
+    }
+}
+
+/// What [`reveal`]'s thread could not do since this was last asked, once.
+pub fn take_reveal_error() -> Option<String> {
+    REVEAL_ERROR.lock().ok().and_then(|mut slot| slot.take())
+}
+
 pub fn reveal(path: &Path, select: bool) -> Result<(), String> {
     let mut command = if cfg!(target_os = "windows") {
         let mut c = std::process::Command::new("explorer");
@@ -776,7 +793,9 @@ pub fn reveal(path: &Path, select: bool) -> Result<(), String> {
                 .spawn(move || {
                     if !show_items(&file) {
                         let folder = file.parent().unwrap_or(&file);
-                        let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                        if let Err(e) = std::process::Command::new("xdg-open").arg(folder).spawn() {
+                            report_reveal_error(format!("could not show {}: {e}", folder.display()));
+                        }
                     }
                 })
                 .map(|_| ())
@@ -791,7 +810,8 @@ pub fn reveal(path: &Path, select: bool) -> Result<(), String> {
 
 /// Asks the desktop's file manager over D-Bus to show `path` selected
 /// (`org.freedesktop.FileManager1.ShowItems`, the freedesktop file manager interface); whether one
-/// answered. Waits for `dbus-send`'s answer, which comes at once.
+/// answered. Waits for `dbus-send`'s answer, at most its reply timeout (two seconds): called on
+/// [`reveal`]'s own thread, never the window's.
 fn show_items(path: &Path) -> bool {
     let Ok(absolute) = std::path::absolute(path) else { return false };
     let uri = file_uri(&absolute);
@@ -814,10 +834,22 @@ fn show_items(path: &Path) -> bool {
 }
 
 /// `path` as a `file://` URI: each byte outside the unreserved characters and `/` written as
-/// `%XX`, so spaces and non-ASCII names reach the file manager whole.
+/// `%XX`, so spaces and non-ASCII names reach the file manager whole. On Unix the bytes are the
+/// path's own, so a name that is not UTF-8 (a file system in another encoding) still names the
+/// file; elsewhere they are its UTF-8.
 fn file_uri(path: &Path) -> String {
+    #[cfg(unix)]
+    let bytes: std::borrow::Cow<'_, [u8]> = {
+        use std::os::unix::ffi::OsStrExt;
+        std::borrow::Cow::Borrowed(path.as_os_str().as_bytes())
+    };
+    #[cfg(not(unix))]
+    let bytes: std::borrow::Cow<'_, [u8]> = match path.to_string_lossy() {
+        std::borrow::Cow::Borrowed(text) => std::borrow::Cow::Borrowed(text.as_bytes()),
+        std::borrow::Cow::Owned(text) => std::borrow::Cow::Owned(text.into_bytes()),
+    };
     let mut uri = String::from("file://");
-    for byte in path.to_string_lossy().bytes() {
+    for &byte in bytes.iter() {
         if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
             uri.push(char::from(byte));
         } else {

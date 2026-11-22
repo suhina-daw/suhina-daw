@@ -36,8 +36,8 @@ Under it, in a row (the detail area under the views), its parts side by side, 8 
 panel's edges and 12 points apart; with the detail area stacked at the side, one under another, the
 Gain and Pitch part centered.
 
-**Width.** In a row the panel is first as wide as all its parts side by side (680 points with the
-audio editor's part), the most it is ever made. Its right edge (*Clip panel width* to a screen
+**Width.** In a row the panel is first as wide as all its parts side by side (558 points: the four
+parts, the gaps between them and its edges), the most it is ever made. Its right edge (*Clip panel width* to a screen
 reader) is dragged to make it narrower, down to two columns (312 points: the Clip part's and one as
 wide as Gain and Pitch); a double-click on it makes it as wide as it goes again. A drag starts from
 the edge where it is drawn, also when a narrow detail area cuts the panel short of its width. Narrower, the parts
@@ -59,7 +59,6 @@ beside it, and controls are 6 points apart, so no two touch.
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
 | | **Edit gain envelope**: a switch that opens the gain envelope on the waveform for editing (every audio clip's, or the clip's own, by Settings › *Envelope editing*), as Alt+E and the button by the clip's name do | `clip.setEnvelope` |
 | **Warp** (110 points) | The settings of the clip's warp mode (› Warp mode settings); only for a mode that has settings | `clip.setAudio` |
-| **Audio editor** (110 points) | While the editor shows the clip: its **Grid**, **Snap**, **Fit**, **Reset warp…** and **Transients** | the editor's own state; Transients `clip.addWarpMarkersAtTransients` |
 | **Gain and Pitch** (128 points) | **Gain**: a vertical fader, its scale at its left (24, 0 half-way, −inf at the bottom), the dB readout under it | `clip.setGain` |
 | | **Pitch**: a knob in semitones; under it the semitones and the cents side by side, `st` and `ct` under them | `clip.setAudio` (`transpose`) |
 
@@ -83,7 +82,8 @@ other clips play is copied for this clip first.
 Each warp mode plays the clip in its own way (ADR 0003 › Amendment: a sound of each mode), and the
 Warp part shows the settings of the clip's mode under *Mode settings*. Every setting is the clip's
 own, a `clip.setAudio` parameter and one undo step (a drag one step); a clip keeps the settings of
-every mode, so a mode picked again has its settings back. They are saved with the clip
+every mode, so a mode picked again has its settings back, except that Tonal and Texture share one
+**Grain**: a grain length set in one is the other's too. They are saved with the clip
 ([format](suhina-format.md), version 16).
 
 A setting changed is heard at once, while the clip plays: the clip's stretched sound is made again
@@ -95,8 +95,8 @@ with it, as it is after a tempo change.
 | | **Tail**: what plays after a slice that ends before the next starts (the clip slower than its audio): nothing, its second half again and again (crossfaded where it jumps back), or its second half back and forth | Off, Loop, Back and forth | Loop | `tail` |
 | | **Envelope**: how level a slice stays over its length; lower fades it out sooner, for a tighter, gated sound | 0 to 100 % | 100 % | `envelope` |
 | Tonal | **Grain**: the length of the grains the sound is made of, each lined up with the one before; longer suits low notes, shorter fast ones | 10 to 400 ms | 60 ms | `grain` |
-| Texture | **Grain**: as Tonal's, without the lining up | 10 to 400 ms | 60 ms | `grain` |
-| | **Flux**: how far each grain's start moves at random, from none to a grain either way: the sound smears into a cloud as it rises | 0 to 100 % | 25 % | `flux` |
+| Texture | **Grain**: Tonal's (one setting for both), played without the lining up | 10 to 400 ms | 60 ms | `grain` |
+| | **Scatter**: how far each grain's start moves at random, from none to a grain either way: the sound smears into a cloud as it rises | 0 to 100 % | 25 % | `scatter` |
 | Re-pitch, Smooth, High quality | No settings: the Warp part is left out, and the other parts take its room | | | |
 
 **The audio editor's tools** are in the [audio editor](ui-audio-editor.md)'s own header, right
@@ -280,9 +280,7 @@ its settings, the tempo, **Gain** and **Pitch** (the same `clip.setAudio`, `clip
 `clip.setTempo` for each, in one gesture). The start, end and loop positions are each clip's own
 (the **Loop** switch turns every picked clip's loop on or off, as before). **Edit gain envelope**
 is grayed out: an envelope is one clip's. The audio editor's warp markers move together on clips as
-long as the one shown ([`ui-audio-editor.md`](ui-audio-editor.md) › Several clips). Another DAW's
-manual describes the same for warping (Ableton Live 12, 9.2.4.4 Multi-Clip Warping); there the
-editor shows only the clip clicked last, which a list of the picked clips improves on.
+long as the one shown ([`ui-audio-editor.md`](ui-audio-editor.md) › Several clips).
 
 ## The grey box
 
@@ -308,5 +306,6 @@ Every one changes only the clip it names and is one undo step.
 ## Project file
 
 A clip's audio state is the clip's `audio` object (`gain`, `gain_envelope`, `transpose`, `warped`,
-`stretch`, `warp_markers`, `tempo_source`), written only when it is not the starting one; the
-region keeps the file. Version 10 ([`.suhina` format](suhina-format.md) › Versions).
+`stretch`, `warp_markers`, `tempo_source`, and from version 16 `warp_settings`, the warp mode
+settings), written only when it is not the starting one; the region keeps the file. Version 10
+([`.suhina` format](suhina-format.md) › Versions).

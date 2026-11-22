@@ -425,7 +425,7 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         ui.close();
     }
     // The track's clips, or with several tracks selected every one's: back to their track's
-    // colour, or named after it; one undo step for them all (one gesture).
+    // color, or named after it; one undo step for them all (one gesture).
     let now = ui.input(|i| i.time);
     let each = |id: &'static str, params: &dyn Fn(u32) -> serde_json::Value, actions: &mut Vec<Action>| {
         let gesture = (selected.len() > 1).then(|| crate::interaction::commands::gesture(format_args!("{id} {now}")));

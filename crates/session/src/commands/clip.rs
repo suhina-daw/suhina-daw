@@ -5,6 +5,14 @@
 
 use super::*;
 
+/// The note starts of a warped clip's file, found already (the window finds them on a thread of
+/// its own), so a warp marker command places markers on them without analysing the file again.
+const TRANSIENTS: Param = optional(
+    "transients",
+    ParamType::Numbers,
+    "the seconds in the clip's audio file where notes start, as found before (at most 100000, each 0 or more); given, the file is not analysed again",
+);
+
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "arrangement.audioOverlaps",
@@ -518,7 +526,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "rhythmic mode: how level a slice stays over its length, 0 to 100 percent (100 does not fade it)",
             ),
             optional("grain", ParamType::Number, "tonal and texture modes: a grain's length, 10 to 400 milliseconds"),
-            optional("flux", ParamType::Number, "texture mode: how far grains move at random, 0 to 100 percent"),
+            optional("scatter", ParamType::Number, "texture mode: how far grains move at random, 0 to 100 percent"),
             GESTURE,
         ],
         kind: CommandKind::EDIT,
@@ -590,8 +598,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.addWarpMarkersAtTransients",
-        label: "Add a warp marker at every transient of a warped audio clip's file (where its level jumps, as the Rhythmic mode finds them), each pinning the sound playing there to its beat, so nothing moves until a marker is moved. A transient near a marker the clip has keeps that marker. One undo step; only that clip changes",
-        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE],
+        label: "Add a warp marker at every note start of a warped audio clip's file (where its spectrum rises as the pitches sounding change or the level jumps, each moved onto a sharp level attack close by), each pinning the sound playing there to its beat, so nothing moves until a marker is moved. A transient near a marker the clip has keeps that marker. One undo step; only that clip changes",
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, TRANSIENTS],
         kind: CommandKind::EDIT,
         run: crate::clip_audio::add_warp_markers_at_transients,
         policy: Policy::DEFAULT,
@@ -645,7 +653,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.quantizeWarpMarkers",
-        label: "Quantise a warped audio clip's timing: each transient (where its sound starts) in the range gets a warp marker where it plays now, then every marker there moves towards the nearest grid line, its sound with it. One undo step; only that clip changes",
+        label: "Quantize a warped audio clip's timing: each transient (where its sound starts) in the range gets a warp marker where it plays now, then every marker there moves towards the nearest grid line, its sound with it. One undo step; only that clip changes",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -656,9 +664,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "start",
                 ParamType::Number,
-                "the content beat the range starts at (default: the clip's beginning)",
+                "the content beat the range starts at (default: where the clip starts playing its content, its offset or its loop's start when earlier)",
             ),
-            optional("end", ParamType::Number, "the content beat the range ends at (default: the clip's end)"),
+            optional(
+                "end",
+                ParamType::Number,
+                "the content beat the range ends at (default: where the clip stops playing its content, its offset plus length or, looping, its loop's end)",
+            ),
+            TRANSIENTS,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_audio::quantize_warp_markers,
@@ -691,6 +704,11 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "detect",
                 ParamType::Bool,
                 "true reads the tempo again from the file (metadata, name, then detection) instead of keeping the clip's",
+            ),
+            optional(
+                "transients",
+                ParamType::Numbers,
+                "the note starts of the clip's audio file, in seconds, as the other warp marker commands take them: checked, but not needed, as the tempo is detected from the sound's beat rather than from its note starts",
             ),
         ],
         kind: CommandKind::EDIT,

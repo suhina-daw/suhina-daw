@@ -1579,8 +1579,8 @@
       "docs/spec/ui-session-view.md"
     ]
   },
-  "ClipEditor/Audio editor/audio_editor_waveform_colour": {
-    "sourceFingerprint": "b30538a0602f2d94a7ced164459d82e2e7898578c3b7a65c9d1bec6766d5c919",
+  "ClipEditor/Audio editor/audio_editor_waveform_color": {
+    "sourceFingerprint": "d2cf0f7661daf2d994c304c9669cfa96e2fcb0a44b0b1bc6bc605688adc1ad26",
     "summary": "Choose the colour of the waveform in the audio editor.",
     "description": "The audio editor is the detail area's view of an audio clip, where its warp markers are placed. This preference decides the colour its large waveform is drawn in. The sound and the project do not change.",
     "options": [
@@ -1602,7 +1602,7 @@
     ]
   },
   "ClipEditor/Audio editor/audio_editor_marker_line_drag": {
-    "sourceFingerprint": "44e5793ee900149842c46a776a55a78c4c752c3c7e9f5044609ecb35c3b32db0",
+    "sourceFingerprint": "565e9788deef2d32affaa7fa2237bb6f2419fe937a46f85b3d1b7c13f7d235a6",
     "summary": "Choose whether a warp marker can be dragged by its line in the audio editor.",
     "description": "Each warp marker in the audio editor has a flag on the marker lane under the ruler and a line down the waveform. Off, only the flag takes hold of the marker, and a drag anywhere on the waveform paints a time selection, beside a marker's line too. On, the line can be dragged as the flag can.",
     "options": [],

@@ -739,6 +739,9 @@ pub struct App {
     piano_roll: PianoRollState,
     /// The audio editor's zoom and scroll, for the audio clip it shows.
     audio_editor: crate::detail::audio_editor::AudioEditorState,
+    /// Commands that look for transients in a clip's file, held until the window's background
+    /// analysis has found them, with the project they were made in (`App::with_transients`).
+    transients_waiting: Vec<(Option<ProjectId>, Action)>,
     /// Backups a crash left, offered one at a time (`docs/spec/backups.md` › The offer on
     /// start); the one chosen to open, and a backup to show in the file manager, for the app.
     recovery: Vec<suhina_session::backup::Leftover>,
@@ -941,6 +944,7 @@ impl App {
             sample_drops: Vec::new(),
             piano_roll: PianoRollState::default(),
             audio_editor: crate::detail::audio_editor::AudioEditorState::default(),
+            transients_waiting: Vec::new(),
             recovery: Vec::new(),
             recovery_open: None,
             reveal: None,
@@ -4145,6 +4149,8 @@ impl App {
         self.update_title(ui.ctx());
         self.frame_trace.mark("dialogs");
         let actions: Vec<Action> = actions.into_iter().map(|action| self.remove_every_pick(action)).collect();
+        // Those that look for transients take the ones found in the background, or wait for them.
+        let actions = self.with_transients(ui.ctx(), actions);
         let ran = actions.len();
         for action in &actions {
             if actions_held || self.dialog_holds_actions() {
@@ -4475,6 +4481,7 @@ pub(crate) fn clipboard_line(command: &str) -> Option<String> {
         "automation.copy" => "automation",
         "device.copy" => "devices",
         "track.copy" | "track.cut" => "tracks",
+        "range.copy" | "range.cut" => "a range",
         _ => return None,
     };
     Some(format!("Suhina: {what} copied"))

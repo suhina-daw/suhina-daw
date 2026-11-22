@@ -2626,7 +2626,7 @@ fn row_menu(
     // The file or folder in the system's file manager (Explorer, Finder, the desktop's own),
     // selected there where the system can do that.
     if let Some(Item::File(path) | Item::Voice(path, _)) = item.item()
-        && ui.button(crate::kit::platform::current().show_in_folder_label()).clicked()
+        && crate::kit::menu::item(ui, crate::kit::platform::current().show_in_folder_label(), false).clicked()
     {
         out.reveal = Some(path.to_path_buf());
         ui.close();

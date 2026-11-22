@@ -33,7 +33,7 @@ use suhina_model::{
     TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation,
     max_clip_gain, valid_bpm,
 };
-use suhina_model::{ENVELOPE_RANGE, FLUX_RANGE, GRAIN_RANGE, SliceAt, SliceTail, WarpSettings};
+use suhina_model::{ENVELOPE_RANGE, GRAIN_RANGE, SCATTER_RANGE, SliceAt, SliceTail, WarpSettings};
 use suhina_model::{LaneGroup, LaneLayout, LaneRef, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
 /// The file extension, without the dot.
@@ -669,7 +669,7 @@ fn clip_audio_value(a: &ClipAudio) -> Value {
                     "tail": w.tail.name(),
                     "envelope": number(w.envelope),
                     "grain": number(w.grain),
-                    "flux": number(w.flux),
+                    "scatter": number(w.scatter),
                 }),
             );
         }
@@ -712,7 +712,7 @@ fn read_warp_settings(a: &Map<String, Value>, at: &str) -> Result<WarpSettings, 
         tail,
         envelope: ranged("envelope", ENVELOPE_RANGE, default.envelope)?,
         grain: ranged("grain", GRAIN_RANGE, default.grain)?,
-        flux: ranged("flux", FLUX_RANGE, default.flux)?,
+        scatter: ranged("scatter", SCATTER_RANGE, default.scatter)?,
     })
 }
 

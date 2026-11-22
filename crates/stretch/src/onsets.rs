@@ -9,7 +9,7 @@
 //! the pitches sounding change across it (the powers of semitone bands, octaves told apart, as
 //! pitch-based note detection reads them) or its level rises clearly; the wobble of a held chord
 //! does neither. Unlike
-//! [`transients`](crate::transients), which follows the level alone, it finds a note that starts
+//! [`transients`](crate::transients()), which follows the level alone, it finds a note that starts
 //! with no jump in level, as one note of a legato arpeggio or a sustained synth line does when its
 //! pitch changes. Spectral flux onset detection is the textbook method (Bello et al., "A Tutorial
 //! on Onset Detection in Music Signals", IEEE TASLP 2005; Dixon, "Onset Detection Revisited",
@@ -40,11 +40,13 @@ const LEAST_SHARE: f32 = 0.1;
 /// semitone bands' powers (octaves told apart) 45 ms before it and 45 ms after it is at least
 /// this ...
 const PITCH_CHANGE: f32 = 0.3;
-/// ... or when its level rises at least this many dB from the quietest 5 ms in the 60 ms before
-/// it to the loudest 5 ms in the 30 ms after it (a drum, a chord struck again). A held note's
-/// wobble moves neither: on a piano chord part measured with two legato arpeggios, 57 candidates
-/// became the part's 4 chords and 1 more, while the arpeggios kept 50 of 57 and 28 of 32 notes.
-const LEAST_RISE_DB: f32 = 11.0;
+/// ... or when its level rises at least this many dB out of the dip it starts from (a drum, a
+/// chord struck again, a note out of the fade of the one before): the loudest 5 ms in the 30 ms
+/// after the quietest 5 ms near the candidate, over the loudest 5 ms in the 10 ms before that dip.
+/// Peak against peak, so the beating of a held chord's partials (dips every few milliseconds
+/// between peaks as loud as the ones after) rises a few dB at most, where a dip against the peak
+/// after it read as 11 dB; a note out of a fade to a fifth of the level rises about 9.
+const LEAST_RISE_DB: f32 = 6.0;
 /// Seconds the pitch is measured over on each side of a candidate (to the nearest power of two of
 /// frames), and how far from it each side's window is centered.
 const PITCH_WINDOW_SECONDS: f32 = 0.046;
@@ -67,7 +69,7 @@ pub const MAX_ONSETS: usize = 200_000;
 /// note starts, in order. Each channel's spectrum is taken on its own and their levels added, so
 /// channels in opposite phase do not cancel. A sharp attack is placed where its level first
 /// reaches a quarter of its peak in the window that found it; a note that starts without one, at
-/// the middle of that window (within a window's length: [`transients`](crate::transients) places
+/// the middle of that window (within a window's length: [`transients`](crate::transients()) places
 /// an attack to the millisecond). Allocates; for a worker thread, not the audio thread.
 pub fn note_onsets(samples: &[f32], channels: usize, rate: f32) -> Vec<usize> {
     let channels = channels.max(1);
@@ -79,7 +81,11 @@ pub fn note_onsets(samples: &[f32], channels: usize, rate: f32) -> Vec<usize> {
     let above = wanted.next_power_of_two();
     let size = if above - wanted > wanted - above / 2 { above / 2 } else { above };
     let hop = ((HOP_SECONDS * rate) as usize).max(16);
-    if frames < size + 2 * hop {
+    // A rate so high the hop saturates (`f32::MAX`) leaves no room for the windows.
+    let Some(needed) = hop.checked_mul(2).and_then(|hops| hops.checked_add(size)) else {
+        return Vec::new();
+    };
+    if frames < needed {
         return Vec::new();
     }
     let bins = size / 2 - 1;
@@ -174,7 +180,7 @@ pub fn note_onsets(samples: &[f32], channels: usize, rate: f32) -> Vec<usize> {
     for (i, _) in picked {
         let at = i * hop;
         let change = pitch.change(samples, channels, frames, at, rate);
-        let rise = rise_db(samples, channels, frames, at, rate);
+        let rise = rise_db(samples, channels, frames, at, size, rate);
         if change < PITCH_CHANGE && rise < LEAST_RISE_DB {
             continue;
         }
@@ -250,31 +256,40 @@ impl Pitch {
     }
 
     /// How much the pitches sounding change at frame `at`: the cosine distance between the bands
-    /// before and after it, 0 for the same, 1 for none in common (or where a side is outside the
-    /// file).
+    /// before and after it, 0 for the same, 1 for none in common. 0 where a side is outside the
+    /// file: a sound that starts with the file is no note found (the clip's start is pinned
+    /// already), and counting it as a change put a marker on every file's first moment.
     fn change(&self, samples: &[f32], channels: usize, frames: usize, at: usize, rate: f32) -> f32 {
         let offset = (PITCH_OFFSET_SECONDS * rate) as usize;
         let before = at.checked_sub(offset).and_then(|c| self.bands(samples, channels, frames, c));
         let after = self.bands(samples, channels, frames, at + offset);
         match (before, after) {
             (Some(a), Some(b)) => 1.0 - a.iter().zip(&b).map(|(p, q)| p * q).sum::<f32>(),
-            _ => 1.0,
+            _ => 0.0,
         }
     }
 }
 
-/// How many dB the level rises at frame `at`: the loudest 5 ms in the 30 ms after it over the
-/// quietest 5 ms in the 60 ms before it.
-fn rise_db(samples: &[f32], channels: usize, frames: usize, at: usize, rate: f32) -> f32 {
+/// How many dB the level rises at the candidate whose window of `size` frames starts at frame
+/// `at`: the quietest 5 ms from 10 ms before the window to 10 ms past its middle is the dip the
+/// note starts from, and the rise is the loudest 5 ms in the 30 ms after the dip over the loudest
+/// 5 ms in the 10 ms before it, each scanned a millisecond at a time. 0 where the 10 ms before the
+/// dip's search run out of the file: the file's start is the clip's own, not a note found.
+fn rise_db(samples: &[f32], channels: usize, frames: usize, at: usize, size: usize, rate: f32) -> f32 {
     let step = ((0.005 * rate) as usize).max(1);
+    let milli = ((0.001 * rate) as usize).max(1);
+    let ten = 10 * milli;
     let power = |from: usize| {
-        let (from, to) = (from.min(frames), (from + step).min(frames));
+        let (from, to) = (from.min(frames), from.saturating_add(step).min(frames));
         let part = samples.get(from * channels..to * channels).unwrap_or_default();
         part.iter().filter(|v| v.is_finite()).map(|v| v * v).sum::<f32>() / part.len().max(1) as f32 + 1e-12
     };
-    let before = (0..12).map(|k| power((at + k * step).saturating_sub(12 * step))).fold(f32::INFINITY, f32::min);
-    let after = (0..6).map(|k| power(at + k * step)).fold(0.0, f32::max);
-    10.0 * (after / before).log10()
+    let Some(low) = at.checked_sub(2 * ten).map(|before| before + ten) else { return 0.0 };
+    let high = at.saturating_add(size / 2).saturating_add(ten);
+    let Some(dip) = (low..high).step_by(milli).min_by(|a, b| power(*a).total_cmp(&power(*b))) else { return 0.0 };
+    let before = (dip - ten..dip).step_by(milli).map(power).fold(0.0, f32::max);
+    let after = (dip..dip.saturating_add(30 * milli)).step_by(milli).map(power).fold(0.0, f32::max);
+    if before <= 0.0 { 0.0 } else { 10.0 * (after / before).log10() }
 }
 
 /// Where an onset found in the window of `size` frames from `start` begins: the first frame whose
@@ -394,5 +409,6 @@ mod tests {
         assert!(note_onsets(&odd, 2, RATE).is_empty());
         assert!(note_onsets(&mono, 0, RATE).len() == note_onsets(&mono, 1, RATE).len());
         assert!(note_onsets(&mono, 1, 0.0).is_empty() && note_onsets(&mono, 1, f32::NAN).is_empty());
+        assert!(note_onsets(&mono, 1, f32::MAX).is_empty() && note_onsets(&mono, 1, f32::INFINITY).is_empty());
     }
 }

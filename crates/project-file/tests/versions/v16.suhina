@@ -100,7 +100,7 @@
                 ],
                 "warp_settings": {
                   "envelope": 40.0,
-                  "flux": 60.0,
+                  "scatter": 60.0,
                   "grain": 120.0,
                   "slice": "1/16",
                   "tail": "back-and-forth"

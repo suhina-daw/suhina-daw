@@ -10,8 +10,8 @@
 //! - **Tonal** lines each grain up with the one before: its start moves by up to a quarter of a
 //!   grain to where its sound best matches how the previous grain's sound goes on, so a held note
 //!   carries on without the beating of grains out of phase.
-//! - **Texture** moves each grain's start at random by up to `flux` grains, which smears the sound
-//!   into a cloud as flux rises; the randomness depends only on the grain's number, so a render
+//! - **Texture** moves each grain's start at random by up to `scatter` grains, which smears the sound
+//!   into a cloud as scatter rises; the randomness depends only on the grain's number, so a render
 //!   is the same every time and wherever it starts.
 //!
 //! Nothing here allocates once built.
@@ -27,7 +27,7 @@ pub struct Grains {
     hop: usize,
     window: Vec<f32>,
     /// How far, in grains, a start may move at random (Texture).
-    flux: f64,
+    scatter: f64,
     /// Whether each start is lined up with the grain before it (Tonal).
     align: bool,
     pitch: f64,
@@ -39,7 +39,7 @@ pub struct Grains {
 impl Grains {
     /// Grains of `grain_seconds` at `rate` frames a second, for `channels` channels. Allocates
     /// the window: build it off the audio thread.
-    pub fn new(channels: usize, rate: f32, grain_seconds: f32, flux: f32, align: bool) -> Self {
+    pub fn new(channels: usize, rate: f32, grain_seconds: f32, scatter: f32, align: bool) -> Self {
         let grain = ((grain_seconds * rate) as usize).clamp(32, 1 << 16) & !1;
         let window = (0..grain).map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / grain as f32).cos()).collect();
         Self {
@@ -47,7 +47,7 @@ impl Grains {
             grain,
             hop: grain / 2,
             window,
-            flux: f64::from(flux.clamp(0.0, 1.0)),
+            scatter: f64::from(scatter.clamp(0.0, 1.0)),
             align,
             pitch: 1.0,
             recent: [(u64::MAX, 0.0); RECENT],
@@ -96,6 +96,10 @@ impl Grains {
             let (a, b) = (start_out.max(first), start_out.saturating_add(grain).min(end));
             for t in a..b {
                 let Some(w) = self.window.get((t - start_out) as usize).copied() else { continue };
+                // No grain before the first overlaps its first half: there it plays whole, at
+                // the level two overlapping grains add up to everywhere else, instead of fading
+                // in from silence.
+                let w = if k == 0 && t < hop { 1.0 } else { w };
                 let at = start_in + (t - start_out) as f64 * self.pitch;
                 let base = (t - first) as usize * channels;
                 for c in 0..channels {
@@ -118,8 +122,8 @@ impl Grains {
                 Some((_, before)) => self.lined_up(ideal, before + self.hop as f64 * self.pitch, sample),
                 None => ideal,
             }
-        } else if self.flux > 0.0 {
-            ideal + (unit(k) - 0.5) * 2.0 * self.flux * self.grain as f64
+        } else if self.scatter > 0.0 {
+            ideal + (unit(k) - 0.5) * 2.0 * self.scatter * self.grain as f64
         } else {
             ideal
         };
@@ -222,8 +226,8 @@ mod tests {
     /// Played at half speed, a 440 Hz tone keeps its pitch and level, in both modes.
     #[test]
     fn half_speed_keeps_the_pitch_and_the_level() {
-        for (flux, align) in [(0.0, true), (0.3, false)] {
-            let mut grains = Grains::new(1, RATE, 0.06, flux, align);
+        for (scatter, align) in [(0.0, true), (0.3, false)] {
+            let mut grains = Grains::new(1, RATE, 0.06, scatter, align);
             let mut out = vec![0.0; 96_000];
             for (i, chunk) in out.chunks_mut(1000).enumerate() {
                 grains.render((i * 1000) as u64, chunk, &|t| t as f64 * 0.5, &sine(440.0));
@@ -271,16 +275,28 @@ mod tests {
     fn rendering_in_pieces_gives_the_same_frames() {
         let source = sine(330.0);
         let position = |t: u64| t as f64 * 0.7;
-        for (flux, align) in [(0.0, true), (0.5, false)] {
+        for (scatter, align) in [(0.0, true), (0.5, false)] {
             let mut whole = vec![0.0; 2 * 10_000];
-            Grains::new(2, RATE, 0.04, flux, align).render(0, &mut whole, &position, &source);
+            Grains::new(2, RATE, 0.04, scatter, align).render(0, &mut whole, &position, &source);
             let mut pieces = vec![0.0; 2 * 10_000];
-            let mut grains = Grains::new(2, RATE, 0.04, flux, align);
+            let mut grains = Grains::new(2, RATE, 0.04, scatter, align);
             for (i, chunk) in pieces.chunks_mut(2 * 777).enumerate() {
                 grains.render((i * 777) as u64, chunk, &position, &source);
             }
             assert_eq!(whole, pieces);
         }
+    }
+
+    /// The first half grain, which no grain before it overlaps, plays at the level the grains
+    /// add up to later on, instead of fading in from silence.
+    #[test]
+    fn the_first_half_grain_keeps_the_level() {
+        let mut grains = Grains::new(1, RATE, 0.02, 0.0, false);
+        let (grain, hop) = (grains.grain_frames(), grains.grain_frames() / 2);
+        let mut out = vec![0.0; 4 * grain];
+        grains.render(0, &mut out, &|t| t as f64, &|_, _| 1.0);
+        assert!(out[..hop].iter().all(|s| (s - 1.0).abs() < 1e-5), "first hop: {:?}", &out[..4]);
+        assert!(out[hop..].iter().all(|s| (s - 1.0).abs() < 1e-5), "steady state");
     }
 
     #[test]

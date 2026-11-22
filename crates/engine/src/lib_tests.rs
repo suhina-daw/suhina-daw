@@ -2245,7 +2245,7 @@ fn every_stretch_mode_sounds_different() {
     }
 }
 
-/// Texture's flux and grain change its sound; Rhythmic's settings change its sound.
+/// Texture's scatter and grain change its sound; Rhythmic's settings change its sound.
 #[test]
 fn a_modes_settings_change_its_sound() {
     // Grains on the drum loop; slices on a held tone, whose tails and envelope are heard.
@@ -2260,7 +2260,7 @@ fn a_modes_settings_change_its_sound() {
     };
     let base = WarpSettings::default();
     let pairs = [
-        (StretchMode::Texture, WarpSettings { flux: 0.0, ..base }, WarpSettings { flux: 90.0, ..base }),
+        (StretchMode::Texture, WarpSettings { scatter: 0.0, ..base }, WarpSettings { scatter: 90.0, ..base }),
         (StretchMode::Texture, WarpSettings { grain: 20.0, ..base }, WarpSettings { grain: 300.0, ..base }),
         (StretchMode::Tonal, WarpSettings { grain: 20.0, ..base }, WarpSettings { grain: 300.0, ..base }),
         (

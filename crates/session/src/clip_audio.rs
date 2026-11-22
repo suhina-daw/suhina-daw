@@ -21,12 +21,40 @@ fn audio_clip(
     params: &Value,
     what: &str,
 ) -> Result<(ClipAt, Clip, suhina_model::AudioRegion), CommandError> {
+    let (at, region) = audio_place(session, params, what)?;
+    let clip = crate::notes::clip_at(&session.project, at).cloned().ok_or("the clip is missing")?;
+    Ok((at, clip, region))
+}
+
+/// Where the clip `params` names is and the audio region it plays, without copying the clip;
+/// fails as [`audio_clip`] does.
+fn audio_place(
+    session: &Session,
+    params: &Value,
+    what: &str,
+) -> Result<(ClipAt, suhina_model::AudioRegion), CommandError> {
     let (at, content, track) = locate(&session.project, params)?;
     let region = crate::audio_timing::region_on(&session.project, content, track)
         .cloned()
         .ok_or_else(|| format!("only an audio clip {what}"))?;
-    let clip = crate::notes::clip_at(&session.project, at).cloned().ok_or("the clip is missing")?;
-    Ok((at, clip, region))
+    Ok((at, region))
+}
+
+/// [`audio_clip`] for a command that edits the clip's warp markers: a clip holding more than
+/// [`MAX_MARKERS`] (a damaged or foreign file) is refused before its list is copied, pointing to
+/// Reset warp, which replaces the list without reading it.
+fn warp_clip(session: &Session, params: &Value) -> Result<(ClipAt, Clip, suhina_model::AudioRegion), CommandError> {
+    let (at, region) = audio_place(session, params, "has warp markers")?;
+    let clip = crate::notes::clip_at(&session.project, at).ok_or("the clip is missing")?;
+    if clip.audio.warp_markers.len() > MAX_MARKERS {
+        return Err(too_many_markers());
+    }
+    Ok((at, clip.clone(), region))
+}
+
+/// The error for a clip with more warp markers than a clip keeps.
+fn too_many_markers() -> CommandError {
+    format!("the clip has more than {MAX_MARKERS} warp markers: reset its warp (Reset warp) to edit them again").into()
 }
 
 /// `clip.setEnvelope`: an audio clip's gain envelope, as pairs of a content beat and an offset in
@@ -246,10 +274,14 @@ const SAME_MARKER: f64 = 1e-6;
 const MAX_MARKERS: usize = 100_000;
 
 /// The clip's warp markers as the engine plays them: finite, in beat order, one to a beat (the
-/// first of those on it). Fails for a clip that is not warped or has fewer than two.
+/// first of those on it). Fails for a clip that is not warped, has fewer than two or more than
+/// [`MAX_MARKERS`] (checked before the list is copied).
 fn marker_list(clip: &Clip) -> Result<Vec<suhina_model::WarpMarker>, CommandError> {
     if !clip.audio.warped {
         return Err("warp is off: turn Warp on to edit warp markers".into());
+    }
+    if clip.audio.warp_markers.len() > MAX_MARKERS {
+        return Err(too_many_markers());
     }
     let mut markers: Vec<suhina_model::WarpMarker> =
         clip.audio.warp_markers.iter().copied().filter(|m| m.time.is_finite() && m.audio_time.is_finite()).collect();
@@ -293,7 +325,7 @@ fn store_markers(
     clip.audio.warp_markers = markers;
     // The tempo the markers make is the user's now.
     clip.audio.tempo_source = Some(TempoSource::Manual);
-    follow_audio_end(session, at, before, region)?;
+    follow_audio_end(session, at, &before.audio, region)?;
     let clip = crate::notes::clip_at(&session.project, at).ok_or("the clip is missing")?;
     Ok(json!({ "clip": clip.id.0, "markers": listed(&clip.audio.warp_markers) }))
 }
@@ -301,35 +333,33 @@ fn store_markers(
 /// After the warp markers of the clip `at` changed from `before`'s: moves the end of its content
 /// to where the end of its audio is now, so a clip whose audio was stretched longer can be drawn
 /// out over all of it (and one squeezed shorter stops where it ends), its own start and length
-/// left as they are (`docs/spec/ui-audio-editor.md` › Warp markers). A content other clips play
-/// too is copied first, as their warp is their own.
+/// left as they are (`docs/spec/ui-audio-editor.md` › Warp markers). The end is read from the
+/// new mapping, not added to the length the content had, so a content held at its shortest
+/// length by one edit comes back to the audio's end with the next. A content other clips play
+/// too is copied first, as their warp is their own; the copy is not a linked copy, and the
+/// content left behind stops being one when a single clip plays it (as `clip.unlink` leaves it).
 pub(crate) fn follow_audio_end(
     session: &mut Session,
     at: ClipAt,
-    before: &Clip,
+    before: &suhina_model::ClipAudio,
     region: &suhina_model::AudioRegion,
 ) -> Result<(), CommandError> {
     let Some(seconds) = region.duration_seconds.filter(|s| s.is_finite() && *s > 0.0) else { return Ok(()) };
     let p = &mut session.project;
     let tempo = p.transport.tempo_bpm;
     let now = crate::notes::clip_at(p, at).ok_or("the clip is missing")?;
-    // Where the audio's end falls in content beats: by the warp markers when warped, else at the
-    // tempo where the clip plays, as `clip.setAudio` reads it (an arrangement clip on the song's
-    // tempo map from its content's beat 0, a slot's clip at the song's tempo): a clip in a slower
-    // section of the song does not grow by the song's main tempo.
-    let place = crate::clip_shape::Place::of(now, matches!(at, ClipAt::Slot(..)));
-    let end_of = |audio: &suhina_model::ClipAudio| {
-        if audio.warped {
-            crate::audio_timing::Mapping::of(audio, tempo).map(|m| m.beat(seconds))
-        } else {
-            Some(place.beats_for(&p.transport, seconds))
-        }
-    };
-    let (Some(old), Some(new)) = (end_of(&before.audio), end_of(&now.audio)) else {
+    // Where the audio's end falls in content beats, as the engine plays the clip
+    // (`crates/engine/src/audio.rs`): by the warp markers when warped, else at the project's
+    // tempo, wherever the clip lies on the song's tempo map. Unwarped audio plays at its file's
+    // speed and only its start and end follow the map; its content beats are counted at the
+    // project's tempo, as an import and `clip.resetWarp` count them.
+    let end_of =
+        |audio: &suhina_model::ClipAudio| crate::audio_timing::Mapping::of(audio, tempo).map(|m| m.beat(seconds));
+    let (Some(old), Some(new)) = (end_of(before), end_of(&now.audio)) else {
         return Ok(());
     };
     let moved = new - old;
-    if !moved.is_finite() || moved.abs() < SAME_MARKER {
+    if !(moved.is_finite() && new.is_finite()) || moved.abs() < SAME_MARKER {
         return Ok(());
     }
     let content = now.content;
@@ -339,20 +369,22 @@ pub(crate) fn follow_audio_end(
     if lanes.chain(takes).chain(slots).filter(|c| c.content == content).count() > 1 {
         let id = crate::commands::new_content_id(p)?;
         let copy = p.content(content).cloned().ok_or("the clip's content is missing")?;
-        p.contents.push(suhina_model::ClipContent { id, ..copy });
+        p.contents.push(suhina_model::ClipContent { id, linked: false, ..copy });
         clip_mut(p, at).ok_or("the clip is missing")?.content = id;
-        return grow(p, id, moved);
+        if crate::notes::placements(p, content) <= 1
+            && let Some(left) = p.contents.iter_mut().find(|c| c.id == content)
+        {
+            left.linked = false;
+        }
+        return end_at(p, id, new);
     }
-    grow(p, content, moved)
+    end_at(p, content, new)
 }
 
-/// Moves the end of `content` by `beats`, keeping it a 64th of a beat long at least.
-fn grow(p: &mut suhina_model::Project, content: suhina_model::ContentId, beats: f64) -> Result<(), CommandError> {
+/// Ends `content` at content beat `end`, keeping it a 64th of a beat long at least.
+fn end_at(p: &mut suhina_model::Project, content: suhina_model::ContentId, end: f64) -> Result<(), CommandError> {
     let content = p.contents.iter_mut().find(|c| c.id == content).ok_or("the clip's content is missing")?;
-    let length = content.length + beats;
-    if length.is_finite() {
-        content.length = length.max(1.0 / 64.0);
-    }
+    content.length = end.max(1.0 / 64.0);
     Ok(())
 }
 
@@ -361,7 +393,7 @@ fn grow(p: &mut suhina_model::Project, content: suhina_model::ContentId, beats: 
 /// marker already changes nothing.
 pub(crate) fn add_warp_marker(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let beat = marker_beat(params, "beat")?;
-    let (at, clip, region) = audio_clip(session, params, "has warp markers")?;
+    let (at, clip, region) = warp_clip(session, params)?;
     let mut markers = marker_list(&clip)?;
     if markers.iter().any(|m| (m.time - beat).abs() <= SAME_MARKER) {
         return Ok(json!({ "clip": clip.id.0, "markers": listed(&markers) }));
@@ -388,6 +420,32 @@ pub(crate) fn add_warp_marker(session: &mut Session, params: &Value) -> Result<V
 /// Two warp markers placed at transients are at least this many seconds apart in the file, and a
 /// transient this close to a marker the clip has already gets none.
 const TRANSIENT_GAP_SECONDS: f64 = 0.04;
+
+/// The file seconds of `markers`, in order, for [`near_marker`].
+fn audio_times(markers: &[suhina_model::WarpMarker]) -> Vec<f64> {
+    let mut times: Vec<f64> = markers.iter().map(|m| m.audio_time).collect();
+    times.sort_by(f64::total_cmp);
+    times
+}
+
+/// Whether one of the file seconds `times` (in order) is closer than [`TRANSIENT_GAP_SECONDS`]
+/// to `seconds`: only the two either side of it can be, found by a binary search rather than a
+/// scan of every marker for every transient.
+fn near_marker(times: &[f64], seconds: f64) -> bool {
+    let at = times.partition_point(|t| *t < seconds);
+    [at.checked_sub(1), Some(at)]
+        .into_iter()
+        .flatten()
+        .filter_map(|i| times.get(i))
+        .any(|t| (t - seconds).abs() < TRANSIENT_GAP_SECONDS)
+}
+
+/// The marker of `markers` (in beat order, one to a beat) within [`SAME_MARKER`] of `beat`, by a
+/// binary search.
+fn marker_on(markers: &[suhina_model::WarpMarker], beat: f64) -> Option<&suhina_model::WarpMarker> {
+    let from = markers.partition_point(|m| m.time < beat && (m.time - beat).abs() > SAME_MARKER);
+    markers.get(from).filter(|m| (m.time - beat).abs() <= SAME_MARKER)
+}
 
 /// How far, in seconds, a note's start found from its spectrum moves to an attack found from its
 /// level: the level places an attack to the millisecond, the spectrum within a window's length.
@@ -428,30 +486,65 @@ pub fn transient_seconds(data: &suhina_engine::AudioData) -> Vec<f64> {
     found
 }
 
-/// `clip.addWarpMarkersAtTransients`: pins a warp marker on every transient of the clip's file
-/// (where its level jumps, as the Rhythmic mode finds them), each at the beat where that sound
-/// plays now, so nothing moves yet; dragging one then puts its hit on a beat. A transient near a
-/// marker the clip has keeps that marker. One undo step (#1185).
+/// The note starts a warp marker command places markers on: the `transients` it was given (the
+/// window finds them on a thread of its own, so a long file is not analysed on the window's
+/// thread), else [`transient_seconds`] of the clip's file. A given list is hostile input: at most
+/// [`MAX_MARKERS`] numbers, each finite and 0 or more, sorted and each kept once; seconds past
+/// the end of the audio (when its length is known) are left out.
+fn note_starts(
+    session: &Session,
+    params: &Value,
+    region: &suhina_model::AudioRegion,
+) -> Result<Vec<f64>, CommandError> {
+    if let Some(mut given) = given_transients(params)? {
+        if let Some(end) = region.duration_seconds.filter(|s| s.is_finite() && *s > 0.0) {
+            given.retain(|s| *s <= end);
+        }
+        return Ok(given);
+    }
+    let data = session
+        .audio()
+        .files
+        .get(region.pool_key().as_ref())
+        .ok_or("the clip's audio is not loaded, so its transients cannot be found")?;
+    if data.sample_rate == 0 {
+        return Err("the clip's audio has no sample rate".into());
+    }
+    Ok(transient_seconds(data))
+}
+
+/// The `transients` parameter checked, sorted and each value once; `None` when it is left out.
+fn given_transients(params: &Value) -> Result<Option<Vec<f64>>, CommandError> {
+    let args = Args::new(params);
+    if !args.has("transients") {
+        return Ok(None);
+    }
+    let mut list = args.numbers("transients", MAX_MARKERS)?;
+    if let Some(bad) = list.iter().find(|s| **s < 0.0) {
+        return Err(format!("transients must be seconds from 0 on, got {bad}").into());
+    }
+    list.sort_by(f64::total_cmp);
+    list.dedup();
+    Ok(Some(list))
+}
+
+/// `clip.addWarpMarkersAtTransients`: pins a warp marker on every note start of the clip's file
+/// ([`transient_seconds`]), each at the beat where that sound plays now, so nothing moves yet;
+/// dragging one then puts its hit on a beat. A transient near a marker the clip has keeps that
+/// marker. One undo step (#1185).
 pub(crate) fn add_warp_markers_at_transients(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (at, clip, region) = audio_clip(session, params, "has warp markers")?;
+    let (at, clip, region) = warp_clip(session, params)?;
     let mut markers = marker_list(&clip)?;
     let mapping = crate::audio_timing::Mapping::of(&clip.audio, session.project.transport.tempo_bpm);
     let Some(mapping @ crate::audio_timing::Mapping::Warp(_)) = mapping else {
         return Err("the clip's warp markers must rise in beats and in seconds".into());
     };
-    let data = session
-        .audio()
-        .files
-        .get(region.pool_key().as_ref())
-        .cloned()
-        .ok_or("the clip's audio is not loaded, so its transients cannot be found")?;
-    if data.sample_rate == 0 {
-        return Err("the clip's audio has no sample rate".into());
-    }
+    let transients = note_starts(session, params, &region)?;
     let mut added = 0usize;
     let existing = markers.clone();
-    for seconds in transient_seconds(&data) {
-        if markers.iter().any(|m| (m.audio_time - seconds).abs() < TRANSIENT_GAP_SECONDS) {
+    let times = audio_times(&existing);
+    for seconds in transients {
+        if near_marker(&times, seconds) {
             continue;
         }
         if markers.len() >= MAX_MARKERS {
@@ -464,7 +557,7 @@ pub(crate) fn add_warp_markers_at_transients(session: &mut Session, params: &Val
         // A pin the clip has keeps its place: a transient too close to one in beats (closer than
         // a marker may be to its neighbour) gets none, rather than the merge below dropping the
         // existing pin for it.
-        if existing.iter().any(|m| (m.time - beat).abs() <= SAME_MARKER) {
+        if marker_on(&existing, beat).is_some() {
             continue;
         }
         markers.push(suhina_model::WarpMarker { time: beat, audio_time: seconds });
@@ -477,8 +570,10 @@ pub(crate) fn add_warp_markers_at_transients(session: &mut Session, params: &Val
     // Read back through the markers' own mapping, so they rise; one closer than a marker can be
     // to its neighbour in beats is left out rather than refusing the rest.
     let mut kept: Vec<suhina_model::WarpMarker> = Vec::with_capacity(markers.len());
-    let was_there =
-        |m: &suhina_model::WarpMarker| existing.iter().any(|e| e.time == m.time && e.audio_time == m.audio_time);
+    let was_there = |m: &suhina_model::WarpMarker| {
+        let i = existing.partition_point(|e| e.time < m.time);
+        existing.get(i).is_some_and(|e| e.time == m.time && e.audio_time == m.audio_time)
+    };
     for m in markers {
         match kept.last() {
             Some(last) if m.time - last.time <= SAME_MARKER || m.audio_time <= last.audio_time => {
@@ -506,7 +601,7 @@ pub(crate) fn add_warp_markers_at_transients(session: &mut Session, params: &Val
 /// pinned to goes with it. It stays between its neighbours.
 pub(crate) fn move_warp_marker(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let (from, to) = (marker_beat(params, "from")?, marker_beat(params, "beat")?);
-    let (at, clip, region) = audio_clip(session, params, "has warp markers")?;
+    let (at, clip, region) = warp_clip(session, params)?;
     let mut markers = marker_list(&clip)?;
     let index = markers
         .iter()
@@ -539,7 +634,7 @@ fn marker_indices(
     let mut indices = beats
         .iter()
         .map(|beat| {
-            let from = markers.partition_point(|m| m.time < beat - SAME_MARKER);
+            let from = markers.partition_point(|m| m.time < *beat && (m.time - beat).abs() > SAME_MARKER);
             markers
                 .get(from)
                 .filter(|m| (m.time - beat).abs() <= SAME_MARKER)
@@ -557,7 +652,7 @@ fn marker_indices(
 /// moved stay where they are, and a moved one stays between them.
 pub(crate) fn move_warp_markers(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let by = Args::new(params).f64("by")?;
-    let (at, clip, region) = audio_clip(session, params, "has warp markers")?;
+    let (at, clip, region) = warp_clip(session, params)?;
     let mut markers = marker_list(&clip)?;
     let indices = marker_indices(&markers, params, "beats")?;
     let most = suhina_engine::MAX_START_BEAT;
@@ -578,7 +673,7 @@ pub(crate) fn move_warp_markers(session: &mut Session, params: &Value) -> Result
 /// `clip.removeWarpMarkers`: takes away the markers at the content beats `beats` in one step. A
 /// warped clip keeps two.
 pub(crate) fn remove_warp_markers(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let (at, clip, region) = audio_clip(session, params, "has warp markers")?;
+    let (at, clip, region) = warp_clip(session, params)?;
     let markers = marker_list(&clip)?;
     let indices = marker_indices(&markers, params, "beats")?;
     if markers.len().saturating_sub(indices.len()) < 2 {
@@ -591,10 +686,12 @@ pub(crate) fn remove_warp_markers(session: &mut Session, params: &Value) -> Resu
 
 /// `clip.quantizeWarpMarkers`: moves the audio's transients towards the nearest line of `grid`
 /// (as `note.quantize` takes it) by `amount` percent (default 100: onto it), in the content beats
-/// from `start` to `end` (both left out: the whole clip). Each transient there without a marker
-/// near it gets one first, pinned where its sound plays now; then every marker in the range moves
-/// with its sound. A marker that would land on or past its neighbour stays (a new one is left
-/// out). One undo step.
+/// from `start` to `end`. Left out, they are the part of the content the clip plays, as the audio
+/// editor shows it: from its start marker (its offset, or its loop's start when that is earlier)
+/// to its end (offset plus length) or, looping, its loop's end. Each transient there without a
+/// marker near it gets one first, pinned where its sound plays now; then every marker in the
+/// range moves with its sound. A marker that would land on or past its neighbour stays (a new one
+/// is left out). One undo step.
 pub(crate) fn quantize_warp_markers(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let step = crate::notes::quantize_step(&session.project, params)?;
     let args = Args::new(params);
@@ -603,35 +700,27 @@ pub(crate) fn quantize_warp_markers(session: &mut Session, params: &Value) -> Re
         return Err(format!("amount must be 0 to 100 percent, got {amount}").into());
     }
     let amount = amount / 100.0;
-    let most = suhina_engine::MAX_START_BEAT;
-    let start = args.opt_f64("start")?.unwrap_or(-most);
-    let end = args.opt_f64("end")?.unwrap_or(most);
+    let (start, end) = (args.opt_f64("start")?, args.opt_f64("end")?);
+    let (at, clip, region) = warp_clip(session, params)?;
+    let (start, end) = (start.unwrap_or_else(|| played(&clip).0), end.unwrap_or_else(|| played(&clip).1));
     if !(start.is_finite() && end.is_finite() && start < end) {
         return Err(format!("start ({start}) must be before end ({end})").into());
     }
     let inside = |beat: f64| beat >= start - SAME_MARKER && beat <= end + SAME_MARKER;
-    let (at, clip, region) = audio_clip(session, params, "has warp markers")?;
     let markers = marker_list(&clip)?;
     let mapping = crate::audio_timing::Mapping::of(&clip.audio, session.project.transport.tempo_bpm);
     let Some(mapping @ crate::audio_timing::Mapping::Warp(_)) = mapping else {
         return Err("the clip's warp markers must rise in beats and in seconds".into());
     };
-    let data = session
-        .audio()
-        .files
-        .get(region.pool_key().as_ref())
-        .cloned()
-        .ok_or("the clip's audio is not loaded, so its transients cannot be found")?;
-    if data.sample_rate == 0 {
-        return Err("the clip's audio has no sample rate".into());
-    }
+    let transients = note_starts(session, params, &region)?;
     // (marker, whether it was there before)
     let mut all: Vec<(suhina_model::WarpMarker, bool)> = markers.iter().map(|m| (*m, true)).collect();
-    for seconds in transient_seconds(&data) {
+    let times = audio_times(&markers);
+    for seconds in transients {
         if all.len() >= MAX_MARKERS {
             break;
         }
-        if markers.iter().any(|m| (m.audio_time - seconds).abs() < TRANSIENT_GAP_SECONDS) {
+        if near_marker(&times, seconds) {
             continue;
         }
         let beat = mapping.beat(seconds);
@@ -640,23 +729,54 @@ pub(crate) fn quantize_warp_markers(session: &mut Session, params: &Value) -> Re
         }
     }
     all.sort_by(|a, b| a.0.time.total_cmp(&b.0.time));
-    let line = |beat: f64| {
+    let to = |beat: f64| {
+        if !inside(beat) {
+            return beat;
+        }
         let nearest = (beat / step).round() * step;
         beat + (nearest - beat) * amount
     };
+    let (kept, moved) = quantized(&all, to)?;
+    let mut answer = store_markers(session, at, &clip, &region, kept)?;
+    if let Some(map) = answer.as_object_mut() {
+        map.insert("moved".into(), json!(moved));
+    }
+    Ok(answer)
+}
+
+/// The content beats from where `clip` starts playing its content to where it stops: its offset
+/// (or its loop's start, when earlier) to its offset plus length (or its loop's end, looping).
+fn played(clip: &Clip) -> (f64, f64) {
+    match clip.loop_range.filter(|r| r.end > r.start) {
+        Some(range) => (clip.offset.min(range.start), range.end),
+        None => (clip.offset, clip.offset + clip.length),
+    }
+}
+
+/// The markers `all` (in beat order, each with whether the clip had it) moved to the beats `to`
+/// gives them, and how many moved. Two that land on one line: a new marker is left out; one the
+/// clip had stays where it was, the marker before it going back to its own place if it moved
+/// over it. Fails, rather than saving markers the next read would merge, when two end up no
+/// further apart than [`SAME_MARKER`] or out of order in seconds.
+fn quantized(
+    all: &[(suhina_model::WarpMarker, bool)],
+    to: impl Fn(f64) -> f64,
+) -> Result<(Vec<suhina_model::WarpMarker>, usize), CommandError> {
     // Each kept marker with the beat it had before the move and whether the clip had it.
     let mut kept: Vec<(suhina_model::WarpMarker, f64, bool)> = Vec::with_capacity(all.len());
-    for &(marker, was_there) in &all {
-        let to = if inside(marker.time) { line(marker.time) } else { marker.time };
+    for &(marker, was_there) in all {
+        let target = to(marker.time);
         let after = |kept: &[(suhina_model::WarpMarker, f64, bool)], time: f64| {
             kept.last().is_none_or(|(last, _, _)| time > last.time + SAME_MARKER && marker.audio_time > last.audio_time)
         };
-        if after(&kept, to) {
-            kept.push((suhina_model::WarpMarker { time: to, audio_time: marker.audio_time }, marker.time, was_there));
+        if after(&kept, target) {
+            kept.push((
+                suhina_model::WarpMarker { time: target, audio_time: marker.audio_time },
+                marker.time,
+                was_there,
+            ));
             continue;
         }
-        // Two land on one line: a new marker is left out; one the clip had stays where it was,
-        // the marker before it going back to its own place if it moved over it.
         if !was_there {
             continue;
         }
@@ -677,20 +797,17 @@ pub(crate) fn quantize_warp_markers(session: &mut Session, params: &Value) -> Re
     }
     let moved = kept.iter().filter(|(m, from, _)| (m.time - from).abs() > SAME_MARKER).count();
     let kept: Vec<suhina_model::WarpMarker> = kept.into_iter().map(|(m, _, _)| m).collect();
-    if !rising(&kept) || kept.len() < 2 {
-        return Err("the markers could not be quantised without passing each other".into());
+    let apart = kept.windows(2).all(|w| matches!(w, [a, b] if b.time - a.time > SAME_MARKER));
+    if !rising(&kept) || !apart || kept.len() < 2 {
+        return Err("the markers could not be quantized without passing or meeting each other".into());
     }
-    let mut answer = store_markers(session, at, &clip, &region, kept)?;
-    if let Some(map) = answer.as_object_mut() {
-        map.insert("moved".into(), json!(moved));
-    }
-    Ok(answer)
+    Ok((kept, moved))
 }
 
 /// `clip.removeWarpMarker`: takes away the marker at content beat `beat`. A warped clip keeps two.
 pub(crate) fn remove_warp_marker(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let beat = marker_beat(params, "beat")?;
-    let (at, clip, region) = audio_clip(session, params, "has warp markers")?;
+    let (at, clip, region) = warp_clip(session, params)?;
     let mut markers = marker_list(&clip)?;
     let index = markers
         .iter()
@@ -706,10 +823,18 @@ pub(crate) fn remove_warp_marker(session: &mut Session, params: &Value) -> Resul
 /// `clip.resetWarp`: puts the clip's warp back to two markers, one at each end of the audio, so
 /// the audio runs evenly. By default at the tempo the clip has (or the project's, for a clip that
 /// is not warped); with `detect` at the tempo found in the file's metadata, its name or its sound,
-/// as `clip.findTempo` reads them. The clip's start, length and loop stay where they are.
+/// as `clip.findTempo` reads them. The clip's start, length and loop stay where they are. The
+/// list it replaces is never copied, so it also clears a list too long for the other warp marker
+/// commands.
 pub(crate) fn reset_warp(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let detect = Args::new(params).opt_bool("detect")?.unwrap_or(false);
-    let (at, clip, region) = audio_clip(session, params, "has warp markers")?;
+    // Taken as the other warp marker commands take it, so one list can go to each of them, and
+    // checked as they check it; the tempo is detected from the sound's beat (an autocorrelation of
+    // its level's rises, `suhina_media::tempo::detect`), not from where its notes start.
+    given_transients(params)?;
+    let (at, region) = audio_place(session, params, "has warp markers")?;
+    let clip = crate::notes::clip_at(&session.project, at).ok_or("the clip is missing")?;
+    let (own, own_source) = (clip.audio.tempo().filter(|_| clip.audio.warped), clip.audio.tempo_source);
     let seconds = region
         .duration_seconds
         .filter(|s| s.is_finite() && *s > 0.0)
@@ -723,8 +848,7 @@ pub(crate) fn reset_warp(session: &mut Session, params: &Value) -> Result<Value,
             .find_map(|(bpm, source)| bpm.map(|b| (b, source)))
             .ok_or("no tempo was found in the file's metadata, its name or its sound")?
     } else {
-        let own = clip.audio.tempo().filter(|_| clip.audio.warped);
-        (own.unwrap_or(session.project.transport.tempo_bpm), clip.audio.tempo_source.unwrap_or(TempoSource::Manual))
+        (own.unwrap_or(session.project.transport.tempo_bpm), own_source.unwrap_or(TempoSource::Manual))
     };
     if !(bpm.is_finite() && CLIP_TEMPO_RANGE.contains(&bpm)) {
         return Err(format!("the tempo {bpm} is outside {CLIP_TEMPO_RANGE:?}").into());
@@ -733,10 +857,12 @@ pub(crate) fn reset_warp(session: &mut Session, params: &Value) -> Result<Value,
         suhina_model::WarpMarker { time: 0.0, audio_time: 0.0 },
         suhina_model::WarpMarker { time: seconds * bpm / 60.0, audio_time: seconds },
     ];
-    let before = clip;
     let clip = clip_mut(&mut session.project, at).ok_or("the clip is missing")?;
+    // The old list is moved out, not copied: `before` is the audio as it was, for its end.
+    let old = std::mem::replace(&mut clip.audio.warp_markers, markers);
+    let mut before = clip.audio.clone();
+    before.warp_markers = old;
     clip.audio.warped = true;
-    clip.audio.warp_markers = markers;
     clip.audio.tempo_source = Some(source);
     follow_audio_end(session, at, &before, &region)?;
     let clip = crate::notes::clip_at(&session.project, at).ok_or("the clip is missing")?;
@@ -806,6 +932,27 @@ mod tests {
         let notes = (1..12).map(|k| k as f64 * note);
         let missed: Vec<f64> = notes.filter(|at| !found.iter().any(|s| (s - at).abs() < 0.02)).collect();
         assert!(missed.len() <= 1, "missed {missed:?} of {found:?}");
+    }
+
+    /// A new marker rolled back to its own beat, just past where the marker before it moved, would
+    /// be saved within `SAME_MARKER` of it and merged by the next read: the quantize is refused.
+    #[test]
+    fn a_quantize_that_leaves_two_markers_on_one_beat_is_refused() {
+        let at = |time: f64, audio_time: f64| suhina_model::WarpMarker { time, audio_time };
+        // The first moves to 1.0; the new one (1.0000005) to 1.2; the last (not in the range)
+        // stays at 1.1, before 1.2, so the new one goes back to 1.0000005.
+        let all = [(at(0.5, 0.25), true), (at(1.000_000_5, 0.5), false), (at(1.1, 0.55), true)];
+        let to = |beat: f64| match beat {
+            b if b < 0.6 => 1.0,
+            b if b < 1.05 => 1.2,
+            b => b,
+        };
+        assert!(quantized(&all, to).is_err());
+        // Further apart, they are kept: the first moved, the new one back at its own beat.
+        let all = [(at(0.5, 0.25), true), (at(1.01, 0.5), false), (at(1.1, 0.55), true)];
+        let (kept, moved) = quantized(&all, to).unwrap();
+        let beats: Vec<f64> = kept.iter().map(|m| m.time).collect();
+        assert_eq!((beats, moved), (vec![1.0, 1.01, 1.1], 1));
     }
 
     #[test]

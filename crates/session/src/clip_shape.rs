@@ -241,7 +241,7 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
     };
     let settings = warp_settings(params)?;
     if warp.is_none() && mode.is_none() && transpose.is_none() && settings.is_none() {
-        return Err("give warp, mode, transpose or a warp mode setting (slice, tail, envelope, grain, flux)".into());
+        return Err("give warp, mode, transpose or a warp mode setting (slice, tail, envelope, grain, scatter)".into());
     }
     let (at, clip) = named(session, params)?;
     let clip = clip.clone();
@@ -315,7 +315,7 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
     // the end the clip can be drawn out to follows it, as after a warp marker's move
     // (`docs/spec/ui-audio-editor.md` › Warp markers).
     if warp.is_some() {
-        crate::clip_audio::follow_audio_end(session, at, &original, &region)?;
+        crate::clip_audio::follow_audio_end(session, at, &original.audio, &region)?;
     }
     let mut out = address(at, id);
     out.insert("warp".into(), json!(warped));
@@ -328,26 +328,27 @@ pub(crate) fn set_audio(session: &mut Session, params: &Value) -> Result<Value, 
             "tail": settings.tail.name(),
             "envelope": settings.envelope,
             "grain": settings.grain,
-            "flux": settings.flux,
+            "scatter": settings.scatter,
         }),
     );
     Ok(Value::Object(with_scene_id(&session.project, out)))
 }
 
 /// A change to the stretch modes' settings `clip.setAudio` was given (`slice`, `tail`,
-/// `envelope`, `grain`, `flux`), as a function of the settings the clip has; `None` when none of
+/// `envelope`, `grain`, `scatter`), as a function of the settings the clip has; `None` when none of
 /// them was given. Every value is checked before anything changes.
 #[allow(clippy::type_complexity)]
 fn warp_settings(
     params: &Value,
 ) -> Result<Option<Box<dyn Fn(suhina_model::WarpSettings) -> suhina_model::WarpSettings>>, CommandError> {
-    use suhina_model::{ENVELOPE_RANGE, FLUX_RANGE, GRAIN_RANGE, SliceAt, SliceTail};
+    use suhina_model::{ENVELOPE_RANGE, GRAIN_RANGE, SCATTER_RANGE, SliceAt, SliceTail};
     let args = Args::new(params);
+    // Read as every command reads a text (trimmed, null as left out), then matched to a name.
     let named = |key: &str, names: &[&str]| -> Result<Option<String>, CommandError> {
-        match args.value(key) {
-            None | Some(Value::Null) => Ok(None),
-            Some(Value::String(name)) if names.contains(&name.as_str()) => Ok(Some(name.clone())),
-            Some(_) => Err(format!("{key} must be one of {}", names.join(", ")).into()),
+        match args.opt_text(key) {
+            Ok(None) => Ok(None),
+            Ok(Some(name)) if names.contains(&name) => Ok(Some(name.to_string())),
+            _ => Err(format!("{key} must be one of {}", names.join(", ")).into()),
         }
     };
     let slice_names: Vec<&str> = SliceAt::ALL.iter().map(|s| s.name()).collect();
@@ -363,8 +364,8 @@ fn warp_settings(
     };
     let envelope = number("envelope", ENVELOPE_RANGE, "percent")?;
     let grain = number("grain", GRAIN_RANGE, "milliseconds")?;
-    let flux = number("flux", FLUX_RANGE, "percent")?;
-    if slice.is_none() && tail.is_none() && envelope.is_none() && grain.is_none() && flux.is_none() {
+    let scatter = number("scatter", SCATTER_RANGE, "percent")?;
+    if slice.is_none() && tail.is_none() && envelope.is_none() && grain.is_none() && scatter.is_none() {
         return Ok(None);
     }
     Ok(Some(Box::new(move |w: suhina_model::WarpSettings| suhina_model::WarpSettings {
@@ -372,7 +373,7 @@ fn warp_settings(
         tail: tail.unwrap_or(w.tail),
         envelope: envelope.unwrap_or(w.envelope),
         grain: grain.unwrap_or(w.grain),
-        flux: flux.unwrap_or(w.flux),
+        scatter: scatter.unwrap_or(w.scatter),
     })))
 }
 

@@ -34,13 +34,16 @@ pub fn transients(samples: &[f32], channels: usize, rate: f32) -> Vec<usize> {
     }
     // The energy of each hop: each channel's squared samples, averaged over the channels. The
     // channels are squared before they are combined, so channels in opposite phase do not cancel
-    // into silence and hide their attacks (#1540).
+    // into silence and hide their attacks (#1540). A sample that is not finite, or whose square is
+    // not, counts as silence: one infinite hop made the running sum below infinite, and every
+    // attack after it was measured against a NaN average and lost.
     let energy: Vec<f32> = (0..hops)
         .map(|h| {
             let from = h * hop * channels;
             let part = samples.get(from..from + hop * channels).unwrap_or_default();
-            let sum: f32 = part.iter().map(|v| v * v).sum::<f32>() / channels as f32;
-            sum / hop as f32
+            let sum: f32 = part.iter().map(|v| v * v).filter(|e| e.is_finite()).sum::<f32>() / channels as f32;
+            let energy = sum / hop as f32;
+            if energy.is_finite() { energy } else { 0.0 }
         })
         .collect();
     let rises: Vec<f32> = std::iter::once(0.0)
@@ -84,7 +87,9 @@ pub fn transients(samples: &[f32], channels: usize, rate: f32) -> Vec<usize> {
 /// hop's peak: where the attack begins.
 fn attack(samples: &[f32], channels: usize, start: usize, hop: usize) -> usize {
     let level = |f: usize| {
-        samples.get(f * channels..(f + 1) * channels).map_or(0.0, |s| s.iter().map(|v| v.abs()).fold(0.0, f32::max))
+        samples
+            .get(f * channels..(f + 1) * channels)
+            .map_or(0.0, |s| s.iter().map(|v| v.abs()).filter(|v| v.is_finite()).fold(0.0, f32::max))
     };
     let peak = (start..start + hop).map(level).fold(0.0, f32::max);
     (start..start + hop).find(|f| level(*f) >= peak * 0.25).unwrap_or(start)
@@ -118,6 +123,21 @@ mod tests {
         assert_eq!(found.len(), want.len(), "{found:?}");
         for (f, w) in found.iter().zip(&want) {
             assert!(f.abs_diff(*w) <= 48, "{f} for {w}");
+        }
+    }
+
+    /// One sample that is not finite does not hide the attacks after it.
+    #[test]
+    fn an_invalid_sample_leaves_the_later_clicks_found() {
+        for invalid in [f32::INFINITY, f32::NAN, f32::MAX] {
+            let mut samples = clicks(0.25, 2.0);
+            samples[1_000] = invalid;
+            let found = transients(&samples, 1, RATE);
+            let want: Vec<usize> = (1..8).map(|k| k * 12_000).collect();
+            assert_eq!(found.len(), want.len(), "{invalid}: {found:?}");
+            for (f, w) in found.iter().zip(&want) {
+                assert!(f.abs_diff(*w) <= 48, "{invalid}: {f} for {w}");
+            }
         }
     }
 

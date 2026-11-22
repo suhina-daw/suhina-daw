@@ -85,6 +85,21 @@ fn a_marker_is_added_where_the_sound_is_then_moved_and_removed_one_undo_step_eac
     assert_eq!(markers_of(&session), [(0.0, 0.0), (2.5, 1.0), (4.0, 2.0)]);
 }
 
+/// A marker found by its beat at a floating-point edge: two markers within `SAME_MARKER` of the
+/// beat asked for, the first a hair outside it; the second is the one moved.
+#[test]
+fn a_marker_just_inside_the_tolerance_is_found_past_one_just_outside() {
+    let dir = TempDir::new("warp-markers-edge");
+    let (mut session, id) = tone(&dir);
+    run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": 1.0000985 })).unwrap();
+    run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": 1.0001005 })).unwrap();
+    let before = markers_of(&session);
+    run(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": [1.0001], "by": 0.5 })).unwrap();
+    let after = markers_of(&session);
+    assert_eq!(after.len(), before.len(), "{after:?}");
+    assert!(after.iter().any(|m| (m.0 - 1.5001005).abs() < 1e-6), "the marker within reach moved: {after:?}");
+}
+
 #[test]
 fn several_markers_move_and_are_removed_together_in_one_undo_step_each() {
     let dir = TempDir::new("warp-markers-many");
@@ -186,10 +201,15 @@ fn quantising_moves_the_transients_onto_the_grid() {
         json!({ "clip": id, "grid": "1/4", "start": 1.5, "end": 3.0, "amount": 50 }),
     )
     .unwrap();
+    // Each new marker is on the transient found (a little after the click's first sample), so its
+    // beat is worked out from that second, not from the click's.
     let beat = |seconds: f64| seconds * 110.0 / 60.0;
     let half = |b: f64| b + (b.round() - b) * 0.5;
-    let want = [(0.0, 0.0), (half(beat(1.0)), 1.0), (half(beat(1.5)), 1.5), (before[1].0, before[1].1)];
-    assert!(near(&markers_of(&session), &want), "{:?}", markers_of(&session));
+    let got = markers_of(&session);
+    let found = |near: f64| got.iter().map(|m| m.1).find(|s| (s - near).abs() < 0.002).unwrap_or(near);
+    let (one, one_half) = (found(1.0), found(1.5));
+    let want = [(0.0, 0.0), (half(beat(one)), one), (half(beat(one_half)), one_half), (before[1].0, before[1].1)];
+    assert!(near(&got, &want), "{got:?}");
 
     let fails = |session: &mut Session, params: Value| run(session, "clip.quantizeWarpMarkers", params).unwrap_err();
     fails(&mut session, json!({ "clip": id }));
@@ -299,11 +319,11 @@ fn resetting_with_detection_needs_a_tempo_to_find_and_takes_a_named_one() {
 fn a_clip_keeps_its_own_warp_mode_settings() {
     let dir = TempDir::new("warp-settings");
     let (mut session, id) = tone(&dir);
-    let set = json!({ "clip": id, "mode": "texture", "grain": 120.0, "flux": 70.0 });
+    let set = json!({ "clip": id, "mode": "texture", "grain": 120.0, "scatter": 70.0 });
     let answer = run(&mut session, "clip.setAudio", set).unwrap();
     assert_eq!(answer["settings"]["grain"], json!(120.0));
     let warp = clips(&session)[0].audio.warp;
-    assert_eq!((warp.grain, warp.flux), (120.0, 70.0));
+    assert_eq!((warp.grain, warp.scatter), (120.0, 70.0));
     run(&mut session, "clip.setAudio", json!({ "clip": id, "mode": "rhythmic", "slice": "1/16", "tail": "off" }))
         .unwrap();
     let audio = clips(&session)[0].audio.clone();
@@ -317,7 +337,7 @@ fn a_clip_keeps_its_own_warp_mode_settings() {
         json!({ "clip": id, "tail": 3 }),
         json!({ "clip": id, "envelope": 101.0 }),
         json!({ "clip": id, "grain": 5.0 }),
-        json!({ "clip": id, "flux": "lots" }),
+        json!({ "clip": id, "scatter": "lots" }),
         json!({ "clip": id }),
     ] {
         assert!(run(&mut session, "clip.setAudio", bad.clone()).is_err(), "{bad}");
@@ -391,4 +411,152 @@ fn a_shared_audio_keeps_its_end_for_the_other_clips() {
     let length = |c: &Clip| session.project().content(c.content).unwrap().length;
     assert_ne!(both[0].content, both[1].content);
     assert_eq!((length(&both[0]), length(&both[1])), (8.0, 4.0));
+}
+
+/// The content's end is read from the markers each time, not added to the length it had: held
+/// at its shortest (a 64th) by one move, it comes back to the audio's end with the next.
+#[test]
+fn a_content_squeezed_to_its_shortest_comes_back_to_the_end_of_its_audio() {
+    let dir = TempDir::new("warp-end-shortest");
+    let (mut session, id) = tone(&dir);
+    let content_length = |session: &Session| {
+        let clip = clips(session)[0].clone();
+        session.project().content(clip.content).unwrap().length
+    };
+    run(&mut session, "clip.moveWarpMarker", json!({ "clip": id, "from": 4.0, "beat": 1.0 / 128.0 })).unwrap();
+    assert_eq!(content_length(&session), 1.0 / 64.0);
+    run(&mut session, "clip.moveWarpMarker", json!({ "clip": id, "from": 1.0 / 128.0, "beat": 4.0 })).unwrap();
+    assert!((content_length(&session) - 4.0).abs() < 1e-9, "{}", content_length(&session));
+}
+
+/// A linked copy whose warp moves the end of the audio gets a content of its own that is no
+/// linked copy, and the content left behind stays linked only while two clips still play it.
+#[test]
+fn a_linked_copy_given_its_own_audio_end_leaves_the_link() {
+    let dir = TempDir::new("warp-end-linked");
+    let (mut session, id) = tone(&dir);
+    let content = clips(&session)[0].content;
+    let duplicate = json!({ "clips": [{ "clip": id }], "linked": true, "stack": true });
+    run(&mut session, "clip.duplicate", duplicate.clone()).unwrap();
+    run(&mut session, "clip.duplicate", duplicate).unwrap();
+    let all = clips(&session);
+    assert_eq!(all.len(), 3);
+    assert!(all.iter().all(|c| c.content == content));
+    assert!(session.project().content(content).unwrap().linked);
+    let own = |session: &Session, clip: u32| clips(session).into_iter().find(|c| c.id.0 == clip).unwrap().content;
+    run(&mut session, "clip.moveWarpMarker", json!({ "clip": id, "from": 4.0, "beat": 8.0 })).unwrap();
+    let first = own(&session, id);
+    assert_ne!(first, content);
+    assert!(!session.project().content(first).unwrap().linked, "the clip's own content is no linked copy");
+    assert!(session.project().content(content).unwrap().linked, "two clips still play the content left");
+    // The second of the copies leaves too: one clip plays the content left, so it is no longer linked.
+    let second = clips(&session).into_iter().find(|c| c.id.0 != id && c.content == content).unwrap().id.0;
+    run(&mut session, "clip.moveWarpMarker", json!({ "clip": second, "from": 4.0, "beat": 6.0 })).unwrap();
+    assert!(!session.project().content(own(&session, second)).unwrap().linked);
+    assert!(!session.project().content(content).unwrap().linked, "one clip plays it now");
+}
+
+/// A clip holding more markers than a clip keeps (a damaged file) is refused by the marker
+/// commands with a pointer to Reset warp, which replaces the list.
+#[test]
+fn a_clip_with_too_many_warp_markers_is_edited_again_after_a_reset() {
+    let dir = TempDir::new("warp-too-many");
+    let (session, id) = tone(&dir);
+    let mut project = session.project().clone();
+    let clip = project.arrangement.lanes.iter_mut().flat_map(|l| l.clips.iter_mut()).find(|c| c.id.0 == id).unwrap();
+    clip.audio.warp_markers =
+        (0..=100_000).map(|k| WarpMarker { time: k as f64 * 4e-5, audio_time: k as f64 * 2e-5 }).collect();
+    let mut session = Session::new(project);
+    for (command, params) in [
+        ("clip.addWarpMarker", json!({ "clip": id, "beat": 1.0 })),
+        ("clip.moveWarpMarker", json!({ "clip": id, "from": 4.0, "beat": 5.0 })),
+        ("clip.removeWarpMarker", json!({ "clip": id, "beat": 4.0 })),
+    ] {
+        let error = run(&mut session, command, params).unwrap_err();
+        assert!(error.contains("Reset warp"), "{command}: {error}");
+    }
+    assert_eq!(markers_of(&session).len(), 100_001, "nothing refused changed anything");
+    run(&mut session, "clip.resetWarp", json!({ "clip": id })).unwrap();
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (4.0, 2.0)]);
+    run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": 2.0 })).unwrap();
+    assert_eq!(markers_of(&session).len(), 3);
+}
+
+/// Without `start` and `end`, quantizing takes the part of the content the clip plays: a clip
+/// trimmed to beat 2 leaves the click after its end, and the marker at the audio's end, alone.
+#[test]
+fn quantizing_without_a_range_takes_what_the_clip_plays() {
+    let dir = TempDir::new("warp-quantize-played");
+    let (mut session, id) = warped(&wav(&dir, "clicks.wav", &clicks()));
+    run(&mut session, "clip.setTempo", json!({ "clip": id, "bpm": 110.0 })).unwrap();
+    let end = *markers_of(&session).last().unwrap();
+    run(&mut session, "clip.trim", json!({ "clip": id, "end": 2.0 })).unwrap();
+    run(&mut session, "clip.quantizeWarpMarkers", json!({ "clip": id, "grid": "1/4" })).unwrap();
+    let got = markers_of(&session);
+    let want = [(0.0, 0.0), (1.0, 0.5), (2.0, 1.0), end];
+    let near = got.len() == want.len()
+        && got.iter().zip(&want).all(|(g, w)| (g.0 - w.0).abs() < 1e-6 && (g.1 - w.1).abs() < 0.002);
+    assert!(near, "{got:?}");
+}
+
+/// The stretch settings' names are read as every command's texts are: trimmed, null left out.
+#[test]
+fn warp_setting_names_are_read_trimmed() {
+    let dir = TempDir::new("warp-settings-trimmed");
+    let (mut session, id) = tone(&dir);
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "slice": " 1/16 ", "tail": null })).unwrap();
+    assert_eq!(clips(&session)[0].audio.warp.slice, SliceAt::Sixteenth);
+    assert!(run(&mut session, "clip.setAudio", json!({ "clip": id, "slice": "  " })).is_err());
+    assert!(run(&mut session, "clip.setAudio", json!({ "clip": id, "tail": 1 })).is_err());
+}
+
+/// Note starts found already (the window finds them on a thread of its own) are used as given:
+/// a silent file, where analysis finds none, gets markers on them, sorted, each once, and none
+/// past the end of its audio; quantizing moves the ones given.
+#[test]
+fn given_note_starts_are_used_instead_of_analysing_the_file() {
+    let dir = TempDir::new("warp-given-transients");
+    let (mut session, id) = warped(&wav(&dir, "silence.wav", &vec![0.0; 2 * SR as usize]));
+    let found = run(&mut session, "clip.addWarpMarkersAtTransients", json!({ "clip": id })).unwrap();
+    assert_eq!(found["added"], json!(0), "silence has no note starts of its own: {found}");
+    let given = json!({ "clip": id, "transients": [1.5, 0.5, 1.0, 1.0, 3.0] });
+    let placed = run(&mut session, "clip.addWarpMarkersAtTransients", given).unwrap();
+    assert_eq!(placed["added"], json!(3), "{placed}");
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (1.0, 0.5), (2.0, 1.0), (3.0, 1.5), (4.0, 2.0)]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (4.0, 2.0)]);
+    // 0.55 s plays at beat 1.1 and is quantized onto beat 1.
+    let given = json!({ "clip": id, "grid": "1/4", "transients": [0.55] });
+    let done = run(&mut session, "clip.quantizeWarpMarkers", given).unwrap();
+    assert_eq!(done["moved"], json!(1), "{done}");
+    let got = markers_of(&session);
+    let want = [(0.0, 0.0), (1.0, 0.55), (4.0, 2.0)];
+    let near = got.len() == want.len()
+        && got.iter().zip(&want).all(|(g, w)| (g.0 - w.0).abs() < 1e-9 && (g.1 - w.1).abs() < 1e-12);
+    assert!(near, "{got:?}");
+    // Reset warp takes the same list (its tempo is not read from note starts).
+    run(&mut session, "clip.resetWarp", json!({ "clip": id, "transients": [0.5] })).unwrap();
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (4.0, 2.0)]);
+}
+
+/// A list of note starts is hostile input: not a list, a value that is not a number (NaN is
+/// written as null), a negative second or more than a clip's markers are refused by each command
+/// that takes one, and the markers stay as they were.
+#[test]
+fn malformed_note_starts_are_refused() {
+    let dir = TempDir::new("warp-bad-transients");
+    let (mut session, id) = warped(&wav(&dir, "silence.wav", &vec![0.0; 2 * SR as usize]));
+    let too_many = vec![0.5; 100_001];
+    let bad = [json!(0.5), json!("0.5"), json!(["0.5"]), json!([0.5, f64::NAN]), json!([0.5, -0.1]), json!(too_many)];
+    for transients in bad {
+        for (command, mut params) in [
+            ("clip.addWarpMarkersAtTransients", json!({ "clip": id })),
+            ("clip.quantizeWarpMarkers", json!({ "clip": id, "grid": "1/4" })),
+            ("clip.resetWarp", json!({ "clip": id })),
+        ] {
+            params["transients"] = transients.clone();
+            assert!(run(&mut session, command, params).is_err(), "{command} took {transients}");
+        }
+    }
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (4.0, 2.0)]);
 }

@@ -10,8 +10,8 @@ use crate::arrangement::Dragged;
 use crate::interaction::colour_picker;
 use crate::kit::widgets::Drag;
 use suhina_engine::model::{
-    CLIP_TEMPO_RANGE, ENVELOPE_RANGE, FLUX_RANGE, GRAIN_RANGE, ROOT_NAMES, ScaleMode, SliceAt, SliceTail, StretchMode,
-    TempoSource,
+    CLIP_TEMPO_RANGE, ENVELOPE_RANGE, GRAIN_RANGE, ROOT_NAMES, SCATTER_RANGE, ScaleMode, SliceAt, SliceTail,
+    StretchMode, TempoSource,
 };
 
 /// The gain fader's cap, and the pitch knob.
@@ -1373,7 +1373,7 @@ fn has_mode_settings(mode: StretchMode) -> bool {
 
 /// The Warp part (`docs/spec/clip-panel.md` › Warp mode settings): the settings of the clip's
 /// warp mode, each a `clip.setAudio` parameter (Rhythmic's Slice at, Tail and Envelope, Tonal's
-/// Grain, Texture's Grain and Flux). Returns where it ends.
+/// Grain, Texture's Grain and Scatter). Returns where it ends.
 fn warp_part(
     ui: &mut Ui,
     painter: &egui::Painter,
@@ -1436,9 +1436,9 @@ fn warp_part(
                 set(actions, with_more(json!({ "grain": change.value }), change));
             }
             if info.stretch == StretchMode::Texture {
-                let range = (*FLUX_RANGE.start(), *FLUX_RANGE.end());
-                if let Some(change) = number(ui, &mut y, "Flux", warp.flux, range, "%") {
-                    set(actions, with_more(json!({ "flux": change.value }), change));
+                let range = (*SCATTER_RANGE.start(), *SCATTER_RANGE.end());
+                if let Some(change) = number(ui, &mut y, "Scatter", warp.scatter, range, "%") {
+                    set(actions, with_more(json!({ "scatter": change.value }), change));
                 }
             }
         }

@@ -229,6 +229,9 @@ pub(crate) struct StretchSpec {
     /// beats), and where one starts when no transient is near (every beat).
     cuts: Arc<[f64]>,
     fill: Arc<[f64]>,
+    /// The frames of one beat at `fill`'s only beat, when it has one: a lone beat has no
+    /// neighbour to measure half a beat from.
+    fill_gap: f64,
     data: Arc<AudioData>,
 }
 
@@ -254,8 +257,8 @@ impl StretchSpec {
             }
             StretchMode::Tonal | StretchMode::Texture => {
                 let texture = self.mode == StretchMode::Texture;
-                let flux = if texture { (warp.flux / 100.0) as f32 } else { 0.0 };
-                let mut grains = Grains::new(channels, rate, (warp.grain / 1000.0) as f32, flux, !texture);
+                let scatter = if texture { (warp.scatter / 100.0) as f32 } else { 0.0 };
+                let mut grains = Grains::new(channels, rate, (warp.grain / 1000.0) as f32, scatter, !texture);
                 grains.set_pitch(self.pitch);
                 Engine::Grains(grains)
             }
@@ -273,7 +276,7 @@ impl StretchSpec {
             }
         };
         // Input for one chunk at the fastest speed, or for a seek (which wants up to one block
-        // plus the output latency at that speed); the grains and slices read the file directly.
+        // plus the output latency at that speed); the grains and slices need no input buffer.
         let input_frames = engine.spectral().map_or(0, |stretch| {
             (CHUNK_FRAMES as f64 * self.max_rate).ceil() as usize
                 + stretch.block_samples() * 2
@@ -302,7 +305,7 @@ impl StretchSpec {
         points.extend(found.iter().map(|f| *f as f64));
         let mut near = points.clone();
         near.sort_by(f64::total_cmp);
-        points.extend(beats_without_a_cut(&self.fill, &near));
+        points.extend(beats_without_a_cut(&self.fill, &near, self.fill_gap));
         points
     }
 }
@@ -320,8 +323,9 @@ fn tail_of(tail: SliceTail) -> Tail {
 /// of them. Half a beat is measured on each side from the beat's own neighbours, not from the
 /// mean spacing: warp markers squeeze some beats close together in the file and spread others
 /// far apart, and a cut half a mean beat away could hide a beat whose neighbours are much
-/// closer (#1540).
-fn beats_without_a_cut(fill: &[f64], near: &[f64]) -> Vec<f64> {
+/// closer (#1540). A lone beat, with no neighbour on either side, measures from `lone`, the
+/// frames of one beat there by the warp map.
+fn beats_without_a_cut(fill: &[f64], near: &[f64], lone: f64) -> Vec<f64> {
     let gap = |a: Option<&f64>, b: Option<&f64>| match (a, b) {
         (Some(a), Some(b)) if b > a => b - a,
         _ => f64::INFINITY,
@@ -334,7 +338,8 @@ fn beats_without_a_cut(fill: &[f64], near: &[f64]) -> Vec<f64> {
         let (before, after) = match (before.is_finite(), after.is_finite()) {
             (false, true) => (after, after),
             (true, false) => (before, before),
-            _ => (before, after),
+            (false, false) => (lone, lone),
+            (true, true) => (before, after),
         };
         let i = near.partition_point(|p| p < f);
         let left = i.checked_sub(1).and_then(|j| near.get(j)).is_some_and(|p| f - p < before / 2.0);
@@ -350,18 +355,26 @@ fn beats_without_a_cut(fill: &[f64], near: &[f64]) -> Vec<f64> {
 const MAX_CUTS: usize = 200_000;
 
 /// The file frames at every multiple of `every` content beats over a file of `seconds`, through
-/// the clip's warp `markers` (two or more, rising).
-fn grid_frames(markers: &[(f64, f64)], every: f64, seconds: f64, file_rate: f64) -> Vec<f64> {
-    let before_last = markers.len().checked_sub(2).and_then(|i| markers.get(i));
-    let (Some(first), Some(second), Some(last), Some(before)) =
-        (markers.first(), markers.get(1), markers.last(), before_last)
-    else {
+/// the clip's warp `markers` (two or more, rising), within the file `reach` (seconds, from and
+/// to) the placement plays and two steps on either side. A short clip far into a long file
+/// gets its cuts: a grid from the file's start ran out at [`MAX_CUTS`] (25 000 beats at 1/32)
+/// before it got there. A `reach` that is not finite stands for the whole file.
+fn grid_frames(markers: &[(f64, f64)], every: f64, reach: (f64, f64), seconds: f64, file_rate: f64) -> Vec<f64> {
+    if markers.len() < 2 || !(every > 0.0 && every.is_finite()) {
         return Vec::new();
-    };
-    // The beats of the file's first and last seconds, along the first and last segments.
-    let along = |a: &(f64, f64), b: &(f64, f64), s: f64| a.0 + (s - a.1) * (b.0 - a.0) / (b.1 - a.1);
-    let (from, to) = (along(first, second, 0.0), along(before, last, seconds));
-    if !(every > 0.0 && from.is_finite() && to.is_finite() && to > from) {
+    }
+    // The beats of the file's first and last seconds, along the warp map.
+    let (start, end) = (beat_at(markers, 0.0), beat_at(markers, seconds));
+    if !(start.is_finite() && end.is_finite() && end > start) {
+        return Vec::new();
+    }
+    let (mut from, mut to) = (start, end);
+    let (a, b) = (beat_at(markers, reach.0), beat_at(markers, reach.1));
+    if a.is_finite() && b.is_finite() {
+        from = from.max(a.min(b) - 2.0 * every);
+        to = to.min(a.max(b) + 2.0 * every);
+    }
+    if to <= from {
         return Vec::new();
     }
     let mut out = Vec::new();
@@ -371,6 +384,34 @@ fn grid_frames(markers: &[(f64, f64)], every: f64, seconds: f64, file_rate: f64)
         k += 1.0;
     }
     out
+}
+
+/// The clip beat at file `seconds` through the warp `markers` (sorted by beat, their seconds
+/// rising), extending the first and last segments; NaN without two markers to go by.
+fn beat_at(markers: &[(f64, f64)], seconds: f64) -> f64 {
+    let i = markers.partition_point(|(_, s)| *s <= seconds).clamp(1, markers.len().max(2) - 1);
+    match (i.checked_sub(1).and_then(|j| markers.get(j)), markers.get(i)) {
+        (Some(&(b0, s0)), Some(&(b1, s1))) if s1 != s0 => b0 + (seconds - s0) * (b1 - b0) / (s1 - s0),
+        _ => f64::NAN,
+    }
+}
+
+/// The frames one beat lasts at file frame `frame` through the warp `markers`, half a beat on
+/// either side; infinite where the map gives none.
+fn beat_frames_at(markers: &[(f64, f64)], frame: f64, file_rate: f64) -> f64 {
+    let beat = beat_at(markers, frame / file_rate);
+    let frames = (crate::audio::seconds_at(markers, beat + 0.5) - crate::audio::seconds_at(markers, beat - 0.5)).abs()
+        * file_rate;
+    if frames.is_finite() && frames > 0.0 { frames } else { f64::INFINITY }
+}
+
+/// The file seconds the `pieces` of a playlist read, from the first to the last; not finite
+/// when there are none.
+fn reach_of(pieces: &[Piece], file_rate: f64) -> (f64, f64) {
+    let (lo, hi) = pieces.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+        (lo.min(p.src_start).min(p.src_end), hi.max(p.src_start).max(p.src_end))
+    });
+    (lo / file_rate, hi / file_rate)
 }
 
 /// A voice's stretcher and buffers, built by [`StretchSpec::build`] for
@@ -387,6 +428,9 @@ pub(crate) struct StretchVoice {
     data: Arc<AudioData>,
     pieces: Vec<Piece>,
     repeat: Option<Repeat>,
+    /// The clip loops: past its playlist's last piece (a loop pass the clip ends in) the input
+    /// stream is silent, never the file past the loop.
+    loops: bool,
     /// Built with its buffers before the voice first plays ([`StretchVoice::prepare`], or
     /// [`StretchSpec::build`] on another thread and [`StretchVoice::install`]), off the audio
     /// thread: building every voice of a project with hundreds of stretched clips for each edit
@@ -397,6 +441,7 @@ pub(crate) struct StretchVoice {
     warp: WarpSettings,
     cuts: Arc<[f64]>,
     fill: Arc<[f64]>,
+    fill_gap: f64,
     /// Moved since it was built: it plays from where the last seek put it.
     started: bool,
     /// The pitch factor and the fastest speed of the playlist, for that build.
@@ -462,7 +507,7 @@ impl StretchVoice {
         let mode = clip.audio.stretch;
         // Audio that already plays at its own speed and pitch needs no stretcher: the caller reads
         // it directly. Not in Rhythmic and Texture, whose slices and grains change the sound at
-        // any speed (a slice's envelope, a grain's flux).
+        // any speed (a slice's envelope, a grain's scatter).
         let shaped = matches!(mode, StretchMode::Rhythmic | StretchMode::Texture);
         if !shaped && pitch == 1.0 && pieces.iter().all(|p| (p.rate - 1.0).abs() <= UNITY_TOLERANCE) {
             return None;
@@ -475,26 +520,36 @@ impl StretchVoice {
         // Rhythmic's cuts: at the warp markers, and on every note value (or, between the
         // transients the stretcher finds, on every beat).
         let warp = clip.audio.warp.held();
-        let (cuts, fill) = if mode == StretchMode::Rhythmic {
+        let (cuts, fill, fill_gap) = if mode == StretchMode::Rhythmic {
             let markers = crate::audio::warp_markers(&clip.audio);
             let seconds = data.frames() as f64 / file_rate;
+            // Only where the placement reads the file (its loop included): the cap on a grid's
+            // cuts then spends them there.
+            let reach = reach_of(&pieces, file_rate);
             let mut cuts: Vec<f64> = markers.iter().map(|m| m.1 * file_rate).collect();
             let every = warp.slice.beats();
-            cuts.extend(every.map(|b| grid_frames(&markers, b, seconds, file_rate)).unwrap_or_default());
-            let fill = if every.is_none() { grid_frames(&markers, 1.0, seconds, file_rate) } else { Vec::new() };
-            (cuts, fill)
+            cuts.extend(every.map(|b| grid_frames(&markers, b, reach, seconds, file_rate)).unwrap_or_default());
+            let fill = if every.is_none() { grid_frames(&markers, 1.0, reach, seconds, file_rate) } else { Vec::new() };
+            let fill_gap = match fill.as_slice() {
+                [only] => beat_frames_at(&markers, *only, file_rate),
+                _ => f64::INFINITY,
+            };
+            (cuts, fill, fill_gap)
         } else {
-            (Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), f64::INFINITY)
         };
+        let loops = clip.loop_range.is_some_and(|r| r.start.is_finite() && r.end.is_finite() && r.end > r.start);
         Some(Self {
             data,
             pieces,
             repeat,
+            loops,
             stretch: None,
             mode,
             warp,
             cuts: cuts.into(),
             fill: fill.into(),
+            fill_gap,
             started: false,
             pitch,
             max_rate,
@@ -524,6 +579,7 @@ impl StretchVoice {
             warp: self.warp,
             cuts: Arc::clone(&self.cuts),
             fill: Arc::clone(&self.fill),
+            fill_gap: self.fill_gap,
             data: Arc::clone(&self.data),
         }
     }
@@ -629,7 +685,8 @@ impl StretchVoice {
     /// next pass from the loop's start, as the spectral stretcher's input does, never the file past
     /// the loop. Silence outside the file.
     fn stream_sample(&self, at: f64, c: usize) -> f32 {
-        if at.is_nan() || at < 0.0 {
+        // Not finite (an extreme transpose): `at - whole` would be NaN, and so the sample.
+        if !at.is_finite() || at < 0.0 {
             return 0.0;
         }
         let whole = at.floor();
@@ -640,7 +697,16 @@ impl StretchVoice {
 
     /// Channel `c` of the input stream at whole frame `at`.
     fn stream_frame(&self, at: f64, c: usize) -> f32 {
-        let Some(piece) = self.piece(self.piece_in_stream(at)) else { return 0.0 };
+        if !at.is_finite() {
+            return 0.0;
+        }
+        let place = self.piece_in_stream(at);
+        let Some(piece) = self.piece(place) else { return 0.0 };
+        // A looping clip's last pass ends with the clip: a grain that runs on past it reads
+        // silence, not the file past the loop (with no repeat there is no next pass to read).
+        if self.loops && self.next(place).is_none() && at - piece.stream_start >= piece.src_end - piece.src_start {
+            return 0.0;
+        }
         let file_frame = (piece.src_start + (at - piece.stream_start)).floor();
         let channels = self.channels;
         let c = c.min(channels.saturating_sub(1));
@@ -653,7 +719,8 @@ impl StretchVoice {
 
     /// Channel `c` of the file at frame `at`, between frames by a straight line; silence outside it.
     fn sample_at(&self, at: f64, c: usize) -> f32 {
-        if at.is_nan() || at < 0.0 {
+        // Not finite (an extreme transpose): `at - whole` would be NaN, and so the sample.
+        if !at.is_finite() || at < 0.0 {
             return 0.0;
         }
         let whole = at.floor();
@@ -667,6 +734,26 @@ impl StretchVoice {
         };
         let (a, b) = (read(i), read(i.saturating_add(1)));
         a + (b - a) * frac
+    }
+
+    /// The file frame where the stretch of file voice frame `at` plays in ends: the end of the
+    /// pieces that follow on from its piece in the file (warp segments one after another), where
+    /// the next jumps (a loop's end back to its start). Unbounded past a playlist that does not
+    /// repeat and does not loop. Slices play at most up to it (finding where a slice ends); never
+    /// allocates, and walks at most the playlist's pieces once.
+    fn run_end(&self, at: u64) -> f64 {
+        let mut place = self.piece_at(at);
+        for _ in 0..=self.pieces.len() {
+            let Some(piece) = self.piece(place) else { return f64::INFINITY };
+            let Some(next) = self.next(place) else {
+                return if self.loops { piece.src_end } else { f64::INFINITY };
+            };
+            match self.piece(next) {
+                Some(after) if (after.src_start - piece.src_end).abs() < 0.5 => place = next,
+                _ => return piece.src_end,
+            }
+        }
+        f64::INFINITY
     }
 
     /// Where in the input stream voice frame `at` plays.
@@ -849,6 +936,7 @@ impl StretchVoice {
         let mut chunk = std::mem::take(&mut self.chunk);
         if let Some(out) = chunk.get_mut(..frames * channels) {
             let position = |f: u64| self.file_at(f);
+            let end = |f: u64| self.run_end(f);
             let sample = |at: f64, c: usize| self.sample_at(at, c);
             // Grains read the input stream: one that runs past a loop's end goes on with the next
             // pass, where reading the file played what lies past the loop.
@@ -856,7 +944,9 @@ impl StretchVoice {
             let stream_sample = |at: f64, c: usize| self.stream_sample(at, c);
             match engine.as_mut() {
                 Some(Engine::Grains(grains)) => grains.render(self.produced, out, &stream_position, &stream_sample),
-                Some(Engine::Slices(slices)) => slices.render(self.produced, out, &position, &sample),
+                // Slices stop at a loop's end: slower than the file, one reached it in its sound
+                // before the clip's time came round, and read on past the loop.
+                Some(Engine::Slices(slices)) => slices.render_within(self.produced, out, &position, &end, &sample),
                 _ => out.fill(0.0),
             }
         }

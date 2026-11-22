@@ -1288,7 +1288,16 @@ fn a_rename_in_a_session_header_reads_as_the_name() {
 /// so Ctrl+V reaches the keymap after it even when the clipboard held no text (#916).
 #[test]
 fn copies_put_a_line_on_the_system_clipboard() {
-    for command in ["automation.copy", "device.copy", "track.copy", "track.cut", "clip.copy", "note.cut"] {
+    for command in [
+        "automation.copy",
+        "device.copy",
+        "track.copy",
+        "track.cut",
+        "clip.copy",
+        "note.cut",
+        "range.copy",
+        "range.cut",
+    ] {
         assert!(clipboard_line(command).is_some_and(|line| line.starts_with("Suhina: ")), "{command}");
     }
     assert_eq!(clipboard_line("automation.paste"), None);

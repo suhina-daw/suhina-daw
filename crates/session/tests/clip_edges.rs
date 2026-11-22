@@ -238,24 +238,57 @@ fn warp_turned_on_in_a_slot_marks_the_audio_s_end_at_the_song_s_tempo_not_the_ar
     assert!(!first(&session, 3).audio.warped, "the arrangement's clip of the same audio is as it was");
 }
 
-/// Warp turned on and off again in a slower section (the song at 120, 60 from its start): the 4 s
-/// are 4 beats there both ways, so the content keeps its length; counted at the song's main tempo
-/// the unwarped audio was 8 beats, and turning Warp on shrank the content by 4.
-#[test]
-fn warp_turned_off_in_a_slower_section_keeps_the_audio_s_end() {
+/// The project of [`project`] with a tempo change to 60 BPM at beat 16 and its audio clip (4 s,
+/// 8 beats at the project's 120) moved to beat 32, in the slower section.
+fn slower_section() -> Project {
     let mut p = project();
     p.transport.tempo_bpm = 120.0;
-    p.transport.tempo_changes = vec![TempoPoint { beat: 0.0, bpm: 60.0, ramp: false }].into();
+    p.transport.tempo_changes = vec![TempoPoint { beat: 16.0, bpm: 60.0, ramp: false }].into();
+    p.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(3))).unwrap().clips[0].start = 32.0;
+    p
+}
+
+fn content_length(session: &Session) -> f64 {
+    session.project().content(first(session, 3).content).map_or(0.0, |c| c.length)
+}
+
+/// Warp turned on and off in a slower section (120 BPM, 60 from beat 16, the clip at beat 32).
+/// Unwarped, the engine plays the content at the project's 120, so the 4 s end at content beat
+/// 8 whatever the section. Warp on pins the audio where it plays, 4 s in 4 beats at 60, so the
+/// content ends at 4; warp off counts it at 120 again, so it ends at 8.
+#[test]
+fn warp_turned_on_and_off_in_a_slower_section_ends_the_content_with_the_audio() {
+    let mut session = Session::new(slower_section());
+    let clip = first(&session, 3).id.0;
+    assert_eq!(content_length(&session), 8.0);
+    run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": true })).unwrap();
+    let end = *first(&session, 3).audio.warp_markers.last().unwrap();
+    assert!((end.time - 4.0).abs() < 1e-9 && end.audio_time == 4.0, "{end:?}: 4 s at 60 BPM");
+    assert!((content_length(&session) - 4.0).abs() < 1e-9, "{}", content_length(&session));
+    run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": false })).unwrap();
+    assert!((content_length(&session) - 8.0).abs() < 1e-9, "{}", content_length(&session));
+    // Reset warp on the unwarped clip warps it at the project's tempo, where the content's beats
+    // already were: the audio still ends at beat 8.
+    run(&mut session, "clip.resetWarp", json!({ "clip": clip })).unwrap();
+    let end = *first(&session, 3).audio.warp_markers.last().unwrap();
+    assert!((end.time - 8.0).abs() < 1e-9 && end.audio_time == 4.0, "{end:?}: 4 s at 120 BPM");
+    assert!((content_length(&session) - 8.0).abs() < 1e-9, "{}", content_length(&session));
+    assert_eq!(first(&session, 3).start, 32.0, "the clip stays where it was");
+}
+
+/// Reset warp in a slower section on an unwarped clip whose content was cut short of its audio
+/// (6 of 8 beats): the audio's end does not move (content beat 8 at the project's 120 before and
+/// after), so the content keeps its own end.
+#[test]
+fn reset_warp_in_a_slower_section_leaves_a_shortened_content_as_it_is() {
+    let mut p = slower_section();
+    p.contents.iter_mut().find(|c| c.id == ContentId(1)).unwrap().length = 6.0;
     let mut session = Session::new(p);
     let clip = first(&session, 3).id.0;
-    let length = |session: &Session| session.project().content(first(session, 3).content).map_or(0.0, |c| c.length);
-    let before = length(&session);
-    // On: the markers pin the audio where it plays, so its end does not move.
-    run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": true })).unwrap();
-    assert!((length(&session) - before).abs() < 1e-9, "{} after {before}", length(&session));
-    // Off again: the same.
-    run(&mut session, "clip.setAudio", json!({ "clip": clip, "warp": false })).unwrap();
-    assert!((length(&session) - before).abs() < 1e-9, "{} after {before}", length(&session));
+    run(&mut session, "clip.resetWarp", json!({ "clip": clip })).unwrap();
+    let markers = first(&session, 3).audio.warp_markers;
+    assert_eq!(markers.last().map(|m| (m.time, m.audio_time)), Some((8.0, 4.0)), "{markers:?}");
+    assert_eq!(content_length(&session), 6.0);
 }
 
 /// The clip properties' audio controls (#699): warp on gives the audio two warp markers and

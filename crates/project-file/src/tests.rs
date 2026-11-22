@@ -250,7 +250,7 @@ fn everything() -> Project {
                                 tail: SliceTail::BackAndForth,
                                 envelope: 40.0,
                                 grain: 120.0,
-                                flux: 60.0,
+                                scatter: 60.0,
                             },
                         },
                         ..clip(2, 4.0)
@@ -1954,7 +1954,7 @@ fn warp_settings_are_written_when_changed_and_checked_when_read() {
         json!({ "slice": 4 }),
         json!({ "envelope": 101.0 }),
         json!({ "grain": 5.0 }),
-        json!({ "flux": -1.0 }),
+        json!({ "scatter": -1.0 }),
         json!({ "grain": "long" }),
         json!("loud"),
     ] {
@@ -1967,19 +1967,19 @@ fn warp_settings_are_written_when_changed_and_checked_when_read() {
 /// so the file reads back; settings in range are written as they are.
 #[test]
 fn warp_settings_out_of_range_save_as_they_play() {
-    for (grain, envelope, flux) in [(5.0, 50.0, 25.0), (f64::NAN, 50.0, 25.0), (60.0, f64::INFINITY, -3.0)] {
+    for (grain, envelope, scatter) in [(5.0, 50.0, 25.0), (f64::NAN, 50.0, 25.0), (60.0, f64::INFINITY, -3.0)] {
         let mut project = everything();
         for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
-            clip.audio.warp = WarpSettings { grain, envelope, flux, ..WarpSettings::default() };
+            clip.audio.warp = WarpSettings { grain, envelope, scatter, ..WarpSettings::default() };
         }
-        let read = from_json(&to_json(&project)).unwrap_or_else(|e| panic!("{grain} {envelope} {flux}: {e}"));
-        let held = WarpSettings { grain, envelope, flux, ..WarpSettings::default() }.held();
+        let read = from_json(&to_json(&project)).unwrap_or_else(|e| panic!("{grain} {envelope} {scatter}: {e}"));
+        let held = WarpSettings { grain, envelope, scatter, ..WarpSettings::default() }.held();
         for clip in read.arrangement.lanes.iter().flat_map(|l| &l.clips) {
-            assert_eq!(clip.audio.warp, held, "{grain} {envelope} {flux}");
+            assert_eq!(clip.audio.warp, held, "{grain} {envelope} {scatter}");
         }
     }
     let mut project = everything();
-    let own = WarpSettings { grain: 120.0, envelope: 40.0, flux: 10.0, ..WarpSettings::default() };
+    let own = WarpSettings { grain: 120.0, envelope: 40.0, scatter: 10.0, ..WarpSettings::default() };
     for clip in project.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
         clip.audio.warp = own;
     }

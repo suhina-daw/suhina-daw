@@ -20,8 +20,9 @@ MIDI clip shows its piano roll. Suhina's own design, written in our own words un
 rules (`CONTRIBUTING.md` › Clean-room).
 
 **What is built.** The audio shown large under a ruler, its warp markers added (one at a time or
-on every transient), moved and removed on it, and a dialog that resets the warp. Playing from a
-click on the ruler is **Later**.
+on every transient), moved and removed on it, and a dialog that resets the warp. A click on the
+ruler moves playback there and one on the waveform sets where it starts, the playhead showing on
+the marker lane while the transport runs (an arrangement clip).
 
 ## Where it opens
 
@@ -173,7 +174,9 @@ A strip under the ruler (14 points) that holds:
   Arrangement draws the clip, so it shows what is heard; the clip's gain and fades are not
   applied.
 - A file whose waveform is not there yet says *The audio is not loaded*; one with no length says
-  so too.
+  so too. Warp markers that stand still in the file or go back (a project from elsewhere; the
+  engine plays them) are drawn as they play, and the file's place on the beats is read through
+  those of them that rise, so such a clip is still shown and edited.
 
 ### Waveform colour
 
@@ -220,8 +223,24 @@ another view, or the Clip / Devices switch on Devices, gives the keyboard back t
 one later stretches the whole file longer). The clip keeps its start and length, and the end its
 right edge can be drawn out to in the Arrangement (`clip.trim`) follows the audio's end: a clip
 whose audio was stretched past it is drawn out over the rest with a drag, without setting its length
-first. A reset follows it the same way. The audio of a clip that other clips play too is copied for
+first. A reset follows it the same way, and so does Warp turned on or off. Where the audio ends is
+read as the engine plays the clip: by its warp markers when warped, else at the project's tempo,
+wherever the clip lies on the song's tempo map (unwarped audio plays at its file's speed, and only
+its start and end follow the map). The audio of a clip that other clips play too is copied for
 it first, so theirs keeps its end.
+
+**Note starts found once.** The editor finds the note starts of the file on a thread of its own and
+gives them to the commands that place markers on them (`clip.addWarpMarkersAtTransients`,
+`clip.quantizeWarpMarkers`) as `transients`, seconds in the file, so a long file is not analysed
+again while the window waits. Transients, Ctrl+U or the menu's items, used while the note starts
+are still being found, wait for them, the status bar saying *Finding where the notes start…*, and
+are sent once they are there, in the project they were made in (one switched away from drops
+them); the window never analyses the file on its own thread. Left out, the command analyses the
+file itself (the CLI and agents).
+A list given is checked: at most 100 000 numbers, each 0 or more; it is sorted, each second kept
+once, and seconds past the end of the audio are left out. `clip.resetWarp` takes the same list and
+checks it, but does not need it: its `detect` reads the tempo from the beat of the sound's level,
+not from where notes start.
 
 To put a snare
 on a beat: zoom in until the grid has lines near it, double-click on the snare's start to pin it,
@@ -237,6 +256,10 @@ drag, a double-click, Delete or the right-click menu) is made at the same beats 
 clip as long as it and warped, one undo step for all (each clip's own command in one gesture): a
 clip without a marker on the beat moved gets one there first, pinned where its sound is, so its
 sound moves with the others'; a removal is made only where the clip has that marker and keeps two.
+A move goes to every such clip or to none: when it would take one of their markers onto or past its
+neighbour (closer than a 64th of a beat), or a marker one of them needs first would lie before its
+file's start, it is made on the clip shown alone, so no clip is left with a marker added for a move
+it then refused.
 So a band recorded together is put in time with the metronome by warping its drums. Clips of
 another length are left alone. Quantize and markers at transients act on the clip shown, from its
 own sound.
@@ -249,15 +272,15 @@ own sound.
 | A drag on the waveform or the marker lane (not on a marker) | Paints the time selection, on the grid (Alt: free) |
 | Shift and a click | Carries the time selection's nearer end to the point |
 | **Ctrl+A** | Select all, the piano roll's key: the time selection becomes the whole file, every warp marker picked with it |
-| **Ctrl+U** | Quantise, the piano roll's key: each transient in the time selection (none: the whole clip) gets a warp marker where it plays, then every marker there moves towards the nearest line of the quantise grid by the quantise amount, its sound with it (`clip.quantizeWarpMarkers`, one undo step). Two that would land on one line: a new one is left out, one the clip had stays. The grid (the piano roll's quantise grids, 1/16 to start) and the amount (100 % to start; 75, 50 and 25 %) are set in the right-click menu's *Quantize settings* |
-| **Ctrl+L** | Loops the clip over the time selection and starts it there, so the clip plays that stretch round and round over its whole length (`clip.setLoop` with `start` and `end`, then `clip.setStart` at the loop's start: two undo steps); a selection that begins before the clip's first beat (a warp marker can put the file's start there) loops from beat 0. Pressed again over the same loop, turns it off. With no time selection it turns the clip's loop on or off (`clip.setLoop`) |
+| **Ctrl+U** | Quantise, the piano roll's key: each transient in the time selection (none: the part of the file the clip plays, from its start marker to its end or loop end) gets a warp marker where it plays, then every marker there moves towards the nearest line of the quantise grid by the quantise amount, its sound with it (`clip.quantizeWarpMarkers`, one undo step). Two that would land on one line: a new one is left out, one the clip had stays. The grid (the piano roll's quantise grids, 1/16 to start) and the amount (100 % to start; 75, 50 and 25 %) are set in the right-click menu's *Quantize settings* |
+| **Ctrl+L** | Loops the clip over the time selection and starts it there, so the clip plays that stretch round and round over its whole length (`clip.setLoop` with `start` and `end`, then `clip.setStart` at the loop's start: two undo steps); a selection that begins before the clip's first beat (a warp marker can put the file's start there) loops from beat 0. Pressed again over the same loop, turns it off. With no time selection it turns the clip's loop on or off (`clip.setLoop`); a selection too short to be a loop (under a thousandth of a beat, or wholly before beat 0) leaves the loop as it is, and *Loop selection* in the right-click menu is grayed for it |
 
 ### Reset warp
 
 The **Reset…** button in the header (*Reset warp…* to a screen reader) opens a dialog that says how many markers the clip has and
 asks:
 
-- **Keep warp markers**: closes it and changes nothing (so do Escape and a click outside it);
+- **Keep warp markers**: closes it and changes nothing (so do Escape and its Close button);
 - **Reset to clip tempo**: replaces the markers with two, one at each end of the audio, at the
   tempo the clip has (the project's for a clip that was not warped), so the audio runs evenly again
   (`clip.resetWarp`);
@@ -285,8 +308,8 @@ one act (on the grid, Alt held when the menu opened: free).
 | **Reset warp…** | The Reset warp dialog (› Reset warp) |
 | **Loop selection** | With a time selection: loops the clip over it and starts it there, as Ctrl+L |
 | **Set clip start here** | The clip's start marker to the point clicked (`clip.setStart`) |
-| **Set loop start here**, **Set loop end here** | A looping clip: that end of its loop to the point clicked, kept a grid step from the other (`clip.setLoop`) |
-| **Split clip here** | An arrangement clip: cut in two where the point clicked plays (`clip.split`) |
+| **Set loop start here**, **Set loop end here** | A looping clip: that end of its loop to the point clicked, kept a grid step from the other, the start never before beat 0 (a loop shorter than a step from beat 0: its start at 0); grayed where the point is not before the end (after the start) by half that (`clip.setLoop`) |
+| **Split clip here** | An arrangement clip: cut in two where the point clicked first plays (`clip.split`): in a looping clip, a beat of the loop before the start marker where the loop comes round to it |
 | **Zoom to fit** | The file fitted to the area again, as Fit |
 | The grid's entries | Snap, the adaptive widths, the fixed values and triplets, as the header's grid list and the piano roll's keys (Ctrl+1 to Ctrl+4) |
 
@@ -303,7 +326,7 @@ audio into MIDI need commands of their own and are not in the menu yet.
 | The wheel | Scroll along the file |
 | A drag with the middle button held | Drags the view along the file, as in the piano roll and the other views |
 | **Fit** in the header, or a double-click on the ruler | Fit the file again |
-| A click on the ruler | Playback jumps there, as a click on the Arrangement's ruler does: to where that point plays in the arrangement, on the grid (Alt: free), while playing at the next launch boundary (`transport.jump`); an arrangement clip only |
+| A click on the ruler | Playback jumps there, as a click on the Arrangement's ruler does: to where that point first plays in the arrangement (in a looping clip, a beat of the loop before the start marker where the loop comes round to it; one the clip never plays, its start or end), on the grid (Alt: free), while playing at the next launch boundary (`transport.jump`); an arrangement clip only |
 | A drag on the ruler | Up zooms in and down zooms out, the beat where the drag began staying put; sideways scrolls. The pointer is a magnifier over the ruler and hidden while the button is held, as on the piano roll's ruler |
 
 Zoom stays between 0.05 and 20 000 points per beat, scroll between the file's two ends. Another
@@ -311,7 +334,6 @@ clip starts fitted. The zoom and scroll are the view's and are not saved with th
 
 ## Later
 
-- A playhead, and a click on the ruler to move it.
 - A marker dragged near a transient snapping to it, and Alt-drag to move a marker's sound without
   its neighbours stretching.
 - Vertical zoom of the waveform.

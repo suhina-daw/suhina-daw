@@ -134,6 +134,22 @@ impl Slices {
         position: &impl Fn(u64) -> f64,
         sample: &impl Fn(f64, usize) -> f32,
     ) {
+        self.render_within(first, out, position, &|_| f64::INFINITY, sample);
+    }
+
+    /// [`Slices::render`], with `end` giving the file frame where the stretch of file the clip's
+    /// time plays at an output frame ends (a loop's end, where the time jumps back to its start):
+    /// a slice that starts there plays at most up to it, and its tail plays on until the time
+    /// jumps, where reading on played the file past the loop. A clip slower than the file reaches
+    /// that end in its slice's sound before its time gets there.
+    pub fn render_within(
+        &mut self,
+        first: u64,
+        out: &mut [f32],
+        position: &impl Fn(u64) -> f64,
+        end: &impl Fn(u64) -> f64,
+        sample: &impl Fn(f64, usize) -> f32,
+    ) {
         let channels = self.channels;
         for (i, frame) in out.chunks_exact_mut(channels).enumerate() {
             let t = first + i as u64;
@@ -146,7 +162,9 @@ impl Slices {
             let back = on && self.last_position.is_some_and(|before| p.is_finite() && p < before - 1.0);
             if !on || back || self.playing.is_none_or(|play| play.index != index) {
                 let start = self.points.get(index).copied().unwrap_or(0.0);
-                let next = self.points.get(index + 1).copied().unwrap_or(self.frames);
+                let next_point = self.points.get(index + 1).copied().unwrap_or(self.frames);
+                let bound = end(t);
+                let next = if bound.is_finite() { next_point.min(bound) } else { next_point };
                 // Reached by playing on: from the slice's own start, so its attack is on time.
                 let in_start = if on && !back && p.is_finite() && p - start <= self.snap { start } else { p };
                 // The slice before has just reached this one's start (the clip at the file's
@@ -161,7 +179,14 @@ impl Slices {
                 // Where the clip's time is when this slice runs out: at the next one already, or
                 // short of it (a tail plays).
                 let runs_out = t.saturating_add((length / self.pitch).floor() as u64);
-                let followed = index + 1 < self.points.len() && position(runs_out) >= next - 1.0;
+                let then = position(runs_out);
+                // Cut short at the stretch's end: followed when the time has jumped back by then
+                // (the clip at the file's speed), else its tail plays until it does.
+                let followed = if next < next_point {
+                    then.is_finite() && (then < in_start || then >= next - 1.0)
+                } else {
+                    index + 1 < self.points.len() && then >= next - 1.0
+                };
                 let fresh = Play { index, out_start: t, in_start, length, seamless, followed };
                 self.leaving = if on && !seamless { self.playing.map(|play| (play, t)) } else { None };
                 self.playing = Some(fresh);
@@ -203,8 +228,10 @@ impl Slices {
                 Tail::BackAndForth => {
                     let turn = (past / span).floor();
                     let into = past - turn * span;
-                    // First back from the end, then forwards again.
-                    if turn.rem_euclid(2.0) < 1.0 { play.in_start + length - into } else { play.in_start + half + into }
+                    // First back from the end, then forwards again; from its last frame, not the
+                    // one past it (the next slice's first, or past a loop's end).
+                    let last = play.in_start + (length - 1.0).max(half);
+                    if turn.rem_euclid(2.0) < 1.0 { last - into } else { play.in_start + half + into }
                 }
             }
         };

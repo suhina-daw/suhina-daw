@@ -29,8 +29,8 @@ pub use tempo::{
 
 pub use audio_data::{AudioData, AudioPool};
 pub use clip_audio::{
-    CLIP_GAIN_MAX_DB, CLIP_TEMPO_RANGE, ClipAudio, ENVELOPE_RANGE, FLUX_RANGE, GAIN_POINT_RANGE, GRAIN_RANGE,
-    GainPoint, MAX_GAIN_POINTS, SliceAt, SliceTail, TRANSPOSE_RANGE, TempoSource, WarpSettings, db_to_gain,
+    CLIP_GAIN_MAX_DB, CLIP_TEMPO_RANGE, ClipAudio, ENVELOPE_RANGE, GAIN_POINT_RANGE, GRAIN_RANGE, GainPoint,
+    MAX_GAIN_POINTS, SCATTER_RANGE, SliceAt, SliceTail, TRANSPOSE_RANGE, TempoSource, WarpSettings, db_to_gain,
     envelope_db_at, gain_to_db, max_clip_gain,
 };
 pub use groups::{

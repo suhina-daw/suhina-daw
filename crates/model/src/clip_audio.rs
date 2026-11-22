@@ -128,11 +128,11 @@ impl SliceTail {
 pub const ENVELOPE_RANGE: std::ops::RangeInclusive<f64> = 0.0..=100.0;
 /// The range of a grain's length, in milliseconds (Tonal, Texture).
 pub const GRAIN_RANGE: std::ops::RangeInclusive<f64> = 10.0..=400.0;
-/// The range of Texture's flux, in percent: how far grains move at random.
-pub const FLUX_RANGE: std::ops::RangeInclusive<f64> = 0.0..=100.0;
+/// The range of Texture's scatter, in percent: how far grains move at random.
+pub const SCATTER_RANGE: std::ops::RangeInclusive<f64> = 0.0..=100.0;
 
 /// The settings of the stretch modes that have them: Rhythmic's slices, tail and envelope, Tonal's
-/// grain, Texture's grain and flux. Smooth and High quality have none.
+/// grain, Texture's grain and scatter. Smooth and High quality have none.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WarpSettings {
     pub slice: SliceAt,
@@ -141,14 +141,14 @@ pub struct WarpSettings {
     pub envelope: f64,
     /// Milliseconds, within [`GRAIN_RANGE`].
     pub grain: f64,
-    /// Percent, within [`FLUX_RANGE`].
-    pub flux: f64,
+    /// Percent, within [`SCATTER_RANGE`].
+    pub scatter: f64,
 }
 
 impl Default for WarpSettings {
-    /// Slices at transients with a looping tail and no fade; grains of 60 ms, a quarter flux.
+    /// Slices at transients with a looping tail and no fade; grains of 60 ms, a quarter scatter.
     fn default() -> Self {
-        Self { slice: SliceAt::Transients, tail: SliceTail::Loop, envelope: 100.0, grain: 60.0, flux: 25.0 }
+        Self { slice: SliceAt::Transients, tail: SliceTail::Loop, envelope: 100.0, grain: 60.0, scatter: 25.0 }
     }
 }
 
@@ -163,7 +163,7 @@ impl WarpSettings {
         Self {
             envelope: keep(self.envelope, &ENVELOPE_RANGE, default.envelope),
             grain: keep(self.grain, &GRAIN_RANGE, default.grain),
-            flux: keep(self.flux, &FLUX_RANGE, default.flux),
+            scatter: keep(self.scatter, &SCATTER_RANGE, default.scatter),
             ..self
         }
     }

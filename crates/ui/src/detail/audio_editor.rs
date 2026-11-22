@@ -117,7 +117,7 @@ fn audio_clip_from(project: &Project, track: TrackId, clip: &Clip) -> Option<Aud
     let content = project.content(clip.content)?;
     let view = audio_view(content, clip, project.transport.tempo_bpm)?;
     let position = project.tracks.iter().position(|t| t.id == track)?;
-    // The clip's own colour when it has one; its track's otherwise (`Clip::color`).
+    // The clip's own color when it has one; its track's otherwise (`Clip::color`).
     let color = clip.color.unwrap_or_else(|| {
         project.tracks.get(position).map(|track| track_colour(track, position)).unwrap_or(suhina_session::colours::MIDI)
     });
@@ -142,8 +142,11 @@ fn audio_clip_from(project: &Project, track: TrackId, clip: &Clip) -> Option<Aud
 /// is as long as it and warped (`AudioClip::others`), all in one gesture (the action's own, else a
 /// new one), so the edit is one undo step: a marker moved, removed or added at a beat there is
 /// moved, removed or added at that beat in every one, a clip without a marker on that beat getting
-/// one first, pinned where its sound is. Another action, or a clip with none joined, is `action`
-/// alone.
+/// one first, pinned where its sound is. A move goes to every joined clip or to none: when it
+/// would take a marker of one of them onto or past its neighbor (closer than [`MARKER_GAP`]), or
+/// a marker it needs added would lie before its file's start, none of them get it, so no clip is
+/// left with an added marker its move then refused. Another action, or a clip with none joined,
+/// is `action` alone.
 pub fn for_joined(clip: &AudioClip, action: Action) -> Vec<Action> {
     const EDITS: [&str; 5] = [
         "clip.addWarpMarker",
@@ -176,6 +179,17 @@ pub fn for_joined(clip: &AudioClip, action: Action) -> Vec<Action> {
             .map(|a| a.iter().filter_map(Value::as_f64).collect())
             .unwrap_or_default()
     };
+    // A move: the beats it moves and by how much, the same for every clip.
+    let moving: Option<(Vec<f64>, f64)> = match action.id {
+        "clip.moveWarpMarker" => number("from").zip(number("beat")).map(|(from, to)| (vec![from], to - from)),
+        "clip.moveWarpMarkers" => number("by").map(|by| (numbers("beats"), by)),
+        _ => None,
+    };
+    if let Some((beats, by)) = &moving
+        && !joined.iter().all(|other| moves_cleanly(&other.view, beats, *by))
+    {
+        return out;
+    }
     for other in joined {
         let has = |beat: f64| other.view.markers.iter().any(|m| (m.0 - beat).abs() < 1e-6);
         let on = |id: &'static str, params: Value| Action::new(id, own(&with_address(&other.address, params)));
@@ -214,6 +228,32 @@ pub fn for_joined(clip: &AudioClip, action: Action) -> Vec<Action> {
     out
 }
 
+/// Whether the warp markers of `view` at `beats` (each added first where it has none) can move by
+/// `by` together, as `clip.addWarpMarker` and `clip.moveWarpMarker(s)` take them: an added marker
+/// lies where the file is (at or after its start) on markers that rise in seconds, and every marker
+/// keeps at least [`MARKER_GAP`] from its neighbors after the move, none passing another.
+fn moves_cleanly(view: &AudioView, beats: &[f64], by: f64) -> bool {
+    if !by.is_finite() || beats.is_empty() {
+        return false;
+    }
+    let same = |a: f64, b: f64| (a - b).abs() < 1e-6;
+    let rising = view.markers.windows(2).all(|w| w[1].0 > w[0].0 && w[1].1 > w[0].1);
+    let mut all: Vec<f64> = view.markers.iter().map(|m| m.0).collect();
+    for &beat in beats {
+        if all.iter().any(|b| same(*b, beat)) {
+            continue;
+        }
+        let seconds = seconds_at(view, beat);
+        if !(beat.is_finite() && rising && seconds.is_finite() && seconds >= 0.0) {
+            return false;
+        }
+        all.push(beat);
+    }
+    all.sort_by(f64::total_cmp);
+    let moved: Vec<f64> = all.iter().map(|&b| if beats.iter().any(|m| same(*m, b)) { b + by } else { b }).collect();
+    moved.windows(2).all(|w| w[1] - w[0] >= MARKER_GAP - 1e-9)
+}
+
 impl AudioClip {
     /// The clips picked with it whose warp markers move with its: as long as it, and warped.
     pub fn joined(&self) -> impl Iterator<Item = &AudioClip> {
@@ -237,13 +277,29 @@ impl AudioClip {
         beat.is_finite().then_some(beat)
     }
 
-    /// The arrangement beat at which content beat `beat` plays, held to the clip's span: where a
-    /// click on the waveform puts the playhead. `None` for a slot's clip, or a clip with no rate.
+    /// The arrangement beat at which content beat `beat` first plays, held to the clip's span:
+    /// where a click on the waveform puts the playhead. The inverse of [`AudioClip::content_beat`]:
+    /// in a looping clip a beat of the loop before the start marker is first played when the loop
+    /// comes round to it, after the stretch from the start marker to the loop's end. A beat the
+    /// clip never plays (before the start marker without a loop, past the loop's end) is held to
+    /// the clip's start or end. `None` for a slot's clip, or a clip with no rate.
     pub fn arrangement_beat(&self, beat: f64) -> Option<f64> {
-        if self.endless || self.view.rate.is_nan() || self.view.rate <= 0.0 {
+        let rate = self.view.rate;
+        if self.endless || rate.is_nan() || rate <= 0.0 || !beat.is_finite() {
             return None;
         }
-        let at = self.start + (beat - self.view.offset) / self.view.rate;
+        let offset = self.view.offset;
+        let elapsed = match self.view.loop_range.filter(|(start, end)| end > start && (*start..*end).contains(&beat)) {
+            Some((start, end)) => {
+                // Where playback enters the content: a start marker at or past the loop's end turns
+                // into the loop at once, as `content_beat` (and the engine) wrap it.
+                let from = if offset >= end { start + (offset - end).rem_euclid(end - start) } else { offset };
+                let ahead = if beat >= from { beat - from } else { (end - from) + (beat - start) };
+                ahead / rate
+            }
+            None => (beat - offset) / rate,
+        };
+        let at = self.start + elapsed;
         at.is_finite().then(|| at.clamp(self.start, self.start + self.length))
     }
 }
@@ -281,6 +337,13 @@ impl MarkerDrag {
     }
 }
 
+/// Where the `picked` markers are drawn: carried by `drag` while it lasts (they are where it began
+/// until it is let go); after the release they are the beats they were let go at already, and
+/// are drawn there as they are, never moved by the landing drag a second time.
+fn picked_now(picked: &[f64], drag: Option<&MarkerDrag>) -> Vec<f64> {
+    picked.iter().map(|&b| drag.and_then(|d| d.moves(b)).unwrap_or(b)).collect()
+}
+
 /// The beats of the `markers` inside `span` (its ends included), in order; none without one.
 fn markers_in(markers: &[(f64, f64)], span: Option<(f64, f64)>) -> Vec<f64> {
     let Some((start, end)) = span else { return Vec::new() };
@@ -288,7 +351,7 @@ fn markers_in(markers: &[(f64, f64)], span: Option<(f64, f64)>) -> Vec<f64> {
 }
 
 /// How far the markers at the beats `moved` may go together, earlier (the first, at most 0) and
-/// later (the second, at least 0): each stays at least [`MARKER_GAP`] from a neighbour that is not
+/// later (the second, at least 0): each stays at least [`MARKER_GAP`] from a neighbor that is not
 /// moved. `markers` are the clip's, in beat order.
 fn group_bounds(markers: &[(f64, f64)], moved: &[f64]) -> (f64, f64) {
     let is_moved = |beat: f64| moved.iter().any(|b| (b - beat).abs() < 1e-9);
@@ -318,6 +381,9 @@ pub struct AudioEditorState {
     scroll: f32,
     /// The clip the zoom belongs to.
     shown: Option<Value>,
+    /// The id of the clip shown: a launcher slot keeps its address when its clip is replaced, and
+    /// the clip that took its place starts fitted, with no dialog or drag of the one before.
+    shown_id: Option<ClipId>,
     /// The grid marks snap to: the piano roll's kind of grid, changed by the same keys (Ctrl+1
     /// finer, Ctrl+2 coarser, Ctrl+3 triplets, Ctrl+4 snap) and by the clip panel's Grid list.
     grid: PianoGrid,
@@ -347,7 +413,7 @@ pub struct AudioEditorState {
     loop_drag: Option<(LoopPart, f64, (f64, f64))>,
     /// Where the right-click menu was opened, while it is open.
     menu_at: Option<MenuAt>,
-    /// What Quantize (Ctrl+U) moves the transients to: one of the piano roll's quantise grids
+    /// What Quantize (Ctrl+U) moves the transients to: one of the piano roll's quantize grids
     /// ([`QUANTIZE_GRIDS`](crate::detail::piano_roll::QUANTIZE_GRIDS)), and how far, 0 to 100
     /// percent.
     quantize_grid: &'static str,
@@ -358,6 +424,8 @@ pub struct AudioEditorState {
     /// Pressed last: the grid keys are the editor's, as the piano roll's are while it has the
     /// keyboard.
     focused: bool,
+    /// A click's seek on the ruler or the waveform, waiting out the double-click time.
+    waiting: WaitingClick,
 }
 
 impl Default for AudioEditorState {
@@ -367,6 +435,7 @@ impl Default for AudioEditorState {
             beat_width: 0.0,
             scroll: 0.0,
             shown: None,
+            shown_id: None,
             grid: default_grid(),
             drag: None,
             landing: None,
@@ -383,7 +452,58 @@ impl Default for AudioEditorState {
             quantize_amount: 100.0,
             file_span: None,
             focused: false,
+            waiting: WaitingClick::default(),
         }
+    }
+}
+
+/// A single click's action held back for the double-click time, so a click that turns out to be
+/// the first of a double-click does not do it: egui reports a click on both presses of a
+/// double-click, and a double-click on the ruler fits the file and one on the waveform adds a
+/// warp marker, neither of which seeks.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct WaitingClick(Option<(f64, Action)>);
+
+impl WaitingClick {
+    /// A click at `now`, `count` presses in a row (2 for a double-click, 3 for a triple one): a
+    /// single click waits with its action (if any), the one waiting before it sent first; a double
+    /// or triple click drops what waits.
+    pub(crate) fn click(&mut self, now: f64, count: u32, action: Option<Action>, out: &mut Vec<Action>) {
+        if count > 1 {
+            self.0 = None;
+            return;
+        }
+        if let Some((_, before)) = self.0.take() {
+            out.push(before);
+        }
+        self.0 = action.map(|action| (now, action));
+    }
+
+    /// Sends what waits once `delay` seconds have passed since its click with no second press;
+    /// true while something still waits.
+    pub(crate) fn tick(&mut self, now: f64, delay: f64, out: &mut Vec<Action>) -> bool {
+        match self.0.take() {
+            Some((at, action)) if now - at >= delay => {
+                out.push(action);
+                false
+            }
+            Some(waiting) => {
+                self.0 = Some(waiting);
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// How many presses in a row `response`'s click is: 1, 2 for a double-click, 3 for a triple one.
+fn presses(response: &egui::Response) -> u32 {
+    if response.triple_clicked() {
+        3
+    } else if response.double_clicked() {
+        2
+    } else {
+        1
     }
 }
 
@@ -452,7 +572,7 @@ fn menu_items(ui: &mut Ui, cx: &MenuCx<'_>, state: &mut AudioEditorState, action
     {
         actions.push(action);
     }
-    // The quantise grid and amount, beside the menu: no dialog to open first.
+    // The quantize grid and amount, beside the menu: no dialog to open first.
     let (grid, amount) = state.quantize();
     menu::submenu(ui, &format!("Quantize settings: {grid}, {amount:.0} %"), false, |ui| {
         menu::heading(ui, "Grid");
@@ -482,7 +602,7 @@ fn menu_items(ui: &mut Ui, cx: &MenuCx<'_>, state: &mut AudioEditorState, action
         state.reset_open = true;
     }
     line(ui);
-    let looped = state.span.is_some_and(|(s, e)| e > s.max(0.0));
+    let looped = state.loop_span().is_some();
     if pick(ui, "Loop selection", key("pianoRoll.loop"), looped) {
         actions.extend(state.loop_key(clip));
     }
@@ -492,20 +612,18 @@ fn menu_items(ui: &mut Ui, cx: &MenuCx<'_>, state: &mut AudioEditorState, action
             with_address(address, json!({ "offset": round_beat(at.beat.max(0.0)) })),
         ));
     }
-    let least = if cx.step > 0.0 { cx.step } else { 1.0 / 64.0 };
-    let (loop_start, loop_end) = clip.view.loop_range.unzip();
-    let starts = loop_end.is_some_and(|end| at.beat < end - least * 0.5);
-    if pick(ui, "Set loop start here", None, starts)
-        && let Some(end) = loop_end
+    let new_start = clip.view.loop_range.and_then(|range| loop_start_at(range, at.beat, cx.step));
+    if pick(ui, "Set loop start here", None, new_start.is_some())
+        && let Some(own) = new_start
     {
-        let own = json!({ "start": round_beat(at.beat.max(0.0).min(end - least)), "end": round_beat(end) });
+        let own = json!({ "start": own.0, "end": own.1 });
         actions.push(Action::new("clip.setLoop", with_address(address, own)));
     }
-    let ends = loop_start.is_some_and(|start| at.beat > start + least * 0.5);
-    if pick(ui, "Set loop end here", None, ends)
-        && let Some(start) = loop_start
+    let new_end = clip.view.loop_range.and_then(|range| loop_end_at(range, at.beat, cx.step));
+    if pick(ui, "Set loop end here", None, new_end.is_some())
+        && let Some(own) = new_end
     {
-        let own = json!({ "start": round_beat(start), "end": round_beat(at.beat.max(start + least)) });
+        let own = json!({ "start": own.0, "end": own.1 });
         actions.push(Action::new("clip.setLoop", with_address(address, own)));
     }
     line(ui);
@@ -530,6 +648,41 @@ fn menu_items(ui: &mut Ui, cx: &MenuCx<'_>, state: &mut AudioEditorState, action
         state.grid = grid;
         ui.close();
     }
+}
+
+/// The least a loop set from the right-click menu keeps between its ends: a grid `step`, or a 64th
+/// of a beat with no grid.
+fn menu_loop_gap(step: f64) -> f64 {
+    if step > 0.0 && step.is_finite() { step } else { 1.0 / 64.0 }
+}
+
+/// The loop *Set loop start here* makes of `range` with the point clicked at `beat`, its ends to a
+/// thousandth of a beat: the start there, from beat 0, at least a grid `step` before the end, or
+/// as far before it as there is room from beat 0 when the loop is shorter than that. `None` when
+/// the point is not before the end by half that gap (the item is grayed).
+fn loop_start_at(range: (f64, f64), beat: f64, step: f64) -> Option<(f64, f64)> {
+    let (_, end) = range;
+    let gap = menu_loop_gap(step).min(end);
+    if !(beat.is_finite() && end > 0.0 && beat < end - gap * 0.5) {
+        return None;
+    }
+    let start = round_beat(beat.max(0.0).min(end - gap));
+    let end = round_beat(end);
+    (end > start).then_some((start, end))
+}
+
+/// The loop *Set loop end here* makes of `range` with the point clicked at `beat`, its ends to a
+/// thousandth of a beat: the end there, at least a grid `step` after the start. `None` when the
+/// point is not after the start by half that gap (the item is grayed).
+fn loop_end_at(range: (f64, f64), beat: f64, step: f64) -> Option<(f64, f64)> {
+    let (start, _) = range;
+    let gap = menu_loop_gap(step);
+    if !(beat.is_finite() && beat > start + gap * 0.5) {
+        return None;
+    }
+    let end = round_beat(beat.max(start + gap));
+    let start = round_beat(start);
+    (end > start).then_some((start, end))
 }
 
 /// The height of one of the right-click menu's rows, as the piano roll's.
@@ -661,6 +814,7 @@ impl AudioEditorState {
     /// editor gives up the keyboard, and the next clip shown starts fitted. The grid stays.
     pub fn forget_clip(&mut self) {
         self.shown = None;
+        self.shown_id = None;
         self.drag = None;
         self.landing = None;
         self.picked.clear();
@@ -677,33 +831,41 @@ impl AudioEditorState {
     /// the clip over the time selection and starts it there, so the clip plays that stretch round
     /// and round over its whole length (the start marker left before it played the audio up to
     /// the loop first); pressed again over the same loop, turns it off. With no time selection it
-    /// turns the clip's loop on or off. Nothing when the editor shows another clip.
+    /// turns the clip's loop on or off. A selection too short to be a loop (it rounds to no length,
+    /// or lies wholly before beat 0) leaves the loop as it is. Nothing when the editor shows
+    /// another clip.
     pub fn loop_key(&self, clip: &AudioClip) -> Vec<Action> {
         if self.shown.as_ref() != Some(&clip.address) {
             return Vec::new();
         }
         let set_loop = |own: Value| Action::new("clip.setLoop", with_address(&clip.address, own));
-        // A clip's loop and start are at beat 0 or later: a selection painted from before the
-        // clip's first beat (where a warp marker puts the file's start earlier) loops from 0.
-        match self.span.map(|(s, e)| (round_beat(s.max(0.0)), round_beat(e))) {
-            Some((start, end)) if end > start => {
-                let same =
-                    clip.view.loop_range.is_some_and(|(s, e)| (s - start).abs() < 1e-6 && (e - end).abs() < 1e-6);
-                if same {
-                    return vec![set_loop(json!({ "loop": false }))];
-                }
-                vec![
-                    set_loop(json!({ "start": start, "end": end })),
-                    Action::new("clip.setStart", with_address(&clip.address, json!({ "offset": start }))),
-                ]
-            }
-            _ => vec![set_loop(json!({ "loop": clip.view.loop_range.is_none() }))],
+        if self.span.is_none() {
+            return vec![set_loop(json!({ "loop": clip.view.loop_range.is_none() }))];
         }
+        let Some((start, end)) = self.loop_span() else { return Vec::new() };
+        let same = clip.view.loop_range.is_some_and(|(s, e)| (s - start).abs() < 1e-6 && (e - end).abs() < 1e-6);
+        if same {
+            return vec![set_loop(json!({ "loop": false }))];
+        }
+        vec![
+            set_loop(json!({ "start": start, "end": end })),
+            Action::new("clip.setStart", with_address(&clip.address, json!({ "offset": start }))),
+        ]
+    }
+
+    /// The loop the time selection makes, as the commands are given beats: its ends to a
+    /// thousandth of a beat, from beat 0 at the earliest (a clip's loop and start are at beat 0 or
+    /// later, so a selection painted from before the clip's first beat, where a warp marker puts
+    /// the file's start earlier, loops from 0). `None` without a selection, or for one that is
+    /// no loop at those beats.
+    fn loop_span(&self) -> Option<(f64, f64)> {
+        let (start, end) = self.span.map(|(s, e)| (round_beat(s.max(0.0)), round_beat(e)))?;
+        (end > start).then_some((start, end))
     }
 
     /// What Quantize (Ctrl+U, the piano roll's key) does while the editor shows `clip`: moves the
-    /// transients in the time selection (none: the whole clip) towards the quantise grid by the
-    /// quantise amount (`clip.quantizeWarpMarkers`). Nothing when the editor shows another clip or
+    /// transients in the time selection (none: the whole clip) towards the quantize grid by the
+    /// quantize amount (`clip.quantizeWarpMarkers`). Nothing when the editor shows another clip or
     /// the clip is not warped.
     pub fn quantize_key(&self, clip: &AudioClip) -> Option<Action> {
         if self.shown.as_ref() != Some(&clip.address) || clip.view.markers.len() < 2 {
@@ -730,7 +892,7 @@ impl AudioEditorState {
         }
     }
 
-    /// The quantise grid and amount, for tests and the menu.
+    /// The quantize grid and amount, for tests and the menu.
     pub fn quantize(&self) -> (&'static str, f64) {
         (self.quantize_grid, self.quantize_amount)
     }
@@ -779,6 +941,27 @@ impl AudioEditorState {
         self.drag.is_some()
     }
 
+    /// Starts on `clip` when it is not the one shown (another address, or another clip in the same
+    /// launcher slot) or nothing is fitted yet: its file of `beats` fitted to `width` points, and
+    /// nothing of the clip before kept (a drag, the picked markers, the time selection, the reset
+    /// dialog).
+    fn show_clip(&mut self, clip: &AudioClip, beats: f64, width: f32) {
+        if self.shown.as_ref() == Some(&clip.address) && self.shown_id == Some(clip.id) && self.beat_width > 0.0 {
+            return;
+        }
+        self.shown = Some(clip.address.clone());
+        self.shown_id = Some(clip.id);
+        self.fit(beats, width);
+        self.drag = None;
+        self.landing = None;
+        self.picked.clear();
+        self.reset_open = false;
+        self.span = None;
+        self.painting = None;
+        self.loop_drag = None;
+        self.menu_at = None;
+    }
+
     /// Zooms and scrolls so that the file fills `width` points.
     fn fit(&mut self, beats: f64, width: f32) {
         self.beat_width = fitted_width(beats, width);
@@ -806,12 +989,12 @@ impl AudioEditorState {
     }
 }
 
-/// What the editor reads from the window: the decoded waveforms and the waveform colour setting.
+/// What the editor reads from the window: the decoded waveforms and the waveform color setting.
 #[derive(Clone, Copy)]
 pub struct Env<'a> {
     pub waveforms: &'a Waveforms,
     /// Settings › Clip editor › Audio editor waveform colour is Theme: the waveform takes the
-    /// theme's `clip-waveform` colour instead of the clip's.
+    /// theme's `clip-waveform` color instead of the clip's.
     pub theme_waveform: bool,
     /// Settings › Clip editor › Audio editor › Drag warp markers by their line: a marker's line down
     /// the waveform takes the pointer as its flag does; off, only the flag on the marker lane does.
@@ -858,6 +1041,30 @@ pub fn beat_at(view: &AudioView, seconds: f64) -> f64 {
     }
 }
 
+/// `view` as seconds are read back to beats ([`beat_at`]): its warp markers that rise in seconds
+/// as they do in beats, each kept only when its second is after the last one kept, and a steady
+/// rate when fewer than two are left. The engine plays markers that stand still in the file or
+/// fall (a project from elsewhere), and [`seconds_at`] draws them as they play; only the way back
+/// needs them rising, or a flat end segment would put every second past it on one beat. Borrowed
+/// when the markers rise already.
+pub fn readable(view: &AudioView) -> std::borrow::Cow<'_, AudioView> {
+    use std::borrow::Cow;
+    let markers = &view.markers;
+    if markers.windows(2).all(|w| w[1].0 > w[0].0 && w[1].1 > w[0].1) {
+        return Cow::Borrowed(view);
+    }
+    let mut kept: Vec<(f64, f64)> = Vec::with_capacity(markers.len());
+    for &marker in markers {
+        if kept.last().is_none_or(|last| marker.0 > last.0 && marker.1 > last.1) {
+            kept.push(marker);
+        }
+    }
+    if kept.len() < 2 {
+        kept.clear();
+    }
+    Cow::Owned(AudioView { markers: kept, ..view.clone() })
+}
+
 /// The content beats the clip plays: from where it starts to where its loop ends, or to where its
 /// length reaches, a loop's own start counting when it lies before the start.
 pub fn played(view: &AudioView, length: f64) -> (f64, f64) {
@@ -884,14 +1091,22 @@ pub fn snap(beat: f64, step: f64, free: bool) -> f64 {
     if free || step.is_nan() || step <= 0.0 || !beat.is_finite() { beat } else { (beat / step).round() * step }
 }
 
-/// Where `beat` is as the ruler counts it: `bar.beat.sixteenth`, each from 1.
-pub fn position_label(beat: f64, bar_beats: f64) -> String {
-    let bar_beats = if bar_beats > 0.0 { bar_beats } else { 4.0 };
+/// Where `beat` is as the ruler counts it: `bar.beat.sixteenth`, each from 1. `None` for a beat
+/// that is not a number, or so far out that its bar has no number (a ruler or a pointer there
+/// writes nothing rather than a wrong count).
+pub fn position_label(beat: f64, bar_beats: f64) -> Option<String> {
+    let bar_beats = if bar_beats > 0.0 && bar_beats.is_finite() { bar_beats } else { 4.0 };
     let bar = (beat / bar_beats).floor();
-    let in_bar = beat - bar * bar_beats;
+    // Past what a whole number of bars holds (or a float stops telling beats apart) there is no
+    // count to write.
+    if !(bar.is_finite() && bar.abs() < 1e15) {
+        return None;
+    }
+    let in_bar = (beat - bar * bar_beats).clamp(0.0, bar_beats);
     let whole = in_bar.floor();
     let sixteenth = ((in_bar - whole) * 4.0).floor();
-    format!("{}.{}.{}", bar as i64 + 1, whole as i64 + 1, sixteenth as i64 + 1)
+    let count = |n: f64| (n as i64).checked_add(1);
+    Some(format!("{}.{}.{}", count(bar)?, count(whole)?, count(sixteenth)?))
 }
 
 /// Whether `beat` is (within a hair of) a whole number of `unit`s.
@@ -922,10 +1137,10 @@ fn with_address(address: &Value, own: Value) -> Value {
     Value::Object(map)
 }
 
-/// The colour the waveform is drawn in, as Settings › Clip editor › Audio editor waveform colour
-/// says: the clip's colour (its own, else its track's, as the Arrangement colours the clip), or
-/// the theme's: its `clip-waveform` colour where it gives one, else a neutral ink that reads on
-/// the editor's `panel` (the clip's colour there made Theme look the same as Track colour).
+/// The color the waveform is drawn in, as Settings › Clip editor › Audio editor waveform colour
+/// says: the clip's color (its own, else its track's, as the Arrangement colors the clip), or
+/// the theme's: its `clip-waveform` color where it gives one, else a neutral ink that reads on
+/// the editor's `panel` (the clip's color there made Theme look the same as Track colour).
 fn waveform_ink(theme: bool, clip: Color32, panel: Color32) -> Color32 {
     if theme {
         crate::kit::element::CLIP_WAVEFORM.enter().color_or(theme::text_on(panel.to_opaque()).gamma_multiply(0.7))
@@ -939,43 +1154,108 @@ fn waveform_ink(theme: bool, clip: Color32, panel: Color32) -> Color32 {
 /// found on a thread of their own (a long song takes seconds), none until they are: the window
 /// never waits for them, and is drawn again when they are there.
 fn transients(ctx: &egui::Context, file: &str, peaks: &waveform::Peaks) -> std::sync::Arc<Vec<f64>> {
-    type Found = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Option<std::sync::Arc<Vec<f64>>>>>>;
-    let id = egui::Id::unique("audio-editor-transients");
-    let found: Found = ctx.data_mut(|d| std::sync::Arc::clone(d.get_temp_mut_or_default::<Found>(id)));
-    let Ok(mut known) = found.lock() else { return std::sync::Arc::default() };
-    match known.get(file) {
-        Some(Some(seconds)) => return std::sync::Arc::clone(seconds),
-        // Being found.
-        Some(None) => return std::sync::Arc::default(),
-        None => {}
+    match file_transients(ctx, file, peaks) {
+        Transients::Ready(seconds) => seconds,
+        Transients::Waiting | Transients::Unavailable => std::sync::Arc::default(),
     }
-    let Some(data) = peaks.data().cloned() else { return std::sync::Arc::default() };
+}
+
+/// Where the transients of a file stand in the window's background analysis.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Transients {
+    /// Found: the file seconds where notes start (`suhina_session::transient_seconds`).
+    Ready(std::sync::Arc<Vec<f64>>),
+    /// Being found on a thread of their own, or waiting for one; the window is drawn again when
+    /// they are there.
+    Waiting,
+    /// The window holds no samples of the file to look in.
+    Unavailable,
+}
+
+/// The files' transients found or being found, each under its file and the decoded samples it was
+/// found in: two projects with a file of the same name each have their own samples, so their own
+/// entry. The condition variable is told whenever a file's are found.
+type TransientCache =
+    std::sync::Arc<(std::sync::Mutex<std::collections::HashMap<(String, usize), TransientEntry>>, std::sync::Condvar)>;
+
+/// One file's transients: the samples they are (being) found in, and the seconds once found.
+#[derive(Debug, Clone)]
+struct TransientEntry {
+    data: std::sync::Weak<suhina_engine::AudioData>,
+    seconds: Option<std::sync::Arc<Vec<f64>>>,
+}
+
+fn transient_cache(ctx: &egui::Context) -> TransientCache {
+    let id = egui::Id::unique("audio-editor-transients");
+    ctx.data_mut(|d| std::sync::Arc::clone(d.get_temp_mut_or_default::<TransientCache>(id)))
+}
+
+/// The transients of `file` (its samples in `peaks`), as [`Transients`] says: found once per file
+/// and its samples on a thread of their own, at most [`TRANSIENT_JOBS`] at once; a file asked for
+/// while that many are being found is started when it is next asked for. The window never waits
+/// for them, and is drawn again when they are there.
+pub fn file_transients(ctx: &egui::Context, file: &str, peaks: &waveform::Peaks) -> Transients {
+    let Some(data) = peaks.data() else { return Transients::Unavailable };
+    let cache = transient_cache(ctx);
+    let (lock, found) = &*cache;
+    let Ok(mut known) = lock.lock() else { return Transients::Unavailable };
+    let key = (file.to_owned(), std::sync::Arc::as_ptr(data) as usize);
+    // The same samples, not others that came to sit at the same address once these were freed.
+    if let Some(entry) = known.get(&key).filter(|e| e.data.upgrade().is_some_and(|d| std::sync::Arc::ptr_eq(&d, data)))
+    {
+        return match &entry.seconds {
+            Some(seconds) => Transients::Ready(std::sync::Arc::clone(seconds)),
+            None => Transients::Waiting,
+        };
+    }
     // At most a couple found at once: browsing long clips quickly started a thread and kept an
     // audio buffer for each. A file over the limit is asked for again when it is next drawn.
-    if known.values().filter(|seconds| seconds.is_none()).count() >= TRANSIENT_JOBS {
-        return std::sync::Arc::default();
+    if known.values().filter(|e| e.seconds.is_none()).count() >= TRANSIENT_JOBS {
+        return Transients::Waiting;
     }
-    // A few files' worth: the editor shows one clip at a time.
+    // A few files' worth, and none whose samples are gone: the editor shows one clip at a time.
+    known.retain(|_, e| e.data.strong_count() > 0);
     if known.len() >= 32 {
-        known.retain(|_, seconds| seconds.is_none());
+        known.retain(|_, e| e.seconds.is_none());
     }
-    known.insert(file.to_owned(), None);
+    let entry = TransientEntry { data: std::sync::Arc::downgrade(data), seconds: None };
+    known.insert(key.clone(), entry.clone());
     drop(known);
-    let (shared, key, repaint) = (std::sync::Arc::clone(&found), file.to_owned(), ctx.clone());
+    let (shared, job_key, samples, repaint) =
+        (std::sync::Arc::clone(&cache), key.clone(), std::sync::Arc::clone(data), ctx.clone());
     let spawned = std::thread::Builder::new().name("suhina-transients".into()).spawn(move || {
-        let seconds = std::sync::Arc::new(suhina_session::transient_seconds(&data));
-        if let Ok(mut known) = shared.lock() {
-            known.insert(key, Some(seconds));
+        let seconds = std::sync::Arc::new(suhina_session::transient_seconds(&samples));
+        let (lock, found) = &*shared;
+        if let Ok(mut known) = lock.lock() {
+            known.insert(job_key, TransientEntry { seconds: Some(seconds), ..entry });
         }
+        found.notify_all();
         repaint.request_repaint();
     });
     // No thread to be had: no suggestions for the file, rather than a window that waits.
-    if spawned.is_err()
-        && let Ok(mut known) = found.lock()
-    {
-        known.insert(file.to_owned(), Some(std::sync::Arc::default()));
+    if spawned.is_err() {
+        if let Ok(mut known) = lock.lock()
+            && let Some(entry) = known.get_mut(&key)
+        {
+            entry.seconds = Some(std::sync::Arc::default());
+        }
+        found.notify_all();
     }
-    std::sync::Arc::default()
+    Transients::Waiting
+}
+
+/// Blocks until no file's transients are being found in `ctx`'s window, woken each time one's are
+/// found: for tests and tools that must see the background analysis finished before they go on.
+pub fn await_transients(ctx: &egui::Context) {
+    let cache = transient_cache(ctx);
+    let (lock, found) = &*cache;
+    let Ok(mut known) = lock.lock() else { return };
+    while known.values().any(|e| e.seconds.is_none()) {
+        match found.wait(known) {
+            Ok(next) => known = next,
+            Err(_) => return,
+        }
+    }
 }
 
 /// Where a marker double-clicked on the marker lane at `x` goes: onto the transient suggested
@@ -1068,7 +1348,10 @@ fn show_one(
     // the end of what it plays). The axis is the clip's beats, as the ruler counts them: moving the
     // first warp marker moves the file along it and leaves room before it, rather than moving the
     // ruler under a file pinned to the left edge.
-    let (file_first, file_last) = (beat_at(&clip.view, 0.0), beat_at(&clip.view, duration));
+    // Read back from seconds through the markers that rise (`readable`): a project's markers that
+    // stand still in the file, or fall, would put the whole file on one beat.
+    let inverse = readable(&clip.view);
+    let (file_first, file_last) = (beat_at(&inverse, 0.0), beat_at(&inverse, duration));
     state.file_span = (file_first.is_finite() && file_last > file_first).then_some((file_first, file_last));
     if !(file_first.is_finite() && file_last.is_finite() && file_last > file_first) {
         hint(&painter, area, "This audio has no length to show");
@@ -1117,16 +1400,7 @@ fn show_one(
         crate::detail::piano_roll::draw_magnifier(ui, pos);
     }
     // A clip not shown before starts with its file fitted to the area.
-    if state.shown.as_ref() != Some(&clip.address) || state.beat_width <= 0.0 {
-        state.shown = Some(clip.address.clone());
-        state.fit(last - first, area.width());
-        state.drag = None;
-        state.landing = None;
-        state.picked.clear();
-        state.reset_open = false;
-        state.span = None;
-        state.painting = None;
-    }
+    state.show_clip(clip, last - first, area.width());
     // A press here gives the editor the keyboard; one anywhere else takes it away (the clip's panel
     // gives it back, beside it).
     if ui.input(|i| i.pointer.any_pressed()) {
@@ -1193,8 +1467,7 @@ fn show_one(
     // Zoomed out so far that the transients on show would be closer than
     // [`TRANSIENT_LEAST`] points on average, each is a thin line on the lane instead of a mark, and
     // they take no double-click: a marker put down there could not be told from the next.
-    let on_show =
-        found.iter().filter(|s| (area.left()..=area.right()).contains(&x_of(beat_at(&clip.view, **s)))).count();
+    let on_show = found.iter().filter(|s| (area.left()..=area.right()).contains(&x_of(beat_at(&inverse, **s)))).count();
     let crowded = on_show > 1 && area.width() / (on_show as f32) < TRANSIENT_LEAST;
     let marks = std::sync::Arc::clone(&found);
     let found = if crowded { std::sync::Arc::new(Vec::new()) } else { found };
@@ -1283,7 +1556,7 @@ fn show_one(
                 && let Some(p) = marker.interact_pointer_pos()
                 && let Some(drag) = state.drag.as_mut().filter(|d| (d.from - beat).abs() < 1e-9)
             {
-                // Between the neighbours not moved, which none of them passes.
+                // Between the neighbors not moved, which none of them passes.
                 let (low, high) = group_bounds(markers, &drag.moved());
                 let wanted = snap(beat_at_x(p.x) - drag.grab, step, free);
                 drag.to = drag.from + (wanted - drag.from).clamp(low, high);
@@ -1345,7 +1618,7 @@ fn show_one(
             // On the marker lane, onto the transient suggested there, else on the grid; on the
             // waveform, on the grid (Alt: exactly where the double-click is).
             let beat = if lane.contains(p) {
-                placed(p.x, &found, &clip.view, &x_of, &beat_at_x, step, free).0
+                placed(p.x, &found, &inverse, &x_of, &beat_at_x, step, free).0
             } else {
                 snap(beat_at_x(p.x), step, free)
             };
@@ -1358,7 +1631,7 @@ fn show_one(
     {
         let beat = snap(beat_at_x(p.x), step, free);
         let marker_beat = if lane.contains(p) {
-            placed(p.x, &found, &clip.view, &x_of, &beat_at_x, step, free).0
+            placed(p.x, &found, &inverse, &x_of, &beat_at_x, step, free).0
         } else {
             snap(beat_at_x(p.x), step, free)
         };
@@ -1397,7 +1670,7 @@ fn show_one(
         state.painting = None;
     }
     // Shift and a click carries the time selection to the clicked point.
-    let shift = ui.input(|i| i.modifiers.shift);
+    let (shift, now) = ui.input(|i| (i.modifiers.shift, i.time));
     if response.clicked()
         && hot.is_none()
         && shift
@@ -1418,23 +1691,34 @@ fn show_one(
         // a click in a clip's body in the Arrangement does: the next start begins there, and
         // while playing, playback goes on where it is (#657). A slot's clip plays from its launch
         // and has no such place.
-        if !clip.endless
-            && let Some(p) = response.interact_pointer_pos().filter(|p| takes(*p))
-            && let Some(at) = clip.arrangement_beat(snap(beat_at_x(p.x), step, free))
-        {
-            actions.push(Action::new("transport.setStart", json!({ "beats": round_beat(at) })));
-        }
+        // It waits out the double-click time: a double-click adds a warp marker instead.
+        let start = response
+            .interact_pointer_pos()
+            .filter(|p| !clip.endless && takes(*p))
+            .and_then(|p| clip.arrangement_beat(snap(beat_at_x(p.x), step, free)))
+            .map(|at| Action::new("transport.setStart", json!({ "beats": round_beat(at) })));
+        state.waiting.click(now, presses(&response), start, actions);
+    } else if response.double_clicked() || response.triple_clicked() {
+        // The second press of a double-click on a marker or with Shift held: no seek either.
+        state.waiting.click(now, 2, None, actions);
     }
     // A click on the ruler is the deliberate seek, as on the Arrangement's ruler: playback jumps
     // to where it plays in the arrangement, on the grid (Alt: free), while playing at the next
     // launch boundary (`transport.jump`). A slot's clip plays from its launch and has no such
-    // place.
-    if ruler_response.clicked()
-        && !clip.endless
-        && let Some(p) = ruler_response.interact_pointer_pos()
-        && let Some(at) = clip.arrangement_beat(snap(beat_at_x(p.x), step, free))
-    {
-        actions.push(Action::new("transport.jump", json!({ "beats": round_beat(at) })));
+    // place. It waits out the double-click time: a double-click fits the file instead.
+    if ruler_response.clicked() {
+        let jump = ruler_response
+            .interact_pointer_pos()
+            .filter(|_| !clip.endless)
+            .and_then(|p| clip.arrangement_beat(snap(beat_at_x(p.x), step, free)))
+            .map(|at| Action::new("transport.jump", json!({ "beats": round_beat(at) })));
+        state.waiting.click(now, presses(&ruler_response), jump, actions);
+    }
+    // A click left alone for the double-click time does what it waited to do; the window is
+    // drawn again until then.
+    let delay = ui.ctx().options(|o| o.input_options.max_double_click_delay);
+    if state.waiting.tick(now, delay, actions) {
+        ui.ctx().request_repaint();
     }
     // Picked markers that are gone (removed, or the project changed under them) are no longer
     // picked; not while moved ones are on their way to where they were let go.
@@ -1549,7 +1833,7 @@ fn show_one(
         );
     }
 
-    // The loop row: the clip's loop as a bar with an arrow at each end, in the clip's colour; with
+    // The loop row: the clip's loop as a bar with an arrow at each end, in the clip's color; with
     // the loop off, gray over the part the clip plays. A click switches the loop on or off; a drag
     // of an end moves that end, of the bar the whole loop, on the grid (Alt: free); each is one
     // `clip.setLoop`.
@@ -1748,14 +2032,15 @@ fn show_one(
     painter.rect_filled(lane, 0.0, crate::detail::detail_fill("window").gamma_multiply(0.85));
     painter.line_segment([lane.left_bottom(), lane.right_bottom()], theme::hairline(hint_ink().gamma_multiply(0.4)));
     let pointer = ui.input(|i| i.pointer.hover_pos()).filter(|p| area.contains(*p) && state.drag.is_none());
+    let inverse_now = readable(view);
     // The transient suggestions answer the pointer on the marker lane only: over the waveform
     // nothing on the lane moves as the pointer does.
     let target = pointer
         .filter(|p| lane.contains(*p) && hot.is_none() && editable)
-        .map(|p| placed(p.x, &found, view, &x_of, &beat_at_x, step, free));
+        .map(|p| placed(p.x, &found, &inverse_now, &x_of, &beat_at_x, step, free));
     if editable {
         for &seconds in marks.iter() {
-            let beat = beat_at(view, seconds);
+            let beat = beat_at(&inverse_now, seconds);
             let x = x_of(beat);
             if !(lane.left()..=lane.right()).contains(&x) || view.markers.iter().any(|m| (x_of(m.0) - x).abs() < 3.0) {
                 continue;
@@ -1798,8 +2083,7 @@ fn show_one(
     // Two or more markers picked: a band on the marker lane from the first to the last of them,
     // with a bar along its top joining their flags, so it reads that they go together (where a
     // drag carries them).
-    let picked_now: Vec<f64> =
-        state.picked.iter().map(|&b| moving.as_ref().and_then(|d| d.moves(b)).unwrap_or(b)).collect();
+    let picked_now = picked_now(&state.picked, state.drag.as_ref());
     if let (true, Some(first), Some(last)) =
         (picked_now.len() > 1, picked_now.iter().copied().reduce(f64::min), picked_now.iter().copied().reduce(f64::max))
     {
@@ -1818,11 +2102,11 @@ fn show_one(
         let lit = hot == Some(i)
             || state.picked.iter().any(|b| (b - beat).abs() < 1e-9)
             || moving.as_ref().is_some_and(|d| d.lands_on(beat));
-        let colour = if lit { title_ink() } else { accent };
+        let color = if lit { title_ink() } else { accent };
         // Its line down the waveform, to put its sound on a beat by eye; it takes the pointer only
         // when Settings say so (`Env::line_drag`), so a drag beside it paints the time selection.
         let width = if lit { 2.0 } else { 1.0 };
-        painter.line_segment([Pos2::new(x, lane.bottom()), Pos2::new(x, wave.bottom())], Stroke::new(width, colour));
+        painter.line_segment([Pos2::new(x, lane.bottom()), Pos2::new(x, wave.bottom())], Stroke::new(width, color));
         // The flag: a small block on the lane with a point down to the line.
         let top = lane.top() + 2.0;
         painter.add(egui::Shape::convex_polygon(
@@ -1833,7 +2117,7 @@ fn show_one(
                 Pos2::new(x, lane.bottom()),
                 Pos2::new(x - 4.5, lane.bottom() - 4.0),
             ],
-            colour,
+            color,
             Stroke::new(1.0, panel),
         ));
     }
@@ -1902,13 +2186,13 @@ fn show_one(
     if let Some((x, beat)) = readout {
         let line = Stroke::new(1.0, hint_ink().gamma_multiply(0.7));
         painter.line_segment([Pos2::new(x, ruler_rect.bottom()), Pos2::new(x, wave.bottom())], line);
-        let text = position_label(beat, clip.bar_beats);
+        let text = position_label(beat, clip.bar_beats).unwrap_or_default();
         let chip = Rect::from_center_size(Pos2::new(x, ruler_rect.top() + 9.0), Vec2::new(58.0, 15.0));
         painter.rect_filled(chip, 3.0, crate::detail::detail_fill("control"));
         painter.text(chip.center(), Align2::CENTER_CENTER, text, theme::mono_font(theme::TEXT_TINY + 1.0), title_ink());
     }
     if let Some(drag) = &state.drag {
-        let text = position_label(drag.to, clip.bar_beats);
+        let text = position_label(drag.to, clip.bar_beats).unwrap_or_default();
         let chip = Rect::from_center_size(Pos2::new(x_of(drag.to), ruler_rect.top() + 9.0), Vec2::new(58.0, 15.0));
         painter.rect_filled(chip, 3.0, crate::detail::detail_fill("control"));
         painter.text(chip.center(), Align2::CENTER_CENTER, text, theme::mono_font(theme::TEXT_TINY + 1.0), title_ink());
@@ -1947,60 +2231,73 @@ enum Reset {
     Detect,
 }
 
+/// What the reset dialog's Close button and Escape choose: the markers stay.
+impl crate::app::project_dialog::CloseChoice for Reset {
+    fn close() -> Self {
+        Reset::Keep
+    }
+}
+
 /// The dialog that asks whether to keep the clip's warp markers or put the audio back on an even
-/// grid; `None` while it is up and nothing is chosen. Escape or a click outside keeps them.
+/// grid, a `dialog[name="reset-warp"]` over the window as the other dialogs are, its question
+/// wrapped to its width and its three choices along its bottom (`dialog::actions`); `None` while
+/// it is up and nothing is chosen. Escape and its Close button keep them.
 fn reset_dialog(ctx: &egui::Context, markers: usize) -> Option<Reset> {
-    use crate::kit::widgets::{self, button};
-    const WIDTH: f32 = 380.0;
-    const BUTTON_HEIGHT: f32 = 18.0;
-    let modal = crate::kit::floating::modal(ctx, egui::Id::unique("audio-editor-reset")).show(ctx, |ui| {
-        ui.set_width(WIDTH);
-        // The title and the question are the kit's text (golden rule 15), the question wrapped to
-        // the dialog's width.
-        let lines = [
-            ("Reset warp markers".to_owned(), theme::ui_font(theme::TEXT + 2.0), title_ink()),
-            (
-                format!(
-                    "This clip has {markers} warp markers. Keep them, or reset the warp so the audio runs evenly                      again, with one marker at each end? The clip's start, length and loop stay where they are."
-                ),
-                theme::ui_font(theme::TEXT_SMALL),
-                caption_ink(),
-            ),
-        ];
-        for (index, (text, font, ink)) in lines.into_iter().enumerate() {
-            if index > 0 {
-                ui.add_space(6.0);
+    use crate::kit::dialog;
+    use crate::kit::widgets;
+    const WIDTH: f32 = 404.0;
+    let area = ctx.content_rect();
+    let question = format!(
+        "This clip has {markers} warp markers. Keep them, or reset the warp so the audio runs evenly \
+         again, with one marker at each end? The clip's start, length and loop stay where they are."
+    );
+    let style_class = dialog::enter("reset-warp");
+    crate::kit::floating::area(ctx, egui::Id::unique("audio-editor-reset"), crate::kit::floating::Kind::Own)
+        .order(egui::Order::Foreground)
+        .fixed_pos(area.min)
+        .show(ctx, |ui| {
+            let mut styled = style_class.ui(ui);
+            let ui = &mut *styled;
+            ui.set_min_size(area.size());
+            let galley = ui.painter().layout(question.clone(), theme::ui_font(theme::TEXT_SMALL), caption_ink(), WIDTH);
+            let text_height = galley.size().y;
+            let mut closed = None;
+            let content = crate::app::project_dialog::panel(
+                ui,
+                &style_class,
+                area,
+                Vec2::new(WIDTH, text_height + theme::PAD * 2.0 + dialog::BUTTON_HEIGHT),
+                "Reset warp markers",
+                &mut closed,
+            );
+            let painter = ui.painter_at(area);
+            let text = Rect::from_min_size(content.min, Vec2::new(content.width(), text_height));
+            ui.interact(text, egui::Id::unique("audio-editor-reset-question"), Sense::hover())
+                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &question));
+            widgets::paint_text(&painter, text.min, galley, caption_ink());
+            // Each choice as wide as its words, named as it reads.
+            let choices = [
+                ("Keep warp markers", Reset::Keep),
+                ("Reset to clip tempo", Reset::Even),
+                ("Find tempo again", Reset::Detect),
+            ];
+            let buttons: Vec<dialog::Action<'_>> = choices
+                .iter()
+                .map(|(text, _)| {
+                    let width = widgets::text_width(ui, text, theme::ui_font(theme::TEXT)) + 20.0;
+                    dialog::Action::new(text, text).wide(width.max(dialog::BUTTON_WIDTH))
+                })
+                .collect();
+            let clicked = dialog::actions(ui, &painter, content, &buttons);
+            if let Some(&(_, choice)) = clicked.and_then(|index| choices.get(index)) {
+                return Some(choice);
             }
-            let galley = ui.painter().layout(text.clone(), font, ink, WIDTH);
-            let (rect, response) = ui.allocate_exact_size(Vec2::new(WIDTH, galley.size().y), Sense::hover());
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &text));
-            widgets::paint_text(ui.painter(), rect.min, galley, ink);
-        }
-        ui.add_space(10.0);
-        // The three choices are the kit's buttons, side by side, each as wide as its words.
-        let choices =
-            [("Keep warp markers", Reset::Keep), ("Reset to clip tempo", Reset::Even), ("Find tempo again", Reset::Detect)];
-        let font = theme::ui_font(theme::TEXT);
-        let widths: Vec<f32> = choices
-            .iter()
-            .map(|(text, _)| ui.painter().layout_no_wrap((*text).to_owned(), font.clone(), title_ink()).size().x + 20.0)
-            .collect();
-        let gap = 6.0;
-        let row_width = widths.iter().sum::<f32>() + gap * (widths.len() as f32 - 1.0);
-        let (row, _) = ui.allocate_exact_size(Vec2::new(row_width.max(WIDTH), BUTTON_HEIGHT), Sense::hover());
-        let painter = ui.painter().clone();
-        let mut left = row.left();
-        let mut choice = None;
-        for ((text, pick), width) in choices.into_iter().zip(widths) {
-            let rect = Rect::from_min_size(Pos2::new(left, row.top()), Vec2::new(width, BUTTON_HEIGHT));
-            if button(ui, &painter, rect, text, text) {
-                choice = Some(pick);
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                return Some(Reset::Keep);
             }
-            left += width + gap;
-        }
-        choice
-    });
-    modal.inner.or_else(|| modal.should_close().then_some(Reset::Keep))
+            closed
+        })
+        .inner
 }
 
 /// The lines of the grid down the waveform, under it: a bar's, a beat's and, closer in, the
@@ -2072,15 +2369,15 @@ fn ruler(
         );
         let text = if on_bar {
             let n = (beat / bar).round() as i64;
-            (n.rem_euclid(stride) == 0).then(|| (n + 1).to_string())
-        } else if on_beat {
-            (beat_width >= LEVEL_LEAST).then(|| {
-                position_label(beat, bar_beats).rsplit_once('.').map(|(a, _)| a.to_owned()).unwrap_or_default()
-            })
-        } else {
+            if n.rem_euclid(stride) == 0 { n.checked_add(1).map(|n| n.to_string()) } else { None }
+        } else if on_beat && beat_width >= LEVEL_LEAST {
+            position_label(beat, bar_beats).and_then(|text| text.rsplit_once('.').map(|(a, _)| a.to_owned()))
+        } else if !on_beat && on_multiple(beat, 0.25) && beat_width / 4.0 >= LEVEL_LEAST {
             // Only a sixteenth's own mark (not a 32nd's), once sixteenths are as far apart as
             // beats are when they get their numbers.
-            (on_multiple(beat, 0.25) && beat_width / 4.0 >= LEVEL_LEAST).then(|| position_label(beat, bar_beats))
+            position_label(beat, bar_beats)
+        } else {
+            None
         };
         if let Some(text) = text {
             painter.text(

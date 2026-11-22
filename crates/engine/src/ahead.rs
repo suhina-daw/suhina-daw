@@ -182,6 +182,11 @@ struct Reader {
     /// than one jump's lead never caught up with a fixed one: each jump landed behind again and
     /// the clip stayed silent until the transport stopped.
     jump_blocks: u64,
+    /// Its last jump landed ahead of the playhead, so a voice behind again since was late
+    /// because the lead was too short: only then does the next jump go further. A jump that
+    /// completed after the playhead had already passed its target (the worker stalled) says
+    /// nothing about the lead, and doubling on it pushed the voice's return late.
+    landed_ahead: bool,
     /// Its track is heard (not muted, not left out by a solo): a start waits for it.
     heard: bool,
     /// The clip the voice plays, by its id: a new graph's voice for the same clip takes over
@@ -481,12 +486,21 @@ impl StretchThread {
             #[cfg(test)]
             let (sync, requests) = std::sync::mpsc::channel::<std::sync::mpsc::Sender<()>>();
             let name = if number == 0 { "suhina-stretch".to_string() } else { format!("suhina-stretch-{number}") };
-            let handle = std::thread::Builder::new().name(name).spawn(move || {
+            let spawned = std::thread::Builder::new().name(name).spawn(move || {
                 #[cfg(test)]
                 run_lane(&stop_flag, incoming, preparers_here, requests);
                 #[cfg(not(test))]
                 run_lane(&stop_flag, incoming, preparers_here);
-            })?;
+            });
+            let handle = match spawned {
+                Ok(handle) => handle,
+                Err(error) => {
+                    // The threads already started would otherwise run for ever: nothing holds
+                    // their stop flag once this returns.
+                    stop_lanes(&stop, &mut lanes);
+                    return Err(error);
+                }
+            };
             lanes.push(Lane {
                 handle: Some(handle),
                 inbox,
@@ -597,14 +611,19 @@ fn run_lane(
 
 impl Drop for StretchThread {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        for lane in &mut self.lanes {
-            if let Some(handle) = lane.handle.take() {
-                #[cfg(test)]
-                handle.thread().unpark();
-                // A worker that panicked has nothing left to clean up.
-                let _ = handle.join();
-            }
+        stop_lanes(&self.stop, &mut self.lanes);
+    }
+}
+
+/// Stops the threads of `lanes` and waits for them to finish.
+fn stop_lanes(stop: &AtomicBool, lanes: &mut [Lane]) {
+    stop.store(true, Ordering::Relaxed);
+    for lane in lanes {
+        if let Some(handle) = lane.handle.take() {
+            #[cfg(test)]
+            handle.thread().unpark();
+            // A worker that panicked has nothing left to clean up.
+            let _ = handle.join();
         }
     }
 }
@@ -678,6 +697,7 @@ impl AheadReader {
                 rewound: false,
                 jumping: None,
                 jump_blocks: JUMP_BLOCKS,
+                landed_ahead: false,
                 heard: true,
                 clip,
                 fade,
@@ -774,6 +794,10 @@ impl AheadReader {
             std::mem::swap(&mut reader.consumer, &mut old.consumer);
             std::mem::swap(&mut reader.ring, &mut old.ring);
             reader.next = old.next;
+            // The lead its jumps go by comes along with where it is: a voice still catching up
+            // after a jump keeps its longer lead instead of starting over from the shortest.
+            reader.jump_blocks = old.jump_blocks;
+            reader.landed_ahead = old.landed_ahead;
             reader.rewound = old.rewound;
             reader.on_twin = old.on_twin;
             reader.jumping = None;
@@ -1023,6 +1047,9 @@ impl AheadReader {
                 if reader.is_twin { reader.length } else { to.saturating_sub(reader.start).min(reader.length) };
             reader.rewound = !reader.is_twin;
             reader.on_twin = false;
+            // A rewind starts the voice afresh: its jumps go the usual way again.
+            reader.jump_blocks = JUMP_BLOCKS;
+            reader.landed_ahead = false;
             // A jump under way is void: the rewind moves the voice.
             if reader.jumping.take().is_some() {
                 let requested = jump.requested.load(Ordering::Acquire);
@@ -1076,9 +1103,13 @@ impl AheadReader {
         let Some(jump) = self.shared.jumps.get(index) else { return 0 };
         // A jump under way: once the worker has stopped pushing, the ring is emptied and the voice
         // goes on from where it jumped to.
+        let was_jumping = reader.jumping.is_some();
         if !complete_jump(reader, jump) {
             self.shared.underruns.fetch_add(wanted, Ordering::Relaxed);
             return 0;
+        }
+        if was_jumping {
+            reader.landed_ahead = reader.next >= from;
         }
         if reader.rewound {
             if reader.consumer.slots() == 0 {
@@ -1107,16 +1138,18 @@ impl AheadReader {
             let ahead = reader.next > from.saturating_add(lead) && !reader.rewound;
             let behind = reader.next < from && from - reader.next > BLOCK_FRAMES as u64 && reader.consumer.slots() == 0;
             if ahead || behind {
+                // Behind again after a jump that landed in time: this one goes further, within
+                // the ring. The first jump, and one after a stale landing, keep the lead.
+                if behind && std::mem::take(&mut reader.landed_ahead) {
+                    let most = (self.ring_frames / BLOCK_FRAMES as u64).saturating_sub(2).max(JUMP_BLOCKS);
+                    reader.jump_blocks = reader.jump_blocks.saturating_mul(2).min(most);
+                }
+                reader.landed_ahead = false;
                 let requested = jump.requested.load(Ordering::Acquire) + 1;
                 let to = from + wanted + reader.jump_blocks * BLOCK_FRAMES as u64;
                 jump.to.store(to, Ordering::Release);
                 jump.requested.store(requested, Ordering::Release);
                 reader.jumping = Some(requested);
-                // Behind again after a jump: the next one goes further, within the ring.
-                if behind {
-                    let most = (self.ring_frames / BLOCK_FRAMES as u64).saturating_sub(2).max(JUMP_BLOCKS);
-                    reader.jump_blocks = reader.jump_blocks.saturating_mul(2).min(most);
-                }
             }
             return 0;
         }
@@ -1136,6 +1169,7 @@ impl AheadReader {
             self.shared.underruns.fetch_add(wanted - frames as u64, Ordering::Relaxed);
         } else {
             reader.jump_blocks = JUMP_BLOCKS;
+            reader.landed_ahead = false;
         }
         frames
     }
@@ -1255,10 +1289,10 @@ pub(crate) fn voice_key(
     region.pool_key().hash(&mut hasher);
     (clip.audio.warped, clip.audio.transpose.to_bits()).hash(&mut hasher);
     std::mem::discriminant(&clip.audio.stretch).hash(&mut hasher);
-    // The mode's settings: a changed grain, flux, slice, tail or envelope is heard at once.
+    // The mode's settings: a changed grain, scatter, slice, tail or envelope is heard at once.
     let warp = clip.audio.warp;
     (warp.slice.name(), warp.tail.name()).hash(&mut hasher);
-    for value in [warp.envelope, warp.grain, warp.flux] {
+    for value in [warp.envelope, warp.grain, warp.scatter] {
         value.to_bits().hash(&mut hasher);
     }
     for marker in &clip.audio.warp_markers {

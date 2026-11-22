@@ -156,20 +156,15 @@ impl App {
                 }
             })
         });
+        // The window reports Ctrl+V only while the system clipboard holds text
+        // (`keymap::clipboard_keys`): the copy and cut commands that ran put a line there
+        // (`App::run`, `clipboard_line`), so a key that copied nothing (the audio editor holding
+        // the keys, nothing selected, a command refused) leaves the clipboard as it was.
         for action in pressed {
             self.do_action(&action, actions);
-            // The window reports Ctrl+V only while the system clipboard holds text
-            // (`keymap::clipboard_keys`): with nothing there a paste of what Suhina copied never
-            // came. A copy or cut here puts a line of text there, so the paste key always arrives.
-            if matches!(action.as_str(), "selection.copy" | "selection.cut") {
-                ui.ctx().copy_text(CLIPBOARD_MARK.to_owned());
-            }
         }
     }
 }
-
-/// The text a copy or cut in Suhina leaves on the system clipboard, so Ctrl+V reaches it.
-const CLIPBOARD_MARK: &str = "Suhina selection";
 
 /// Keys are the shortcuts' (Tab switches the view, the arrows move the selection): egui's own
 /// keyboard focus, which Tab and the arrows move from widget to widget, is kept to text fields.

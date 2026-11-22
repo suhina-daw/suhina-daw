@@ -233,9 +233,67 @@ fn markers_are_added_jumped_to_and_deleted_from_the_marker_row() {
     assert_eq!(markers(&harness)[0], (24.0, "Marker 1".to_string()));
 }
 
+/// The demo project in the Arrangement with a loop from beat 4 to beat 12, and a click on its
+/// brace at beat 8 (8 points a beat by default).
+fn arrangement_with_a_clicked_loop_brace() -> Harness<'static, App> {
+    let mut harness = arrangement_app();
+    harness.state_mut().run(&Action::new("transport.setLoop", json!({ "start": 4.0, "end": 12.0, "enabled": true })));
+    harness.run();
+    let row = harness.get_by_label("Loop brace").rect();
+    let at = egui::pos2(row.left() + 8.0 * 8.0, row.center().y);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+    harness
+}
+
+/// The id of the track named `name` in the project open.
+fn track_id(h: &Harness<'static, App>, name: &str) -> Option<TrackId> {
+    h.state().session().and_then(|s| s.project().tracks.iter().find(|t| t.name == name).map(|t| t.id))
+}
+
+/// A click on the loop brace selects its span in time over every track and leaves the loop as
+/// it was (`docs/spec/arrangement-editing.md` › Loop region).
+#[test]
+fn a_click_on_the_loop_brace_selects_its_span_over_every_track() {
+    let harness = arrangement_with_a_clicked_loop_brace();
+    let span = harness.state().arrangement().time_selection().cloned();
+    let span = span.expect("the click made a time selection");
+    assert_eq!((span.start, span.end), (4.0, 12.0));
+    for name in ["Drums", "Bass", "Keys"] {
+        let id = track_id(&harness, name).expect("a demo track");
+        assert!(span.tracks.contains(&id), "{name} is in the selection: {:?}", span.tracks);
+    }
+    let transport = harness.state().session().map(|s| s.project().transport.clone()).unwrap_or_default();
+    assert_eq!((transport.loop_range.map(|r| (r.start, r.end)), transport.loop_enabled), (Some((4.0, 12.0)), true));
+}
+
+/// A header clicked after the brace takes the span over to its track, and Delete then removes
+/// the track (the header click is the newer act), not what plays in the span; one undo brings
+/// it back (`docs/spec/arrangement-editing.md` › the track headers).
+#[test]
+fn after_a_brace_click_a_header_click_gives_delete_to_the_tracks() {
+    let mut harness = arrangement_with_a_clicked_loop_brace();
+    let before = names(&harness);
+    let drums = track_id(&harness, "Drums").expect("a demo track");
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    let span = harness.state().arrangement().time_selection().map(|s| (s.tracks.clone(), s.start, s.end));
+    assert_eq!(span, Some((vec![drums], 4.0, 12.0)), "the span goes over to the clicked track");
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert!(!names(&harness).iter().any(|n| n == "Drums"), "Delete removed the track: {:?}", names(&harness));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(names(&harness), before, "one undo brings it back");
+}
+
 /// The loop brace row under the ruler: a drag draws a region on the bar grid and turns looping
-/// on, Ctrl+L and a click on the brace turn it off and on, its end and its middle are dragged,
-/// and undo takes an edit back (`docs/spec/arrangement-editing.md` › Loop region).
+/// on, Ctrl+L turns it off and on, a click on the brace selects its span without switching
+/// looping, its end and its middle are dragged, and undo takes an edit back
+/// (`docs/spec/arrangement-editing.md` › Loop region).
 #[test]
 fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
     let mut renderer = suhina_engine::Renderer::stopped(
@@ -569,11 +627,11 @@ fn shift_clicking_a_header_takes_the_run_of_tracks_between() {
 }
 
 /// With several tracks selected, the track menu's Assign track color to all clips gives every
-/// selected track's clips their track's colour back, not only the clicked one's, in one undo step.
+/// selected track's clips their track's color back, not only the clicked one's, in one undo step.
 #[test]
 fn assign_track_color_to_all_clips_acts_on_every_selected_track() {
     let mut harness = arrangement_app();
-    let own_colours = |h: &Harness<'static, App>| -> Vec<bool> {
+    let own_colors = |h: &Harness<'static, App>| -> Vec<bool> {
         h.state()
             .session()
             .map(|s| {
@@ -596,7 +654,7 @@ fn assign_track_color_to_all_clips_acts_on_every_selected_track() {
         harness.state_mut().run(&Action::new("clip.setColor", json!({ "track": name, "color": "#123456" })));
     }
     harness.run();
-    assert_eq!(own_colours(&harness), [true, true]);
+    assert_eq!(own_colors(&harness), [true, true]);
     harness.get_by_label("Track Drums").click();
     harness.run();
     harness.get_by_label("Track Bass").click_modifiers(Modifiers::SHIFT);
@@ -605,10 +663,51 @@ fn assign_track_color_to_all_clips_acts_on_every_selected_track() {
     harness.run();
     harness.get_by_label("Assign track color to all clips").click();
     harness.run();
-    assert_eq!(own_colours(&harness), [false, false], "both tracks' clips");
+    assert_eq!(own_colors(&harness), [false, false], "both tracks' clips");
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
-    assert_eq!(own_colours(&harness), [true, true], "one undo step");
+    assert_eq!(own_colors(&harness), [true, true], "one undo step");
+}
+
+/// With several tracks selected, the track menu's Assign track name to clips names every selected
+/// track's clips after their own track, not only the clicked one's, in one undo step.
+#[test]
+fn assign_track_name_to_clips_acts_on_every_selected_track() {
+    let mut harness = arrangement_app();
+    // Whether every clip of Drums, and of Bass, is named after its track.
+    let named = |h: &Harness<'static, App>| -> Vec<bool> {
+        h.state()
+            .session()
+            .map(|s| {
+                let p = s.project();
+                ["Drums", "Bass"]
+                    .iter()
+                    .map(|name| {
+                        let track = p.tracks.iter().find(|t| t.name == *name).map(|t| t.id);
+                        p.arrangement.lanes.iter().find(|l| l.track == track).is_some_and(|l| {
+                            !l.clips.is_empty()
+                                && l.clips
+                                    .iter()
+                                    .all(|c| p.content(c.content).is_some_and(|content| content.name == *name))
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(named(&harness), [false, false], "the demo's clips have names of their own");
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::SHIFT);
+    harness.run();
+    harness.get_by_label("Track Bass").click_secondary();
+    harness.run();
+    harness.get_by_label("Assign track name to clips").click();
+    harness.run();
+    assert_eq!(named(&harness), [true, true], "both tracks' clips");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(named(&harness), [false, false], "one undo step");
 }
 
 /// How many arrangement clips each of the first four tracks has.

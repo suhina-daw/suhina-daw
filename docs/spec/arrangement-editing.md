@@ -200,7 +200,9 @@ shows its name in the body instead (› Clip edges).
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
 A time selection goes over to the tracks so picked, keeping its span: a stretch picked (the loop
-brace's, say) moves from track to track with clicks on their headers.
+brace's, say) moves from track to track with clicks on their headers. The edit keys still follow
+the header click, the newer act: Delete, like the keys below, acts on the tracks, not on what plays
+in the span, until a time selection is painted again.
 After a header click Delete removes the selected tracks, not a clip (a clip on the track stays
 selected for the detail area until another is picked); a click on a clip or a lane gives Delete
 back to the clips. In the Launcher view a header click does the same for its track (#690). After a

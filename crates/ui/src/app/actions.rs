@@ -188,7 +188,7 @@ impl App {
                 let running = self.session().and_then(|s| s.player()).is_some_and(|p| p.monitor().running());
                 actions.push(if running { self.stop_action() } else { self.play_action() });
             }
-            // Quantise in an audio clip's editor, while it shows one: its transients onto the grid.
+            // Quantize in an audio clip's editor, while it shows one: its transients onto the grid.
             "pianoRoll.quantize" if let Some(quantize) = self.audio_editor_quantize() => actions.extend(quantize),
             // Quantise in the piano roll, while it shows a clip.
             "pianoRoll.quantize" => {
@@ -396,7 +396,9 @@ impl App {
                 }
             }
             // A time selection in the Arrangement: the keys act on what plays inside it, as in
-            // clips picked by a click act whole (the arm below).
+            // clips picked by a click act whole (the arm below). A header clicked after it keeps
+            // the span on the picked tracks, but Delete then removes the tracks, as Ctrl+C, X and
+            // D act on them in the arm above (`docs/spec/arrangement-editing.md`).
             "selection.copy"
             | "selection.cut"
             | "selection.duplicate"
@@ -405,6 +407,7 @@ impl App {
             | "selection.consolidate"
                 if self.shown == View::Arrangement
                     && !self.device_focus
+                    && !(action == "selection.delete" && self.arrangement.track_focus)
                     && self.arrangement.automation.selected_points().is_none()
                     && self.arrangement.time_selection().is_some() =>
             {

@@ -138,6 +138,30 @@ fn a_handed_over_voice_plays_on_from_where_it_was() {
 }
 
 #[test]
+fn a_handed_over_voice_keeps_the_lead_its_jumps_go_by() {
+    // A voice still catching up after jumps that left it behind: a swap that hands it over
+    // must not reset its lead to the shortest, or it chases the playhead again from the start.
+    let (mut old, mut new) = (reader(), reader());
+    let (Some(mut old_worker), Some(mut new_worker)) = (old.take_worker_unfilled(), new.take_worker_unfilled()) else {
+        panic!("no workers")
+    };
+    new_worker.adopt_from(&mut old_worker);
+    old.readers[0].jump_blocks = JUMP_BLOCKS * 4;
+    new.adopt_from(&mut old, 0);
+    assert_eq!(new.readers[0].jump_blocks, JUMP_BLOCKS * 4);
+}
+
+#[test]
+fn stopping_the_lanes_ends_every_thread_started() {
+    // What `spawn_with` does with the threads already started when a later one fails to start.
+    let mut thread = StretchThread::spawn_with(2).expect("threads start");
+    let mut lanes = std::mem::take(&mut thread.lanes);
+    stop_lanes(&thread.stop, &mut lanes);
+    assert!(thread.stop.load(Ordering::Relaxed));
+    assert!(lanes.iter().all(|lane| lane.handle.is_none()), "every thread joined");
+}
+
+#[test]
 fn a_jump_the_old_graph_asked_for_after_the_handover_is_asked_for_again() {
     // The new writer renders the ring now and never saw the old graph's jump: the new
     // graph jumps the voice to the same frame, so the ring and the reader line up again.
@@ -229,7 +253,7 @@ fn a_changed_warp_mode_setting_is_another_voice() {
     let mut changed = Vec::new();
     for edit in [
         |w: &mut suhina_model::WarpSettings| w.grain += 10.0,
-        |w: &mut suhina_model::WarpSettings| w.flux += 10.0,
+        |w: &mut suhina_model::WarpSettings| w.scatter += 10.0,
         |w: &mut suhina_model::WarpSettings| w.envelope -= 10.0,
         |w: &mut suhina_model::WarpSettings| w.slice = suhina_model::SliceAt::Eighth,
         |w: &mut suhina_model::WarpSettings| w.tail = suhina_model::SliceTail::Off,

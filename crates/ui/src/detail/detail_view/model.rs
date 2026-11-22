@@ -341,7 +341,7 @@ pub struct ClipInfo {
     pub stretch: StretchMode,
     pub transpose: f64,
     /// The settings of the warp modes that have them (`clip.setAudio`'s slice, tail, envelope,
-    /// grain and flux).
+    /// grain and scatter).
     pub warp: suhina_engine::model::WarpSettings,
     /// The clip the column's controls edit; none where nothing can be edited.
     pub at: Option<ClipRef>,

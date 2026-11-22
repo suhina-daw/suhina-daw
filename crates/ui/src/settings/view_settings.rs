@@ -167,8 +167,8 @@ pub struct ViewSettings {
     pub liquid: crate::kit::liquid::Options,
     pub track_sizes: super::track_sizes::TrackSizes,
     pub waveform: WaveformAppearance,
-    /// The audio editor's waveform in the theme's `clip-waveform` colour; off, in the clip's
-    /// colour (its own, else its track's), as the Arrangement colours the clip.
+    /// The audio editor's waveform in the theme's `clip-waveform` color; off, in the clip's
+    /// color (its own, else its track's), as the Arrangement colors the clip.
     pub audio_editor_theme_waveform: bool,
     /// A warp marker's line down the audio editor's waveform can be dragged as its flag can.
     pub audio_editor_line_drag: bool,
@@ -427,7 +427,7 @@ impl ViewSettings {
             },
         ) + &format!("empty_group_processing = {}\n", if self.remove_group_processing { "remove" } else { "ask" })
             + &format!(
-                "waveform_colour = {}\naudio_editor_waveform_colour = {}\naudio_editor_marker_line_drag = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
+                "waveform_colour = {}\naudio_editor_waveform_color = {}\naudio_editor_marker_line_drag = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
                 self.waveform.mode.name(),
                 if self.audio_editor_theme_waveform { "theme" } else { "track" },
                 if self.audio_editor_line_drag { "on" } else { "off" },
@@ -541,8 +541,8 @@ selection_custom_colour = {}
                     _ => return false,
                 };
             }
-            ("audio_editor_waveform_colour", "track") => self.audio_editor_theme_waveform = false,
-            ("audio_editor_waveform_colour", "theme") => self.audio_editor_theme_waveform = true,
+            ("audio_editor_waveform_color", "track") => self.audio_editor_theme_waveform = false,
+            ("audio_editor_waveform_color", "theme") => self.audio_editor_theme_waveform = true,
             ("audio_editor_marker_line_drag", "on") => self.audio_editor_line_drag = true,
             ("audio_editor_marker_line_drag", "off") => self.audio_editor_line_drag = false,
             ("waveform_custom_colour", colour) => {

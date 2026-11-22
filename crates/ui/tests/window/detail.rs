@@ -467,6 +467,29 @@ fn opened_audio_editor() -> Harness<'static, App> {
     harness
 }
 
+/// [`opened_audio_editor`] with a software engine behind the session, so the transport commands
+/// the editor sends reach a play start marker the test reads (`renderer.monitor()`).
+fn opened_audio_editor_with_engine(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
+    let (project, waveforms) = super::project_with_audio();
+    let mut session = Session::new(project);
+    session.attach_player(suhina_session::Player::new(renderer.controller(), None));
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(session, &[]);
+    app.set_waveforms(waveforms);
+    let mut harness = window_with_step(app, 1.0 / 60.0);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    let at = harness.get_by_label("Clip Loop on Loop at bar 1").rect().center();
+    double_click_at(&mut harness, at);
+    harness.run();
+    // The play start marker far past the clip, where no click in the editor can put it.
+    harness.state_mut().run(&Action::new("transport.setStart", json!({ "beats": 40.0 })));
+    harness.run();
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    harness
+}
+
 /// The warp markers of the `Loop` clip as (beat, seconds).
 #[allow(clippy::unwrap_used)]
 fn loop_markers(harness: &Harness<'static, App>) -> Vec<(f64, f64)> {
@@ -522,13 +545,14 @@ fn a_double_click_adds_a_warp_marker_and_a_double_click_on_it_removes_it() {
     let at = egui::pos2((first + last) / 2.0, wave.center().y + 20.0);
     double_click_at(&mut harness, at);
     assert_eq!(loop_markers(&harness), [(0.0, 0.0), (2.0, 1.0), (4.0, 2.0)]);
-    // The new marker is the middle one; a double-click on it takes it away again.
+    // The new marker is the middle one; a double-click on its flag takes it away again (its line
+    // is the waveform's unless "Drag markers by line" is on).
     let on_it = harness.get_by_label("Warp marker 2").rect().center();
-    double_click_at(&mut harness, egui::pos2(on_it.x, wave.center().y + 20.0));
+    double_click_at(&mut harness, on_it);
     assert_eq!(loop_markers(&harness), [(0.0, 0.0), (4.0, 2.0)]);
     // A warped clip keeps two: a double-click on one of them does nothing.
     let on_last = harness.get_by_label("Warp marker 2").rect().center();
-    double_click_at(&mut harness, egui::pos2(on_last.x - 2.0, wave.center().y + 20.0));
+    double_click_at(&mut harness, on_last - egui::vec2(2.0, 0.0));
     assert_eq!(loop_markers(&harness).len(), 2);
 }
 
@@ -549,7 +573,7 @@ fn dragging_a_warp_marker_moves_the_sound_pinned_to_it() {
     // Half a beat to the right: beat 2.5 on the grid, the same second of the file.
     drag_from_to(&mut harness, from, from + egui::vec2(per_beat / 2.0, 0.0));
     assert_eq!(loop_markers(&harness), [(0.0, 0.0), (2.5, 1.0), (4.0, 2.0)]);
-    // Dragged past its neighbour it stops short of it.
+    // Dragged past its neighbor it stops short of it.
     let from = harness.get_by_label("Warp marker 2").rect().center();
     drag_from_to(&mut harness, from, from + egui::vec2(per_beat * 3.0, 0.0));
     let markers = loop_markers(&harness);
@@ -582,6 +606,58 @@ fn the_reset_dialog_keeps_the_markers_or_resets_them() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert_eq!(loop_markers(&harness).len(), 3, "one undo step brings the markers back");
+}
+
+/// The audio editor's right-click menu is the kit's rows: an item with nothing to act on is grayed
+/// and takes no click, one that has adds its command.
+#[test]
+fn the_audio_editors_menu_grays_what_has_nothing_to_act_on() {
+    let mut harness = opened_audio_editor();
+    harness.get_by_label("Audio editor").click_secondary();
+    harness.run();
+    // Two markers, which a warped clip keeps, and no time selection.
+    assert!(harness.get_by_label("Delete").accesskit_node().is_disabled(), "Delete is grayed");
+    assert!(harness.get_by_label("Loop selection").accesskit_node().is_disabled());
+    harness.get_by_label("Delete").click();
+    harness.run();
+    assert_eq!(loop_markers(&harness).len(), 2, "a grayed item does nothing");
+    // The menu is still open: a click on a grayed item does not close it.
+    assert!(!harness.get_by_label("Add warp marker here").accesskit_node().is_disabled());
+    harness.get_by_label("Add warp marker here").click();
+    harness.run();
+    assert_eq!(loop_markers(&harness).len(), 3, "a marker where the menu was opened");
+}
+
+/// The Clip / Devices switch's key works for an audio clip as for a MIDI clip: the editor gives
+/// way to the track's devices and comes back.
+#[test]
+fn the_devices_switch_takes_an_audio_clip_to_its_devices_and_back() {
+    let mut harness = opened_audio_editor();
+    assert!(harness.query_by_label("Audio editor").is_some());
+    harness.state_mut().run(&Action::new("view.devices", json!({})));
+    harness.run();
+    assert!(harness.query_by_label("Audio editor").is_none(), "the devices took the editor's place");
+    harness.state_mut().run(&Action::new("view.devices", json!({})));
+    harness.run();
+    assert!(harness.query_by_label("Audio editor").is_some(), "and the editor is back");
+}
+
+/// With the devices stacked the audio editor still lies along the bottom, as the piano roll does:
+/// closed, its splitter runs along the bottom, not up the window's side.
+#[test]
+fn with_the_devices_stacked_the_audio_editor_stays_along_the_bottom() {
+    let mut harness = opened_audio_editor();
+    let ctx = harness.ctx.clone();
+    let settings =
+        suhina_ui::settings::Settings { device_layout: suhina_ui::settings::DeviceLayout::Stack, ..Default::default() };
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    let editor = harness.get_by_label("Audio editor").rect();
+    assert!(editor.width() > editor.height(), "along the bottom: {editor:?}");
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::Tab);
+    harness.run();
+    let splitter = harness.get_by_label("Detail area splitter").rect();
+    assert!(splitter.width() > splitter.height(), "a splitter along the bottom: {splitter:?}");
 }
 
 /// Presses and lets go once at `at`, a second after anything before it, so it is a click and not
@@ -688,10 +764,10 @@ fn a_marker_dragged_past_the_editors_edge_still_moves() {
     assert!(!harness.state().audio_editor().dragging(), "no drag is left over");
 }
 
-/// An audio clip with a colour of its own is drawn in the editor in that colour, not its track's.
+/// An audio clip with a color of its own is drawn in the editor in that color, not its track's.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn the_audio_editor_takes_the_clips_own_colour() {
+fn the_audio_editor_takes_the_clips_own_color() {
     let mut harness = opened_audio_editor();
     let id = loop_clip_id(&harness);
     let track = {
@@ -710,7 +786,7 @@ fn the_audio_editor_takes_the_clips_own_colour() {
     assert_eq!(shown(&harness), egui::Color32::from_rgb(0x12, 0x34, 0x56));
     harness.state_mut().run(&Action::new("clip.setColor", json!({ "track": track.0, "clip": id, "color": "none" })));
     harness.run();
-    assert_eq!(shown(&harness), before, "back to the track's colour");
+    assert_eq!(shown(&harness), before, "back to the track's color");
 }
 
 /// The Transients button pins markers on the file's transients: one command, one undo step.
@@ -719,6 +795,9 @@ fn the_transients_button_places_markers_in_one_step() {
     let mut harness = opened_audio_editor();
     let before = loop_markers(&harness);
     harness.get_by_label("Add warp markers at transients").click();
+    harness.run();
+    // The click waits for the note starts the editor finds in the background, then goes.
+    suhina_ui::detail::audio_editor::await_transients(&harness.ctx);
     harness.run();
     let after = loop_markers(&harness);
     assert!(after.len() >= before.len(), "{after:?}");
@@ -744,7 +823,7 @@ fn the_warp_part_shows_the_modes_settings_and_the_editors_buttons() {
     assert!(harness.query_by_label("Snap to grid: On").is_some(), "the editor's grid snaps");
     harness.state_mut().run(&Action::new("clip.setAudio", json!({ "clip": id, "mode": "texture" })));
     harness.run();
-    assert!(harness.query_by_label("Grain: 60 ms").is_some() && harness.query_by_label("Flux: 25 %").is_some());
+    assert!(harness.query_by_label("Grain: 60 ms").is_some() && harness.query_by_label("Scatter: 25 %").is_some());
     harness.state_mut().run(&Action::new("clip.setAudio", json!({ "clip": id, "mode": "rhythmic", "tail": "off" })));
     harness.run();
     assert!(harness.query_by_label("Grain: 60 ms").is_none(), "Rhythmic has its own settings");
@@ -804,4 +883,88 @@ fn the_audio_clips_panel_narrows_and_folds_its_parts() {
     double_click_at(&mut harness, handle);
     harness.run();
     assert_eq!(harness.get_by_label("Audio editor").rect().left(), wide.left());
+}
+
+/// A double-click on the audio editor's ruler fits the file again and does not seek (neither of
+/// its clicks moves playback); a click alone on the ruler still does
+/// (`docs/spec/ui-audio-editor.md` › Zoom and scroll).
+#[test]
+fn a_double_click_on_the_audio_editors_ruler_fits_without_a_seek() {
+    let (project, _) = super::project_with_audio();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
+    let monitor = renderer.monitor();
+    let mut harness = opened_audio_editor_with_engine(&mut renderer);
+    assert_eq!(monitor.start_beat(), 40.0);
+    let fitted = harness.state().audio_editor().beat_width();
+    let editor = harness.get_by_label("Audio editor").rect();
+    // Zoomed in first, so the fit shows.
+    harness.hover_at(editor.center());
+    harness.run();
+    harness.event(egui::Event::Zoom(2.0));
+    harness.run();
+    assert!(harness.state().audio_editor().beat_width() > fitted * 1.5, "zoomed in");
+    // The ruler is under the editor's header bar.
+    let on_ruler = egui::pos2(editor.center().x, editor.top() + 20.0 + 14.0);
+    double_click_at(&mut harness, on_ruler);
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert!((harness.state().audio_editor().beat_width() - fitted).abs() < 1e-3, "fitted again");
+    assert_eq!(monitor.start_beat(), 40.0, "no seek from either click of the double-click");
+    click_once_at(&mut harness, on_ruler);
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert!(monitor.start_beat() < 40.0, "a click alone seeks: {}", monitor.start_beat());
+}
+
+/// A double-click on the waveform adds a warp marker and does not move the play start marker;
+/// a click alone there still does (`docs/spec/ui-audio-editor.md`).
+#[test]
+fn a_double_click_on_the_waveform_adds_a_marker_without_moving_the_play_start() {
+    let (project, _) = super::project_with_audio();
+    let mut renderer =
+        suhina_engine::Renderer::stopped(&project, &suhina_engine::AudioPool::new(), 48_000, suhina_session::devices())
+            .unwrap();
+    let monitor = renderer.monitor();
+    let mut harness = opened_audio_editor_with_engine(&mut renderer);
+    let (first, last) = (
+        harness.get_by_label("Warp marker 1").rect().center().x,
+        harness.get_by_label("Warp marker 2").rect().center().x,
+    );
+    let wave = harness.get_by_label("Audio editor").rect();
+    let at = egui::pos2((first + last) / 2.0, wave.center().y + 20.0);
+    double_click_at(&mut harness, at);
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert_eq!(loop_markers(&harness).len(), 3, "a marker was added");
+    assert_eq!(monitor.start_beat(), 40.0, "the double-click did not move the play start marker");
+    click_once_at(&mut harness, egui::pos2((first + at.x) / 2.0, at.y));
+    renderer.process(&mut [0.0f32; 2 * 64]);
+    assert!(monitor.start_beat() < 40.0, "a click alone moves it: {}", monitor.start_beat());
+}
+
+/// The commands that place markers on note starts take those the editor found in the background
+/// (`transients`), so the window never analyses the file itself: one made before they are found
+/// waits and goes once they are; one that brings its own list goes as it is
+/// (`docs/spec/ui-audio-editor.md` › Note starts found once).
+#[test]
+fn the_transient_commands_take_the_note_starts_found_in_the_background() {
+    let mut harness = opened_audio_editor();
+    let ctx = harness.ctx.clone();
+    let id = loop_clip_id(&harness);
+    let quantize =
+        Action::new("clip.quantizeWarpMarkers", json!({ "track": 30, "clip": id, "grid": "1/16", "amount": 100.0 }));
+    let markers = Action::new("clip.addWarpMarkersAtTransients", json!({ "track": 30, "clip": id }));
+    // Sent now if they are found already, else held until they are.
+    let mut sent = harness.state_mut().with_transients(&ctx, vec![quantize, markers]);
+    suhina_ui::detail::audio_editor::await_transients(&ctx);
+    sent.extend(harness.state_mut().with_transients(&ctx, Vec::new()));
+    let ids: Vec<&str> = sent.iter().map(|a| a.id).collect();
+    assert_eq!(ids, ["clip.quantizeWarpMarkers", "clip.addWarpMarkersAtTransients"], "each sent once, in order");
+    for action in &sent {
+        let seconds = action.params.get("transients").and_then(serde_json::Value::as_array);
+        let seconds = seconds.unwrap_or_else(|| panic!("{} carries the note starts: {}", action.id, action.params));
+        assert!(seconds.iter().all(|s| s.as_f64().is_some_and(|s| (0.0..=2.0).contains(&s))), "{seconds:?}");
+    }
+    // A list of its own is kept.
+    let own = Action::new("clip.addWarpMarkersAtTransients", json!({ "track": 30, "clip": id, "transients": [0.5] }));
+    assert_eq!(harness.state_mut().with_transients(&ctx, vec![own.clone()]), [own]);
 }

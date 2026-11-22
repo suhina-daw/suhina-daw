@@ -279,6 +279,11 @@ impl Mapping {
 #[derive(Debug, Clone, PartialEq)]
 struct Draft {
     clip: ClipId,
+    /// Where the drag started ([`Place::site`]): only that drawing of the envelope ends it, so
+    /// the release is judged on its screen. With the clip's envelope in the Arrangement and the
+    /// audio editor at once, whichever drew first after the release took it and checked the merge
+    /// with its own geometry, where dots a few points apart in the other could be far apart.
+    site: &'static str,
     index: usize,
     points: Vec<GainPoint>,
 }
@@ -585,7 +590,7 @@ pub fn show(
         if alt && !mods.shift {
             let segment = points.partition_point(|p| p.beat <= beat).checked_sub(1).filter(|i| i + 1 < points.len());
             if let Some(index) = segment {
-                start_curve(ui, clip, index, &points);
+                start_curve(ui, clip, site, index, &points);
             }
         } else if mods.shift && !alt {
             // Shift moves the whole line up or down, Ctrl+Shift the segment under the pointer; a
@@ -595,11 +600,11 @@ pub fn show(
             let start = envelope_db_at(&from, beat);
             ui.data_mut(|d| {
                 d.insert_temp(lift_key(), Lift { clip, from: from.clone(), moved, start });
-                d.insert_temp(draft_key(), Draft { clip, index: usize::MAX, points: from });
+                d.insert_temp(draft_key(), Draft { clip, site, index: usize::MAX, points: from });
             });
         } else if !alt && !taken(pointer.x) {
             let (more, index) = add_at(pointer);
-            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: more }));
+            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: more }));
         }
     }
     let mut dragging = None;
@@ -613,7 +618,7 @@ pub fn show(
             let loose = alt || free_move(ui.ctx()) || settings.step <= 0.0;
             let delta = if loose { (raw * 10.0).round() / 10.0 } else { (raw / settings.step).round() * settings.step };
             let moved = lifted(&lift.from, lift.moved.as_deref(), delta, settings.ceiling);
-            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index: usize::MAX, points: moved }));
+            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index: usize::MAX, points: moved }));
             egui::Tooltip::always_open(
                 ui.ctx().clone(),
                 ui.layer_id(),
@@ -667,7 +672,7 @@ pub fn show(
                 return;
             }
             if response.drag_started_by(egui::PointerButton::Primary) {
-                start_curve(ui, clip, index, &points);
+                start_curve(ui, clip, site, index, &points);
             }
             if response.dragged_by(egui::PointerButton::Primary) {
                 drag_curve(ui, clip, response.drag_delta().y);
@@ -716,7 +721,7 @@ pub fn show(
                 continue;
             }
             if response.drag_started_by(egui::PointerButton::Primary) {
-                ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: points.clone() }));
+                ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: points.clone() }));
             }
             // The point the drag holds, by where it is now: passing another changes its index.
             if response.dragged_by(egui::PointerButton::Primary) {
@@ -735,7 +740,7 @@ pub fn show(
         let beat = if fine { before.beat + (target - before.beat) * 0.1 } else { target };
         let db = dragged_db(ui, rect, pointer, before.db, top);
         let index = passed(&mut moved, index, beat.max(0.0), db);
-        ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: moved }));
+        ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: moved }));
         // Its value beside the pointer while the button is down.
         egui::Tooltip::always_open(
             ui.ctx().clone(),
@@ -766,7 +771,7 @@ pub fn show(
     }
     // Once the button is up, what the point or the curve moved to is set, and the draft goes:
     // also for a drag whose point stopped being drawn (its pass moved past the clip's end).
-    if let Some(done) = draft(ui.ctx(), clip)
+    if let Some(done) = draft(ui.ctx(), clip).filter(|d| d.site == site)
         && !ui.input(|i| i.pointer.any_down())
     {
         ui.data_mut(|d| {
@@ -775,20 +780,16 @@ pub fn show(
             d.remove::<Lift>(lift_key());
         });
         // A point let go within a dot's width of another's dot, on screen (on any pass of a loop),
-        // is one with it.
+        // is one with it: the dots as they are drawn (`Mapping::point_places`), so a dot left off
+        // (the left point of a step at the loop's start, on the passes that wrap) takes nothing.
         let mut kept = done.points;
-        let dots = |p: &GainPoint| -> Vec<Pos2> {
+        let dots = |points: &[GainPoint], i: usize| -> Vec<Pos2> {
+            let Some(p) = points.get(i) else { return Vec::new() };
             let y = y_of(rect, p.db, top);
-            mapping.places(p.beat, length).into_iter().map(|at| Pos2::new(x_of(at), y)).collect()
+            mapping.point_places(points, i, length).into_iter().map(|at| Pos2::new(x_of(at), y)).collect()
         };
-        if let Some(moved) = kept.get(done.index) {
-            let here = dots(moved);
-            let on_another = kept.iter().enumerate().filter(|(i, _)| *i != done.index).any(|(_, p)| {
-                dots(p).iter().any(|q| here.iter().any(|h| (q.x - h.x).abs() < POINT && (q.y - h.y).abs() < POINT))
-            });
-            if on_another {
-                kept.remove(done.index);
-            }
+        if lands_on_another(&kept, done.index, dots) {
+            kept.remove(done.index);
         }
         if kept != view.envelope {
             actions.push(dragged(clip, &kept));
@@ -809,6 +810,18 @@ pub fn show(
         ui.data_mut(|d| d.remove::<Draft>(draft_key()));
         actions.push(set(clip, &reset));
     }
+}
+
+/// Whether point `index` of `points`, drawn at `dots(points, index)`, lies within a dot's width of
+/// a dot of another point (on any pass of a loop), on screen: let go there it is one with it.
+fn lands_on_another(points: &[GainPoint], index: usize, dots: impl Fn(&[GainPoint], usize) -> Vec<Pos2>) -> bool {
+    if index >= points.len() {
+        return false;
+    }
+    let here = dots(points, index);
+    (0..points.len()).filter(|i| *i != index).any(|i| {
+        dots(points, i).iter().any(|q| here.iter().any(|h| (q.x - h.x).abs() < POINT && (q.y - h.y).abs() < POINT))
+    })
 }
 
 /// Moves point `index` of `points` to `beat` and `db`, past the points it is dragged over, as an
@@ -838,7 +851,7 @@ fn curve_edit(ctx: &egui::Context, clip: ClipId) -> Option<CurveEdit> {
 }
 
 /// Starts a drag of the curve of the segment from point `index`, the envelope `points` as it is.
-fn start_curve(ui: &Ui, clip: ClipId, index: usize, points: &[GainPoint]) {
+fn start_curve(ui: &Ui, clip: ClipId, site: &'static str, index: usize, points: &[GainPoint]) {
     let curve = points.get(index).map_or(Curve::STRAIGHT, |p| p.curve);
     let paths = CurveDrag::new(&curve);
     let mut drafted = points.to_vec();
@@ -847,7 +860,7 @@ fn start_curve(ui: &Ui, clip: ClipId, index: usize, points: &[GainPoint]) {
     }
     ui.data_mut(|d| {
         d.insert_temp(curve_key(), CurveEdit { clip, index, paths, moved: 0.0 });
-        d.insert_temp(draft_key(), Draft { clip, index, points: drafted });
+        d.insert_temp(draft_key(), Draft { clip, site, index, points: drafted });
     });
 }
 
@@ -1158,6 +1171,35 @@ mod tests {
         let from_start = Mapping { offset: 1.0, loop_range: Some((1.0, 2.0)), rate: 1.0 };
         assert!(from_start.point_places(&points, 1, 3.0).is_empty(), "never reached");
         assert_eq!(from_start.point_places(&points, 2, 3.0), vec![0.0, 1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn a_point_let_go_on_a_hidden_dot_is_not_merged_with_it() {
+        let step = GainPoint::new;
+        // A step at the loop's start, beat 1 (0 dB, then silence), and a loud point just after
+        // it: from the loop's start its passes come round at 1, 2 and so on, where the step's left
+        // point is never drawn (`point_places`), so the loud point is not one with it there.
+        let points = [step(1.0, 0.0), step(1.0, -70.0), step(1.001, 0.0), step(2.0, -70.0)];
+        let mapping = Mapping { offset: 1.0, loop_range: Some((1.0, 2.0)), rate: 1.0 };
+        let drawn = |points: &[GainPoint], i: usize| -> Vec<Pos2> {
+            let y = points[i].db as f32;
+            mapping.point_places(points, i, 3.0).into_iter().map(|at| Pos2::new(at as f32 * 100.0, y)).collect()
+        };
+        assert!(!lands_on_another(&points, 2, drawn), "the hidden left point takes nothing");
+        // Every place, hidden ones included, would have merged it.
+        let every = |points: &[GainPoint], i: usize| -> Vec<Pos2> {
+            let y = points[i].db as f32;
+            mapping.places(points[i].beat, 3.0).into_iter().map(|at| Pos2::new(at as f32 * 100.0, y)).collect()
+        };
+        assert!(lands_on_another(&points, 2, every));
+        // A dot that is drawn still takes it.
+        let lead_in = Mapping { offset: 0.0, loop_range: Some((1.0, 2.0)), rate: 1.0 };
+        let reached = |points: &[GainPoint], i: usize| -> Vec<Pos2> {
+            let y = points[i].db as f32;
+            lead_in.point_places(points, i, 3.0).into_iter().map(|at| Pos2::new(at as f32 * 100.0, y)).collect()
+        };
+        assert!(lands_on_another(&points, 2, reached), "reached from before the loop, the left point is drawn");
+        assert!(!lands_on_another(&points, 9, reached));
     }
 
     #[test]

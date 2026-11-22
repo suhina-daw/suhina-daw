@@ -97,7 +97,7 @@ what is inside it).
 | Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |
 | Launcher and mixer | Launching | Select launched clip |
 | Launcher and mixer | Mixer | Mixer control style |
-| Clip editor | Audio editor | Audio editor waveform colour (Track colour, the default; Theme), Drag warp markers by their line (off by default) |
+| Clip editor | Audio editor | Audio editor waveform colour (Track colour, the default; Theme), Drag markers by line (off by default) |
 | Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names, Note names, Default scale |
 | Clip editor | Advanced | Covered notes |
 | Browser | Browser | Browser side, Recent item kinds layout, Dropping on a folder |

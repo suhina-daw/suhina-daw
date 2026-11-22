@@ -173,15 +173,20 @@ describe their warp modes; the designs and the code are Suhina's own, in `crates
 | `Repitch` | none (unchanged) | none |
 | `Rhythmic` | **Slices** (`suhina_stretch::Slices`): the file cut at its transients (`suhina_stretch::transients`: 5 ms hops, a rise of 3.5 dB and twice the rises around it, 40 ms apart, placed on the attack), at the warp markers and on a beat where no transient is near, or on every note value; each slice starts when the clip's time reaches it and plays at the file's speed, so attacks land on their beats and keep their length; cut by the next with a 4 ms crossfade, faded in over 0.25 ms; a gap after it is filled by its tail | Slice at, Tail, Envelope |
 | `Tonal` | **Grains** (`suhina_stretch::Grains`): Hann-windowed grains half a grain apart, each read at the file's speed (times the transpose) from where the clip's time is, its start moved within a quarter grain to best match how the grain before goes on (a coarse search, then every frame around the best), so a held note carries on without beating | Grain |
-| `Texture` | **Grains** without the lining up; each start moved at random by up to *flux* grains, the randomness a function of the grain's number so a render repeats exactly | Grain, Flux |
+| `Texture` | **Grains** without the lining up; each start moved at random by up to *scatter* grains, the randomness a function of the grain's number so a render repeats exactly | Grain, Scatter |
 | `Smooth` | the Signalsmith port, 120 ms blocks 30 ms apart (unchanged) | none |
 | `HighQuality` | the Signalsmith port, 200 ms blocks 20 ms apart: more detail for low notes and full mixes, about four times Smooth's work | none |
 
-Grains and slices read the file directly (no input stream, no latency), so a voice of theirs seeks
-by starting afresh where the clip's time is. A Tonal voice's search was first a full one (every
+Grains and slices need no input buffer and add no latency, so a voice of theirs seeks by starting
+afresh where the clip's time is. Slices read the file at the clip's time; grains read the playlist's
+input stream at the same place (its loop passes one after another), so a grain that runs on past a
+loop's end goes on with the next pass from the loop's start instead of playing what lies past the
+loop in the file. The first grain plays its first half whole, where no grain before it overlaps,
+so a voice does not fade in from silence. A Tonal voice's search was first a full one (every
 second offset over a quarter grain): a new voice could not render ahead in time after an edit while
 playing, and its first 15 ms were silent; the two-stage search reads about thirty times less.
-Rhythmic and Texture change a sound even at its own speed, so their clips are never read directly.
+Rhythmic and Texture change a sound even at its own speed, so playing at unity speed does not by
+itself let their clips skip the stretcher: they always play through their slices or grains.
 
 **Speeds.** Decision 2 re-pitched a whole clip in a stretching mode when one of its segments ran
 slower than 0.25x or faster than 4x, so a warp marker dragged close to its neighbour (a 166 BPM loop
