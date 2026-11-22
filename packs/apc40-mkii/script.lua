@@ -1,0 +1,378 @@
+-- The Akai APC40 MkII as a Suhina surface program: the 5x8 clip grid, the scene launch
+-- buttons, the per-track stop, activator, solo and record-arm buttons, the transport's play and
+-- metronome buttons, and the mixer — the eight faders, the master fader and the pan encoders
+-- with their LED rings — with feedback on every button.
+--
+-- Suhina's own, written from public documentation alone (the repository's clean-room rules):
+-- Akai's public *APC40 Mk2 Communication Protocol v1.2* (January 19, 2015) for the note and CC
+-- map, the RGB values and the Application/Configuration message that puts the device in the
+-- mode the document names Ableton Live (0x41), and Akai's public MIDI implementation chart for
+-- the control map. See README.md beside this file. Suhina content: CC0-1.0.
+
+local TRACKS = 8
+local SCENES = 5
+
+-- The device wakes in its Generic mode, where the activator, solo and record-arm buttons are
+-- latching toggles that drive their own lights; Ableton Live mode (0x41) makes every button
+-- momentary — a press is always note-on 127, a release note-off — and hands the buttons' LEDs
+-- to the host. The message is the Application/Configuration identifier of the protocol
+-- document; its trailing bytes are the host application's version, as the document and the
+-- public examples send. The mode lasts until the device is powered off, so it goes out
+-- whenever the ports are (re)opened.
+local LIVE_MODE = string.char(0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41, 0x09, 0x07, 0x01, 0xF7)
+
+-- The note that lights the pad of (track, scene): the chart numbers clip launch 1 at the
+-- bottom-left, left to right, bottom row first — note 0 is track 1, scene 5 (the bottom), and
+-- the top row (scene 1) is notes 32-39.
+local function pad_note(track, scene)
+    return 32 + track - 8 * scene
+end
+
+local function pad_of(note)
+    local scene = 4 - math.floor(note / 8)
+    return note - 32 + 8 * scene, scene
+end
+
+-- The pads' colours, by note-on velocity (the protocol document's RGB table): off, the two
+-- greys, white, red, yellow and green.
+local OFF, DIM, WHITE, RED, YELLOW, GREEN = 0, 2, 3, 5, 13, 21
+-- The single-colour buttons (the per-track activator, solo and arm, play, metronome): the
+-- chart's own values — 0 is off, 1 to 127 on. The track's stop button has its own table: 0
+-- off, 1 lit, 2 triggered.
+local ON, OFF_BUTTON, STOP_LIT, STOP_TRIGGERED = 127, 0, 1, 2
+
+-- What the subscriptions last reported: the grid (which slots hold clips, which have stop
+-- buttons), the launcher's state (what plays and what is queued, the transport), and the
+-- tracks (mute, solo, armed, pan).
+local grid, state, strips = nil, nil, nil
+
+-- What each LED last had, so a refresh writes only what changed; and the output port.
+local leds = {}
+local out = nil
+
+-- The subscriptions, by the token each returned.
+local kinds = {}
+
+-- JSON null crosses as suhina.null, which is neither nil nor false.
+local function is_nil(value)
+    return value == nil or value == suhina.null
+end
+
+local function strip_of(track)
+    if is_nil(strips) then
+        return nil
+    end
+    return strips[track + 1]
+end
+
+local function column_state(track)
+    if is_nil(state) then
+        return nil
+    end
+    return state.tracks[track + 1]
+end
+
+-- The mixer's track under a surface index: project.tracks counts every track, so a return
+-- track (which has no launcher column) still has the fader, the pan and the buttons of its
+-- index; the grid's track list stands in until the strips have arrived.
+local function mixer_track(track)
+    local strip = strip_of(track)
+    if not is_nil(strip) then
+        return strip.id
+    end
+    if is_nil(grid) then
+        return nil
+    end
+    local column = grid.tracks[track + 1]
+    if is_nil(column) then
+        return nil
+    end
+    return column.track
+end
+
+local function pad_velocity(track, scene)
+    local column = column_state(track)
+    if column ~= nil then
+        if not is_nil(column.playing) and column.playing.scene == scene then
+            return GREEN
+        end
+        if type(column.queued) == "table" and column.queued.scene == scene then
+            return YELLOW
+        end
+    end
+    if not is_nil(grid) then
+        local column_grid = grid.tracks[track + 1]
+        if column_grid ~= nil then
+            local slot = column_grid.slots and column_grid.slots[scene + 1] or nil
+            if slot ~= nil and not is_nil(slot.clip) then
+                if slot.enabled == false then
+                    return DIM
+                end
+                return WHITE
+            end
+        end
+    end
+    return OFF
+end
+
+local function stop_velocity(track)
+    local column = column_state(track)
+    if column == nil then
+        return OFF
+    end
+    if not is_nil(column.playing) or type(column.queued) == "table" then
+        return STOP_LIT
+    end
+    return OFF
+end
+
+local function scene_velocity(scene)
+    if is_nil(state) then
+        return OFF
+    end
+    for track = 0, TRACKS - 1 do
+        local column = state.tracks[track + 1]
+        if column ~= nil and not is_nil(column.playing) and column.playing.scene == scene then
+            return GREEN
+        end
+    end
+    for track = 0, TRACKS - 1 do
+        local column = state.tracks[track + 1]
+        if column ~= nil and type(column.queued) == "table" and column.queued.scene == scene then
+            return YELLOW
+        end
+    end
+    return OFF
+end
+
+-- The activator lights while its track is heard (not muted); solo and record arm light while
+-- they are on.
+local function activator_velocity(track)
+    local strip = strip_of(track)
+    if strip == nil then
+        return OFF
+    end
+    if strip.mute == true then
+        return OFF_BUTTON
+    end
+    return ON
+end
+
+local function solo_velocity(track)
+    local strip = strip_of(track)
+    if strip == nil then
+        return OFF
+    end
+    if strip.solo == true then
+        return ON
+    end
+    return OFF_BUTTON
+end
+
+local function arm_velocity(track)
+    local strip = strip_of(track)
+    if strip == nil then
+        return OFF
+    end
+    if strip.armed == true then
+        return RED
+    end
+    return OFF_BUTTON
+end
+
+local function play_velocity()
+    if state ~= nil and state.running == true then
+        return ON
+    end
+    return OFF_BUTTON
+end
+
+local function metronome_velocity()
+    if state ~= nil and state.metronome == true then
+        return ON
+    end
+    return OFF_BUTTON
+end
+
+-- One LED: the velocity that changed only. Note-on with velocity 0 is the pad's off.
+local function led(channel, note, velocity)
+    local key = "n" .. channel .. ":" .. note
+    if leds[key] == velocity then
+        return
+    end
+    leds[key] = velocity
+    if out ~= nil then
+        suhina.send(out, suhina.midi.note_on(channel, note, velocity))
+    end
+end
+
+-- One ring LED: the ring's type goes on its own CC (0 off, 1 single, 2 volume style, 3 pan
+-- spread), the position on the knob's CC, as the protocol document describes them.
+local function led_cc(controller, value)
+    local key = "c" .. controller
+    if leds[key] == value then
+        return
+    end
+    leds[key] = value
+    if out ~= nil then
+        suhina.send(out, suhina.midi.cc(0, controller, value))
+    end
+end
+
+local function refresh()
+    for track = 0, TRACKS - 1 do
+        for scene = 0, SCENES - 1 do
+            led(0, pad_note(track, scene), pad_velocity(track, scene))
+        end
+        led(track, 52, stop_velocity(track))
+        led(track, 50, activator_velocity(track))
+        led(track, 49, solo_velocity(track))
+        led(track, 48, arm_velocity(track))
+        -- The pan ring: pan spread style, then the position (0 at full left, 127 full right).
+        led_cc(56 + track, 3)
+        local strip = strip_of(track)
+        local pan = (strip ~= nil and not is_nil(strip.pan)) and strip.pan or 0
+        local position
+        if pan <= -1 then
+            position = 0
+        elseif pan >= 1 then
+            position = 127
+        else
+            position = math.floor(pan * 63.5 + 64 + 0.5)
+        end
+        led_cc(48 + track, position)
+    end
+    for scene = 0, SCENES - 1 do
+        led(0, 82 + scene, scene_velocity(scene))
+    end
+    led(0, 91, play_velocity())
+    led(0, 90, metronome_velocity())
+end
+
+-- A press: pads and scenes launch, the track buttons act, the transport runs.
+local function press(channel, note)
+    if channel == 0 and note >= 0 and note <= 39 then
+        local track, scene = pad_of(note)
+        local id = mixer_track(track)
+        if id == nil or is_nil(grid) then
+            return
+        end
+        local column = grid.tracks[track + 1]
+        local slot = (column ~= nil) and (column.slots and column.slots[scene + 1] or nil) or nil
+        if slot == nil then
+            return
+        end
+        -- An empty slot with a stop button stops the track; an empty one without does nothing.
+        if is_nil(slot.clip) and slot.stop_button ~= true then
+            return
+        end
+        suhina.command("clip.launch", { track = id, scene = scene })
+    elseif channel == 0 and note >= 82 and note <= 86 then
+        local row = (not is_nil(grid)) and grid.scenes[note - 82 + 1] or nil
+        if is_nil(row) then
+            return
+        end
+        suhina.command("scene.launch", { scene = { id = row.scene_id } })
+    elseif channel == 0 and note == 91 then
+        if state ~= nil and state.running == true then
+            suhina.command("transport.stop")
+        else
+            suhina.command("transport.play")
+        end
+    elseif channel == 0 and note == 90 then
+        suhina.command("transport.setMetronome", { on = not (state ~= nil and state.metronome == true) })
+    elseif channel >= 0 and channel < TRACKS then
+        local id = mixer_track(channel)
+        if id == nil then
+            return
+        end
+        local strip = strip_of(channel)
+        if note == 52 then
+            suhina.command("track.stop", { track = id })
+        elseif note == 50 then
+            local mute = not (strip ~= nil and strip.mute == true)
+            suhina.command("track.setMute", { tracks = { id }, mute = mute })
+        elseif note == 49 then
+            local solo = not (strip ~= nil and strip.solo == true)
+            suhina.command("track.setSolo", { tracks = { id }, solo = solo })
+        elseif note == 48 then
+            -- Record arm takes one track, not a list.
+            local armed = not (strip ~= nil and strip.armed == true)
+            suhina.command("track.setArm", { track = id, armed = armed })
+        end
+        -- note 51 (track select) waits for the selection to reach the window (#1679).
+    end
+end
+
+-- A fader or an encoder: the mixer. The fader's bottom is silence, its top +6 dB; the pan
+-- encoder's centre is centre. One gesture per control, so a move is one undo step.
+local function cc_received(channel, controller, value)
+    if controller == 7 and channel >= 0 and channel < TRACKS then
+        local id = mixer_track(channel)
+        if id == nil then
+            return
+        end
+        local db = "-inf"
+        if value > 0 then
+            db = math.floor((-60 + (value / 127) * 66) * 10) / 10
+        end
+        suhina.command("track.setVolume", { tracks = { id }, db = db }, "apc40-mkii volume " .. id)
+    elseif controller >= 48 and controller <= 55 and channel == 0 then
+        local id = mixer_track(controller - 48)
+        if id == nil then
+            return
+        end
+        local pan = (value - 64) / 63.5
+        if pan > 1 then
+            pan = 1
+        elseif pan < -1 then
+            pan = -1
+        end
+        suhina.command("track.setPan", { tracks = { id }, pan = pan }, "apc40-mkii pan " .. id)
+    elseif controller == 14 then
+        -- The master fader (CC 14): the main output's volume, the same curve.
+        local db = "-inf"
+        if value > 0 then
+            db = math.floor((-60 + (value / 127) * 66) * 10) / 10
+        end
+        suhina.command("mixer.setMainVolume", { db = db }, "apc40-mkii main volume")
+    end
+end
+
+suhina.on_port_message(function(bytes, port, timestamp)
+    local message = suhina.midi.parse(bytes)
+    if message == nil then
+        return
+    end
+    if message.kind == "note_on" and message.velocity > 0 then
+        press(message.channel, message.note)
+    elseif message.kind == "cc" then
+        cc_received(message.channel, message.controller, message.value)
+    end
+end)
+
+suhina.on_state(function(token, value)
+    local kind = kinds[token]
+    if kind == "grid" then
+        grid = value
+    elseif kind == "state" then
+        state = value
+    elseif kind == "strips" then
+        strips = value
+    end
+    refresh()
+end)
+
+suhina.on_ports(function(inputs, outputs)
+    out = outputs[1]
+    if out ~= nil then
+        suhina.send(out, LIVE_MODE)
+    end
+    -- The device may hold LEDs from before: send every control again, whatever changed.
+    leds = {}
+    refresh()
+end)
+
+kinds[suhina.subscribe("project.launcher")] = "grid"
+kinds[suhina.subscribe("launcher.state")] = "state"
+kinds[suhina.subscribe("project.tracks")] = "strips"

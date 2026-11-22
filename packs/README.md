@@ -4,12 +4,16 @@ The files the executable carries ([ADR 0036](../docs/decisions/0036-library-and-
 live here, one folder per device, named after which device runs them. A project names one of
 these files by its library key, and the panels list them as the **Suhina** pack — first on every
 device, before the user's own packs. At app start the pack unpacks into the library's
-`Suhina` folders when a file is not there; a file the user carries is never overwritten.
+`Suhina` folders when a file is not there; a file the user carries is never overwritten. A
+surface program's script is a pack too: `packs/apc40-mkii/` unpacks into the library's
+`Scripts/apc40-mkii/`, and the app installs it into the extensions store so the port scan runs
+it for the device it names ([shipped scripts](../docs/spec/shipped-scripts.md)).
 
 | Folder | What | Files |
 |---|---|---|
 | `packs/nam-amp-modeler/` | `.nam` models the NAM Amp Modeler runs | 18 |
 | `packs/nam-cab-loader/` | `.wav` cabinet responses the NAM Cab Loader runs | 26 |
+| `packs/apc40-mkii/` | the Lua surface program the runner runs for the APC40 MkII | 3 |
 
 ## Licences
 
@@ -39,3 +43,10 @@ device, before the user's own packs. At app start the pack unpacks into the libr
 The names are the files' names, which say where a capture was recorded from — the AGENTS.md
 rule that permits hardware names on content licensed for redistribution. The names stand as the
 panels show them.
+
+## `packs/apc40-mkii/`
+
+| File | Author | Source | Licence |
+|---|---|---|---|
+| `script.lua` | Suhina | written for Suhina from public documentation alone: Akai's public *APC40 Mk2 Communication Protocol v1.2* — the note and controller assignments, the RGB values by velocity, the Application/Configuration message that puts the device in the mode the document names Ableton Live — and the public APC40 MkII MIDI implementation chart; no other product's code, content or script | CC0-1.0 |
+| `extension.json`, `README.md` | Suhina | the program's manifest and the record beside the script | CC0-1.0 |

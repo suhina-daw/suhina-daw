@@ -17,8 +17,10 @@ covers:
 - **Builds on:** the extensions store and its supervisor ([extensions](extensions.md),
   [surface programs](surface-programs.md)), the pack that rides inside the executable and unpacks
   into the library (ADR 0036 › 2 and 3), and the command registry ([ADR 0002](../decisions/0002-commands.md)).
-- **Status:** not built. The first shipped script is the Akai APC40 MkII's
-  ([#1676](https://github.com/suhina-daw/suhina-daw/issues/1676)).
+- **Status:** planned ([#1676](https://github.com/suhina-daw/suhina-daw/issues/1676)). Built so
+  far: the first script itself — a clean-room rewrite of the Akai APC40 MkII's surface program,
+  written from Akai's public protocol document and chart, in `packs/apc40-mkii/` (#1677). The
+  unpack, the store install and the tests follow.
 
 ## What ships
 
