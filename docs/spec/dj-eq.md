@@ -3,7 +3,7 @@ description: The built-in three-band DJ EQ - its bands, gains, kills, crossovers
 read_when: dj eq, three-band eq, band split, kill, crossover, linkwitz-riley, importing the three-band EQ, FilterEQ3 elements
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-23
 covers:
   - devices/dj-eq/**
   - crates/als/src/devices.rs

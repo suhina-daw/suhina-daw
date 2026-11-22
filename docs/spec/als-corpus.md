@@ -3,7 +3,7 @@ description: How to author the Live Sets used to learn the .als format and test 
 read_when: making test sets, locators, corpus, new series, what to save in Live, test files, device corpus, bounce, device parameters, test signal, automation, envelopes
 type: howto
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-23
 covers:
   - crates/als/tests/corpus.rs
   - scripts/test-signal.py

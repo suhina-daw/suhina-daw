@@ -4,7 +4,7 @@ read_when: FM synth, fm-synth, full FM instrument, DX7 compatibility, two envelo
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-02
+last_verified: 2026-11-23
 covers:
   - devices/fm-synth/**
 ---

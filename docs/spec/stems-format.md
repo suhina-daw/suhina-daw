@@ -3,7 +3,7 @@ description: Stems files (.stem.mp4, .stem.m4a): an MP4 with the master and its 
 read_when: stems, stem file, .stem.mp4, .stem.m4a, Traktor stems, NI stems, master track, mastering_dsp, MP4 boxes, edit list, AAC priming, multitrack audio file, DJ, remix, folded group
 type: spec
 status: draft
-last_verified: 2026-10-19
+last_verified: 2026-11-23
 covers:
   - crates/media/src/stems.rs
   - crates/session/src/files.rs

@@ -3,7 +3,7 @@ description: How stem separation behaves: an audio clip split offline into stems
 read_when: stem separation, separate stems, vocals drums bass other, separation crate, separation model, model manifest, inference backend, tract, ort, ONNX, overlap-add, chunking, window weighting, band splitter, test backend
 type: spec
 status: planned
-last_verified: 2026-10-15
+last_verified: 2026-11-23
 covers:
   - crates/separation/**
 ---

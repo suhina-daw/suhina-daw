@@ -3,7 +3,7 @@ description: The FL Studio project (.flp) container and event stream as read by 
 read_when: reading .flp, FL Studio project, FLhd, FLdt, event stream, event id, varint, LEB128, UTF-16 strings, version event 199, flp reader errors
 type: spec
 status: draft
-last_verified: 2026-11-19
+last_verified: 2026-11-23
 covers:
   - crates/flp/src/lib.rs
   - crates/flp/src/event.rs
