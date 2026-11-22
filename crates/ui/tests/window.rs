@@ -114,6 +114,9 @@ pub(super) fn window_with_step(mut app: App, step: f32) -> Harness<'static, App>
         .with_max_steps((1.0 / step).ceil() as u64)
         .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
     theme::install(&harness.ctx);
+    // An audio clip's note starts are found as the editor asks, not on a thread whose repaint
+    // could land in the middle of a test's run.
+    suhina_ui::detail::audio_editor::find_transients_in_place(&harness.ctx, true);
     // Frames, not a run to rest: a window that repaints every frame while it settles (the
     // sample map's grid building, an animation) would spend the run's max and fail, where
     // these frames advance the same second.

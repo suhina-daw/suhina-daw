@@ -1143,6 +1143,17 @@ struct TransientEntry {
     seconds: Option<std::sync::Arc<Vec<f64>>>,
 }
 
+/// Whether [`file_transients`] finds a file's transients on the calling thread rather than on one
+/// of their own: for tests, so a window test's frames never wait on a thread's repaint (AGENTS.md
+/// › Tests are the gate). The window itself never does it.
+pub fn find_transients_in_place(ctx: &egui::Context, on: bool) {
+    ctx.data_mut(|d| d.insert_temp(transients_in_place_id(), on));
+}
+
+fn transients_in_place_id() -> egui::Id {
+    egui::Id::new("audio-editor-transients-in-place")
+}
+
 fn transient_cache(ctx: &egui::Context) -> TransientCache {
     let id = egui::Id::unique("audio-editor-transients");
     ctx.data_mut(|d| std::sync::Arc::clone(d.get_temp_mut_or_default::<TransientCache>(id)))
@@ -1154,6 +1165,7 @@ fn transient_cache(ctx: &egui::Context) -> TransientCache {
 /// for them, and is drawn again when they are there.
 pub fn file_transients(ctx: &egui::Context, file: &str, peaks: &waveform::Peaks) -> Transients {
     let Some(data) = peaks.data() else { return Transients::Unavailable };
+    let in_place = ctx.data(|d| d.get_temp::<bool>(transients_in_place_id()).unwrap_or(false));
     let cache = transient_cache(ctx);
     let (lock, found) = &*cache;
     let Ok(mut known) = lock.lock() else { return Transients::Unavailable };
@@ -1175,6 +1187,19 @@ pub fn file_transients(ctx: &egui::Context, file: &str, peaks: &waveform::Peaks)
     known.retain(|_, e| e.data.strong_count() > 0);
     if known.len() >= 32 {
         known.retain(|_, e| e.seconds.is_none());
+    }
+    if in_place {
+        drop(known);
+        let seconds = std::sync::Arc::new(suhina_session::transient_seconds(data));
+        if let Ok(mut known) = lock.lock() {
+            let entry = TransientEntry {
+                data: std::sync::Arc::downgrade(data),
+                seconds: Some(std::sync::Arc::clone(&seconds)),
+            };
+            known.insert(key, entry);
+        }
+        found.notify_all();
+        return Transients::Ready(seconds);
     }
     let entry = TransientEntry { data: std::sync::Arc::downgrade(data), seconds: None };
     known.insert(key.clone(), entry.clone());
