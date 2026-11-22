@@ -189,6 +189,27 @@ taken past 664 BPM) changed the clip's pitch. Every stretcher now takes 1/64x to
 is a clip re-pitched. The spectral stretcher's input buffer grows with the fastest speed: about
 1 MB for a stereo voice at 32x and 48 kHz.
 
+## Amendment (2026-11-22): the stretch voices on several threads
+
+Decision 6 ran every arrangement voice on one worker thread, and its cost grows with the number
+of warped clips playing at once. Eight songs of a multitrack, about three and a half minutes each,
+warped together in Smooth mode fell behind on it: the trace's *stretched frames late* grew by
+50 000 to 350 000 frames a second and playback broke up, with no device underrun (measured under
+the Relax JIT; a native build is not measured). So the voices are now shared among a few threads
+(`StretchThread`, `crates/engine/src/ahead.rs`): the cores but two (the audio thread and the
+window's), from one to four. Each graph's worker is split into one shard per thread
+(`StretchWorker::split`) by the voices' clip ids, which run on from one clip to the next, so a
+multitrack is shared out evenly (by the voices' keys, a hash, eight clips went seven to one on two
+threads) and a clip stays on its thread through its edits: its voice in the next graph falls to the
+same shard, and the thread that renders it takes it over as before
+(`StretchWorker::adopt_from`, ADR 0005). A rewind waits until every shard has said it stopped
+pushing (one *paused* slot per shard), then the audio side empties the rings as before; jumps and
+handovers stay per voice, so nothing else changes on the audio side. The launcher's preparers
+(decision 7) run on the first thread. Offline rendering keeps one unsplit worker, filled by the
+reader (rule 4), and a test checks that voices rendered on several threads give the same samples
+as on one. Tests that run the threads wait on every thread's acknowledgement
+(`StretchThread::sync`).
+
 ## Measurements (2026-10-11, the warped-vocal project: 80 s, 58 warped clips, 25 files)
 
 With the Signalsmith port (current):
