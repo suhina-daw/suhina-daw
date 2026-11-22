@@ -1671,7 +1671,7 @@ of bars, and a slider id per parameter.
   theme in use) and every dialog (its title row `dialog-title`, its words `label` and `label[kind]`,
   its lists `list-row`, its buttons `button`, its progress bar `progress` and `progress-fill`) draw
   from their elements, the base sheet's rules giving their colours through the colour variables. The start page's tabs are
-  `editor-tab#tab-recent` and `#tab-templates` and the colour picker's swatches `colour-swatch`
+  `editor-tab#tab-recent` and `#tab-templates` and the colour picker's swatches `color-swatch`
   (`border-color` outlines the chosen one). A Settings switch, a chosen segment of a Settings
   choice, a plug-in folder's format and a keymap preset (`button[checked]`) take their lit look
   from the base sheet, which a theme's rule for every `button` covers, so the theme states it; a

@@ -90,3 +90,46 @@ fn a_slider_takes_a_click_and_then_the_arrow_keys() {
     assert!((harness.state().hue - (hue - 1.0)).abs() < 1e-3);
     assert_eq!(harness.get_by_label("Hue").accesskit_node().numeric_value(), Some(f64::from(harness.state().hue)));
 }
+
+/// A stepped band's click takes the block under the pointer, and the arrows move one block; the
+/// arrow buttons report their clicks.
+#[test]
+fn a_stepped_band_takes_the_block_clicked_and_arrow_buttons_click() {
+    #[derive(Default)]
+    struct Steps {
+        index: usize,
+        changes: usize,
+        back: usize,
+    }
+    let colors = [egui::Color32::RED, egui::Color32::GREEN, egui::Color32::BLUE, egui::Color32::WHITE];
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(320.0, 120.0)).build_ui_state(
+        move |ui, state: &mut Steps| {
+            crate::kit::theme::install(ui.ctx());
+            let fill = colors[state.index];
+            if super::stepped_band(ui, "Hue", &mut state.index, |i| format!("{i}"), &colors, fill).changed() {
+                state.changes += 1;
+            }
+            if super::arrow_button(ui, "Previous", true).clicked() {
+                state.back += 1;
+            }
+        },
+        Steps::default(),
+    );
+    harness.run();
+    // The track is the rail less 4 points each side: a click a little right of its middle is
+    // in the third of four blocks.
+    let rail = harness.get_by_label("Hue").rect();
+    harness.hover_at(rail.center() + egui::vec2(rail.width() * 0.1, 0.0));
+    harness.run();
+    harness.get_by_label("Hue").click();
+    harness.run();
+    assert_eq!((harness.state().index, harness.state().changes), (2, 1));
+    harness.key_press(Key::ArrowRight);
+    harness.key_press(Key::ArrowRight);
+    harness.run();
+    assert_eq!(harness.state().index, 3, "the last block, and no further");
+    assert_eq!(harness.get_by_label("Hue").accesskit_node().numeric_value(), Some(3.0));
+    harness.get_by_label("Previous").click();
+    harness.run();
+    assert_eq!(harness.state().back, 1);
+}

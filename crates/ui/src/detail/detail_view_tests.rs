@@ -1765,16 +1765,16 @@ fn a_marker_is_dragged_by_the_place_under_the_pointer() {
     assert!(offsets.last().is_some_and(|o| (o - o.round()).abs() < 1e-9 && *o > 1.0), "whole beats: {offsets:?}");
 }
 
-/// A slot's clip shows its colour, but no palette: `clip.setColor` names arrangement clips.
+/// A slot's clip opens the palette, as an arrangement clip's does: `clip.setColor` takes either.
 #[test]
-fn a_slots_clip_has_no_colour_palette() {
+fn a_slots_clip_has_the_color_palette() {
     use egui_kittest::kittest::Queryable;
     let (Detail::Clip(mut info, chain), _) = audio_detail(AudioPanel::default(), 0.0, 0.0) else {
         panic!("expected the clip")
     };
     info.at = Some(ClipRef::Slot(TrackId(1), 0));
     let harness = panel_harness(Detail::Clip(info, chain));
-    assert!(harness.query_by_label("Clip colour").is_none());
+    assert!(harness.query_by_label("Clip color").is_some(), "a slot's clip opens the palette too");
 }
 
 /// Semitones at the top and cents added stay in the transpose's range.

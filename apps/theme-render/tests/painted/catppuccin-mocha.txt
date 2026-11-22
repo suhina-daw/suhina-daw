@@ -9,10 +9,10 @@ browser-plug-ins catppuccin-mocha 25ad6b0c1f0806f0
 browser-search catppuccin-mocha 10125533ef9c9e1f
 clip-audio catppuccin-mocha 56a1f40a3a804967
 clip-midi catppuccin-mocha fa7f189506a5c45b
-colour-picker catppuccin-mocha db7d8bf374565b97
-colour-picker-field catppuccin-mocha e65224f37b65a35e
-colour-picker-wheel catppuccin-mocha f7e1fe2a17757f4c
-context-menu catppuccin-mocha 69e8eb7065346012
+color-menu-saved catppuccin-mocha 5ce8f5d8aa03b823
+color-picker catppuccin-mocha 84f89cea5eb0720a
+color-picker-field catppuccin-mocha 64a50d24afe5831b
+context-menu catppuccin-mocha 7cacfb2a5fdb8301
 control-bar-toggles catppuccin-mocha 6b729534523eb76b
 count-in-menu catppuccin-mocha 2d60977d886c378e
 cpu catppuccin-mocha 80cf0282e23571ab

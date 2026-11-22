@@ -1062,7 +1062,7 @@ fn the_variant_editor_shows_only_the_themes_quick_controls() {
 /// A quick control's colour picker offers normal blending only: an additive colour is kept by egui
 /// with an alpha of 0, so choosing it saved the colour as transparent.
 #[test]
-fn a_quick_controls_colour_picker_has_no_additive_blending() {
+fn a_quick_controls_color_picker_has_no_additive_blending() {
     let mut harness = short_window();
     harness.get_by_label("Settings page: Themes").click();
     settle(&mut harness);

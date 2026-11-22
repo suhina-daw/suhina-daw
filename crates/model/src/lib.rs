@@ -264,23 +264,23 @@ pub enum MidiPort {
 pub struct Rgb(pub u8, pub u8, pub u8);
 
 /// The colour a new MIDI track or clip gets (and every new track with *One colour*).
-pub const NEW_MIDI_COLOUR: Rgb = Rgb(0x4F, 0xC3, 0xF7);
+pub const NEW_MIDI_COLOR: Rgb = Rgb(0x57, 0xC0, 0xFF);
 
 /// The colour a new audio track or clip gets.
-pub const NEW_AUDIO_COLOUR: Rgb = Rgb(0xFF, 0x9A, 0x3C);
+pub const NEW_AUDIO_COLOR: Rgb = Rgb(0xFF, 0x99, 0x39);
 
 /// What a track saved without a colour of its own (a project from before tracks stored one)
 /// shows, by its place among the tracks: these four in turn. Fixed, since it says what a saved
 /// file means: such a track looks the same in every theme and every version.
-pub const LEGACY_TRACK_COLOURS: [Rgb; 4] =
+pub const LEGACY_TRACK_COLORS: [Rgb; 4] =
     [Rgb(0xFF, 0x9A, 0x3C), Rgb(0xF2, 0xD5, 0x41), Rgb(0x4F, 0xC3, 0xF7), Rgb(0xB3, 0x8B, 0xFF)];
 
 impl Project {
     /// Gives every track without a colour of its own the one it shows
-    /// ([`LEGACY_TRACK_COLOURS`] by its place), so every track has its own.
+    /// ([`LEGACY_TRACK_COLORS`] by its place), so every track has its own.
     pub fn fill_track_colours(&mut self) {
         for (place, track) in self.tracks.iter_mut().enumerate() {
-            track.color.get_or_insert(LEGACY_TRACK_COLOURS[place % LEGACY_TRACK_COLOURS.len()]);
+            track.color.get_or_insert(LEGACY_TRACK_COLORS[place % LEGACY_TRACK_COLORS.len()]);
         }
     }
 }

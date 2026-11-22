@@ -1208,15 +1208,22 @@ fn a_rule_for_every_button_needs_a_checked_rule_to_keep_settings_switches_lit() 
     assert!(lit > 0 && unlit > 0, "the pages hold lit and unlit switches ({lit} and {unlit})");
 }
 
-/// The colour picker's swatches are `colour-swatch`es: the chosen one is outlined in its
+/// The color picker's swatches are `color-swatch`es: the chosen one is outlined in its
 /// `border-color` (#1440).
 #[test]
-fn the_colour_picker_s_swatches_take_their_own_rules() {
-    let mut h = window(demo_app());
+fn the_color_picker_s_swatches_take_their_own_rules() {
+    let mut app = demo_app();
+    // A palette color, so the menu has a chosen swatch.
+    let color = suhina_ui::interaction::color_picker::swatches()[2];
+    app.run(&Action::new(
+        "track.setColor",
+        json!({"track":1,"color":suhina_ui::interaction::color_picker::hex(color)}),
+    ));
+    let mut h = window(app);
     h.get_by_label("Track Drums").click_secondary();
     h.run();
     assert_eq!(
-        missing(&mut h, &[("colour-swatch", "border-color", odd(143))]),
+        missing(&mut h, &[("color-swatch", "border-color", odd(143))]),
         Vec::<String>::new(),
         "the swatch under the pointer or the chosen one is outlined"
     );

@@ -1933,13 +1933,13 @@ fn the_tags_right_menu_selects_a_colour() {
     harness.run();
     assert!(harness.query_by_label("Select colour…").is_some(), "the picker opened in the menu");
     // A palette swatch recolours the tag, in one command, and the menu stays open.
-    let colour = suhina_ui::interaction::colour_picker::swatches()[3];
-    harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(colour))).click();
+    let colour = suhina_ui::interaction::color_picker::swatches()[3];
+    harness.get_by_label(&format!("Color {}", suhina_ui::interaction::color_picker::hex(colour))).click();
     harness.run();
     let first = harness.state_mut().projects_mut().file_library_mut().tag_flat().swap_remove(0);
     assert_eq!(
         (first.name, first.color),
-        ("Red".to_string(), theme::hex(suhina_ui::interaction::colour_picker::color32(colour)))
+        ("Red".to_string(), theme::hex(suhina_ui::interaction::color_picker::color32(colour)))
     );
     assert!(harness.query_by_label("Select colour…").is_some(), "the picker stays for a second look");
     // A second press closes it again.
@@ -2394,8 +2394,8 @@ fn the_tags_titles_menu_adds_a_tag_in_a_colour() {
     harness.run();
     harness.get_by_label("Select colour").click();
     harness.run();
-    let colour = suhina_ui::interaction::colour_picker::swatches()[5];
-    harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(colour))).click();
+    let colour = suhina_ui::interaction::color_picker::swatches()[5];
+    harness.get_by_label(&format!("Color {}", suhina_ui::interaction::color_picker::hex(colour))).click();
     harness.run();
     harness.get_by_label("New tag name").click();
     harness.run();
@@ -2406,7 +2406,7 @@ fn the_tags_titles_menu_adds_a_tag_in_a_colour() {
     let tags = harness.state_mut().projects_mut().file_library_mut().tag_flat();
     assert_eq!(
         tags.iter().find(|t| t.name == "Everything").map(|t| t.color.as_str()),
-        Some(theme::hex(suhina_ui::interaction::colour_picker::color32(colour)).as_str()),
+        Some(theme::hex(suhina_ui::interaction::color_picker::color32(colour)).as_str()),
         "the pick colours the tag the title's menu made",
     );
     // The name one already has refuses, the add leaving the menu open for the correction.
@@ -2965,8 +2965,8 @@ fn a_folders_menu_colours_a_new_tag_from_the_palette() {
     // A pick is the new tag's colour, the same way a tag's own menu recolours.
     harness.get_by_label("Select colour").click();
     harness.run();
-    let colour = suhina_ui::interaction::colour_picker::swatches()[5];
-    harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(colour))).click();
+    let colour = suhina_ui::interaction::color_picker::swatches()[5];
+    harness.get_by_label(&format!("Color {}", suhina_ui::interaction::color_picker::hex(colour))).click();
     harness.run();
     harness.get_by_label("New tag name").click();
     harness.run();
@@ -2978,7 +2978,7 @@ fn a_folders_menu_colours_a_new_tag_from_the_palette() {
     let made = tree.iter().find(|t| t.name == "Everything");
     assert_eq!(
         made.map(|t| t.color.as_str()),
-        Some(theme::hex(suhina_ui::interaction::colour_picker::color32(colour)).as_str()),
+        Some(theme::hex(suhina_ui::interaction::color_picker::color32(colour)).as_str()),
         "the pick colours the tag the folder's menu made",
     );
     // The add shows itself ([#1254] review): a tag made at a closed folder opens the
@@ -3009,8 +3009,8 @@ fn a_folders_menu_colours_a_new_tag_from_the_palette() {
     harness.run();
     harness.get_by_label("Select colour").click();
     harness.run();
-    let abandoned = suhina_ui::interaction::colour_picker::swatches()[3];
-    harness.get_by_label(&format!("Colour {}", suhina_ui::interaction::colour_picker::hex(abandoned))).click();
+    let abandoned = suhina_ui::interaction::color_picker::swatches()[3];
+    harness.get_by_label(&format!("Color {}", suhina_ui::interaction::color_picker::hex(abandoned))).click();
     harness.run();
     harness.key_press(Key::Escape);
     harness.run();

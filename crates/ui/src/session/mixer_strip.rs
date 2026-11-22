@@ -10,7 +10,7 @@ use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::{InputChannels, Monitor, TrackId};
 
-use crate::interaction::colour_picker;
+use crate::interaction::color_picker;
 use crate::interaction::commands;
 use crate::interaction::grid::{Column, ColumnKind};
 use crate::interaction::menus;
@@ -475,11 +475,11 @@ pub fn show(
     let kind = Strip::Track { armable: column.armable };
     let parts = layout_in(Host::Strip(&style_class), whole, !column.sends.is_empty(), column.plays_audio, shared, kind);
     if let Some(band) = parts.band {
-        painter.rect_filled(band, 0.0, colour_picker::fill(column.color, column.mute));
+        painter.rect_filled(band, 0.0, color_picker::fill(column.color, column.mute));
         let band_hit = band.intersect(painter.clip_rect());
         if band_hit.is_positive() {
             let colour_id = id.with("strip-colour");
-            colour_picker::area(ui, band_hit, colour_id, column.track, &column.name, column.color, actions);
+            color_picker::area(ui, band_hit, colour_id, column.track, &column.name, column.color, actions);
         }
     }
     if let Some(name) = parts.name {
@@ -564,7 +564,7 @@ fn name_row(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: I
     let name_style = crate::kit::element::TRACK_NAME.id(&track_id).response(&response).attr(Selected, selected).enter();
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{} strip", column.name)));
     // The name stands on the track's colour, as in the column's header.
-    let native_fill = colour_picker::fill(column.color, column.mute);
+    let native_fill = color_picker::fill(column.color, column.mute);
     // An alpha material layers over the track colour. An explicitly authored
     // transparent solid background can still remove that colour completely.
     let fill = if name_style.style().is_some_and(|style| style.has_gradient() && style.background.a() == 0) {

@@ -181,9 +181,9 @@ pub(crate) fn default_colours(p: &mut suhina_model::Project) {
         let parent_like = track.channel.is_none() || track.content == suhina_model::ContentKinds::default();
         if track.color.is_none() && !parent_like {
             track.color = Some(if track.content.audio && !track.content.notes {
-                suhina_model::NEW_AUDIO_COLOUR
+                suhina_model::NEW_AUDIO_COLOR
             } else {
-                suhina_model::NEW_MIDI_COLOUR
+                suhina_model::NEW_MIDI_COLOR
             });
         }
     }
@@ -195,7 +195,7 @@ pub(crate) fn default_colours(p: &mut suhina_model::Project) {
         let first =
             p.tracks.iter().filter(|t| t.id != id && p.with_descendants(id).contains(&t.id)).find_map(|t| t.color);
         if let Some(track) = p.track_mut(id) {
-            track.color = Some(first.unwrap_or(suhina_model::NEW_MIDI_COLOUR));
+            track.color = Some(first.unwrap_or(suhina_model::NEW_MIDI_COLOR));
         }
     }
 }

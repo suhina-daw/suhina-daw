@@ -14,7 +14,7 @@ use suhina_engine::model::{ClipId, FadeCurve, FadeShape, Project, Rgb, TrackId};
 use crate::arrangement::automation_lanes::{self as automation, LanesState};
 use crate::arrangement::timeline::{ClipBox, Folds, Lane, Timeline, inside_lanes};
 pub use crate::detail::piano_roll_grid::{GridMode, PianoGrid, Width};
-use crate::interaction::colour_picker;
+use crate::interaction::color_picker;
 use crate::interaction::commands;
 use crate::interaction::drop::{DropProbe, DropTarget};
 use crate::interaction::grid::ColumnKind;

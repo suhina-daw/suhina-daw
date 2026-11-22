@@ -5,7 +5,7 @@
 //! groups inside groups, the grid of tracks and slots, the track colour picker, the timelines'
 //! grid and how far they scroll, the grid menu, the toolbars' icon buttons and a MIDI key's name.
 
-pub mod colour_picker;
+pub mod color_picker;
 pub mod commands;
 pub mod device_at;
 pub mod drop;

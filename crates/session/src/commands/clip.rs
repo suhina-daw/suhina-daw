@@ -63,8 +63,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setColorMany",
-        label: "Give several arrangement clips a colour of their own, or their tracks' colour again, as one undo step",
-        params: &[CLIPS, param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for each track's colour")],
+        label: "Give several clips, in the arrangement or in clip slots, a colour of their own, or their tracks' colour again, as one undo step",
+        params: &[CLIPS, param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for each track's color"), GESTURE],
         kind: CommandKind::EDIT,
         run: set_clips_color,
         policy: Policy::UNHEARD,
@@ -261,7 +261,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setColor",
-        label: "Give a clip a colour of its own (by index), or every clip of a track one when no index is given; \"none\" makes them show the track's colour again",
+        label: "Give a clip a colour of its own (by id, an arrangement clip or a slot's, or by index), or every clip of a track one when neither is given; \"none\" makes them show the track's colour again",
         params: &[
             CLIP_TRACK,
             param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for the track's colour"),
@@ -1336,17 +1336,43 @@ fn shift_fades(session: &mut Session, params: &Value) -> Result<Value, CommandEr
 }
 
 /// `clip.setColorMany`: the clips `clips` names take `color` (or their tracks' again), every one
-/// checked before any changes.
+/// checked before any changes. A clip named by id may be in a clip slot; the deprecated
+/// `{track, index}` form names arrangement clips.
 fn set_clips_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let color = crate::clip_color::parse_color(params, "color")?;
     let p = &mut session.project;
-    let clips = clip_list(p, params)?;
-    for (track, index) in &clips {
-        let lane = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(*track));
-        let clip = lane.and_then(|l| l.clips.get_mut(*index)).ok_or("the clip is missing")?;
-        clip.color = color;
+    let places = color_clip_places(p, params)?;
+    for at in &places {
+        crate::notes::clip_mut(p, *at).ok_or("the clip is missing")?.color = color;
     }
-    Ok(json!({ "clips": clips.len(), "color": Args::new(params).value("color") }))
+    Ok(json!({ "clips": places.len(), "color": Args::new(params).value("color") }))
+}
+
+/// Where each clip `params.clips` names is, arrangement clips and slots' clips alike, each once.
+fn color_clip_places(p: &Project, params: &Value) -> Result<Vec<crate::notes::ClipAt>, CommandError> {
+    let list =
+        Args::new(params).value("clips").and_then(Value::as_array).ok_or("clips must be a list of { \"clip\": id }")?;
+    let mut out: Vec<crate::notes::ClipAt> = Vec::new();
+    for entry in list {
+        let at = if entry.get("clip").is_some() {
+            match named_clip(p, entry)? {
+                Some(named) => named.at,
+                None => return Err("each clip in clips is { \"clip\": id }".into()),
+            }
+        } else {
+            let one = json!({ "clips": [entry] });
+            let (track, index) = clip_list(p, &one)?.first().copied().ok_or("each clip in clips names a clip")?;
+            let lane = p.arrangement.lanes.iter().position(|l| l.track == Some(track)).ok_or("the clip is missing")?;
+            crate::notes::ClipAt::Arrangement(lane, index)
+        };
+        if !out.contains(&at) {
+            out.push(at);
+        }
+    }
+    if out.is_empty() {
+        return Err("clips must name at least one clip".into());
+    }
+    Ok(out)
 }
 
 /// Removes the clips named by `clips`, which must exist; returns how many went. Indices are read

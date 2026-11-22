@@ -9,10 +9,10 @@ browser-plug-ins suhina-light 9b6dd08a53064879
 browser-search suhina-light 0004abc537f0a31d
 clip-audio suhina-light 973f5f2a359882de
 clip-midi suhina-light b579079ec09a1e0a
-colour-picker suhina-light a7671eaaa5a1937e
-colour-picker-field suhina-light a0163b996213fbb8
-colour-picker-wheel suhina-light ec5835461333d33c
-context-menu suhina-light e884c2e69316d313
+color-menu-saved suhina-light 95fe353204ff6ca2
+color-picker suhina-light a1d161d6491ab31a
+color-picker-field suhina-light 6c1b33ab37e43b6d
+context-menu suhina-light f15112d1d7c9ff3f
 control-bar-toggles suhina-light 79c1fb64c45bd710
 count-in-menu suhina-light bb6c6afb324eb8e5
 cpu suhina-light d585391e1ab3c3f7

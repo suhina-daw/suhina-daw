@@ -197,7 +197,7 @@ the first token names (`surface.0`, `line`, `text.tertiary` …) still read. Onl
 a theme: sizes, spacing and type stay the design's. Track and clip colours are
 not the theme's: a track's or clip's colour comes from the project, and the colour picker's 24
 curated suggestions ([Colour palette](components.md#colour-palette)) and
-the colours new tracks and clips get (MIDI `#4FC3F7`, audio `#FF9A3C`) are Suhina's own, the same
+the colours new tracks and clips get (MIDI `#57C0FF`, audio `#FF9939`) are Suhina's own, the same
 in every theme. A theme draws them from the element's `color` attribute.
 
 
