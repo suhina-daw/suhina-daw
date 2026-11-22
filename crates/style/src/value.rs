@@ -809,8 +809,8 @@ mod picker_color_tests {
             ("Gold", [219, 180, 12]),
             ("Khaki", [170, 166, 98]),
             ("Mustard", [206, 179, 1]),
-            ("Ochre", [191, 144, 5]),
-            ("Amber", [254, 179, 8]),
+            ("Ochre", [204, 119, 34]),
+            ("Amber", [255, 191, 0]),
             ("Saffron", [254, 178, 9]),
         ] {
             assert_eq!(nearest_named_color(rgb), (name, true));
@@ -826,7 +826,7 @@ mod picker_color_tests {
             assert!(!name.is_empty() && name.chars().count() <= 32);
             assert_eq!(nearest_named_color([r, g, b]), (name, true));
         }
-        assert_eq!(names.len(), 860);
+        assert_eq!(names.len(), 1066);
     }
 
     #[test]

@@ -10,7 +10,7 @@ Apache-2.0, OFL, CC0, CC BY) and keep their license file next to them.
 
 | Path | Title | Author | Source | License |
 |---|---|---|---|---|
-| `crates/style/data/colour-names.tsv` | Curated colour names (877 entries; changes and source hash in adjacent README) | Randall Munroe and xkcd colour survey contributors | [xkcd name/RGB table](https://xkcd.com/color/rgb.txt) | CC0-1.0 (`crates/style/data/LICENSE-CC0.txt`) |
+| `crates/style/data/colour-names.tsv` | Curated colour names (1,067 entries; changes and source hash in adjacent README) | Randall Munroe and xkcd colour survey contributors; Wikipedia contributors | [xkcd name/RGB table](https://xkcd.com/color/rgb.txt); [Wikipedia: List of colors](https://en.wikipedia.org/wiki/List_of_colors:_A%E2%80%93F) (A–F, G–M, N–Z) | CC0-1.0 (`crates/style/data/LICENSE-CC0.txt`) for the xkcd names; CC-BY-SA-4.0 (`crates/style/data/LICENSE-CC-BY-SA-4.0.txt`) for the Wikipedia names |
 | `crates/ui/fonts/manrope/Manrope-Variable.ttf` | Manrope (default UI typeface) | The Manrope Project Authors | [google/fonts](https://github.com/google/fonts/tree/main/ofl/manrope) | OFL-1.1 (`crates/ui/fonts/manrope/OFL.txt`) |
 | `crates/ui/fonts/encode-sans/EncodeSansSemiExpanded-Regular.ttf` | Encode Sans Semi Expanded Regular (the UI typeface) | The Encode Project Authors (Pablo Impallari, Andres Torresi, Jacques Le Bailly) | [google/fonts](https://github.com/google/fonts/tree/main/ofl/encodesanssemiexpanded) | OFL-1.1 (`crates/ui/fonts/encode-sans/OFL.txt`) |
 | `crates/ui/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf` | IBM Plex Mono Regular (numbers, times, positions) | IBM Corp. | [google/fonts](https://github.com/google/fonts/tree/main/ofl/ibmplexmono) | OFL-1.1 (`crates/ui/fonts/ibm-plex-mono/OFL.txt`) |
