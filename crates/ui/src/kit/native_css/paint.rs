@@ -102,8 +102,8 @@ fn draw(painter: &Painter, rect: Rect, gradient: &Gradient, radius: f32, opacity
         let image = if linear {
             egui::ColorImage::new([SAMPLES, 1], samples)
         } else {
-            // Sample a cached 1D colour ramp rather than evaluating expensive CSS
-            // colour-space conversions separately for every spatial texel.
+            // Sample a cached 1D color ramp rather than evaluating expensive CSS
+            // color-space conversions separately for every spatial texel.
             let mut pixels = Vec::with_capacity(SPATIAL_SAMPLES * SPATIAL_SAMPLES);
             for y in 0..SPATIAL_SAMPLES {
                 for x in 0..SPATIAL_SAMPLES {
@@ -171,7 +171,7 @@ fn draw(painter: &Painter, rect: Rect, gradient: &Gradient, radius: f32, opacity
 
 /// An element's box in `rect`, as far as it is painted before its contents (CSS's order): its
 /// outer shadows, clipped by `outer` (the box of the nearest element around it that hides its
-/// overflow) where one is known, its background colour, its gradients, its inset shadows and its
+/// overflow) where one is known, its background color, its gradients, its inset shadows and its
 /// border. `style` is its element's (`kit::element`); the caller's `radius` and `fill` stand where
 /// the sheet sets none. A transparent background paints nothing, rather than a see-through hole in
 /// the window. The surface blends with what is under it, whatever its alpha. Returns the radius
@@ -270,7 +270,7 @@ pub(crate) fn border(painter: &Painter, rect: Rect, radius: f32, style: &super::
         return;
     }
     // Top and bottom take the corners; the sides fill between them. Wider than the box, the
-    // sides meet without overlapping, so a translucent colour is not drawn twice.
+    // sides meet without overlapping, so a translucent color is not drawn twice.
     let (x, y) = (rect.x_range(), rect.y_range());
     let top = top.min(rect.height());
     let bottom = bottom.min(rect.height() - top);

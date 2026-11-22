@@ -458,7 +458,7 @@ fn a_place_of_several_tags_is_the_ids_joined_and_the_filter_narrows_it() {
 fn set_tag_makes_a_tag_for_an_unused_name_and_an_id_selector_refuses() {
     let settings = temp("set-tag-name-settings");
     let mut p = projects(&settings);
-    // `id` as an unused name: made, coloured from the named colours' next turn.
+    // `id` as an unused name: made, colored from the named colors' next turn.
     let made = run(&mut p, "library.setTag", json!({ "id": "Drums" })).unwrap();
     assert!(made["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Drums")));
     made_id_tagged(&mut p, "Drums");
@@ -758,7 +758,7 @@ fn set_tag_runs_the_limit_and_the_make_together() {
     run(&mut p, "library.setTag", json!({ "limit": 11, "id": "#1", "color": "#123456" })).unwrap();
     let tags = run(&mut p, "library.tags", json!({})).unwrap();
     assert_eq!(tags["limit"], json!(11));
-    assert_eq!(tags["tags"][0]["color"], json!("#123456"), "the id's colour with the limit");
+    assert_eq!(tags["tags"][0]["color"], json!("#123456"), "the id's color with the limit");
     // The one command does not go half in: a make that fails leaves the limit what it
     // was ([#1254] review). A top-level folder named as the make's name is the failing
     // make.
@@ -767,11 +767,11 @@ fn set_tag_runs_the_limit_and_the_make_together() {
     let tags = run(&mut p, "library.tags", json!({})).unwrap();
     assert_eq!(tags["limit"], json!(11), "the limit stayed with the failed make");
     assert!(!tags["tags"].as_array().unwrap().iter().any(|t| t["name"] == json!("Spare")));
-    // The id's own too: a colour that is not one changes nothing of the limit's.
+    // The id's own too: a color that is not one changes nothing of the limit's.
     assert!(run(&mut p, "library.setTag", json!({ "limit": 12, "id": "#1", "color": "nope" })).is_err());
     let tags = run(&mut p, "library.tags", json!({})).unwrap();
     assert_eq!(tags["limit"], json!(11), "the limit stayed");
-    assert_eq!(tags["tags"][0]["color"], json!("#123456"), "the colour stayed");
+    assert_eq!(tags["tags"][0]["color"], json!("#123456"), "the color stayed");
     // The nothing form still refuses.
     assert!(run(&mut p, "library.setTag", json!({})).is_err());
     // The one command, whole: a lowered limit the made tags would not carry refuses with

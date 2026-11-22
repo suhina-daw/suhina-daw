@@ -11,7 +11,7 @@
 //! the backdrop, blurred where the system blurs behind the window.
 //!
 //! [`budget`] counts the style engine's work in a scene, for the tests that hold it, and
-//! [`painted`] lists what a scene paints, for the test that holds every built-in theme's look, and
+//! [`painted`] lists what a scene paints, for the test that holds the built-in themes' looks, and
 //! [`cut`] the texts it cuts off, for the test that holds those (#1548).
 
 pub mod budget;
@@ -252,7 +252,7 @@ pub fn rendered(app: App, subject: &Subject, width: f32, scale: f32, gpu: &Gpu) 
 pub struct Shot {
     pub pixels: image::RgbaImage,
     pub see_through: bool,
-    /// The colour an opaque window clears to before drawing, premultiplied.
+    /// The color an opaque window clears to before drawing, premultiplied.
     pub clear: [u8; 4],
 }
 

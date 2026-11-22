@@ -16,18 +16,18 @@ fn view_settings_survive_a_round_trip_through_the_settings_file() {
     let view = ViewSettings {
         liquid: crate::kit::liquid::Options { panels: 40, tracks: 60, clips: 80 },
         track_sizes: super::super::track_sizes::TrackSizes::default(),
-        waveform: WaveformAppearance { mode: WaveformColour::Custom, custom: egui::Color32::from_rgb(120, 210, 80) },
+        waveform: WaveformAppearance { mode: WaveformColor::Custom, custom: egui::Color32::from_rgb(120, 210, 80) },
         automation: AutomationAppearance {
-            mode: AutomationColour::Fixed,
+            mode: AutomationColor::Fixed,
             line: Some(egui::Color32::from_rgb(250, 200, 40)),
             point: None,
         },
         selection: crate::kit::selection::SelectionLook {
-            mode: crate::kit::selection::SelectionColour::Custom,
+            mode: crate::kit::selection::SelectionColor::Custom,
             custom: egui::Color32::from_rgb(200, 20, 30),
         },
-        audio_colour_strength: 64,
-        header_colour_strength: 75,
+        audio_color_strength: 64,
+        header_color_strength: 75,
         mixer_height: 300,
         strip_fader: 90,
         detail_layout: DetailLayout::FullWidth,
@@ -52,12 +52,14 @@ fn view_settings_survive_a_round_trip_through_the_settings_file() {
         play_from_clip: false,
         device_list_vertical: false,
         stack_in_piano_roll: false,
-        fixed_track_colour: true,
-        new_clip_track_colour: false,
+        fixed_track_color: true,
+        new_clip_track_color: false,
         recent_chips: true,
         returns_hidden: true,
         new_returns: false,
         copy_wrapped: false,
+        audio_editor_theme_waveform: true,
+        audio_editor_line_drag: true,
         alt_wheel_one: true,
         folder_drop: FolderDrop::Copy,
         remove_group_processing: true,
@@ -96,33 +98,29 @@ fn a_mixer_height_out_of_range_is_clamped_and_a_bad_value_warned_about() {
 }
 
 #[test]
-fn waveform_choices_round_trip_and_invalid_colours_preserve_defaults() {
-    assert_eq!(Settings::from_text("").0.view.waveform.mode, WaveformColour::Theme);
-    for mode in [
-        WaveformColour::Theme,
-        WaveformColour::Auto,
-        WaveformColour::Light,
-        WaveformColour::Dark,
-        WaveformColour::Custom,
-    ] {
+fn waveform_choices_round_trip_and_invalid_colors_preserve_defaults() {
+    assert_eq!(Settings::from_text("").0.view.waveform.mode, WaveformColor::Theme);
+    for mode in
+        [WaveformColor::Theme, WaveformColor::Auto, WaveformColor::Light, WaveformColor::Dark, WaveformColor::Custom]
+    {
         let mut settings = Settings::default();
         settings.view.waveform = WaveformAppearance { mode, custom: egui::Color32::from_rgb(23, 140, 212) };
         let (read, warnings) = Settings::from_text(&settings.to_text());
         assert!(warnings.is_empty());
         assert_eq!(read.view.waveform, settings.view.waveform);
     }
-    let (read, warnings) = Settings::from_text("waveform_colour = rainbow\nwaveform_custom_colour = #xyz123\n");
+    let (read, warnings) = Settings::from_text("waveform_color = rainbow\nwaveform_custom_color = #xyz123\n");
     assert_eq!(warnings.len(), 2);
     assert_eq!(read.view.waveform, WaveformAppearance::default());
 }
 
 #[test]
-fn automation_and_selection_colours_round_trip_and_bad_values_keep_the_defaults() {
+fn automation_and_selection_colors_round_trip_and_bad_values_keep_the_defaults() {
     let read = Settings::from_text("").0.view;
     assert_eq!(read.automation, AutomationAppearance::default());
-    assert_eq!(read.automation.mode, AutomationColour::Track);
-    assert_eq!(read.selection.mode, crate::kit::selection::SelectionColour::Theme);
-    for mode in [AutomationColour::Track, AutomationColour::Fixed] {
+    assert_eq!(read.automation.mode, AutomationColor::Track);
+    assert_eq!(read.selection.mode, crate::kit::selection::SelectionColor::Theme);
+    for mode in [AutomationColor::Track, AutomationColor::Fixed] {
         for (line, point) in [(None, None), (Some(egui::Color32::from_rgb(1, 2, 3)), Some(egui::Color32::WHITE))] {
             let mut settings = Settings::default();
             settings.view.automation = AutomationAppearance { mode, line, point };
@@ -132,9 +130,9 @@ fn automation_and_selection_colours_round_trip_and_bad_values_keep_the_defaults(
         }
     }
     for mode in [
-        crate::kit::selection::SelectionColour::Theme,
-        crate::kit::selection::SelectionColour::Own,
-        crate::kit::selection::SelectionColour::Custom,
+        crate::kit::selection::SelectionColor::Theme,
+        crate::kit::selection::SelectionColor::Own,
+        crate::kit::selection::SelectionColor::Custom,
     ] {
         let mut settings = Settings::default();
         settings.view.selection =
@@ -144,10 +142,10 @@ fn automation_and_selection_colours_round_trip_and_bad_values_keep_the_defaults(
         assert_eq!(read.view.selection, settings.view.selection);
     }
     let (read, warnings) = Settings::from_text(
-        "automation_colour = rainbow
-automation_line_colour = #xyz
-selection_colour = loud
-selection_custom_colour = red
+        "automation_color = rainbow
+automation_line_color = #xyz
+selection_color = loud
+selection_custom_color = red
 ",
     );
     assert_eq!(warnings.len(), 4, "{warnings:?}");
@@ -156,12 +154,11 @@ selection_custom_colour = red
 }
 
 #[test]
-fn colour_strengths_are_bounded_and_invalid_input_does_not_change_defaults() {
-    let (read, warnings) =
-        Settings::from_text("audio_clip_colour_strength = 9999\ntrack_header_colour_strength = -1\n");
+fn color_strengths_are_bounded_and_invalid_input_does_not_change_defaults() {
+    let (read, warnings) = Settings::from_text("audio_clip_color_strength = 9999\ntrack_header_color_strength = -1\n");
     assert_eq!(warnings.len(), 1);
-    assert_eq!(read.view.audio_colour_strength, 100);
-    assert_eq!(read.view.header_colour_strength, 82);
+    assert_eq!(read.view.audio_color_strength, 100);
+    assert_eq!(read.view.header_color_strength, 82);
 }
 
 #[test]
@@ -174,14 +171,14 @@ fn liquid_strengths_default_off_and_parse_independently_with_bounds() {
 }
 
 #[test]
-fn a_see_through_custom_selection_colour_keeps_its_opacity() {
+fn a_see_through_custom_selection_color_keeps_its_opacity() {
     let mut settings = Settings::default();
     settings.view.selection = crate::kit::selection::SelectionLook {
-        mode: crate::kit::selection::SelectionColour::Custom,
+        mode: crate::kit::selection::SelectionColor::Custom,
         custom: egui::Color32::from_rgba_unmultiplied(200, 40, 60, 128),
     };
     let text = settings.to_text();
-    let saved = text.lines().find_map(|line| line.strip_prefix("selection_custom_colour = ")).unwrap_or_default();
+    let saved = text.lines().find_map(|line| line.strip_prefix("selection_custom_color = ")).unwrap_or_default();
     assert_eq!(saved.len(), 9, "#RRGGBBAA while see-through: {saved}");
     let (read, warnings) = Settings::from_text(&text);
     assert!(warnings.is_empty(), "{warnings:?}");

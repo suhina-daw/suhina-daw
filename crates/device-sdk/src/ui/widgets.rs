@@ -288,7 +288,7 @@ impl CustomControl {
         }
     }
 
-    /// Resolve built-in widget colours against the host's active theme.
+    /// Resolve built-in widget colors against the host's active theme.
     pub fn drawings_with_palette(&self, palette: &WidgetPalette) -> std::borrow::Cow<'_, [Draw]> {
         if self.widget.is_none() {
             return std::borrow::Cow::Borrowed(&self.drawing);
@@ -465,7 +465,7 @@ impl Widget {
                 }
                 if let Some(image) = image {
                     // The device's own face: the track and the value's arc around it in the
-                    // theme's colours, the image inside, the pointer over it.
+                    // theme's colors, the image inside, the pointer over it.
                     let face = (r - 3.).max(1.);
                     let mut out = Vec::with_capacity(6);
                     if !label.is_empty() {

@@ -1358,9 +1358,9 @@ pub struct LanesState {
     /// A click anywhere on a lane adds a point (Settings › Arrangement › Automation); off, only a
     /// click on or near the line does, and a double-click adds one anywhere.
     pub click_anywhere: bool,
-    /// How the envelopes are coloured (Settings › Arrangement › Automation › Automation colour):
-    /// in their track's colour, or in one line and one point colour; the app sets it each frame.
-    pub colours: crate::settings::view_settings::AutomationAppearance,
+    /// How the envelopes are colored (Settings › Arrangement › Automation › Automation color):
+    /// in their track's color, or in one line and one point color; the app sets it each frame.
+    pub colors: crate::settings::view_settings::AutomationAppearance,
     /// The shape a point added from now on gives the segment that ends at it, chosen from a lane's
     /// menu away from a painted range; `None` for a straight line.
     pub new_shape: Option<&'static str>,
@@ -2068,66 +2068,66 @@ fn position_of(plot: Rect, y: f32) -> f64 {
 
 /// The lane position at height `y` in `plot`, not held in the lane: 1.2 is a fifth of the plot
 /// above its top. A point drag measures the pointer with it, so a point taken hold of off its
-/// centre still reaches the lane's ends when the pointer goes past them (#811).
+/// center still reaches the lane's ends when the pointer goes past them (#811).
 fn place_of(plot: Rect, y: f32) -> f64 {
     if plot.height() > 0.0 { f64::from((plot.bottom() - y) / plot.height()) } else { 0.0 }
 }
 
-/// A track colour from the project as egui draws it.
+/// A track color from the project as egui draws it.
 /// The element an envelope's line or points are drawn as: `[kind="fixed"]` while Automation
-/// colour is Fixed.
+/// color is Fixed.
 fn envelope_part(
     name: crate::kit::element::Name,
-    colours: &crate::settings::view_settings::AutomationAppearance,
+    colors: &crate::settings::view_settings::AutomationAppearance,
 ) -> crate::kit::element::Builder<'static> {
     let part = name.builder();
-    if colours.mode == crate::settings::view_settings::AutomationColour::Fixed {
+    if colors.mode == crate::settings::view_settings::AutomationColor::Fixed {
         part.attribute("kind", "fixed")
     } else {
         part
     }
 }
 
-/// An envelope's line colour while it is `enabled`: the track's colour `track` (a theme's rule for
-/// every line wins over it), or with Automation colour Fixed the line colour chosen in Settings,
+/// An envelope's line color while it is `enabled`: the track's color `track` (a theme's rule for
+/// every line wins over it), or with Automation color Fixed the line color chosen in Settings,
 /// else `automation-line[kind="fixed"]`'s, which the base sheet gives every theme.
-/// `automation-line[muted]`'s colour is a lane's while it is off, in either mode.
-fn line_ink(colours: &crate::settings::view_settings::AutomationAppearance, track: Color32, enabled: bool) -> Color32 {
+/// `automation-line[muted]`'s color is a lane's while it is off, in either mode.
+fn line_ink(colors: &crate::settings::view_settings::AutomationAppearance, track: Color32, enabled: bool) -> Color32 {
     let look =
-        envelope_part(crate::kit::element::AUTOMATION_LINE, colours).attr(crate::kit::element::Muted, !enabled).look();
+        envelope_part(crate::kit::element::AUTOMATION_LINE, colors).attr(crate::kit::element::Muted, !enabled).look();
     if !enabled {
         return look.own_color_or(look.color());
     }
-    if colours.mode == crate::settings::view_settings::AutomationColour::Fixed {
-        // The computed colour: the base sheet's rule for `[kind="fixed"]` counts.
-        colours.line.unwrap_or_else(|| look.color())
+    if colors.mode == crate::settings::view_settings::AutomationColor::Fixed {
+        // The computed color: the base sheet's rule for `[kind="fixed"]` counts.
+        colors.line.unwrap_or_else(|| look.color())
     } else {
         look.own_color_or(track)
     }
 }
 
-/// An envelope's point colours: a point's own (`None`: the line's), and a picked point's. With
-/// Automation colour Fixed, a point takes the colour chosen in Settings, else
+/// An envelope's point colors: a point's own (`None`: the line's), and a picked point's. With
+/// Automation color Fixed, a point takes the color chosen in Settings, else
 /// `automation-point[kind="fixed"]`'s, which the base sheet gives every theme; a picked point keeps
 /// `automation-point[selected]`'s in either mode. On a lane that is off (not `enabled`) the points
-/// take the line's `[muted]` colour, as in Track colour.
+/// take the line's `[muted]` color, as in Track color.
 fn point_inks(
-    colours: &crate::settings::view_settings::AutomationAppearance,
+    colors: &crate::settings::view_settings::AutomationAppearance,
     enabled: bool,
 ) -> (Option<Color32>, Color32) {
-    let plain = envelope_part(crate::kit::element::AUTOMATION_POINT, colours).probe();
+    let plain = envelope_part(crate::kit::element::AUTOMATION_POINT, colors).probe();
     let picked =
-        envelope_part(crate::kit::element::AUTOMATION_POINT, colours).attr(crate::kit::element::Selected, true).look();
+        envelope_part(crate::kit::element::AUTOMATION_POINT, colors).attr(crate::kit::element::Selected, true).look();
     // A rule for every point does not hide which are picked: only a `[selected]` rule
-    // recolours them.
-    // A rule's colour beats every base rule, so a rule for every point reaches the picked
-    // ones too: where it does, they take the words' colour, the base sheet's own.
+    // recolors them.
+    // A rule's color beats every base rule, so a rule for every point reaches the picked
+    // ones too: where it does, they take the words' color, the base sheet's own.
     let declared =
         plain.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
     let selected = Some(picked.color()).filter(|c| declared != Some(*c)).unwrap_or_else(crate::kit::element::name_ink);
-    let own = if colours.mode == crate::settings::view_settings::AutomationColour::Fixed && enabled {
-        // The computed colour: the base sheet's rule for `[kind="fixed"]` counts.
-        Some(colours.point.unwrap_or_else(|| plain.color()))
+    let own = if colors.mode == crate::settings::view_settings::AutomationColor::Fixed && enabled {
+        // The computed color: the base sheet's rule for `[kind="fixed"]` counts.
+        Some(colors.point.unwrap_or_else(|| plain.color()))
     } else {
         declared
     };
@@ -2926,8 +2926,8 @@ fn lane(
             let y = y_of(plot, param.scale.position(value));
             let x = geometry.x_of(beat);
             let guide = painter.with_clip_rect(visible);
-            let line = line_ink(&state.colours, color(lanes.color), param.enabled);
-            guide.circle_filled(Pos2::new(x, y), POINT, point_inks(&state.colours, param.enabled).0.unwrap_or(line));
+            let line = line_ink(&state.colors, color(lanes.color), param.enabled);
+            guide.circle_filled(Pos2::new(x, y), POINT, point_inks(&state.colors, param.enabled).0.unwrap_or(line));
             egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), id.with("value"), egui::PopupAnchor::Pointer)
                 .gap(12.0)
                 .show(|ui| ui.add(egui::Label::new(param.scale.text(value)).wrap_mode(egui::TextWrapMode::Extend)));
@@ -3139,7 +3139,7 @@ fn lane(
         grid_menu(ui, state, actions);
     });
 
-    // The envelope: in the track colour while it plays, dimmed while a manual change has turned
+    // The envelope: in the track color while it plays, dimmed while a manual change has turned
     // it off.
     let lane_painter = painter.with_clip_rect(visible);
     // A point being dragged is drawn where the pointer is now: its own response, read further
@@ -3207,9 +3207,9 @@ fn lane(
         let at = if held { None } else { painting };
         state.drawn_drag = Some(Dragged { track, key: key.clone(), points: points.clone(), at });
     }
-    // The envelope's line: the track's colour, or the fixed one (Automation colour), and
+    // The envelope's line: the track's color, or the fixed one (Automation color), and
     // `automation-line[muted]`'s while it is off.
-    let ink = line_ink(&state.colours, color(lanes.color), param.enabled);
+    let ink = line_ink(&state.colors, color(lanes.color), param.enabled);
     let line = envelope(&points, &param.scale, plot, geometry);
     // A finished bend asks for its command only now, after the envelope above drew it: the
     // project has the new curve only once the command has run, after this frame, so dropping
@@ -3398,7 +3398,7 @@ fn lane(
     // The points: a click selects (Shift or Ctrl adds), a drag moves (the selection with it), a
     // double-click or the menu deletes.
     let dragging = gesture.lane_point().filter(|d| d.track == track && &d.key == key).map(|d| d.point);
-    let (point_ink, selected_point) = point_inks(&state.colours, param.enabled);
+    let (point_ink, selected_point) = point_inks(&state.colors, param.enabled);
     for (index, point) in param.points.iter().enumerate() {
         // Drawn where a drag puts it.
         let shown = match dragging {
@@ -4014,7 +4014,7 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
 }
 
 /// A parameter's row in the menu: its name (short under a group's heading) and " •" when it has
-/// points; selected for the lane's own, greyed out when it is not `free`. Its accessible label is
+/// points; selected for the lane's own, grayed out when it is not `free`. Its accessible label is
 /// the whole "Device: Name". Answers whether it was clicked.
 fn parameter_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scroll: bool) -> bool {
     let mark = if choice.points.is_empty() { "" } else { " •" };
@@ -4033,7 +4033,7 @@ fn parameter_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scr
 
 /// A parameter's copy in the menu's "Automated" section: its whole name ("Utility: Gain"), as it
 /// stands outside its device's heading, selected for the lane's own (scrolled to on `scroll`)
-/// and greyed out when it is not `free`. Its accessible label ends in " (automated)", apart from
+/// and grayed out when it is not `free`. Its accessible label ends in " (automated)", apart from
 /// its row in its device. Answers whether it was clicked.
 fn automated_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scroll: bool) -> bool {
     let selected = choice.key == *current;
@@ -4057,7 +4057,7 @@ fn automated_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scr
 /// groups start closed except those holding the lane's own parameter (`current`), which is
 /// scrolled into view, and a track's only device; a search shows the devices and groups with
 /// matches open, and Enter takes the first match. A parameter another lane shows (`shown`) is
-/// greyed out. The menu fits in `room`, the height on its side of the dropdown, so it grows as
+/// grayed out. The menu fits in `room`, the height on its side of the dropdown, so it grows as
 /// headings open without moving. The lane's own parameter is scrolled to where it was chosen:
 /// its copy under "Automated" when it was chosen there (`from_automated`) and still has points,
 /// its own row otherwise; its device and group open either way. Answers the one chosen, and
@@ -4196,7 +4196,7 @@ fn parameter_menu(
 }
 
 /// The parameter menu under `response` (the top lane's dropdown, #1322): every parameter the
-/// track has, by device, those another lane shows greyed out. Answers the parameter chosen.
+/// track has, by device, those another lane shows grayed out. Answers the parameter chosen.
 fn parameter_dropdown(
     ui: &mut Ui,
     response: &egui::Response,
@@ -4294,7 +4294,7 @@ fn lane_header(
     let track = lanes.track;
     let layout = state.layout(track, params);
     let top = !layout.lanes.contains(&param.key);
-    // The header's own look, picked or not: its background and its text colour.
+    // The header's own look, picked or not: its background and its text color.
     let picked = state.is_picked(track, &param.key);
     let look = crate::kit::element::AUTOMATION_HEADER.attr(crate::kit::element::Selected, picked).look();
     let surface = super::arrangement_view::panel_surface();
@@ -4426,7 +4426,7 @@ fn lane_header(
     }
 
     // The pin: on the top lane an outline that pins its parameter as a lane of its own; on a
-    // mounted lane filled, in the accent colour, and a click unpins it with the picked lanes.
+    // mounted lane filled, in the accent color, and a click unpins it with the picked lanes.
     if top {
         let response = widgets::button_area(
             ui,
@@ -4511,7 +4511,7 @@ const PIN_NEEDLE: [(f32, f32); 2] = [(8.0, 8.7), (8.0, 13.5)];
 
 /// Draws one of a lane header's small buttons: no box, a faint background under the pointer,
 /// and `glyph` in its middle, drawn with lines so it is the same in every font; dim until the
-/// pointer is on it, a filled pin in the accent colour.
+/// pointer is on it, a filled pin in the accent color.
 fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response, glyph: Glyph) {
     let hover = widgets::hover(ui, response);
     if hover > 0.0 {

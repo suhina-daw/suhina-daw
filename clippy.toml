@@ -2,7 +2,7 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 allow-panic-in-tests = true
 allow-indexing-slicing-in-tests = true
-# Color32 is premultiplied: its r(), g() and b() are not the colour's channels once it is
+# Color32 is premultiplied: its r(), g() and b() are not the color's channels once it is
 # translucent (#1235). Read them with to_srgba_unmultiplied(), or to_array() where premultiplied
 # channels are meant.
 disallowed-methods = [

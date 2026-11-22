@@ -213,7 +213,7 @@ fn color_high_is_a_bell_at_its_frequency() {
             [(param::TYPE, 6.0), (param::DRIVE, 12.0), (param::COLOR_HIGH, 1.0), (param::COLOR_FREQUENCY, frequency)];
         level(&drive_sine(&mut saturator(&settings), hz, 0.25, 24_000), hz)
     };
-    // The band at the bell's centre is clipped harder than one three octaves away.
+    // The band at the bell's center is clipped harder than one three octaves away.
     assert!(clipped(1_000.0, 1_000.0) < 0.5 * clipped(1_000.0, 125.0));
     assert!(clipped(125.0, 125.0) < 0.5 * clipped(125.0, 1_000.0));
 }

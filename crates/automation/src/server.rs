@@ -682,7 +682,7 @@ fn run_step(
     Ok(value)
 }
 
-/// Adds a title and behaviour hints to each tool, and closes its schema to unknown arguments.
+/// Adds a title and behavior hints to each tool, and closes its schema to unknown arguments.
 fn annotated(mut tool: Tool) -> Tool {
     let words = tool.name.replace('_', " ");
     let mut chars = words.chars();

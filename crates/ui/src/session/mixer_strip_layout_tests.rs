@@ -39,7 +39,7 @@ fn native(rect: Rect, has_sends: bool, input: bool, shared: Shared, main: bool, 
         Pos2::new(inner.right(), toggle_bottom),
     );
     let mut parts = Native {
-        band: Some(Rect::from_min_size(rect.min, Vec2::new(COLOUR_BAND, rect.height()))),
+        band: Some(Rect::from_min_size(rect.min, Vec2::new(COLOR_BAND, rect.height()))),
         toggles: Some(toggles),
         ..Default::default()
     };
@@ -125,20 +125,20 @@ fn native(rect: Rect, has_sends: bool, input: bool, shared: Shared, main: bool, 
         parts.pan = Some(row(top, theme::KNOB));
         top += KNOB_ROW;
     }
-    // Since #1487 B19 every strip centres its fader, as a narrow one did.
-    let centred = true;
-    let group_left = if centred { inner.center().x - FADER_COLUMN / 2.0 } else { inner.left() };
+    // Since #1487 B19 every strip centers its fader, as a narrow one did.
+    let centered = true;
+    let group_left = if centered { inner.center().x - FADER_COLUMN / 2.0 } else { inner.left() };
     let column =
         |top: f32, height: f32| Rect::from_min_size(Pos2::new(group_left, top), Vec2::new(FADER_COLUMN, height));
     parts.readout = Some(column(top, READOUT));
     top += READOUT + UNDER_READOUT;
     let fader = column(top, fader.min(bottom - top).max(0.0));
     parts.meter = Some(Rect::from_min_size(
-        Pos2::new(fader.right() + if centred { 0.0 } else { SCALE_WIDTH } + 4.0, fader.top()),
+        Pos2::new(fader.right() + if centered { 0.0 } else { SCALE_WIDTH } + 4.0, fader.top()),
         Vec2::new(METER_WIDTH, fader.height()),
     ));
     parts.scale = Some(Rect::from_min_size(
-        Pos2::new(if centred { fader.left() - SCALE_WIDTH - 2.0 } else { fader.right() }, fader.top()),
+        Pos2::new(if centered { fader.left() - SCALE_WIDTH - 2.0 } else { fader.right() }, fader.top()),
         Vec2::new(SCALE_WIDTH, fader.height()),
     ));
     parts.fader = Some(fader);

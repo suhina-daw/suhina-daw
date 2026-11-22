@@ -10,7 +10,7 @@
 //! lower of the two Nyquist frequencies, so nothing folds back when going down; going up, the
 //! signal stays as it was below the old Nyquist frequency.
 
-/// Zero crossings of the sinc on each side of the centre, at the cut-off.
+/// Zero crossings of the sinc on each side of the center, at the cut-off.
 const ZEROS: usize = 16;
 /// Table points per input frame.
 const PHASES: usize = 512;

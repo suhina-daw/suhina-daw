@@ -207,8 +207,8 @@ pub(crate) fn notice_line(ui: &Ui, painter: &egui::Painter, line: Rect, notice: 
         right = rect.left() - PAD;
     }
     let text = Rect::from_min_max(Pos2::new(line.left() + 3.0 + PAD, line.top()), Pos2::new(right, line.bottom()));
-    let colour = if notice.error { error_ink() } else { name_ink() };
-    widgets::text_in(painter, text, Align2::LEFT_CENTER, &notice.text, theme::ui_font(theme::TEXT), colour);
+    let color = if notice.error { error_ink() } else { name_ink() };
+    widgets::text_in(painter, text, Align2::LEFT_CENTER, &notice.text, theme::ui_font(theme::TEXT), color);
     if let Some(part) = notice.progress {
         let bar = Rect::from_min_size(Pos2::new(text.left(), line.bottom() - 4.0), Vec2::new(text.width(), 2.0));
         let track = PROGRESS.enter();

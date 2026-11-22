@@ -29,7 +29,7 @@ thread_local! {
 }
 
 /// The background of the region or container something is drawn in, where the sheet gives it
-/// one, else `fallback` (a token): for a part that takes its region's colour (a stop button on
+/// one, else `fallback` (a token): for a part that takes its region's color (a stop button on
 /// the launcher, a ruler's rows) and so matches a theme that styles that region. A region's
 /// background writes no token (#1233), so the part asks for it here.
 pub fn surface_or(fallback: egui::Color32) -> egui::Color32 {
@@ -56,7 +56,7 @@ thread_local! {
 
 /// The innermost element's own `background-color` where its sheet sets one, else `fallback` (a
 /// token): for the panel of a dialog, which a theme may style on `dialog` but which must not take
-/// the enclosing window's colour, as [`surface_or`] would.
+/// the enclosing window's color, as [`surface_or`] would.
 pub fn own_background_or(fallback: egui::Color32) -> egui::Color32 {
     OWN.with(std::cell::Cell::get).unwrap_or(fallback)
 }
@@ -143,9 +143,9 @@ pub(super) fn enter_inner(
 }
 
 /// The ink that keeps the text of the element whose style is `style` readable on `background`:
-/// when the colour it inherited (a bar's light text in a menu that opens over a light window) has
+/// when the color it inherited (a bar's light text in a menu that opens over a light window) has
 /// too little contrast, near black or near white, whichever reads on it; `None` when the inherited
-/// colour reads. Its caller gives it to the element's text (egui's `override_text_color`).
+/// color reads. Its caller gives it to the element's text (egui's `override_text_color`).
 pub(super) fn readable_on(
     style: Option<super::native_css::Computed>,
     background: egui::Color32,
@@ -218,8 +218,8 @@ pub fn theme_header_min_width() -> Option<f32> {
     arrangement()?.points(Property::HeaderMinWidth).filter(|v| (160.0..=520.0).contains(v))
 }
 
-/// How strongly the theme lets the track's colour tint its Arrangement header (`arrangement {
-/// header-tint: 0 }` for none, up to 100), over the user's header colour strength; a see-through
+/// How strongly the theme lets the track's color tint its Arrangement header (`arrangement {
+/// header-tint: 0 }` for none, up to 100), over the user's header color strength; a see-through
 /// theme takes the native tint away with 0.
 pub fn theme_header_tint() -> Option<u8> {
     arrangement()?.integer(Property::HeaderTint).and_then(|v| u8::try_from(v).ok()).filter(|v| *v <= 100)
@@ -301,10 +301,10 @@ impl Drop for UiStyle<'_> {
         }
     }
 }
-/// The outline `own`'s rule gives over the `existing` one: its colour, and its width only when the
+/// The outline `own`'s rule gives over the `existing` one: its color, and its width only when the
 /// rule authors a width (0 included, which removes the line) that is one all round. A rule that
-/// gives a colour alone keeps the width, as egui's separators in a menu are drawn with a
-/// widget's outline and a colour is not a reason to hide them.
+/// gives a color alone keeps the width, as egui's separators in a menu are drawn with a
+/// widget's outline and a color is not a reason to hide them.
 fn outline(own: &super::native_css::Computed, existing: egui::Stroke) -> egui::Stroke {
     let width = if own.authored.border_width { own.even_border().unwrap_or(existing.width) } else { existing.width };
     egui::Stroke::new(width, own.border)
@@ -423,7 +423,7 @@ impl WidgetRules {
                 widget.weak_bg_fill = own.background;
             }
             // egui draws one outline all round: sides of different widths (an underline, `0 0
-            // 2px`) leave its width as it was, and only a colour is taken (#1336).
+            // 2px`) leave its width as it was, and only a color is taken (#1336).
             if own.authored.border || own.authored.border_width {
                 widget.bg_stroke = outline(own, widget.bg_stroke);
             }
@@ -475,7 +475,8 @@ impl WidgetRules {
 
 /// egui frames its menus and pop-ups with the window's fill and stroke: `menu`'s rules over them.
 pub(super) fn apply_menu(menu: &super::native_css::Computed, visuals: &mut egui::Visuals) {
-    if menu.authored.background {
+    // From whichever sheet gives it, the user-agent's included (see `floating::frame`).
+    if menu.authored.background || menu.background.a() > 0 {
         visuals.window_fill = menu.background;
     }
     if menu.authored.border || menu.authored.border_width {
@@ -532,7 +533,7 @@ pub(super) fn ui_for(ui: &mut egui::Ui, values: Option<super::native_css::Comput
         .filter(|style| style.authored.border_width && !surface)
         .and_then(|style| style.even_border().map(|width| egui::Stroke::new(width, style.border)));
     // A panel's or view's background is the surface behind its widgets, not their fill: a
-    // device panel's colour would otherwise hide its sliders' rails.
+    // device panel's color would otherwise hide its sliders' rails.
     let fill = values.as_ref().filter(|style| style.authored.background && !surface).map(|style| style.background);
     // egui's own widgets in the scope (Settings, dialogs, the start page, the browser) take the
     // sheet's generic control rules, the same ones the root's `Visuals` are built from.

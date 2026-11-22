@@ -29,7 +29,7 @@ pub const STEP: usize = 64;
 /// Frames between the gains a mixer lane gives (a third of a millisecond at 48 kHz), fine enough
 /// for a smoothed jump to be an S rather than a few straight pieces.
 pub const MIX_STEP: usize = 16;
-/// How long a jump of a track's volume lane takes, in seconds: an S-shaped ramp centred on the
+/// How long a jump of a track's volume lane takes, in seconds: an S-shaped ramp centered on the
 /// jump, in the fader's position (`docs/spec/automation.md` › How the engine plays them).
 pub const VOLUME_SMOOTHING: f64 = 0.0044;
 /// Most built-in and `.sd` device lanes one chain plays; more are left out.
@@ -185,7 +185,7 @@ impl Envelope {
 
     /// The value at `time` with its jumps smoothed: each jump within half of `length` frames of
     /// `time` becomes an S-shaped ramp (smootherstep) in position, `length` frames long and
-    /// centred on the jump; everything else plays as drawn. Never allocates.
+    /// centered on the jump; everything else plays as drawn. Never allocates.
     pub(crate) fn smoothed_at(&self, time: u64, length: u64) -> f64 {
         if length < 2 || self.stepped {
             return self.value_at(time);
@@ -475,7 +475,7 @@ impl DeviceLanes {
 }
 
 /// The gains of a track whose mixer follows lanes: the gains the rest of its way applies (its
-/// own channel's automated parameters at their neutral values: volume 1, centred, not muted),
+/// own channel's automated parameters at their neutral values: volume 1, centered, not muted),
 /// scaled frame by frame by the lanes.
 pub(crate) struct MixLanes {
     volume: Option<Envelope>,
@@ -537,7 +537,7 @@ impl MixLanes {
         let volume =
             self.volume.as_ref().map_or(1.0, |e| e.smoothed_at(time, self.smoothing).clamp(0.0, model::MAX_VOLUME));
         let (left, right) = match value(&self.pan).filter(|_| self.pan_applies) {
-            // Equal power, relative to the centre the rest of the gains were taken at.
+            // Equal power, relative to the center the rest of the gains were taken at.
             Some(pan) => {
                 let (left, right) = suhina_dsp::pan::gains(pan);
                 (left * std::f64::consts::SQRT_2, right * std::f64::consts::SQRT_2)
@@ -596,7 +596,7 @@ pub(crate) fn channel_of(project: &Project, track: TrackId) -> Option<&Channel> 
 }
 
 /// `project` with every mixer parameter that follows a lane at its neutral value (volume 1,
-/// centred, not muted), so the graph is built with the lanes' tracks heard and their gains
+/// centered, not muted), so the graph is built with the lanes' tracks heard and their gains
 /// applied after their chains; `None` when no lane plays (the project as it is). Every channel
 /// counts, the main one too (its lanes play after its chain, #687). Allocates.
 pub(crate) fn neutral(project: &Project) -> Option<Project> {

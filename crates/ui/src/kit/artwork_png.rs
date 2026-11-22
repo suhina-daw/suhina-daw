@@ -113,7 +113,7 @@ pub fn raster(source: &str, width: u32, height: u32) -> Option<egui::ColorImage>
 }
 
 /// [`raster`] for a role whose artwork keeps its proportions (a knob's face): scaled to fit
-/// `width` × `height` and centred, transparent around it, as a contained SVG is.
+/// `width` × `height` and centered, transparent around it, as a contained SVG is.
 pub fn raster_contained(source: &str, width: u32, height: u32) -> Option<egui::ColorImage> {
     let image = decode(source).ok()?;
     let (width, height) = (width.clamp(1, 1024), height.clamp(1, 1024));
@@ -148,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn png_pixels_keep_authored_colours_and_alpha_and_reject_bombs_or_corruption() {
+    fn png_pixels_keep_authored_colors_and_alpha_and_reject_bombs_or_corruption() {
         let source = fixture(2, 2, [20, 80, 160, 128]);
         let image = raster(&source, 4, 3).unwrap();
         assert_eq!(image.size, [4, 3]);
@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn a_contained_png_keeps_its_proportions_centred_in_the_rectangle() {
+    fn a_contained_png_keeps_its_proportions_centered_in_the_rectangle() {
         // A 2:1 image in a square: full width, half the height, transparent above and below.
         let image = raster_contained(&fixture(20, 10, [200, 30, 40, 255]), 40, 40).unwrap();
         assert_eq!(image.size, [40, 40]);

@@ -15,18 +15,18 @@ pub fn pan_field(painter: &egui::Painter, rect: Rect, el: &Entered, pan: f64, ho
         level_bar(painter, rect, el, "pan", span, hover, &widgets::format_pan(pan), Align2::CENTER_CENTER);
         return;
     }
-    // The native look: a flat field with centre ticks and a thin bar along its bottom.
-    // `pan` and `#mixer-pan` colour it as well: the theme's background, border and text.
+    // The native look: a flat field with center ticks and a thin bar along its bottom.
+    // `pan` and `#mixer-pan` color it as well: the theme's background, border and text.
     let fill = el.hover_fade(hover, Look::background);
     el.paint_with(painter, rect, Native { radius: 0.0, fill });
-    let centre = rect.center().x.round() - 0.5;
-    // The centre's ticks are `pan-centre`, the bar from the centre the pan's `value-fill`.
-    let tick = theme::hairline(super::element::PAN_CENTRE.look().color());
-    painter.vline(centre, egui::Rangef::new(rect.top(), rect.top() + 2.0), tick);
-    painter.vline(centre, egui::Rangef::new(rect.bottom() - 2.0, rect.bottom()), tick);
+    let center = rect.center().x.round() - 0.5;
+    // The center's ticks are `pan-center`, the bar from the center the pan's `value-fill`.
+    let tick = theme::hairline(super::element::PAN_CENTER.look().color());
+    painter.vline(center, egui::Rangef::new(rect.top(), rect.top() + 2.0), tick);
+    painter.vline(center, egui::Rangef::new(rect.bottom() - 2.0, rect.bottom()), tick);
     let to = rect.center().x + rect.width() / 2.0 * pan.clamp(-1.0, 1.0) as f32;
     let bar =
-        Rect::from_min_max(Pos2::new(centre.min(to), rect.bottom() - 2.0), Pos2::new(centre.max(to), rect.bottom()));
+        Rect::from_min_max(Pos2::new(center.min(to), rect.bottom() - 2.0), Pos2::new(center.max(to), rect.bottom()));
     painter.rect_filled(bar, 0.0, super::element::VALUE_FILL.look().background());
     widgets::text_in(
         painter,
@@ -109,7 +109,7 @@ pub fn level_bar(
         let width = handle_el.style().and_then(|style| style.width);
         let role = format!("{kind}.handle");
         if let Some(width) = width.filter(|w| *w >= 1.0).or_else(|| skin::has_own(&role).then_some(8.0)) {
-            // The end that moves: a volume's right end, a pan's end away from the centre.
+            // The end that moves: a volume's right end, a pan's end away from the center.
             let at = if span.0 > 0.0 && span.0 < 0.5 { x(span.0) } else { x(span.1) };
             let handle = Rect::from_center_size(
                 Pos2::new(at.clamp(track.left() + width / 2.0, track.right() - width / 2.0), rect.center().y),
@@ -138,7 +138,7 @@ pub fn level_bar(
         }
         return;
     }
-    // The sheet may move the value (`text-align`) and give the lit part's text its own colour
+    // The sheet may move the value (`text-align`) and give the lit part's text its own color
     // (`value-fill { color }`).
     let align = match el.style().and_then(|style| style.text_align) {
         Some(-1) => Align2::LEFT_CENTER,
@@ -177,7 +177,7 @@ pub fn level_bar(
 }
 
 /// A send as a tile in `rect`, drawn as `el`, the `send` its caller entered: its letter, its level
-/// in dB and a rail lit up to `position` in `pointer`, the send's colour. The rail is the send's
+/// in dB and a rail lit up to `position` in `pointer`, the send's color. The rail is the send's
 /// `background-color` tinted with `pointer`.
 #[allow(clippy::too_many_arguments)]
 pub fn send_field(
@@ -242,32 +242,32 @@ pub fn send_field(
     }
 }
 
-/// The colour of a fader cap's artwork (its `currentColor`): the computed colour of `el`, the
-/// `fader-cap` entered in its pointer state, which the base sheet gives (the control colour lit a
+/// The color of a fader cap's artwork (its `currentColor`): the computed color of `el`, the
+/// `fader-cap` entered in its pointer state, which the base sheet gives (the control color lit a
 /// little by the values' text) unless a theme does.
 pub fn cap_ink(el: &super::element::Entered) -> Color32 {
     el.color()
 }
 
-/// The control colour darkened into a recess: a fader rail's colour where a theme gives none.
+/// The control color darkened into a recess: a fader rail's color where a theme gives none.
 pub fn recess() -> Color32 {
     super::element::FADER_RAIL.look().color()
 }
 
-/// The colour of a fader rail's artwork (its `currentColor`): the computed colour of `el`, the
+/// The color of a fader rail's artwork (its `currentColor`): the computed color of `el`, the
 /// `fader-rail`, which the base sheet gives unless a theme does.
 pub fn rail_ink(el: &super::element::Entered) -> Color32 {
     el.color()
 }
 
 /// The `background-color` of `el`'s level bar, a track: `el`'s kind with `kind="bar"`, `hover`
-/// (0 to 1) of the way from its resting colour to the one under the pointer.
+/// (0 to 1) of the way from its resting color to the one under the pointer.
 fn bar_fade(el: &Entered, hover: f32) -> Color32 {
     let (rest, hot) = el.name().attribute("kind", "bar").hover_ends(hover);
     motion::mix(rest.background(), hot.background(), hover)
 }
 
-/// A tactile vertical fader cap, drawn as `response`'s widget. Its centre marker, rather than its
+/// A tactile vertical fader cap, drawn as `response`'s widget. Its center marker, rather than its
 /// edges, indicates the gain.
 pub fn fader_cap(painter: &egui::Painter, cap: Rect, hover: f32, response: &egui::Response) {
     let state = super::skin::State::response(response, false);
@@ -277,7 +277,7 @@ pub fn fader_cap(painter: &egui::Painter, cap: Rect, hover: f32, response: &egui
         return;
     }
     // Without artwork: the cap's own `color` where a rule gives it one (not the palette tier's),
-    // shaded lighter and darker; else the control colour lit a little by the values' text.
+    // shaded lighter and darker; else the control color lit a little by the values' text.
     let own = el.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
     let base = own.unwrap_or_else(|| el.hover_fade(hover, Look::background));
     let face = own.unwrap_or_else(|| el.hover_fade(hover, Look::color));

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Follow actions: what a launched clip does after it has played for its follow time. Behaviour:
+//! Follow actions: what a launched clip does after it has played for its follow time. Behavior:
 //! `docs/spec/clip-launching.md` › Follow actions.
 //!
 //! The launcher asks [`FollowPlan::due`] every frame while a clip plays; when it is due, the

@@ -355,7 +355,7 @@ pub(crate) fn menu_face(
     response
 }
 
-/// A small chevron pointing down, centred on `at`: a toolbar menu's sign that it opens a list.
+/// A small chevron pointing down, centered on `at`: a toolbar menu's sign that it opens a list.
 fn chevron(painter: &egui::Painter, at: Pos2, color: Color32) {
     let half = CHEVRON / 2.0;
     painter.add(egui::Shape::line(
@@ -482,7 +482,7 @@ fn row_toggle(
 }
 
 /// The note clipboard as one menu, when the toolbar is short of room: the Copy icon and an arrow,
-/// its list Cut, Copy, Paste and Duplicate (greyed out with nothing to act on, Paste aside).
+/// its list Cut, Copy, Paste and Duplicate (grayed out with nothing to act on, Paste aside).
 /// Returns the button picked.
 fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<IconButton> {
     let ui = paint.ui;
@@ -668,7 +668,7 @@ pub(super) struct ButtonPaint<'a> {
 }
 
 impl ButtonPaint<'_> {
-    /// One icon button: the shape in the tool's colours, a tooltip with its name and the key it
+    /// One icon button: the shape in the tool's colors, a tooltip with its name and the key it
     /// has, and the same name as its accessible label. Returns whether it was clicked.
     pub(super) fn place(&self, area: Rect, button: IconButton, chosen: bool, active: bool) -> bool {
         let ui = self.ui;

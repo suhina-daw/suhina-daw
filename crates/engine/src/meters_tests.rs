@@ -9,7 +9,7 @@ use crate::buses_tests::grouped;
 use crate::chain_tests::{SR, blocks, device, peak};
 use crate::{Level, PEAK_FALL_DB_PER_SECOND, Renderer};
 
-/// The amplitude of one centred note at unity volume and full velocity (−12 dBFS).
+/// The amplitude of one centered note at unity volume and full velocity (−12 dBFS).
 const NOTE: f32 = 0.25;
 
 /// `grouped`, with the note and its clips 16 beats (8 s) long: tracks 1 and 2 play into group

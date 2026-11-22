@@ -1,9 +1,9 @@
 ---
-description: Stems files (.stem.mp4, .stem.m4a): an MP4 with the master and its stems as audio tracks, stem names, colours and mastering settings in moov/udta/stem; what Suhina reads and how it maps the mastering to its compressor and limiter
+description: Stems files (.stem.mp4, .stem.m4a): an MP4 with the master and its stems as audio tracks, stem names, colors and mastering settings in moov/udta/stem; what Suhina reads and how it maps the mastering to its compressor and limiter
 read_when: stems, stem file, .stem.mp4, .stem.m4a, Traktor stems, NI stems, master track, mastering_dsp, MP4 boxes, edit list, AAC priming, multitrack audio file, DJ, remix, folded group
 type: spec
 status: draft
-last_verified: 2026-10-19
+last_verified: 2026-11-23
 covers:
   - crates/media/src/stems.rs
   - crates/session/src/files.rs
@@ -47,7 +47,7 @@ settings.
 
 A box `moov/udta/stem` holds a JSON document, as plain UTF-8 text or as base64 of it (some tools
 write it so). It may end in NUL bytes. A missing or unreadable document is not an error: the
-stems are then called "Stem 1", "Stem 2" and so on, without colours or mastering.
+stems are then called "Stem 1", "Stem 2" and so on, without colors or mastering.
 
 ```json
 {
@@ -63,7 +63,7 @@ stems are then called "Stem 1", "Stem 2" and so on, without colours or mastering
 ```
 
 - `stems[n]` describes audio track `n + 1` (the master has no entry). Names lose control
-  characters and are cut to 64 characters; an empty name falls back to "Stem n". A colour that is
+  characters and are cut to 64 characters; an empty name falls back to "Stem n". A color that is
   not `#RRGGBB` is ignored.
 - Units, as the stemgen defaults show them: `threshold` and `ceiling` in dB, `attack` and
   `release` in seconds, `hp_cutoff` in Hz (a high-pass on the compressor's level detector),

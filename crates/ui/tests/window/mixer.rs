@@ -186,7 +186,7 @@ fn a_pan_drag_is_heard_while_dragging_and_is_one_undo_step() {
     let dropped = pan(&harness);
     assert!((dropped - heard[2].0).abs() < 1e-9, "{dropped} {heard:?}");
 
-    // The whole drag is one step: one undo goes back to the centre, and there is nothing older.
+    // The whole drag is one step: one undo goes back to the center, and there is nothing older.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run_steps(2);
     assert_eq!(pan(&harness), 0.0);
@@ -194,7 +194,7 @@ fn a_pan_drag_is_heard_while_dragging_and_is_one_undo_step() {
     let (left, right) = sides(&mut renderer);
     assert!((left / right - 1.0).abs() < 0.01, "{left} {right}");
 
-    // Redo brings the drag's end back; a double-click then centres the knob as a step of its own.
+    // Redo brings the drag's end back; a double-click then centers the knob as a step of its own.
     harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z);
     harness.run_steps(2);
     assert_eq!(pan(&harness), dropped);
@@ -799,15 +799,15 @@ fn a_group_s_menu_recolors_the_tracks_inside_it() {
         h.state().session().and_then(|s| s.project().tracks.iter().find(|t| t.name == name).cloned())
     };
     let group = track(&harness, "Drums").and_then(|t| t.parent).unwrap();
-    let (name, colour) =
+    let (name, color) =
         harness.state().session().and_then(|s| s.project().track(group).map(|t| (t.name.clone(), t.color))).unwrap();
-    assert_ne!(track(&harness, "Drums").and_then(|t| t.color), colour);
+    assert_ne!(track(&harness, "Drums").and_then(|t| t.color), color);
     harness.get_by_label(&format!("Track {name}")).click_secondary();
     harness.run();
     harness.get_by_label("Recolor group").click();
     harness.run();
     for inside in ["Drums", "Bass"] {
-        assert_eq!(track(&harness, inside).and_then(|t| t.color), colour, "{inside}");
+        assert_eq!(track(&harness, inside).and_then(|t| t.color), color, "{inside}");
     }
 }
 

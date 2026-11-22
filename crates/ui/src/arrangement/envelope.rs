@@ -252,18 +252,79 @@ impl Mapping {
         }
         out
     }
+
+    /// Where point `index` of `points` is drawn in a clip `length` beats long: as [`Mapping::places`],
+    /// except that the left point of a step at the loop's start (another point at the same beat
+    /// after it) is left off the passes that come round to the loop's start from its end. Those
+    /// passes start at the step's right point, and the left one, drawn over the line at every
+    /// wrap, stood off it as a stray dot; it stays where the clip reaches the loop from before it.
+    pub fn point_places(&self, points: &[GainPoint], index: usize, length: f64) -> Vec<f64> {
+        let Some(point) = points.get(index) else { return Vec::new() };
+        let mut out = self.places(point.beat, length);
+        let step_left = points.get(index + 1).is_some_and(|next| (next.beat - point.beat).abs() < 1e-9);
+        if let (true, Some((start, end))) = (step_left, self.loop_range)
+            && (point.beat - start).abs() < 1e-9
+        {
+            // The first place, reached from the start marker, is kept only when the clip plays up
+            // to the loop's start from before it; the passes' places go.
+            let from_before = self.offset < start - 1e-9;
+            let first_pass = (end - self.offset) / self.rate;
+            out.retain(|at| from_before && *at < first_pass - 1e-9);
+        }
+        out
+    }
 }
 
 /// The draft of a point being dragged: the clip, the point's index and its envelope as it is now.
 #[derive(Debug, Clone, PartialEq)]
 struct Draft {
     clip: ClipId,
+    /// Where the drag started ([`Place::site`]): only that drawing of the envelope ends it, so
+    /// the release is judged on its screen. With the clip's envelope in the Arrangement and the
+    /// audio editor at once, whichever drew first after the release took it and checked the merge
+    /// with its own geometry, where dots a few points apart in the other could be far apart.
+    site: &'static str,
     index: usize,
     points: Vec<GainPoint>,
+    /// The pass its site last drew it in (`Context::cumulative_pass_nr`). A drawing that stops
+    /// (the audio editor closed or switched away, the clip scrolled out of the Arrangement)
+    /// ends the drag where its frames left it: a pass later the draft is gone for every drawing,
+    /// so none shows, sends or sets its points ([`live`]).
+    seen: u64,
 }
 
 fn draft_key() -> Id {
     Id::unique("clip-envelope-draft")
+}
+
+/// Whether a draft its site drew in pass `seen` still stands in pass `now`: drawn in this pass or
+/// the one before, as a drawing that comes first in a pass reads it before its own site draws.
+fn live(seen: u64, now: u64) -> bool {
+    seen.saturating_add(1) >= now
+}
+
+/// Ends `clip`'s drag when the drawing it started in stopped drawing it: the draft, and the curve
+/// or lift it carried, go. What its frames sent stays, one undo step; what was not sent yet goes
+/// with it, as the merge on release is judged on the screen that is gone. A later drag of the line
+/// starts clean, not as the lift of a stale one.
+fn end_stale_draft(ctx: &egui::Context, clip: ClipId) {
+    let now = ctx.cumulative_pass_nr();
+    let stale = ctx.data(|d| d.get_temp::<Draft>(draft_key())).is_some_and(|d| d.clip == clip && !live(d.seen, now));
+    if stale {
+        ctx.data_mut(|d| {
+            d.remove::<Draft>(draft_key());
+            d.remove::<CurveEdit>(curve_key());
+            d.remove::<Lift>(lift_key());
+        });
+    }
+}
+
+/// Marks `clip`'s draft as drawn by `site` in this pass, when the drag started there.
+fn keep_draft(ctx: &egui::Context, clip: ClipId, site: &'static str) {
+    if let Some(mut kept) = draft(ctx, clip).filter(|d| d.site == site) {
+        kept.seen = ctx.cumulative_pass_nr();
+        ctx.data_mut(|d| d.insert_temp(draft_key(), kept));
+    }
 }
 
 /// A part of the envelope being moved up or down as one (Shift and a drag of the line: all of it;
@@ -320,8 +381,10 @@ fn curve_key() -> Id {
     Id::unique("clip-envelope-curve")
 }
 
+/// `clip`'s draft while its site still draws it ([`live`]).
 fn draft(ctx: &egui::Context, clip: ClipId) -> Option<Draft> {
-    ctx.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip)
+    let now = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip && live(d.seen, now))
 }
 
 /// `clip`'s envelope as it is drawn now: a point being dragged where it is, else `committed`.
@@ -418,9 +481,13 @@ pub struct Place {
     pub rect: Rect,
     pub origin: f32,
     pub beat_width: f32,
-    /// The ink that reads on the clip's colour, as its name has: white on most, black on a
+    /// The ink that reads on the clip's color, as its name has: white on most, black on a
     /// light one. The line and the points are drawn in it.
     pub ink: egui::Color32,
+    /// Where the envelope is drawn (the Arrangement, the audio editor), told apart in its widgets'
+    /// ids: one clip's envelope edited in both at once drew the same widgets twice. Its points
+    /// and the edit under way are the clip's, shared by both.
+    pub site: &'static str,
 }
 
 /// Draws `view`'s envelope over the clip at `place`. While `edit` is on, the dB grid shows, the
@@ -440,12 +507,13 @@ pub fn show(
     snap: &dyn Fn(f64) -> f64,
     actions: &mut Vec<Action>,
 ) {
-    let Place { rect, origin, beat_width, ink: line_ink } = place;
+    let Place { rect, origin, beat_width, ink: line_ink, site } = place;
     let length = f64::from((rect.right() - origin) / beat_width.max(1e-3));
     if rect.width() <= 1.0 || rect.height() <= 4.0 || length <= 0.0 {
         return;
     }
     let settings = settings(ui.ctx());
+    end_stale_draft(ui.ctx(), clip);
     let points = points_now(ui.ctx(), clip, &view.envelope);
     if !edit && (!settings.show || points.is_empty()) {
         return;
@@ -464,7 +532,7 @@ pub fn show(
     // The gain envelope's points and their line while it is edited: `clip-envelope`'s `color`.
     let look = crate::kit::element::CLIP_ENVELOPE.look();
     let ink = look.color();
-    // The edited line and the points at rest take the element's colour where a rule gives one.
+    // The edited line and the points at rest take the element's color where a rule gives one.
     let line_ink = if edit { look.own_color_or(line_ink) } else { line_ink };
     // Over a halo of the other of black and white, so they read on the waveform too.
     let [r, g, b, _] = line_ink.to_srgba_unmultiplied();
@@ -491,11 +559,15 @@ pub fn show(
     if !edit {
         return;
     }
+    // This drawing goes on: a drag started here stands another pass.
+    keep_draft(ui.ctx(), clip, site);
+    // The pass a draft made here is drawn in; read before `data_mut`, which holds the context.
+    let drawn_in = ui.ctx().cumulative_pass_nr();
 
     // The body only names the envelope; clicks and drags away from the line go to the clip as
     // ever (select, move). On the line: a click adds a point on it, a drag adds one and moves it;
     // with Alt a drag bends the segment under the pointer, as on an automation lane.
-    ui.interact(visible, Id::unique(("clip-envelope-area", clip.0)), Sense::hover())
+    ui.interact(visible, Id::unique(("clip-envelope-area", site, clip.0)), Sense::hover())
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Gain envelope of {name}")));
     let any_down = ui.input(|i| i.pointer.any_down());
     if !any_down {
@@ -516,7 +588,7 @@ pub fn show(
         })
     };
     let body = hit.map(|hit| {
-        ui.interact(hit, Id::unique(("clip-envelope-body", clip.0)), Sense::click_and_drag())
+        ui.interact(hit, Id::unique(("clip-envelope-body", site, clip.0)), Sense::click_and_drag())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
     });
     if body.as_ref().is_some_and(egui::Response::is_pointer_button_down_on) {
@@ -530,7 +602,8 @@ pub fn show(
     };
     // A point already there, within a dot's width on screen: the line takes no second one on it.
     let taken = |x: f32| {
-        points.iter().any(|p| mapping.places(p.beat, length).into_iter().any(|at| (x_of(at) - x).abs() < POINT))
+        (0..points.len())
+            .any(|i| mapping.point_places(&points, i, length).into_iter().any(|at| (x_of(at) - x).abs() < POINT))
     };
     if let Some(body) = &body
         && body.clicked()
@@ -559,7 +632,7 @@ pub fn show(
         if alt && !mods.shift {
             let segment = points.partition_point(|p| p.beat <= beat).checked_sub(1).filter(|i| i + 1 < points.len());
             if let Some(index) = segment {
-                start_curve(ui, clip, index, &points);
+                start_curve(ui, clip, site, index, &points);
             }
         } else if mods.shift && !alt {
             // Shift moves the whole line up or down, Ctrl+Shift the segment under the pointer; a
@@ -569,11 +642,11 @@ pub fn show(
             let start = envelope_db_at(&from, beat);
             ui.data_mut(|d| {
                 d.insert_temp(lift_key(), Lift { clip, from: from.clone(), moved, start });
-                d.insert_temp(draft_key(), Draft { clip, index: usize::MAX, points: from });
+                d.insert_temp(draft_key(), Draft { clip, site, index: usize::MAX, points: from, seen: drawn_in });
             });
         } else if !alt && !taken(pointer.x) {
             let (more, index) = add_at(pointer);
-            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: more }));
+            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: more, seen: drawn_in }));
         }
     }
     let mut dragging = None;
@@ -587,11 +660,13 @@ pub fn show(
             let loose = alt || free_move(ui.ctx()) || settings.step <= 0.0;
             let delta = if loose { (raw * 10.0).round() / 10.0 } else { (raw / settings.step).round() * settings.step };
             let moved = lifted(&lift.from, lift.moved.as_deref(), delta, settings.ceiling);
-            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index: usize::MAX, points: moved }));
+            ui.data_mut(|d| {
+                d.insert_temp(draft_key(), Draft { clip, site, index: usize::MAX, points: moved, seen: drawn_in })
+            });
             egui::Tooltip::always_open(
                 ui.ctx().clone(),
                 ui.layer_id(),
-                Id::unique(("clip-envelope-value", clip.0)),
+                Id::unique(("clip-envelope-value", site, clip.0)),
                 egui::PopupAnchor::Pointer,
             )
             .gap(12.0)
@@ -622,7 +697,7 @@ pub fn show(
             if hit.width() <= 0.0 || hit.height() <= 0.0 {
                 continue;
             }
-            let id = Id::unique(("clip-envelope-curve", clip.0, index, pass));
+            let id = Id::unique(("clip-envelope-curve", site, clip.0, index, pass));
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
             response.widget_info(|| {
@@ -641,7 +716,7 @@ pub fn show(
                 return;
             }
             if response.drag_started_by(egui::PointerButton::Primary) {
-                start_curve(ui, clip, index, &points);
+                start_curve(ui, clip, site, index, &points);
             }
             if response.dragged_by(egui::PointerButton::Primary) {
                 drag_curve(ui, clip, response.drag_delta().y);
@@ -656,13 +731,13 @@ pub fn show(
     let mut removed = None;
     let mut zeroed = None;
     for (index, point) in points.iter().enumerate() {
-        for (pass, at) in mapping.places(point.beat, length).into_iter().enumerate() {
+        for (pass, at) in mapping.point_places(&points, index, length).into_iter().enumerate() {
             let center = Pos2::new(x_of(at), y_of(rect, point.db, top));
             let hit = Rect::from_center_size(center, Vec2::splat(POINT_HIT));
             if !visible.intersects(hit) {
                 continue;
             }
-            let id = Id::unique(("clip-envelope-point", clip.0, index, pass));
+            let id = Id::unique(("clip-envelope-point", site, clip.0, index, pass));
             let response = ui.interact(hit, id, Sense::click_and_drag());
             let response = if response.dragged() {
                 response.on_hover_cursor(egui::CursorIcon::Grabbing)
@@ -690,7 +765,9 @@ pub fn show(
                 continue;
             }
             if response.drag_started_by(egui::PointerButton::Primary) {
-                ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: points.clone() }));
+                ui.data_mut(|d| {
+                    d.insert_temp(draft_key(), Draft { clip, site, index, points: points.clone(), seen: drawn_in })
+                });
             }
             // The point the drag holds, by where it is now: passing another changes its index.
             if response.dragged_by(egui::PointerButton::Primary) {
@@ -709,12 +786,12 @@ pub fn show(
         let beat = if fine { before.beat + (target - before.beat) * 0.1 } else { target };
         let db = dragged_db(ui, rect, pointer, before.db, top);
         let index = passed(&mut moved, index, beat.max(0.0), db);
-        ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, index, points: moved }));
+        ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: moved, seen: drawn_in }));
         // Its value beside the pointer while the button is down.
         egui::Tooltip::always_open(
             ui.ctx().clone(),
             ui.layer_id(),
-            Id::unique(("clip-envelope-value", clip.0)),
+            Id::unique(("clip-envelope-value", site, clip.0)),
             egui::PopupAnchor::Pointer,
         )
         .gap(12.0)
@@ -740,7 +817,7 @@ pub fn show(
     }
     // Once the button is up, what the point or the curve moved to is set, and the draft goes:
     // also for a drag whose point stopped being drawn (its pass moved past the clip's end).
-    if let Some(done) = draft(ui.ctx(), clip)
+    if let Some(done) = draft(ui.ctx(), clip).filter(|d| d.site == site)
         && !ui.input(|i| i.pointer.any_down())
     {
         ui.data_mut(|d| {
@@ -749,20 +826,16 @@ pub fn show(
             d.remove::<Lift>(lift_key());
         });
         // A point let go within a dot's width of another's dot, on screen (on any pass of a loop),
-        // is one with it.
+        // is one with it: the dots as they are drawn (`Mapping::point_places`), so a dot left off
+        // (the left point of a step at the loop's start, on the passes that wrap) takes nothing.
         let mut kept = done.points;
-        let dots = |p: &GainPoint| -> Vec<Pos2> {
+        let dots = |points: &[GainPoint], i: usize| -> Vec<Pos2> {
+            let Some(p) = points.get(i) else { return Vec::new() };
             let y = y_of(rect, p.db, top);
-            mapping.places(p.beat, length).into_iter().map(|at| Pos2::new(x_of(at), y)).collect()
+            mapping.point_places(points, i, length).into_iter().map(|at| Pos2::new(x_of(at), y)).collect()
         };
-        if let Some(moved) = kept.get(done.index) {
-            let here = dots(moved);
-            let on_another = kept.iter().enumerate().filter(|(i, _)| *i != done.index).any(|(_, p)| {
-                dots(p).iter().any(|q| here.iter().any(|h| (q.x - h.x).abs() < POINT && (q.y - h.y).abs() < POINT))
-            });
-            if on_another {
-                kept.remove(done.index);
-            }
+        if lands_on_another(&kept, done.index, dots) {
+            kept.remove(done.index);
         }
         if kept != view.envelope {
             actions.push(dragged(clip, &kept));
@@ -783,6 +856,18 @@ pub fn show(
         ui.data_mut(|d| d.remove::<Draft>(draft_key()));
         actions.push(set(clip, &reset));
     }
+}
+
+/// Whether point `index` of `points`, drawn at `dots(points, index)`, lies within a dot's width of
+/// a dot of another point (on any pass of a loop), on screen: let go there it is one with it.
+fn lands_on_another(points: &[GainPoint], index: usize, dots: impl Fn(&[GainPoint], usize) -> Vec<Pos2>) -> bool {
+    if index >= points.len() {
+        return false;
+    }
+    let here = dots(points, index);
+    (0..points.len()).filter(|i| *i != index).any(|i| {
+        dots(points, i).iter().any(|q| here.iter().any(|h| (q.x - h.x).abs() < POINT && (q.y - h.y).abs() < POINT))
+    })
 }
 
 /// Moves point `index` of `points` to `beat` and `db`, past the points it is dragged over, as an
@@ -812,16 +897,17 @@ fn curve_edit(ctx: &egui::Context, clip: ClipId) -> Option<CurveEdit> {
 }
 
 /// Starts a drag of the curve of the segment from point `index`, the envelope `points` as it is.
-fn start_curve(ui: &Ui, clip: ClipId, index: usize, points: &[GainPoint]) {
+fn start_curve(ui: &Ui, clip: ClipId, site: &'static str, index: usize, points: &[GainPoint]) {
     let curve = points.get(index).map_or(Curve::STRAIGHT, |p| p.curve);
     let paths = CurveDrag::new(&curve);
     let mut drafted = points.to_vec();
     if let Some(p) = drafted.get_mut(index) {
         p.curve = paths.dragged(0);
     }
+    let drawn_in = ui.ctx().cumulative_pass_nr();
     ui.data_mut(|d| {
         d.insert_temp(curve_key(), CurveEdit { clip, index, paths, moved: 0.0 });
-        d.insert_temp(draft_key(), Draft { clip, index, points: drafted });
+        d.insert_temp(draft_key(), Draft { clip, site, index, points: drafted, seen: drawn_in });
     });
 }
 
@@ -1027,104 +1113,5 @@ pub fn free_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, f
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn zero_db_is_the_middle_and_the_first_db_of_a_cut_are_wide() {
-        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0));
-        assert_eq!(y_of(rect, 0.0, 6.0), 50.0);
-        assert_eq!(y_of(rect, 6.0, 6.0), 0.0);
-        assert_eq!(y_of(rect, 3.0, 6.0), 25.0, "even in dB above the middle");
-        assert_eq!(y_of(rect, -70.0, 6.0), 100.0);
-        // Below it by gain: a 3 dB cut is near a third of the way down, 6 dB half of it.
-        assert!((y_of(rect, -3.0, 6.0) - 64.6).abs() < 0.1, "{}", y_of(rect, -3.0, 6.0));
-        assert!((y_of(rect, -6.0, 6.0) - 75.0).abs() < 0.1, "{}", y_of(rect, -6.0, 6.0));
-        assert!(y_of(rect, -1.0, 6.0) - 50.0 > 5.0, "a dB is over five points of a 100-point clip");
-        for db in [-0.5, -1.0, -6.0, -24.0, -60.0, 2.5] {
-            assert!((db_at(rect, y_of(rect, db, 6.0), 6.0) - db).abs() < 1e-3, "{db}");
-        }
-        assert_eq!(db_at(rect, -10.0, 6.0), 6.0, "kept below the top");
-        assert_eq!(db_at(rect, 120.0, 6.0), -70.0, "and above the floor");
-    }
-
-    #[test]
-    fn the_scale_reaches_a_point_above_the_ceiling() {
-        let points = [GainPoint::new(0.0, 12.0)];
-        assert_eq!(top(6.0, &points), 12.0);
-        assert_eq!(top(6.0, &[]), 6.0);
-        assert_eq!(top(24.0, &points), 24.0);
-    }
-
-    #[test]
-    fn points_snap_to_the_grid_unless_free() {
-        assert_eq!(snapped(-3.4, 1.0, false), -3.0);
-        assert_eq!(snapped(-3.6, 0.5, false), -3.5);
-        assert_eq!(snapped(-3.44, 1.0, true), -3.4);
-        assert_eq!(db_text(-3.0), "\u{2212}3 dB");
-        assert_eq!(db_text(1.5), "+1.5 dB");
-        assert_eq!(db_text(0.04), "0 dB");
-    }
-
-    #[test]
-    fn a_point_added_on_a_bent_segment_keeps_its_shape() {
-        let first = GainPoint { curve: Curve::bend(0.8), ..GainPoint::new(0.0, 0.0) };
-        let points = [first, GainPoint::new(4.0, -12.0)];
-        let (more, at) = with_point(&points, 1.0, envelope_db_at(&points, 1.0));
-        assert_eq!(at, 1);
-        for beat in [0.5, 1.5, 3.0] {
-            assert!((envelope_db_at(&more, beat) - envelope_db_at(&points, beat)).abs() < 1e-6, "{beat}");
-        }
-        let action = set(ClipId(1), &more);
-        assert_eq!(action.params["curves"].as_array().map(Vec::len), Some(3));
-        assert!(set(ClipId(1), &[GainPoint::new(0.0, 0.0)]).params.get("curves").is_none(), "straight: none sent");
-    }
-
-    #[test]
-    fn a_segment_moves_up_and_down_as_one_and_the_whole_line_with_it() {
-        let points = [GainPoint::new(0.0, 0.0), GainPoint::new(2.0, -3.0), GainPoint::new(4.0, 2.0)];
-        assert_eq!(segment_at(&points, 1.0), vec![0, 1]);
-        assert_eq!(segment_at(&points, 5.0), vec![2], "after the last point: that point alone");
-        assert_eq!(segment_at(&[], 1.0), Vec::<usize>::new());
-        let db = |p: Vec<GainPoint>| p.iter().map(|p| p.db).collect::<Vec<_>>();
-        // Ctrl+Shift: the segment's two points; Shift: all of them.
-        assert_eq!(db(lifted(&points, Some(&[0, 1]), -2.0, 6.0)), vec![-2.0, -5.0, 2.0]);
-        assert_eq!(db(lifted(&points, None, 3.0, 6.0)), vec![3.0, 0.0, 5.0]);
-        // Kept below the ceiling and above −70 dB.
-        assert_eq!(db(lifted(&points, None, 5.0, 6.0)), vec![5.0, 2.0, 6.0]);
-        assert_eq!(db(lifted(&points, None, -80.0, 6.0)), vec![-70.0, -70.0, -70.0]);
-    }
-
-    #[test]
-    fn a_dragged_point_passes_the_points_it_is_dragged_over() {
-        let at = |beats: &[f64]| beats.iter().map(|&b| GainPoint::new(b, 0.0)).collect::<Vec<_>>();
-        let beats = |points: &[GainPoint]| points.iter().map(|p| p.beat).collect::<Vec<_>>();
-        // The last point dragged left past the one before it.
-        let mut points = at(&[0.0, 2.0, 4.0]);
-        let index = passed(&mut points, 2, 1.0, -3.0);
-        assert_eq!((index, beats(&points)), (1, vec![0.0, 1.0, 2.0]));
-        assert_eq!(points[1].db, -3.0);
-        // The first dragged right past both.
-        let mut points = at(&[0.0, 2.0, 4.0]);
-        let index = passed(&mut points, 0, 5.0, 0.0);
-        assert_eq!((index, beats(&points)), (2, vec![2.0, 4.0, 5.0]));
-        // Onto another's beat it stays on the side it came from.
-        let mut points = at(&[0.0, 2.0, 4.0]);
-        assert_eq!(passed(&mut points, 2, 2.0, 0.0), 2, "from the right");
-        let mut points = at(&[0.0, 2.0, 4.0]);
-        assert_eq!(passed(&mut points, 0, 2.0, 0.0), 0, "from the left");
-    }
-
-    #[test]
-    fn a_point_is_placed_once_or_on_every_pass_of_the_loop() {
-        let once = Mapping { offset: 1.0, loop_range: None, rate: 1.0 };
-        assert_eq!(once.places(3.0, 4.0), vec![2.0]);
-        assert!(once.places(0.5, 4.0).is_empty(), "before the start marker");
-        let looped = Mapping { offset: 0.0, loop_range: Some((0.0, 2.0)), rate: 1.0 };
-        assert_eq!(looped.places(0.5, 6.0), vec![0.5, 2.5, 4.5]);
-        assert_eq!(looped.content(4.5), 0.5);
-        // An unwarped clip an octave up plays its content twice as fast.
-        let up = Mapping { offset: 0.0, loop_range: None, rate: 2.0 };
-        assert_eq!(up.places(4.0, 4.0), vec![2.0]);
-    }
-}
+#[path = "envelope_tests.rs"]
+mod tests;

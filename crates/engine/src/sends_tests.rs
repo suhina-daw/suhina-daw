@@ -119,7 +119,7 @@ fn a_post_fader_send_follows_the_track_volume_and_a_pre_fader_one_does_not() {
 }
 
 #[test]
-fn a_post_fader_send_follows_the_pan_and_a_pre_fader_one_stays_centred() {
+fn a_post_fader_send_follows_the_pan_and_a_pre_fader_one_stays_centered() {
     let right = |out: &[f32]| out.as_chunks::<2>().0.iter().fold(0.0f32, |m, [_, r]| m.max(r.abs()));
     let mut post = sending(1.0, false, vec![]);
     post.channels[0].pan = -1.0;

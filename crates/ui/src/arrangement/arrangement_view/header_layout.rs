@@ -17,7 +17,7 @@ pub(super) struct Header {
     /// Groups and folders reserve a full-height disclosure gutter facing the timeline.
     pub(super) container: bool,
     pub(super) headers_left: bool,
-    /// How deep in groups the track is: the band of its own colour gets narrower.
+    /// How deep in groups the track is: the band of its own color gets narrower.
     pub(super) depth: usize,
     /// How many groups it is in, whose bands run down its indent.
     pub(super) ancestors: usize,
@@ -36,7 +36,7 @@ pub(super) struct Parts {
     /// The groups' bands down the indent (`group#header-indent`), and the scale they are drawn at.
     pub(super) indent: Option<Rect>,
     pub(super) indent_scale: f32,
-    /// The band of the track's own colour (`track-colour`).
+    /// The band of the track's own color (`track-color`).
     pub(super) band: Option<Rect>,
     pub(super) meter: Option<Rect>,
     pub(super) fold: Option<Rect>,
@@ -144,7 +144,7 @@ impl Shape {
 /// The width of the band of a track `depth` groups deep, and of a group's band down the indent.
 pub(super) fn nesting_band_width(depth: usize) -> f32 {
     match depth {
-        0 => COLOUR_BAND,
+        0 => COLOR_BAND,
         1 => 4.0,
         2 => 3.0,
         _ => 2.0,
@@ -179,7 +179,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     };
     // The groups' bands keep the controls their room in a narrow column.
     let indent: f32 = (0..header.ancestors).map(|level| nesting_band_width(level) + 2.0).sum();
-    let indent_room = (inside.width() - COLOUR_BAND - 3.0 * PAD - meter::WIDTH - 114.0).max(0.0);
+    let indent_room = (inside.width() - COLOR_BAND - 3.0 * PAD - meter::WIDTH - 114.0).max(0.0);
     let indent_scale = if indent > 0.0 { (indent_room / indent).min(1.0) } else { 1.0 };
     let band = nesting_band_width(header.depth);
     let gutter = if header.container { FOLD + 2.0 } else { 0.0 };
@@ -258,7 +258,7 @@ pub(super) fn layout(el: Option<&crate::kit::element::Entered>, rect: Rect, head
     if header.ancestors > 0 {
         tree.add(Item::part("group", "header-indent").width(indent * indent_scale), Slot::Indent);
     }
-    tree.add(Item::part("track-colour", "arrangement-color").width(band), Slot::Band);
+    tree.add(Item::part("track-color", "arrangement-color").width(band), Slot::Band);
     let disclosure =
         header.container.then(|| tree.add(Item::part("group", "header-disclosure").width(FOLD), Slot::Disclosure));
     let body = tree.add(Item::part("group", "header-body"), Slot::None);

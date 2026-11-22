@@ -60,7 +60,7 @@ fn a_declaration_is_accepted_as_a_sheet_accepts_it() {
     assert_eq!(top_level_words(" a  calc(1px + (2px)) b "), ["a", "calc(1px + (2px))", "b"]);
     assert!(!accepts("border-width", "1px 2px 3px 4px 5px"));
     assert!(!accepts("border-width", "red"));
-    assert!(!accepts("colour", "#fff"));
+    assert!(!accepts("tint", "#fff"));
     assert!(accepts("image", "url(a.svg)"));
     assert!(accepts("image", "none"));
     assert!(!accepts("image", "red"));
@@ -74,7 +74,7 @@ fn group_classes_are_declared_with_a_label_and_checked_for_a_rule() {
              @group-class typo { label: 'Typo'; } \
              @group-class lcd { label: \"LCD\"; } \
              @group-class 9lives { label: \"Bad\"; } \
-             @group-class bad { colour: red; } \
+             @group-class bad { tint: red; } \
              toolbar group.lcd { background-color: #1a2a1a; } \
              :is(group.pill, button) { radius: 9px; } \
              group.helper { radius: 2px; }",
@@ -126,7 +126,7 @@ fn a_removed_placement_names_what_took_its_place() {
     let sheet = Sheet::parse(
         ".control-play { direction: vertical; anchor-left: 4px; left: 2px; } \
              button { top: 1px; RIGHT: 0; bottom: 0; anchor-bottom: 0; } arrangement { compact-below: 40px; } \
-             mixer-pan { --suhina-direction: horizontal; } knob { colour: red; }",
+             mixer-pan { --suhina-direction: horizontal; } knob { tint: red; }",
     )
     .unwrap();
     let messages: Vec<_> = sheet.notices.iter().map(|notice| notice.message.as_str()).collect();
@@ -146,6 +146,6 @@ fn a_removed_placement_names_what_took_its_place() {
         assert!(message.starts_with(start) && message.contains(names), "{message}");
     }
     assert!(messages[2].contains("#mixer-volume"), "{}", messages[2]);
-    assert_eq!(messages[9], "Unknown native property colour");
+    assert_eq!(messages[9], "Unknown native property tint");
     assert!(sheet.rules.iter().all(|rule| rule.declarations.is_empty()), "the engine keeps none of them");
 }

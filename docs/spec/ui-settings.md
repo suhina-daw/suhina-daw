@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-11-20
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/settings_rows.rs
@@ -16,8 +16,9 @@ covers:
 
 Options › Settings (Ctrl+,) opens the Settings window over the main window. The window's status
 bar stays visible under it, undimmed, so an error or a confirmation from the page is read while
-it is open; moved into its own window, Settings has a status bar of its own at the bottom. How it
-is drawn (sizes, colours, the controls) is in
+it is open; moved into its own window, Settings has no status bar, and what it reports shows in
+the main window's. How it
+is drawn (sizes, colors, the controls) is in
 [components](../design/components.md) › Settings; this spec says what is on each page, how the
 pages scroll and how a setting finds its place.
 
@@ -33,7 +34,7 @@ clicks remain blocked. Only holding or dragging a value control starts that prev
 value or chooses a theme or variant keeps the dimming on every frame, and background and
 navigation drags must not toggle the dimmer.
 Text inputs and dropdowns use transparent fills and only a
-theme-coloured underline, stronger on hover and accented on focus. Navigation rows
+theme-colored underline, stronger on hover and accented on focus. Navigation rows
 have no opaque background: only selected/hovered rows add a translucent tint.
 
 ### Choosing an audio driver and device
@@ -86,27 +87,28 @@ what is inside it).
 | Arrangement | Clip editing | Let audio clips overlap, Let MIDI clips overlap, Double-click makes a clip, Clip menu name field, Clip drag handle, Paste replaces clip |
 | Arrangement | Take lanes | Take crossfade (10 ms, 20 ms, 40 ms, Custom; 10 ms by default), Custom take crossfade (shown with Custom, 1 to 500 ms; [recording](recording.md#take-lanes)) |
 | Arrangement | Time and play | Select time with, Start marker follows selection, Play from, Playhead after Stop |
-| Arrangement | View | Grid inside clips, Waveform size, Waveform and note colour (Theme, Auto, Light, Dark, Custom), Custom waveform colour (shown with Custom), Audio clip colour strength |
-| Arrangement | Tracks | New track colour, New clip colour, Track header colour strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Alt+wheel resizes |
+| Arrangement | View | Grid inside clips, Waveform size, Waveform and note color (Theme, Auto, Light, Dark, Custom), Custom waveform color (shown with Custom), Audio clip color strength |
+| Arrangement | Tracks | New track color, New clip color, Track header color strength, Track header side (Theme, Left, Right), Return tracks, Returns in new projects (A and B, or None, #898), Alt+wheel resizes |
 | Arrangement | Groups | Empty group processing (Ask, the default, or Remove; desktop consent for removing a dissolving group's processing, never inherited by CLI/MCP) |
 | Arrangement | Tools | Toolbar (On or Off, Off by default, #991), Default grid |
-| Arrangement | Automation | Click anywhere adds (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere), Group plug-in lanes (On or Off, On by default: a lane mounted from a plug-in goes into that plug-in's group, #1322), Top lane shows, Automation colour (Track colour, the default, or Fixed, #1518), Automation line colour and Automation point colour (shown with Fixed: the theme's `automation-line[kind="fixed"]` and `automation-point[kind="fixed"]` colours until one is picked, **Theme** beside the picker gives the theme's back) |
+| Arrangement | Automation | Click anywhere adds (On or Off, Off by default: a click adds a point only on or near the line, a double-click anywhere), Group plug-in lanes (On or Off, On by default: a lane mounted from a plug-in goes into that plug-in's group, #1322), Top lane shows, Automation color (Track color, the default, or Fixed, #1518), Automation line color and Automation point color (shown with Fixed: the theme's `automation-line[kind="fixed"]` and `automation-point[kind="fixed"]` colors until one is picked, **Theme** beside the picker gives the theme's back) |
 | Arrangement | Gain envelope | Show gain envelope (On by default), Gain envelope ceiling (+3, +6, +12, +24 dB; +6 by default), Gain envelope grid (0.5, 1, 2, 3, 6 dB; 1 dB by default), Envelope points move (On the grid by default, or Freely; [clip panel](clip-panel.md#gain-envelope)) |
 | Arrangement | Track sizes | Default track size, Default return size, Tiny height, Compact height, Small height, Medium height, Large height |
 | Arrangement | Advanced | Edge drag stretches audio, Rename all selected clips, Exact track heights, Copy names |
 | Launcher and mixer | Launching | Select launched clip |
 | Launcher and mixer | Mixer | Mixer control style |
+| Clip editor | Audio editor | Audio editor waveform colour (Track colour, the default; Theme), Drag markers by line (off by default) |
 | Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names, Note names, Default scale |
 | Clip editor | Advanced | Covered notes |
 | Browser | Browser | Browser side, Recent item kinds layout, Dropping on a folder |
 | Browser | Previews | Preview selected file, Preview volume |
 | Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |
-| Browser | Tags | Colour tag limit |
-| Keys | Mouse and key behaviour | The clip editor's workflow settings (click, right click, double-click, duplicate key); kept in `keymap.json` |
+| Browser | Tags | Color tag limit |
+| Keys | Mouse and key behavior | The clip editor's workflow settings (click, right click, double-click, duplicate key); kept in `keymap.json` |
 | Keys | Shortcuts | The preset, every action's keys, Reset all |
 | Appearance | Window | Window zoom, Animations, Hide pointer while dragging (On by default; a theme's `drag-pointer` wins for its controls), Menu bar in window |
 | Appearance | Waveforms | Waveform scale |
-| Appearance | Selection | Selection colour (From theme, the default; Clip's own colour; Custom, #1218), Custom selection colour (shown with Custom; a colour and its opacity) |
+| Appearance | Selection | Selection color (From theme, the default; Clip's own color; Custom, #1218), Custom selection color (shown with Custom; a color and its opacity) |
 | Appearance | Background | Background image, Surface opacity, Background blur |
 | Appearance | Application bar | Application name position, Show project name, Show project timing, Project information position |
 | Appearance | Advanced | Graphics renderer, Panel liquid, Track liquid, Clip liquid (experimental) |
@@ -149,7 +151,7 @@ one per variant with the default first, and an outlined **+** box that adds a va
 **+** is greyed, with a tooltip saying why, when the theme declares no quick controls, since a
 variant of it could hold nothing. Above the card are **Edit current variant** and **More**. More
 holds *New theme…*, *Import theme…* (a theme package or zip, chosen in the system's dialog),
-*Export theme…*, *Open the themes folder*, *Back up themes* and, last and in the warning colour,
+*Export theme…*, *Open the themes folder*, *Back up themes* and, last and in the warning color,
 *Delete variant…* (greyed for a variant that cannot be deleted). Theme files are read again
 within a second of changing, so there is no Reload.
 
@@ -157,7 +159,7 @@ within a second of changing, so there is no Reload.
 it shows the themes whose name, id or a variant's name contains the text, ignoring case, and
 *No themes match* when none does; the theme in use always shows. Each card shows its thumbnail
 (`thumbnail.svg`, 16:9, drawn with the values of the theme and the variant shown), or a blank card
-filled with its swatch colour when it has none
+filled with its swatch color when it has none
 ([theme skins](theme-skins.md#theme-folders-themejson-themecss-thumbnail-and-variants)), its name,
 and *Built-in* or *Custom* under it. A theme left in an earlier file format says *Not converted*,
 with the reason when hovered, and a theme whose sheet has notices shows a warning badge that lists
@@ -167,13 +169,13 @@ uses and saves that theme and returns the gallery to the top; clicking a swatch 
 The theme in use is highlighted, on its large card and in its place in the list: a 2 px accent
 border and a tint of the accent over the card, and on its variant's swatch a 2 px accent ring. On
 macOS the window's title bar and the system's menus follow the theme: light for a theme with dark
-text, dark otherwise (worked out from the text colour; a variant has no appearance field). The bar
+text, dark otherwise (worked out from the text color; a variant has no appearance field). The bar
 at the top of the screen itself is drawn by the system and follows the desktop. Holding the
 primary button on the active card keeps the background clear, including stationary frames;
 release restores the blur and dimming immediately.
 
-Each swatch is a `theme-swatch` element in the variant's swatch colour, styled by the theme in use:
-a rounded rectangle the colour fills to its edge, larger on the active theme's card than in the
+Each swatch is a `theme-swatch` element in the variant's swatch color, styled by the theme in use:
+a rounded rectangle the color fills to its edge, larger on the active theme's card than in the
 grid. All of a theme's swatches stay on one line, narrowing together when they do not fit. A card
 without variants keeps the row's room, so all the grid's cards are one height.
 
@@ -196,7 +198,7 @@ variant added to a built-in theme is the user's and can be edited, renamed and d
 **Edit current variant** opens a child view of Themes: *Back to themes*, the theme's and the
 variant's names, and *Edited* while there are unsaved changes. It shows the variant's **Name** and
 the theme's quick controls: the settings it declares with `@property` and a label, under *Theme
-settings* (a theme that declares none says so). The palette colours, liquid strengths and surface
+settings* (a theme that declares none says so). The palette colors, liquid strengths and surface
 gradients are not listed there (#1019); a theme sets them in its `theme.css`. Changes preview at
 once across the whole app, and nothing is written until **Save**. **Save as new variant** writes
 the edits as a new variant (named from the Name field, with *copy* added when it is unchanged) and
@@ -229,7 +231,7 @@ name, since it is the theme's id.
 
 **Delete** asks first, naming what goes: *Delete <variant>? Its file will be moved to the
 Trash* (or *Delete the theme <name>? Its folder will be moved to the Trash*), with **Delete** in
-the warning colour and **Cancel**. The file or folder goes to the system's Trash or Recycle Bin.
+the warning color and **Cancel**. The file or folder goes to the system's Trash or Recycle Bin.
 The theme leaves the list, and a theme or variant in use gives way to the theme's default variant
 or Suhina Studio, only once the move succeeded; a move that fails says why in the status bar and
 leaves the file. *Revert to built-in…* asks the same way and moves the user's copy of the variant
@@ -237,17 +239,17 @@ to the Trash, so the variant the theme ships is used again.
 
 *Add default artwork* copies the default artwork the theme lacks
 ([theme skins](theme-skins.md#the-user-agent-sheet)); on a built-in theme it is greyed. A theme
-sets no track or clip colours: new tracks get Suhina's own MIDI and audio colours, a new clip
-takes its track's colour (Suhina's own MIDI and audio colours only with *New clip colour › By
-clip type*), and the colour picker offers Suhina's eight, in every theme.
+sets no track or clip colors: new tracks get Suhina's own MIDI and audio colors, a new clip
+takes its track's color (Suhina's own MIDI and audio colors only with *New clip color › By
+clip type*), and the color picker offers Suhina's eight, in every theme.
 
-An open colour picker holds the undimmed preview for the entire primary-button press,
-including frames with no pointer motion or colour change. Release restores dimming on
-the same frame. This also applies to the custom waveform colour picker.
+An open color picker holds the undimmed preview for the entire primary-button press,
+including frames with no pointer motion or color change. Release restores dimming on
+the same frame. This also applies to the custom waveform color picker.
 
-Theme files write opaque colours as `#RRGGBB`, translucent colours as `#RRGGBBAA` (alpha last).
+Theme files write opaque colors as `#RRGGBB`, translucent colors as `#RRGGBBAA` (alpha last).
 Premultiplied interpolation preserves transparency, including the liquid body gradient.
-Holding a quick control's colour picker or slider previews the background without dimming.
+Holding a quick control's color picker or slider previews the background without dimming.
 
 Under the gallery, *Themes folder* (`themes_folder`) is where themes are kept and read from. It is
 shown, not typed into: **Browse** chooses a folder and **Reset** goes back to `themes` in Suhina's
@@ -278,7 +280,7 @@ selection, commit/cancel behaviour and accessibility labels remain unchanged.
 Each page scrolls when it is taller than the room under the title, at any window size: with the
 mouse wheel over the page, by dragging its scroll bar on the right, and by moving the keyboard
 focus (Tab) to a control out of view, which scrolls it into view. Opening another page shows it
-from its top. A list that fills the space left on its page (the theme colours, the shortcuts, the
+from its top. A list that fills the space left on its page (the theme colors, the shortcuts, the
 plug-ins found) is at least 160 px tall, so in a short window the page scrolls down to it, and
 the list scrolls on its own.
 
@@ -365,7 +367,7 @@ produce the usual settings warning. Older files leave all three off.
 
 Panel liquid controls how much of the Settings backdrop shows through the theme tint.
 Track liquid controls a curved directional rim on MIDI/audio track headers in both
-views; Clip liquid controls the same coating on clip bodies. A source-coloured body
+views; Clip liquid controls the same coating on clip bodies. A source-colored body
 gradient supplies the broad reflection under the rim. Both effects decrease on smaller
 surfaces. Labels, controls, notes and
 waveforms are drawn afterward. The latter two are surface reflections, not per-clip blur.
@@ -378,7 +380,7 @@ the built-in high-contrast theme keep the material off without erasing saved str
 The feature remains experimental: full playback performance qualification is not complete.
 
 A theme can offer a separate Browser text group (primary, secondary, hint and value) as quick
-controls of its own, to change browser text without recolouring the rest of the interface. Text on coloured
+controls of its own, to change browser text without recoloring the rest of the interface. Text on colored
 tracks, returns and clips uses `text.onColorLight` or `text.onColorDark`, whichever has
 greater contrast with the surface, rather than reusing the window background as text.
 Older theme files inherit these new roles from their previous text/background tokens.
@@ -387,14 +389,14 @@ Older theme files inherit these new roles from their previous text/background to
 
 A theme's `theme.css` sets independent Panel, Track and Clip gradient overlays
 (`window { panel-gradient; track-gradient; clip-gradient; }`): a clockwise direction (0 degrees
-left to right, 90 down) and 2–8 stops, each with position 0–100 and colour. They copy and export
-with the theme, without changing project colours.
+left to right, 90 down) and 2–8 stops, each with position 0–100 and color. They copy and export
+with the theme, without changing project colors.
 Gradients work without GPU liquid; high contrast and reduced effects suppress materials.
 An optional `gradients` object stores `panels`, `tracks`, `clips`; each enabled surface
 has an `angle` integer 0–360 and `stops` array of `position` integer and RGBA `color`.
 Missing surfaces remain unmodified. Invalid surfaces warn and fall back independently.
 
-Track and clip refraction samples a shared current-frame substrate of visible coloured
+Track and clip refraction samples a shared current-frame substrate of visible colored
 surface bodies and their gradients, with a bounded edge lens. Foreground notes, labels,
 waveforms and controls are excluded from this capture and painted sharply afterward.
 Only one content capture is made per frame, independently of the panel backdrop; no
@@ -431,10 +433,10 @@ not other windows. Clearing the image restores the theme's desktop transparency 
 supported GPU host; OpenGL and unsupported compositors keep ordinary opaque rendering.
 The image feature does not capture the desktop or discover its wallpaper.
 
-Colour and gradient editors retain unmultiplied RGB at zero opacity, including after
+Color and gradient editors retain unmultiplied RGB at zero opacity, including after
 saving and loading a theme. Returning opacity to 100 percent restores the original hue.
 
-Suhina Glass is a bundled, editable blue glass preset. Its JSON includes all colour tokens,
+Suhina Glass is a bundled, editable blue glass preset. Its JSON includes all color tokens,
 subtle surface gradients and liquid overrides. Its *Glassiness* (0 to 60) sets how far the desktop
 shows through the menu bar, toolbar and status bar, and macOS's title bar strip with them, on a
 host that supports it; the main window's views let through half as much. Menus and dialogs float
@@ -450,7 +452,7 @@ Holding the Background blur slider keeps the Settings live preview active even w
 
 Global liquid strength sliders are disabled while the active theme supplies liquid overrides. Their notes say the theme sets them in its `theme.css`, and that removing those rules there gives the sliders back. Stored global values remain unchanged and become editable again when inheritance is restored.
 
-Colour-picker popups use an opaque readable surface even when Settings uses liquid transparency.
+Color-picker popups use an opaque readable surface even when Settings uses liquid transparency.
 
 ## Sources
 

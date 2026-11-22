@@ -12,12 +12,16 @@ describe a file. Read only the ones that match your task.
 ## 1. Golden rules
 
 1. **Clean-room (outranks everything).** Never disassemble or decompile proprietary binaries,
-   never use leaked code, never commit content from commercial products; knowledge comes from
-   observation, self-authored files and public documentation, written down in `docs/spec/` before
-   it is implemented. Open-source code, other DAWs' included, is a licence question (rule 10), not
-   a clean-room one: its values and solutions may be taken when its own provenance is clean, with
-   the notices CONTRIBUTING asks for. The rules and their one exception (the VeSTige header,
-   [ADR 0022](docs/decisions/0022-vst2-interface-description.md)) are in
+   never use leaked code, never commit content copied from a proprietary product (samples,
+   presets, Packs, impulse responses, wavetables, demo projects, artwork, icons or the look of its
+   interface); knowledge comes from observation, self-authored files and public documentation,
+   written down in `docs/spec/` before it is implemented. Open-source code, other DAWs' included,
+   is a licence question (rule 10), not a clean-room one: its values and solutions may be taken
+   when its own provenance is clean, with the notices CONTRIBUTING asks for. So are facts and
+   descriptive data from other sources, such as color names, scales, tunings and published
+   standards, when they were not taken from disassembled, decompiled or leaked material: their
+   licence decides, not this rule. The rules and their one exception (the
+   VeSTige header, [ADR 0022](docs/decisions/0022-vst2-interface-description.md)) are in
    [CONTRIBUTING.md › Clean-room](CONTRIBUTING.md#clean-room).
 2. **Never crash.** Non-test code never panics (no `unwrap()`, `expect()`, `panic!`,
    `unreachable!`, `todo!`, `unimplemented!`): return the crate's error type, and treat
@@ -116,6 +120,12 @@ describe a file. Read only the ones that match your task.
     drawn with an egui widget in a view
     ([docs/design/components.md](docs/design/components.md),
     [docs/guide/theme-authoring.md](docs/guide/theme-authoring.md)).
+16. **Code is written in US English.** Identifiers, file, crate and command names, style sheet
+    elements, attributes, properties and values, comments and test names use US spelling
+    (`color`, `center`, `behavior`, `normalize`, `gray`, `license`). Existing British names are
+    renamed in pull requests of their own, not in passing. Suhina is pre-alpha: a rename of
+    something a theme, a project file or a script reads (a theme element, a setting's key, a
+    command's id) keeps no alias for the old name.
 
 ## 2. Where to read more
 
@@ -151,7 +161,8 @@ Keep the tree building at every step. Report each check as passed, failed (with 
 run (and why). A pull request also carries what [`docs/workflow.md`](docs/workflow.md) › What a
 pull request carries lists: *How to check it*, settings help, a rebuilt app for a device,
 and the documents that describe what changed. A branch never edits what `next` generates:
-`docs/INDEX.md` and `docs/commands.md`. A new *What works now* bullet is a file of its own in `docs/works-now/`, not a line in `ROADMAP.md`.
+`docs/INDEX.md`, `docs/commands.md` and the theme recordings in `apps/theme-render/tests/painted/`
+and `cut/` (CI flags a change to how a theme looks; it is recorded after the merge). A new *What works now* bullet is a file of its own in `docs/works-now/`, not a line in `ROADMAP.md`.
 
 ## Code Review Rules
 

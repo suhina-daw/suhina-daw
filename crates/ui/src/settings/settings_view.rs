@@ -35,9 +35,9 @@ const CONTROL_COLUMN: f32 = 240.0;
 /// tooltip.
 const LINE_ROW: f32 = 24.0;
 const SEGMENT: f32 = 15.0;
-/// The width of a colour row's picker button.
-const COLOUR_SWATCH_WIDTH: f32 = 40.0;
-/// The width of a colour row's **Theme** button.
+/// The width of a color row's picker button.
+const COLOR_SWATCH_WIDTH: f32 = 40.0;
+/// The width of a color row's **Theme** button.
 const THEME_BUTTON_WIDTH: f32 = 52.0;
 /// The Browse… button at the end of a path field.
 const BROWSE_WIDTH: f32 = 60.0;
@@ -203,14 +203,14 @@ pub enum PluginRequest {
 pub struct ThemesView {
     /// Each theme's id, name and whether it comes with Suhina: the user's own first.
     pub list: Vec<(String, String, bool)>,
-    /// Each theme's and variant's swatch colour, by id (`theme_vars::swatch`).
+    /// Each theme's and variant's swatch color, by id (`theme_vars::swatch`).
     pub swatches: Vec<(String, egui::Color32)>,
     /// Each theme's and variant's thumbnail with its values substituted, by id; a theme without
-    /// one shows a card filled with its swatch colour.
+    /// one shows a card filled with its swatch color.
     pub pictures: Vec<(String, std::sync::Arc<str>)>,
     /// Each theme's `theme.json`: name, author, description and default variant's name, by id.
     pub info: Vec<(String, ThemeInfo)>,
-    /// The id of the theme in use, whether it comes with Suhina, its name and its colours.
+    /// The id of the theme in use, whether it comes with Suhina, its name and its colors.
     pub current: String,
     pub built_in: bool,
     pub name: String,
@@ -398,6 +398,9 @@ pub struct PageState {
     pub page: Page,
     /// Settings lives in a separate native viewport until Dock is chosen.
     pub window: bool,
+    /// What the system draws of that window: its title bar, where Settings' content runs under
+    /// it (macOS, as in the main window), and its corners.
+    pub frame: crate::kit::own_window::Frame,
     pub capture: Option<String>,
     /// The variant editor, a child view of Themes, is open.
     pub theme_editor: bool,
@@ -410,8 +413,8 @@ pub struct PageState {
     pub skin_editor: super::skin_editor::State,
     /// What the theme list is filtered by: part of a theme's or a variant's name, or its id.
     pub theme_search: String,
-    /// A colour picker is open while its primary pointer button is held.
-    pub theme_colour_held: bool,
+    /// A color picker is open while its primary pointer button is held.
+    pub theme_color_held: bool,
     /// The audio devices were listed since the Audio page was opened.
     pub audio_listed: Option<bool>,
     /// A driver picked in the form, applied only once its device is chosen.
@@ -459,7 +462,7 @@ pub struct Outcome {
     pub plugins: Option<PluginRequest>,
     pub themes: Option<ThemeRequest>,
     pub keymap_changed: bool,
-    /// The most colour tags the browser may have, as chosen.
+    /// The most color tags the browser may have, as chosen.
     pub tag_limit: Option<usize>,
     /// The audio output was chosen anew: the app runs `audio.setOutput` with it, or
     /// `output.setCuePair` or `output.setCueVolume` when only the cue changed.
@@ -482,7 +485,7 @@ pub struct Sources<'a> {
     pub plugins: &'a mut PluginsView,
     pub themes: &'a ThemesView,
     pub keymap: &'a mut Keymap,
-    /// The most colour tags the browser may have now.
+    /// The most color tags the browser may have now.
     pub tag_limit: usize,
 }
 
@@ -708,8 +711,8 @@ impl Cx<'_> {
         }
     }
 
-    /// A percentage applied live to its colour surface.
-    pub fn colour_strength(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut u8) {
+    /// A percentage applied live to its color surface.
+    pub fn color_strength(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut u8) {
         let value = field(self.settings);
         let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
         let response = self.ui.put(rect, egui::Slider::new(value, 0..=100).suffix(" %"));
@@ -746,47 +749,47 @@ impl Cx<'_> {
     }
 
     /// The custom waveform and note ink, with the picker's RGB/hex controls.
-    pub fn waveform_colour(&mut self, row: Rect) {
-        self.colour_well(row, false, |s| &mut s.view.waveform.custom);
+    pub fn waveform_color(&mut self, row: Rect) {
+        self.color_well(row, false, |s| &mut s.view.waveform.custom);
     }
 
-    /// A colour the setting `field` holds: the picker's button with its RGB/hex controls, an
-    /// opacity slider too when `see_through`, and the colour's hex beside it (`#RRGGBBAA` while it
+    /// A color the setting `field` holds: the picker's button with its RGB/hex controls, an
+    /// opacity slider too when `see_through`, and the color's hex beside it (`#RRGGBBAA` while it
     /// is see-through).
-    pub fn colour_well(
+    pub fn color_well(
         &mut self,
         row: Rect,
         see_through: bool,
         field: impl FnOnce(&mut Settings) -> &mut egui::Color32,
     ) {
         let value = field(self.settings);
-        let mut colour = *value;
-        let (held, _) = colour_picker(self.ui, self.painter, self.name, row, &mut colour, false, see_through);
+        let mut color = *value;
+        let (held, _) = color_picker(self.ui, self.painter, self.name, row, &mut color, false, see_through);
         self.outcome.adjusting |= held;
-        if colour != *value {
-            *value = colour;
+        if color != *value {
+            *value = color;
             self.outcome.changed = true;
         }
     }
 
-    /// A colour the theme gives, `themed`, which the setting `field` overrides once one is picked
-    /// (`Some`): the picker shows the colour in use, and **Theme** beside it, while one is picked,
+    /// A color the theme gives, `themed`, which the setting `field` overrides once one is picked
+    /// (`Some`): the picker shows the color in use, and **Theme** beside it, while one is picked,
     /// gives the theme's back.
-    pub fn themed_colour(
+    pub fn themed_color(
         &mut self,
         row: Rect,
         themed: egui::Color32,
         field: impl FnOnce(&mut Settings) -> &mut Option<egui::Color32>,
     ) {
         let value = field(self.settings);
-        let mut colour = value.unwrap_or(themed);
-        let (held, reset) = colour_picker(self.ui, self.painter, self.name, row, &mut colour, value.is_some(), false);
+        let mut color = value.unwrap_or(themed);
+        let (held, reset) = color_picker(self.ui, self.painter, self.name, row, &mut color, value.is_some(), false);
         self.outcome.adjusting |= held;
         if reset {
             *value = None;
             self.outcome.changed = true;
-        } else if colour != value.unwrap_or(themed) {
-            *value = Some(colour);
+        } else if color != value.unwrap_or(themed) {
+            *value = Some(color);
             self.outcome.changed = true;
         }
     }
@@ -943,7 +946,7 @@ impl Cx<'_> {
         shown.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{name}: {text}")));
     }
 
-    /// The most colour tags the browser may have, kept by the library rather than the settings.
+    /// The most color tags the browser may have, kept by the library rather than the settings.
     pub fn tag_limit(&mut self, row: Rect, options: &[(&str, usize)]) {
         let rect = options_rect(self.ui, row, options);
         if let Some(limit) = segmented(self.ui, self.painter, rect, self.name, options, self.tag_limit) {
@@ -1045,11 +1048,11 @@ impl Cards {
 }
 
 thread_local! {
-    /// The cards' colours while the picker is drawn.
+    /// The cards' colors while the picker is drawn.
     static CARDS: std::cell::Cell<Option<Cards>> = const { std::cell::Cell::new(None) };
 }
 
-/// Clears the cards' colours when the picker's drawing ends, however it ends.
+/// Clears the cards' colors when the picker's drawing ends, however it ends.
 struct CardsGuard;
 
 impl Drop for CardsGuard {
@@ -1075,13 +1078,19 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     if !state.window && crate::kit::floating::asks_to_blur(style_class.style()) {
         crate::kit::liquid::backdrop(&painter, area, 0.0);
     }
-    let panel_base = crate::kit::liquid::panel_base(ui.ctx());
-    painter.rect_filled(area, 0.0, panel_base);
-    if !state.window {
+    // In a window of its own, Settings is the window's root: its background over the whole
+    // window, under the system's title bar too; the system draws its edge.
+    // Docked, its box over the window, the page inside its border and padding (#1336).
+    let area = if state.window {
+        let (title_bar, corners) = crate::kit::own_window::shown(ui, state.frame);
+        let content = style_class.paint_root(&painter, area, corners);
+        Rect::from_min_max(Pos2::new(content.left(), content.top() + title_bar), content.max)
+    } else {
+        let panel_base = crate::kit::liquid::panel_base(ui.ctx());
+        painter.rect_filled(area, 0.0, panel_base);
         crate::kit::liquid::paint(&painter, area, &style_class, panel_base, crate::kit::liquid::Surface::Panel);
-    }
-    // Its border, and the page in its content box, inside its border and padding (#1336).
-    let area = style_class.paint_border(&painter, area);
+        style_class.paint_border(&painter, area)
+    };
     input_style(ui);
 
     let width = SIDEBAR + SIDEBAR_GAP + PAGE_WIDTH;
@@ -1447,7 +1456,7 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
     picked
 }
 
-/// Appearance › Themes: the themes, the theme in use and its colours.
+/// Appearance › Themes: the themes, the theme in use and its colors.
 pub(crate) fn theme_block(cx: &mut Cx<'_>, y: &mut f32) {
     let (request, close) = theme_page(cx.ui, cx.page, y, cx.themes, cx.state);
     cx.outcome.themes = request;
@@ -1455,7 +1464,7 @@ pub(crate) fn theme_block(cx: &mut Cx<'_>, y: &mut f32) {
         cx.outcome.close = true;
         cx.state.audio_pending = None;
     }
-    cx.outcome.adjusting |= cx.state.theme_colour_held;
+    cx.outcome.adjusting |= cx.state.theme_color_held;
 }
 
 /// Shortcuts › Keys: every action's keys and the preset.
@@ -1522,7 +1531,7 @@ fn theme_page(
     themes: &ThemesView,
     state: &mut PageState,
 ) -> (Option<ThemeRequest>, bool) {
-    state.theme_colour_held = false;
+    state.theme_color_held = false;
     CARDS.set(Some(Cards::read()));
     let _cards = CardsGuard;
     let mut request = None;
@@ -1544,13 +1553,13 @@ fn theme_page(
     (request, close)
 }
 
-/// Why something of a built-in theme cannot be changed, for a greyed item's hover.
+/// Why something of a built-in theme cannot be changed, for a grayed item's hover.
 const BUILT_IN_REASON: &str = "Built-in themes can't be changed; make a new theme from it";
 const SHIPPED_REASON: &str =
     "This variant comes with a built-in theme and can't be changed; duplicate it to make your own";
 const DEFAULT_REASON: &str = "The default variant is the theme's own values; it can't be deleted";
 
-/// A menu item or button that is greyed with `reason` on hover when it does not apply.
+/// A menu item or button that is grayed with `reason` on hover when it does not apply.
 fn item(ui: &mut Ui, label: &str, reason: Option<&str>) -> bool {
     let response = ui.add_enabled(reason.is_none(), egui::Button::new(label));
     match reason {
@@ -1644,7 +1653,7 @@ fn theme_gallery(ui: &mut Ui, page: Rect, themes: &ThemesView, state: &mut PageS
     let width = ((page.width() - gap) / 2.0).max(80.0);
     if let Some((_, name, built_in)) = themes.list.iter().find(|(id, _, _)| *id == current) {
         let (active, asked) = theme_card(ui, themes, state, &themes.current, name, *built_in, page.width(), true);
-        state.theme_colour_held |= active.is_pointer_button_down_on() && ui.input(|input| input.pointer.primary_down());
+        state.theme_color_held |= active.is_pointer_button_down_on() && ui.input(|input| input.pointer.primary_down());
         request = asked.or(request);
         ui.add_space(gap);
     }
@@ -1878,7 +1887,7 @@ fn theme_card(
         );
         let picture = themes.pictures.iter().find(|(key, _)| key == id).map(|(_, svg)| svg);
         if !picture.is_some_and(|svg| crate::kit::skin::paint_svg(ui.painter(), preview, svg, 2.0)) {
-            // A theme without a thumbnail: a blank card in its swatch colour.
+            // A theme without a thumbnail: a blank card in its swatch color.
             ui.painter().rect_filled(preview, 2.0, swatch);
         }
         let border = if in_use {
@@ -2043,7 +2052,7 @@ fn theme_card(
             }
         }
         if active {
-            // + adds a variant: greyed when the theme has no settings a variant could hold.
+            // + adds a variant: grayed when the theme has no settings a variant could hold.
             let area = place(variants.len());
             let enabled = !themes.declared.is_empty();
             let plus = ui.interact(area, Id::unique(("theme-new-variant", base)), Sense::click());
@@ -2060,7 +2069,7 @@ fn theme_card(
             }
             if ui.is_rect_visible(area) {
                 // Drawn as the theme's buttons are: their fill, edge and text, lighter under the
-                // pointer and pressed, faded when greyed.
+                // pointer and pressed, faded when grayed.
                 let visuals = if enabled { *ui.style().interact(&plus) } else { ui.visuals().widgets.inactive };
                 let fade = |color: egui::Color32| if enabled { color } else { ui.visuals().disable(color) };
                 let corner = 6.0_f32.min(area.height() / 2.0);
@@ -2080,7 +2089,7 @@ fn theme_card(
     (response, asked)
 }
 
-/// The swatch colour of the theme or variant `id`, or the panels' colour when it has none.
+/// The swatch color of the theme or variant `id`, or the panels' color when it has none.
 fn swatch_of(themes: &ThemesView, id: &str) -> egui::Color32 {
     themes
         .swatches
@@ -2090,7 +2099,7 @@ fn swatch_of(themes: &ThemesView, id: &str) -> egui::Color32 {
 }
 
 /// A swatch of `color`: a `theme-swatch` element with that `color` attribute, as the theme in use
-/// styles it, or a rounded rectangle of the colour without a theme sheet. Returns its corner
+/// styles it, or a rounded rectangle of the color without a theme sheet. Returns its corner
 /// radius.
 fn paint_swatch(painter: &egui::Painter, rect: Rect, color: egui::Color32) -> f32 {
     let radius = |r: f32| r.clamp(0.0, rect.width().min(rect.height()) / 2.0);
@@ -2177,12 +2186,12 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
     }
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        ui.add_sized([140.0, theme::ROW], egui::Label::new("Colour scheme"))
+        ui.add_sized([140.0, theme::ROW], egui::Label::new("Color scheme"))
             .on_hover_text("Whether this look is light or dark: the window's title bar follows it, and devices pick their light or dark artwork by it");
         let (rect, _) = ui.allocate_exact_size(Vec2::new(128.0, SEGMENT), egui::Sense::hover());
         let painter = ui.painter().clone();
         let options = [("Dark", false), ("Light", true)];
-        if let Some(light) = segmented(ui, &painter, rect, "Colour scheme", &options, themes.light) {
+        if let Some(light) = segmented(ui, &painter, rect, "Color scheme", &options, themes.light) {
             request = Some(ThemeRequest::EditScheme(light));
         }
     });
@@ -2198,7 +2207,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
             .color(ink().caption),
         );
     }
-    if let Some(edit) = super::skin_editor::declared(ui, themes, &mut state.skin_editor, &mut state.theme_colour_held) {
+    if let Some(edit) = super::skin_editor::declared(ui, themes, &mut state.skin_editor, &mut state.theme_color_held) {
         request = Some(edit);
     }
     if let Some(to) = state.theme_leave {
@@ -2595,7 +2604,7 @@ pub(crate) fn plugin_folders(
             plugins.new_format = format;
         }
         // A `button[kind="option"]`, `[checked]` for the format chosen.
-        let (_, color) = option_face(ui, painter, cell, &response, chosen, "option");
+        let (_, color) = widgets::option_face(ui, painter, cell, &response, chosen, "option");
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
@@ -3301,7 +3310,7 @@ fn preset_segmented(
         let response =
             widgets::button_area(ui, segment, Id::unique(("keymap-preset", *text)), format!("Preset: {text}"));
         // A `button[kind="preset"]`, `[checked]` for the chosen preset.
-        let (_, color) = option_face(ui, painter, segment, &response, chosen, "preset");
+        let (_, color) = widgets::option_face(ui, painter, segment, &response, chosen, "preset");
         widgets::text_in(painter, segment, Align2::CENTER_CENTER, text, small.clone(), color);
         if response.clicked() && !chosen {
             picked = Some(*value);
@@ -3489,7 +3498,7 @@ fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> 
     let knob_width = SEGMENT - 4.0;
     let x = track.left() + 2.0 + lit * (track.width() - 4.0 - knob_width);
     let knob = Rect::from_min_size(Pos2::new(x, track.top() + 2.0), Vec2::new(knob_width, SEGMENT - 4.0));
-    // The knob's lit colour contrasts with the lit track: an opaque ground, else the inverse text.
+    // The knob's lit color contrasts with the lit track: an opaque ground, else the inverse text.
     let ground = crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window"));
     let ground = if ground.a() == u8::MAX { ground } else { crate::kit::element::app_fill("knob") };
     painter.rect_filled(knob, 0.0, motion::mix(ink().caption, ground, lit));
@@ -3563,62 +3572,26 @@ fn segmented_parts<T: Copy + PartialEq>(
     options: &[(&str, T)],
     current: T,
 ) -> Option<T> {
-    let mut picked = None;
-    let mut x = rect.left();
-    for (index, ((text, value), part)) in options.iter().zip(widths).enumerate() {
-        let cell = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(*part, rect.height()));
-        x += part + 1.0;
-        let response = widgets::button_area(ui, cell, Id::unique(("setting", name, index)), format!("{name}: {text}"));
-        if response.clicked() && *value != current {
-            picked = Some(*value);
-        }
-        // A part is a `button[kind="option"]`, `[checked]` when chosen.
-        let (_, color) = option_face(ui, painter, cell, &response, *value == current, "option");
-        widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), color);
-    }
-    picked
+    let id = |index: usize| Id::unique(("setting", name, index));
+    widgets::option_parts(ui, painter, rect, widths, id, name, options, current)
 }
 
-/// One part of a row of choices, a `button` of `kind` (`option`, `preset`), `[checked]` while it
-/// is the one chosen: its face painted in `rect` and its fill and ink, which fade with the choice
-/// and the pointer.
-fn option_face(
-    ui: &Ui,
-    painter: &egui::Painter,
-    rect: Rect,
-    response: &egui::Response,
-    chosen: bool,
-    kind: &'static str,
-) -> (egui::Color32, egui::Color32) {
-    let lit = widgets::lit_toggle_kind(
-        ui,
-        response,
-        crate::kit::element::BUTTON.builder(),
-        &[crate::kit::element::Checked],
-        chosen,
-        kind,
-    );
-    let (fill, color) = lit.colors();
-    lit.el.paint_over(painter, rect, crate::kit::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
-    (fill, color)
-}
-
-/// The colour picker's button for `colour` at the control's place in `row`, labelled `name`, its
+/// The color picker's button for `color` at the control's place in `row`, labelled `name`, its
 /// hex beside it, and a **Theme** button at the control's right end when `resettable`; with an
 /// opacity slider when `see_through`: whether the picker is held open with the button down (a
 /// drag in it), and whether **Theme** was clicked. The hex and **Theme** are the kit's text and
 /// button, so the theme styles them as every other row's.
-fn colour_picker(
+fn color_picker(
     ui: &mut Ui,
     painter: &egui::Painter,
     name: &str,
     row: Rect,
-    colour: &mut egui::Color32,
+    color: &mut egui::Color32,
     resettable: bool,
     see_through: bool,
 ) -> (bool, bool) {
     let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
-    let swatch = Rect::from_min_size(rect.min, Vec2::new(COLOUR_SWATCH_WIDTH, SEGMENT));
+    let swatch = Rect::from_min_size(rect.min, Vec2::new(COLOR_SWATCH_WIDTH, SEGMENT));
     let theme_button = Rect::from_min_size(
         Pos2::new(rect.right() - THEME_BUTTON_WIDTH, rect.top() + 1.0),
         Vec2::new(THEME_BUTTON_WIDTH, SEGMENT),
@@ -3629,7 +3602,7 @@ fn colour_picker(
     ui.scope_builder(egui::UiBuilder::new().max_rect(swatch), |ui| {
         let popup = ui.auto_id_with("popup");
         let alpha = if see_through { egui::color_picker::Alpha::OnlyBlend } else { egui::color_picker::Alpha::Opaque };
-        let response = egui::color_picker::color_edit_button_srgba(ui, colour, alpha);
+        let response = egui::color_picker::color_edit_button_srgba(ui, color, alpha);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, name));
         held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
     });
@@ -3637,7 +3610,7 @@ fn colour_picker(
         painter,
         hex,
         Align2::LEFT_CENTER,
-        &theme::hex(*colour),
+        &theme::hex(*color),
         theme::mono_font(theme::TEXT_SMALL),
         ink().name,
     );

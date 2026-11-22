@@ -1175,9 +1175,9 @@ fn a_ghost_note_finds_its_clip() {
     assert_eq!(ghost_view::ghost_at(&ghosts, Pos2::new(45.0, 5.0), rect_of), None);
 }
 
-/// A selected note takes the accent, unless the note's colour is close to it.
+/// A selected note takes the accent, unless the note's color is close to it.
 #[test]
-fn a_selected_note_stands_out_from_its_colour() {
+fn a_selected_note_stands_out_from_its_color() {
     let (accent, plain) = (Color32::from_rgb(0xA6, 0xA3, 0xFF), Color32::from_rgb(0xEC, 0xE8, 0xE1));
     assert_eq!(selected_note_color(Color32::from_rgb(0xF2, 0xD5, 0x41), accent, plain), accent);
     assert_eq!(selected_note_color(Color32::from_rgb(0xE0, 0x30, 0x30), accent, plain), accent);
@@ -1483,7 +1483,7 @@ fn split_clip_leaves_a_selection_past_the_loop_end_alone() {
 }
 
 /// A pattern's notes for other tracks move with a new first beat too: the piano roll knows where
-/// the first of them starts, and the menu's Set the clip's first beat here is greyed out before
+/// the first of them starts, and the menu's Set the clip's first beat here is grayed out before
 /// it, as `clip.setOrigin` refuses there.
 #[test]
 fn the_first_beat_item_counts_a_patterns_other_lanes() {
@@ -1519,7 +1519,7 @@ fn the_first_beat_item_counts_a_patterns_other_lanes() {
 }
 
 /// Swing works within each content eighth, so on a clip that swings Set the clip's first beat here
-/// is greyed out off an eighth, where `clip.setOrigin` refuses: the groove would change.
+/// is grayed out off an eighth, where `clip.setOrigin` refuses: the groove would change.
 #[test]
 fn the_first_beat_item_takes_only_an_eighth_on_a_clip_that_swings() {
     use suhina_engine::model::{ClipContent, ContentId, ContentLane, Extensions, Track};

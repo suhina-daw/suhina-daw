@@ -8,12 +8,12 @@
 //! Adding a setting is one entry under its section, most often a `row` whose control is one call:
 //! `cx.on_off(r, |s| &mut s.field)` or `cx.choose(r, &[("Text", value), …], |s| &mut s.field)`.
 
-use crate::kit::selection::SelectionColour;
+use crate::kit::selection::SelectionColor;
 #[cfg(test)]
 use crate::settings::settings_view::{ADVANCED, Role};
 use crate::settings::settings_view::{Entry, Page, block, row};
 use crate::settings::track_sizes::TrackSize;
-use crate::settings::view_settings::{AutomationColour, DetailLayout, FolderDrop, WaveformColour};
+use crate::settings::view_settings::{AutomationColor, DetailLayout, FolderDrop, WaveformColor};
 use crate::settings::{
     AtStart, DeviceLayout, EditorPlacement, Graphics, MixerControls, NoteSpelling, OnOpen, PianoKeyNames,
     PianoKeyStyle, PianoRollTop, PlayFrom, Side, StopReturn, ToolbarSize, WarpMode,
@@ -453,18 +453,18 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "View",
-        "Waveform and note colour",
-        "The colour waveforms and notes are drawn in on clips",
-        &["waveform_colour"],
+        "Waveform and note color",
+        "The color waveforms and notes are drawn in on clips",
+        &["waveform_color"],
         |cx, r| {
             cx.choose(
                 r,
                 &[
-                    ("Theme", WaveformColour::Theme),
-                    ("Auto", WaveformColour::Auto),
-                    ("Light", WaveformColour::Light),
-                    ("Dark", WaveformColour::Dark),
-                    ("Custom", WaveformColour::Custom),
+                    ("Theme", WaveformColor::Theme),
+                    ("Auto", WaveformColor::Auto),
+                    ("Light", WaveformColor::Light),
+                    ("Dark", WaveformColor::Dark),
+                    ("Custom", WaveformColor::Custom),
                 ],
                 |s| &mut s.view.waveform.mode,
             )
@@ -473,43 +473,43 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "View",
-        "Custom waveform colour",
-        "The colour waveforms and notes take when their colour is Custom",
-        &["waveform_custom_colour"],
-        |cx, r| cx.waveform_colour(r),
+        "Custom waveform color",
+        "The color waveforms and notes take when their color is Custom",
+        &["waveform_custom_color"],
+        |cx, r| cx.waveform_color(r),
     )
-    .when(|s| s.view.waveform.mode == WaveformColour::Custom),
+    .when(|s| s.view.waveform.mode == WaveformColor::Custom),
     row(
         Page::Arrangement,
         "View",
-        "Audio clip colour strength",
-        "How strongly audio clips show their own colour",
-        &["audio_clip_colour_strength"],
-        |cx, r| cx.colour_strength(r, |s| &mut s.view.audio_colour_strength),
+        "Audio clip color strength",
+        "How strongly audio clips show their own color",
+        &["audio_clip_color_strength"],
+        |cx, r| cx.color_strength(r, |s| &mut s.view.audio_color_strength),
     ),
     row(
         Page::Arrangement,
         "Tracks",
-        "New track colour",
-        "Whether new tracks take Suhina's colour for their kind or all take the same colour",
-        &["new_track_colour"],
-        |cx, r| cx.choose(r, &[("By clip type", false), ("One colour", true)], |s| &mut s.view.fixed_track_colour),
+        "New track color",
+        "Whether new tracks take Suhina's color for their kind or all take the same color",
+        &["new_track_color"],
+        |cx, r| cx.choose(r, &[("By clip type", false), ("One color", true)], |s| &mut s.view.fixed_track_color),
     ),
     row(
         Page::Arrangement,
         "Tracks",
-        "New clip colour",
-        "Whether a new clip takes its track's colour or Suhina's colour for its kind",
-        &["new_clip_colour"],
-        |cx, r| cx.choose(r, &[("Track colour", true), ("By clip type", false)], |s| &mut s.view.new_clip_track_colour),
+        "New clip color",
+        "Whether a new clip takes its track's color or Suhina's color for its kind",
+        &["new_clip_color"],
+        |cx, r| cx.choose(r, &[("Track color", true), ("By clip type", false)], |s| &mut s.view.new_clip_track_color),
     ),
     row(
         Page::Arrangement,
         "Tracks",
-        "Track header colour strength",
-        "How strongly track headers show their own colour",
-        &["track_header_colour_strength"],
-        |cx, r| cx.colour_strength(r, |s| &mut s.view.header_colour_strength),
+        "Track header color strength",
+        "How strongly track headers show their own color",
+        &["track_header_color_strength"],
+        |cx, r| cx.color_strength(r, |s| &mut s.view.header_color_strength),
     ),
     row(
         Page::Arrangement,
@@ -699,11 +699,11 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "Automation",
-        "Automation colour",
-        "Whether automation lines and points take their track's colour or the same colours on every track",
-        &["automation_colour"],
+        "Automation color",
+        "Whether automation lines and points take their track's color or the same colors on every track",
+        &["automation_color"],
         |cx, r| {
-            cx.choose(r, &[("Track colour", AutomationColour::Track), ("Fixed", AutomationColour::Fixed)], |s| {
+            cx.choose(r, &[("Track color", AutomationColor::Track), ("Fixed", AutomationColor::Fixed)], |s| {
                 &mut s.view.automation.mode
             })
         },
@@ -711,27 +711,27 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Arrangement,
         "Automation",
-        "Automation line colour",
-        "The colour every automation line takes when Automation colour is Fixed",
-        &["automation_line_colour"],
+        "Automation line color",
+        "The color every automation line takes when Automation color is Fixed",
+        &["automation_line_color"],
         |cx, r| {
             let theme = crate::kit::element::AUTOMATION_LINE.attribute("kind", "fixed").look().color();
-            cx.themed_colour(r, theme, |s| &mut s.view.automation.line)
+            cx.themed_color(r, theme, |s| &mut s.view.automation.line)
         },
     )
-    .when(|s| s.view.automation.mode == AutomationColour::Fixed),
+    .when(|s| s.view.automation.mode == AutomationColor::Fixed),
     row(
         Page::Arrangement,
         "Automation",
-        "Automation point colour",
-        "The colour every automation point takes when Automation colour is Fixed",
-        &["automation_point_colour"],
+        "Automation point color",
+        "The color every automation point takes when Automation color is Fixed",
+        &["automation_point_color"],
         |cx, r| {
             let theme = crate::kit::element::AUTOMATION_POINT.attribute("kind", "fixed").look().color();
-            cx.themed_colour(r, theme, |s| &mut s.view.automation.point)
+            cx.themed_color(r, theme, |s| &mut s.view.automation.point)
         },
     )
-    .when(|s| s.view.automation.mode == AutomationColour::Fixed),
+    .when(|s| s.view.automation.mode == AutomationColor::Fixed),
     row(
         Page::Arrangement,
         "Gain envelope",
@@ -830,6 +830,22 @@ pub(crate) static ROWS: &[Entry] = &[
             let options = [("Field", MixerControls::Field), ("Knob", MixerControls::Knob)];
             cx.choose(r, &options, |s| &mut s.mixer_controls);
         },
+    ),
+    row(
+        Page::ClipEditor,
+        "Audio editor",
+        "Audio editor waveform color",
+        "Whether the audio editor draws the waveform in the clip's color or the theme's",
+        &["audio_editor_waveform_color"],
+        |cx, r| cx.choose(r, &[("Track color", false), ("Theme", true)], |s| &mut s.view.audio_editor_theme_waveform),
+    ),
+    row(
+        Page::ClipEditor,
+        "Audio editor",
+        "Drag markers by line",
+        "Whether a warp marker's line down the waveform can be dragged as well as its flag",
+        &["audio_editor_marker_line_drag"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.audio_editor_line_drag),
     ),
     row(
         Page::ClipEditor,
@@ -995,14 +1011,14 @@ pub(crate) static ROWS: &[Entry] = &[
             cx.choose(r, &options, |s| &mut s.map_label_size);
         },
     ),
-    row(Page::Browser, "Tags", "Colour tag limit", "How many colour tags you can make in the browser", &[], |cx, r| {
+    row(Page::Browser, "Tags", "Color tag limit", "How many color tags you can make in the browser", &[], |cx, r| {
         let options = [("64", 64usize), ("128", 128), ("256", 256), ("1024", 1024)];
         cx.tag_limit(r, &options);
     }),
     block(
         Page::Keys,
-        "Mouse and key behaviour",
-        "Piano roll mouse behaviour",
+        "Mouse and key behavior",
+        "Piano roll mouse behavior",
         "What clicks, double-clicks and right-clicks do to notes in the piano roll",
         KEYMAP,
         crate::settings::settings_view::mouse_switches,
@@ -1058,16 +1074,16 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Appearance,
         "Selection",
-        "Selection colour",
-        "The colour selected tracks and clips are filled with, in the Arrangement and the Launcher",
-        &["selection_colour"],
+        "Selection color",
+        "The color selected tracks and clips are filled with, in the Arrangement and the Launcher",
+        &["selection_color"],
         |cx, r| {
             cx.choose(
                 r,
                 &[
-                    ("From theme", SelectionColour::Theme),
-                    ("Clip's own colour", SelectionColour::Own),
-                    ("Custom", SelectionColour::Custom),
+                    ("From theme", SelectionColor::Theme),
+                    ("Clip's own color", SelectionColor::Own),
+                    ("Custom", SelectionColor::Custom),
                 ],
                 |s| &mut s.view.selection.mode,
             )
@@ -1076,12 +1092,12 @@ pub(crate) static ROWS: &[Entry] = &[
     row(
         Page::Appearance,
         "Selection",
-        "Custom selection colour",
-        "The colour selected tracks and clips take when Selection colour is Custom",
-        &["selection_custom_colour"],
-        |cx, r| cx.colour_well(r, true, |s| &mut s.view.selection.custom),
+        "Custom selection color",
+        "The color selected tracks and clips take when Selection color is Custom",
+        &["selection_custom_color"],
+        |cx, r| cx.color_well(r, true, |s| &mut s.view.selection.custom),
     )
-    .when(|s| s.view.selection.mode == SelectionColour::Custom),
+    .when(|s| s.view.selection.mode == SelectionColor::Custom),
     row(
         Page::Appearance,
         "Background",
@@ -1098,7 +1114,7 @@ pub(crate) static ROWS: &[Entry] = &[
         "Surface opacity",
         "How much the panels cover the background image",
         &["background_tint"],
-        |cx, r| cx.colour_strength(r, |s| &mut s.view.background_tint),
+        |cx, r| cx.color_strength(r, |s| &mut s.view.background_tint),
     ),
     row(
         Page::Appearance,
@@ -1114,7 +1130,7 @@ pub(crate) static ROWS: &[Entry] = &[
         "Application name position",
         "Where the name Suhina sits in the bar at the top of the window",
         &["app_name_centered"],
-        |cx, r| cx.choose(r, &[("Left", false), ("Centre", true)], |s| &mut s.view.app_name_centered),
+        |cx, r| cx.choose(r, &[("Left", false), ("Center", true)], |s| &mut s.view.app_name_centered),
     ),
     row(
         Page::Appearance,
@@ -1138,7 +1154,7 @@ pub(crate) static ROWS: &[Entry] = &[
         "Project information position",
         "Where the project's name and timing sit in the bar at the top of the window",
         &["bar_project_centered"],
-        |cx, r| cx.choose(r, &[("Left", false), ("Centre", true)], |s| &mut s.view.bar_project_centered),
+        |cx, r| cx.choose(r, &[("Left", false), ("Center", true)], |s| &mut s.view.bar_project_centered),
     ),
     row(
         Page::Appearance,

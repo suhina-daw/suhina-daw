@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The clears of `suhina_ui::kit::surface`: a paint callback drawn with no blending, so its colour
+//! The clears of `suhina_ui::kit::surface`: a paint callback drawn with no blending, so its color
 //! and alpha replace what is under it. Only a menu's or dialog's blurred backdrop asks for one, to
 //! clear the window's pixels under it; every background blends. All of a frame's clears share one
 //! instance buffer per renderer, written once after every callback has been prepared. A capture
@@ -16,7 +16,7 @@ use egui::{Color32, CornerRadius, Rect, Shape};
 use egui_wgpu::wgpu;
 use suhina_ui::kit::surface::Provider;
 
-/// Floats in one fill: its rectangle and corner radii in pixels, its colour, the screen's size.
+/// Floats in one fill: its rectangle and corner radii in pixels, its color, the screen's size.
 const FLOATS: usize = 16;
 const STRIDE: u64 = (FLOATS * std::mem::size_of::<f32>()) as u64;
 
@@ -53,9 +53,9 @@ fn vs_main(@builtin(vertex_index) index: u32, fill: Fill) -> Out {
 
 @fragment
 fn fs_main(in: Out) -> @location(0) vec4<f32> {
-    let centre = (in.rect.xy + in.rect.zw) * 0.5;
+    let center = (in.rect.xy + in.rect.zw) * 0.5;
     let half = (in.rect.zw - in.rect.xy) * 0.5;
-    let p = in.position.xy - centre;
+    let p = in.position.xy - center;
     // The radius of the corner this pixel is nearest: nw, ne, sw, se.
     var r = select(in.radii.x, in.radii.y, p.x > 0.0);
     if p.y > 0.0 {
@@ -128,7 +128,7 @@ pub(crate) fn prepare(renderer: &mut egui_wgpu::Renderer, device: &wgpu::Device,
             module: &shader,
             entry_point: Some("fs_main"),
             compilation_options: Default::default(),
-            // No blend state: the fill's colour and alpha replace the pixel's.
+            // No blend state: the fill's color and alpha replace the pixel's.
             targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
         }),
         primitive: wgpu::PrimitiveState::default(),
@@ -178,7 +178,7 @@ impl Provider for Surfaces {
 
 struct Resources {
     pipeline: wgpu::RenderPipeline,
-    /// Whether the target is sRGB, so colours are written linear.
+    /// Whether the target is sRGB, so colors are written linear.
     linear: bool,
     buffer: Option<(wgpu::Buffer, u64)>,
     /// This frame's fills, as they are prepared.

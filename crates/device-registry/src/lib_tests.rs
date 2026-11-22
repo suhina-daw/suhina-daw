@@ -556,7 +556,7 @@ fn the_amp_modelers_artwork_is_embedded_from_its_files() {
     // Each knob once, the same face on either head.
     assert_eq!(canvas.controls.iter().filter(face).count(), 6, "every knob draws the device's face");
     // Its toggles are the canvas's buttons, so a theme's button artwork and rules reach them
-    // (#1500): drawn in their own colours they took none of it.
+    // (#1500): drawn in their own colors they took none of it.
     for (id, label) in [("eq", "EQ"), ("hq", "HQ"), ("mono", "Mono")] {
         let toggle = canvas.controls.iter().find(|c| c.id == id).expect("the toggle");
         assert!(

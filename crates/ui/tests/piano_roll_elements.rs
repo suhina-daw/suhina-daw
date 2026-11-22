@@ -74,7 +74,7 @@ fn tool(h: &mut Harness<'static, App>, name: &str) {
     h.run();
 }
 
-/// A colour no theme or track uses, the `n`-th of a set.
+/// A color no theme or track uses, the `n`-th of a set.
 fn odd(n: u8) -> egui::Color32 {
     egui::Color32::from_rgb(0x13, 0x57, n)
 }
@@ -108,8 +108,8 @@ fn shapes_with(h: &mut Harness<'static, App>, css: &str) -> Vec<egui::Shape> {
     shown
 }
 
-/// The colours of every text shape that reads `text`.
-fn text_colours(shapes: &[egui::Shape], text: &str) -> Vec<egui::Color32> {
+/// The colors of every text shape that reads `text`.
+fn text_colors(shapes: &[egui::Shape], text: &str) -> Vec<egui::Color32> {
     shapes
         .iter()
         .filter_map(|shape| match shape {
@@ -140,10 +140,10 @@ fn the_piano_roll_s_bar_numbers_are_inside_its_ruler() {
         }
         _ => false,
     });
-    assert!(numbered, "a bar number takes the rule's colour");
+    assert!(numbered, "a bar number takes the rule's color");
 }
 
-/// A muted note's edge is dashed only: a theme's `[muted]` border colour paints no solid edge under
+/// A muted note's edge is dashed only: a theme's `[muted]` border color paints no solid edge under
 /// the dashes that would hide them (#1428 review).
 #[test]
 fn a_muted_note_s_border_is_its_dashes_alone() {
@@ -175,14 +175,14 @@ fn a_muted_note_s_border_is_its_dashes_alone() {
         })
         .count();
     assert_eq!(solid, 0, "no solid edge under the dashes");
-    assert!(dashes > 0, "the dashes take the colour");
+    assert!(dashes > 0, "the dashes take the color");
 }
 
 /// The Focus switch is `button#control-focus-first[kind="focus"]`, `[checked]` while on: a rule
-/// for the plain switch's colour is the lit one's label too, and a `[checked]` rule recolours the
+/// for the plain switch's color is the lit one's label too, and a `[checked]` rule recolors the
 /// lit label (#1428 review, #1451).
 #[test]
-fn a_rule_for_the_focus_switch_s_colour_is_the_lit_label_s_until_a_checked_rule_gives_its_own() {
+fn a_rule_for_the_focus_switch_s_color_is_the_lit_label_s_until_a_checked_rule_gives_its_own() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     h.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
@@ -194,15 +194,15 @@ fn a_rule_for_the_focus_switch_s_colour_is_the_lit_label_s_until_a_checked_rule_
     h.run();
     assert!(h.state().piano_roll().focus_first, "the switch is on");
     let css = format!("button#control-focus-first {{ color: {}; }}", hex(odd(63)));
-    let inks = text_colours(&shapes_with(&mut h, &css), "Focus");
+    let inks = text_colors(&shapes_with(&mut h, &css), "Focus");
     assert!(!inks.is_empty(), "the label is drawn");
-    assert!(inks.iter().all(|c| *c == odd(63)), "the plain switch's colour is the lit one's label too: {inks:?}");
+    assert!(inks.iter().all(|c| *c == odd(63)), "the plain switch's color is the lit one's label too: {inks:?}");
     let lit = format!("{css} button#control-focus-first[checked] {{ color: {}; }}", hex(odd(64)));
-    assert!(text_colours(&shapes_with(&mut h, &lit), "Focus").contains(&odd(64)), "a `[checked]` rule recolours it");
+    assert!(text_colors(&shapes_with(&mut h, &lit), "Focus").contains(&odd(64)), "a `[checked]` rule recolors it");
 }
 
-/// Every colour a shape uses: fill, stroke, line, text.
-fn colours_of(shape: &egui::Shape) -> Vec<egui::Color32> {
+/// Every color a shape uses: fill, stroke, line, text.
+fn colors_of(shape: &egui::Shape) -> Vec<egui::Color32> {
     match shape {
         egui::Shape::Rect(rect) => vec![rect.fill, rect.stroke.color],
         egui::Shape::LineSegment { stroke, .. } => vec![stroke.color],
@@ -224,14 +224,14 @@ fn colours_of(shape: &egui::Shape) -> Vec<egui::Color32> {
 /// The looping clip's loop bar keeps its native edge and handles under a `color` rule for every
 /// loop bar: they are read before the bar is entered (#1428 review).
 #[test]
-fn a_colour_rule_for_every_loop_bar_keeps_the_looping_one_s_inks() {
+fn a_color_rule_for_every_loop_bar_keeps_the_looping_one_s_inks() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     let ruler = h.get_by_label("Piano roll ruler").rect();
     let css = format!("loop-region {{ color: {}; }}", hex(odd(65)));
     let inked = shapes_with(&mut h, &css)
         .iter()
-        .filter(|shape| ruler.contains_rect(shape.visual_bounding_rect()) && colours_of(shape).contains(&odd(65)))
+        .filter(|shape| ruler.contains_rect(shape.visual_bounding_rect()) && colors_of(shape).contains(&odd(65)))
         .count();
-    assert_eq!(inked, 0, "the looping bar takes a colour only from a `[checked]` rule");
+    assert_eq!(inked, 0, "the looping bar takes a color only from a `[checked]` rule");
 }

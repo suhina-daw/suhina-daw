@@ -4,7 +4,7 @@ read_when: theme, style sheet, CSS, selector, cascade, media query, layout, taff
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-19
+last_verified: 2026-11-23
 covers:
   - crates/style/
   - crates/ui/src/kit/theme.rs
@@ -18,7 +18,7 @@ covers:
 
 - **Date:** 2026-10-22
 - **Amends:** [ADR 0009](0009-ui-toolkit-and-look.md) decision 6 (themes are style sheets; JSON
-  colour themes are dropped). Decision 1 (the window is drawn by eframe) is amended only if
+  color themes are dropped). Decision 1 (the window is drawn by eframe) is amended only if
   plan step 5 chooses Suhina's own frame renderer.
 - **Alternative to:** ADR 0030 *Native theme CSS*, proposed in
   [PR 841](https://github.com/suhina-daw/suhina-daw/pull/841). This ADR takes that pull request's
@@ -33,7 +33,7 @@ It is not a statement that the existing app already supports this whole language
 property registry, cascade, custom properties, basic viewport media conditions,
 Taffy row/column/grid/stack rectangles and source-preserving declaration edits.
 The desktop uses its source editor for native CSS saves. Its native paint adapter
-now resolves complete sheets limited to supported colours, font size, radius,
+now resolves complete sheets limited to supported colors, font size, radius,
 opacity, box/text shadows and linear/repeating-linear sRGB gradients, including selectors, variables and supported media
 conditions. It preserves native defaults through authored-property markers and
 retains the computed snapshot until state, source, palette or viewport changes.
@@ -65,7 +65,7 @@ themes are folders of the same form (`crates/ui/themes/<id>/`), built into the a
 Device panels use the tiers: `.sd` version 6 adds an optional panel `style`, applied in the
 Device tier bounded to its panel; `#id` selects a control by its id; `user.css` in the themes
 folder is the User tier for every view. Panel layout from CSS (a group/layout tree in the SDK)
-is not yet connected: panel sheets style colours, ink, accents and the other painted
+is not yet connected: panel sheets style colors, ink, accents and the other painted
 properties.
 
 ## Device panels use the same style engine
@@ -94,7 +94,7 @@ not a runtime dependency on a file elsewhere on the author's machine.
 
 ## Context
 
-Today a theme is a JSON file of colour tokens (`crates/ui/src/kit/theme.rs`,
+Today a theme is a JSON file of color tokens (`crates/ui/src/kit/theme.rs`,
 [brief](../design/brief.md) › Themes). Sizes, spacing, fonts, shapes and layout are constants or
 arithmetic in the views (`app.rs` cuts the window into bars and panes by hand). The aim is to make
 the look as customisable as possible, and convenient to customise: a person or an agent edits a
@@ -108,15 +108,15 @@ elements and properties**.
 
 What the look needs:
 
-- fonts: family, size, weight, style, line height, letter spacing, colour;
+- fonts: family, size, weight, style, line height, letter spacing, color;
 - sizing and positioning with proportional sizes like flex and grid, and themes that move and
   reorder parts of the window;
-- backgrounds: colours, gradients, images; borders and corner radius; shadows;
+- backgrounds: colors, gradients, images; borders and corner radius; shadows;
 - **control artwork**: a theme replaces how a knob, fader, button or meter is drawn with its own
   SVG or PNG images, while the control keeps its gestures, commands and undo;
 - **glass**: panes that blur what is behind them, inside the window and, through it, the desktop.
-  How much desktop shows through is separate from colour alpha, which mixes a colour into the
-  colour below it.
+  How much desktop shows through is separate from color alpha, which mixes a color into the
+  color below it.
 
 ### Prior work
 
@@ -142,7 +142,7 @@ Yes.
 | Parser, selectors, cascade, variables, media queries | Small, pure code over `cssparser` (MPL-2.0) tokens |
 | Fonts, line height, letter spacing | egui's `TextFormat` has `line_height` and `extra_letter_spacing`; fonts load from files. Weights and italics need a file each (no synthetic bold) |
 | Backgrounds, gradients, images, borders, radius, shadows | First on egui meshes with cached gradient and shadow textures (as PR 841 does), later a box shader of Suhina's own (one signed-distance pipeline, crisp at any radius) |
-| Control artwork | `resvg` (MPL-2.0) for SVG, `image` (MIT OR Apache-2.0) for PNG, rasterised once per asset, scale and colour, never on the audio thread (as PR 841 does) |
+| Control artwork | `resvg` (MPL-2.0) for SVG, `image` (MIT OR Apache-2.0) for PNG, rasterised once per asset, scale and color, never on the audio thread (as PR 841 does) |
 | Interactive states, transitions | egui reports hover, press and focus per widget; `Context::animate_value_with_time` runs transitions |
 | Proportional layout, rearranging | `taffy` (MIT), a flexbox and grid engine without a GUI; the work is moving `app.rs`'s hand-written rects onto it |
 | Glass | A transparent window and the OS's blur (`window-vibrancy`), and a blur inside the window: either captures under eframe (PR 809) or a frame renderer of Suhina's own (section 6). Plan step 5 chooses by measurement |
@@ -172,7 +172,7 @@ The language is CSS's core, everything in it that does not depend on HTML:
   variable set on any element applies inside it;
 - `calc()`, `min()`, `max()`, `clamp()` on lengths and numbers;
 - `inherit`, `initial`, `unset`, and `!important`;
-- `transition` on colours, lengths and numbers (`transition: background 120ms ease-out`);
+- `transition` on colors, lengths and numbers (`transition: background 120ms ease-out`);
 - `@import "file.css"`, `@font-face`, and `@media` (section 3).
 
 The built-in default style sheet reproduces Suhina Studio exactly, so the move changes nothing on
@@ -182,7 +182,7 @@ Edit interface writes the theme's `layout.css`.
 *Amended 2026-10-23, see Amendment: theme settings and variants.*
 
 Settings › Appearance keeps choosing, duplicating, reloading, importing and exporting themes, and
-chooses a theme's variant; its colour editor changes the variant's values.
+chooses a theme's variant; its color editor changes the variant's values.
 
 **Packages.** A theme exports as a ZIP of its folder, with its images and fonts and the generated
 README (section 8). Built-in themes and the default artwork are embedded in the app; editing one
@@ -210,7 +210,7 @@ menu { glass: 0.8; blur: 24px; }   /* a frosted pane over what is under it */
 #control-bar > .spacer { width: 1fr; }
 
 button { transition: background 120ms ease-out; }
-button:hover { background: rgb(255 255 255 / 6%); }   /* colour alpha: tints, glass unchanged */
+button:hover { background: rgb(255 255 255 / 6%); }   /* color alpha: tints, glass unchanged */
 button:focus-visible { border: 1px var(--accent); }
 track:nth-child(even) > track-header { background: var(--panel-hover); }
 clip:playing { background: var(--track-color); radius: 3px; }
@@ -245,7 +245,7 @@ states; `button#play.toggle:active` names all four.
   `track#track-12`, so a rule for one track follows it when tracks move or are reordered, as
   PR 841's identities do.
 - **Classes** carry data (`track.audio`, `track.midi`, `track.return`, and `.color-ff9a3c` for
-  the track's colour), and elements set variables from data (`--track-color` on each track, from
+  the track's color), and elements set variables from data (`--track-color` on each track, from
   the project), so a theme can style by what a thing is.
 
 Selectors are CSS's own, without the HTML-only parts:
@@ -302,7 +302,7 @@ breakpoint while resizing costs one fresh cascade.
 | Group | Properties | Values |
 | --- | --- | --- |
 | Text | `font-family`, `font-size`, `font-weight`, `font-style`, `line-height`, `letter-spacing`, `color`, `text-align`, `text-shadow` | families from `@font-face` and the built-in fonts; `px`, `em` |
-| Box | `background` (a list of layers), `border`, `border-top` …, `radius` (one to four corners), `shadow` | colours, `linear-gradient()`, `radial-gradient()`, `conic-gradient()`, `image(url, fit, slice)` |
+| Box | `background` (a list of layers), `border`, `border-top` …, `radius` (one to four corners), `shadow` | colors, `linear-gradient()`, `radial-gradient()`, `conic-gradient()`, `image(url, fit, slice)` |
 | Layout | `layout` (`row`, `column`, `grid`, `stack`), `width`, `height`, `min-*`, `max-*`, `gap`, `padding`, `align`, `justify`, `columns`, `rows`, `grid-template-areas`, `grid-area`, `order`, `visible`, `position` (`flow`, `overlay`), `inset` | `px`, `em`, `%`, `fr`, `auto`, `calc()` |
 | Artwork | `body`, `pointer` (knobs), `cap`, `rail` (faders), `face`, `icon` (buttons), `frames`, `frame-rate` | `image(url)`, `frames(url, count)`, `none` |
 | Controls | `appearance` (`auto`, `knob`, `field`), `direction` (`vertical`, `horizontal`) | keywords |
@@ -310,7 +310,7 @@ breakpoint while resizing costs one fresh cascade.
 | Glass | `glass`, `blur`, `glass-content`, `backdrop` | section 6 |
 | Motion | `transition` | property, duration, easing (`linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`, `cubic-bezier()`) |
 
-Colours are `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `hsl()` and `color-mix()`. The text
+Colors are `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `hsl()` and `color-mix()`. The text
 properties inherit, as in CSS; the rest do not. There is no margin (gaps and padding cover it), no
 floats, no transforms. `prefers-reduced-motion` turns transitions off unless a theme says otherwise.
 
@@ -376,9 +376,9 @@ or Escape discards them; entering and leaving without a change writes nothing.
 #### The model
 
 The window is a stack of **materials**: panes of frosted glass. Two numbers describe a spot of the
-window: its **colour**, and its **opacity** `A`, how much it blocks the desktop (1: solid, the
+window: its **color**, and its **opacity** `A`, how much it blocks the desktop (1: solid, the
 desktop hidden; 0: clear, only the blurred desktop). The OS shows
-`A × colour + (1 − A) × blurred desktop`.
+`A × color + (1 − A) × blurred desktop`.
 
 The window is the first material. An element with `glass` is another, with a glass value `g` from
 0 (clear) to 1 (solid). An element without `glass` is not a material: what it paints goes onto the
@@ -397,7 +397,7 @@ A material sits in one of two ways:
 **Blur comes first.** A pane blurs everything behind it before anything else happens: `blur` (a
 radius, `24px` by default, `0` for clear glass) blurs the window's content behind an over pane, or
 behind the over pane an inset pane reaches down to; the desktop behind it all is blurred by the OS.
-Write `B` for what is behind a pane, already blurred: its colour `V_B` and opacity `A_B` (for an
+Write `B` for what is behind a pane, already blurred: its color `V_B` and opacity `A_B` (for an
 over pane, what is under it; for an inset pane, its base; `A_B = 0` for the desktop). Then the pane
 is laid over `B`:
 
@@ -407,16 +407,16 @@ A = g + (1 − g) × A_B
 
 Glass stacks like panes: light through two panes is reduced by both.
 
-**Colour alpha** is how much of a surface a paint covers. It mixes the paint's colour into the
-colour of the material it is painted on, and never changes `A`: `rgb(255 255 255 / 6%)` on a pane
+**Color alpha** is how much of a surface a paint covers. It mixes the paint's color into the
+color of the material it is painted on, and never changes `A`: `rgb(255 255 255 / 6%)` on a pane
 tints the pane. A pane's own `background` is its surface. Where it has no paint, a pane takes the
-colour behind it: an over pane the blurred colour under it, an inset pane its parent's colour. So
+color behind it: an over pane the blurred color under it, an inset pane its parent's color. So
 `glass` and `blur` alone frost a spot without tinting it.
 
-Painting colour `C` with colour alpha `α` on a pane with glass `g`:
+Painting color `C` with color alpha `α` on a pane with glass `g`:
 
 ```text
-surface S = α × C + (1 − α) × U        (U: the unpainted colour, above)
+surface S = α × C + (1 − α) × U        (U: the unpainted color, above)
 A'        = g + (1 − g) × A_B
 V'        = (g × S + (1 − g) × A_B × V_B) / A'
 ```
@@ -432,8 +432,8 @@ Examples, with the window at `glass: 0.9 inset`:
 | `#browser` | `0.5 inset` | 0.5 | Half the blurred desktop shows through the browser |
 | a card in the browser | `0.5` (over) | 0.5 + 0.5 × 0.5 = 0.75 | The card frosts the browser under it and is more solid |
 | a well in that card | `0.3 inset` | 0.3 + 0.7 × 0.5 = 0.65 | The well shows the browser behind the card, blurred |
-| a menu over the arrangement | `0.8` (over) | 0.8 + 0.2 × 0.9 = 0.98 | The menu's colour counts 0.8, the blurred arrangement 0.18, the desktop 0.02 |
-| a hover tint on a button | none | unchanged | Only the colour changes |
+| a menu over the arrangement | `0.8` (over) | 0.8 + 0.2 × 0.9 = 0.98 | The menu's color counts 0.8, the blurred arrangement 0.18, the desktop 0.02 |
+| a hover tint on a button | none | unchanged | Only the color changes |
 
 **Text and icons are solid by default.** Everything that is not a styled box (text, icons, lines,
 the canvases' drawing, and any view not yet moved to style) blocks the desktop by its own coverage,
@@ -463,9 +463,9 @@ two routes, by measurement. Either route must meet the same requirements:
 
 - what is drawn so far can be captured and blurred **in the middle of the frame**, before an over
   pane is drawn;
-- **desktop opacity is kept apart from colour alpha**: the final alpha is the running opacity `A`,
-  not the alpha of the last colour drawn (egui blends the alpha channel with the same source alpha
-  as the colour, so with egui's own pass every colour with alpha would change how much desktop
+- **desktop opacity is kept apart from color alpha**: the final alpha is the running opacity `A`,
+  not the alpha of the last color drawn (egui blends the alpha channel with the same source alpha
+  as the color, so with egui's own pass every color with alpha would change how much desktop
   shows);
 - text, icons, images and paint callbacks are all present in a capture, with nothing left out;
 - the snapshot tests draw through the same path.
@@ -475,7 +475,7 @@ shapes painted so far into an offscreen wgpu target from a paint callback, blurs
 pane over it. It keeps eframe. PR 809 lists its costs: shapes are cloned and tessellated again on
 the UI thread for each capture, the font atlas is copied and compared, and what a capture cannot
 bind (another paint callback, a texture only the main renderer has) is left out. Keeping desktop
-opacity apart from colour alpha under egui's own pass is not shown yet.
+opacity apart from color alpha under egui's own pass is not shown yet.
 
 **Route B: Suhina's own frame renderer.** Suhina runs its own window loop on egui's own parts:
 `egui-winit` for windows and input, `egui-wgpu`'s `Renderer` for egui's meshes and textures, and a
@@ -483,7 +483,7 @@ frame renderer of Suhina's own that splits the frame where it must. It is all sa
 rule 2). wgpu 30 presents transparent windows on Windows (`Dx12SwapchainKind::DxgiFromVisual`,
 through DirectComposition), and `egui_kittest` takes a custom renderer (`TestRenderer`). The frame:
 
-1. **Segments.** The frame is drawn into an offscreen target whose colour channels hold `V` and
+1. **Segments.** The frame is drawn into an offscreen target whose color channels hold `V` and
    whose alpha holds the running opacity `A`, starting at 0. Each over pane leaves a marker in
    egui's paint list (a paint callback that draws nothing). The renderer draws egui's meshes up to a
    marker, then:
@@ -491,11 +491,11 @@ through DirectComposition), and `egui_kittest` takes a custom renderer (`TestRen
    blurs it (downsample, then a dual-filter blur; cheap at any radius). That is `B` for the pane,
    and the base for any inset pane inside it.
 3. **Boxes.** A material's box computes `S`, `A'` and `V'` above from its capture (or the parent's
-   colour and base) and writes them; a box that is not a material writes colour only.
-4. **Content.** Text, icons and the canvases are drawn by egui-wgpu's renderer: they blend colour
+   color and base) and writes them; a box that is not a material writes color only.
+4. **Content.** Text, icons and the canvases are drawn by egui-wgpu's renderer: they blend color
    normally and their coverage adds to `A`, which keeps them solid. Under `glass-content: glass`
    they are drawn with alpha writes off.
-5. **Finish.** One pass copies the target to the window, multiplying the colour by `A` (the
+5. **Finish.** One pass copies the target to the window, multiplying the color by `A` (the
    premultiplied form OS compositors expect; on a post-multiplied surface it copies as is). With the
    setting off, it writes `A = 1`.
 
@@ -525,7 +525,7 @@ crates/ui/src/style/    the egui side
                         ui.element("button").id(..).class(..).state(..)
   sheet.rs              loads the layers from files: imports, fonts, images; reload on save
   artwork.rs            SVG (resvg) and PNG (image) decoding, bounded; textures per asset,
-                        scale and colour
+                        scale and color
   paint.rs              ComputedStyle → boxes (gradients, shadows) and pane markers
   text.rs               ComputedStyle → TextFormat; @font-face → FontDefinitions
   motion.rs             transitions over Context::animate_value_with_time
@@ -630,7 +630,7 @@ Nothing before step 5 changes how a frame is drawn or replaces eframe.
    backups, import and export.
 5. **Glass:** a spike of both routes in section 6 (one blurred over pane, a transparent window,
    `window-vibrancy` on Windows 11 and macOS, the finish). Measure frame time with a full project,
-   check what each capture leaves out, whether desktop opacity stays apart from colour alpha,
+   check what each capture leaves out, whether desktop opacity stays apart from color alpha,
    resizing, a second monitor and the sample map's window. Choose the route, record it in this ADR
    (and amend ADR 0009 decision 1 if it is route B), then build materials, captures and the
    setting. A platform where the OS side fails gets transparency without desktop blur, or none;
@@ -669,8 +669,8 @@ handling into steps 1 and 4, its painters into step 2. PR 809's glass work is in
 ## Open questions
 
 1. **The glass route** (section 6): is owning the window loop acceptable if step 5 shows route A
-   cannot keep desktop opacity apart from colour alpha, or should desktop transparency wait?
-2. **Transitions on layout** (sizes and positions), not only colours and numbers: wanted?
+   cannot keep desktop opacity apart from color alpha, or should desktop transparency wait?
+2. **Transitions on layout** (sizes and positions), not only colors and numbers: wanted?
 3. **Liquid rims:** should PR 809's track and clip rims return as a property (`rim`), and in which
    step?
 4. **Artwork by file name:** should a theme that is only a folder of images (`knob.body.svg`,
@@ -701,7 +701,7 @@ the variant's `appearance`.
 Accepted for the parts below; *presentation defaults* is proposed.
 
 A first theme made by hand on disk ([#880](https://github.com/suhina-daw/suhina-daw/pull/880)) found
-the controls' shapes fixed in code: the CSS reached their colours only. So:
+the controls' shapes fixed in code: the CSS reached their colors only. So:
 
 - **Control surfaces.** A native control's surface (background, `border-width` and
   `border-color`, radius, shadows, opacity) comes from its element, the native values where the
@@ -714,12 +714,12 @@ the controls' shapes fixed in code: the CSS reached their colours only. So:
   setting is *Theme*, the new default; the user's Left or Right wins.
 
 A second theme made by hand (2026-10-23, round 2) added: host states (`:checked`, `:selected`,
-`:playing`, `:recording`, `:armed`, `:muted`) and host variables (`--track-colour`,
-`--track-fill`) in the cascade, per-view track artwork, a bar's own separator colour, `.menu` and
+`:playing`, `:recording`, `:armed`, `:muted`) and host variables (`--track-color`,
+`--track-fill`) in the cascade, per-view track artwork, a bar's own separator color, `.menu` and
 `.popup` classes and a least header width a theme may set.
 
 **Proposed: presentation defaults from the theme.** The Settings page's other presentation
-choices (header and clip colour strength, waveform and note colours, mixer knobs or fields)
+choices (header and clip color strength, waveform and note colors, mixer knobs or fields)
 would work the same way: the theme gives a default as a `--suhina-*` property, the setting gains
 *Theme* and stays the user's override, and the root element says the value in use
 (`[data-track-headers=left]`) so a theme can lay out each case. Open: which choices count as
@@ -749,7 +749,7 @@ themes written for the earlier folders are not migrated.
 
 - **A theme is a folder** of `theme.json`, `theme.css`, an optional `thumbnail.svg`, `assets/`
   and `variants/`. `theme.json` holds the format version, name, author, description, the default
-  variant's name, the swatch colour and an optional suggested toolbar arrangement; the theme's
+  variant's name, the swatch color and an optional suggested toolbar arrangement; the theme's
   name comes from it, not from CSS.
 - **One `theme.css`.** `layout.css` is merged into it and no longer read. What Suhina's editors
   set beyond settings is written into `theme.css` through `suhina_style::edit`, which changes
@@ -767,7 +767,7 @@ themes written for the earlier folders are not migrated.
   drawn as a `theme-swatch` element with a `color` attribute, styled by the theme in use.
 - **Thumbnail.** `thumbnail.svg`, 16:9, may use the theme's properties through `var()`, resolved
   as for the swatch; the artwork checks apply. Without one, the card is filled with the swatch
-  colour. This replaces the open question of rendered thumbnails per variant above.
+  color. This replaces the open question of rendered thumbnails per variant above.
 
 ## Amendment: the element registry, elements by name, attributes and `Element` (2026-11-07)
 
@@ -863,7 +863,7 @@ open.
   so selectors, `:is()`, `@media`, layers and `var()` work for settings as for any property.
   Those read before their element is drawn (`arrangement`'s and `device`'s, and the frames of
   `menu`, `popup` and `tooltip`) are worked out by the same style engine with the window's sheets,
-  tiers, size and colour scheme, under `html > body > window` (#1585).
+  tiers, size and color scheme, under `html > body > window` (#1585).
   The core set is the palette only; a variant may hold settings too, written as rules of their
   elements. A theme still offers quick controls through its own `@property`
   (`window { liquid: var(--glassiness) 24 12; }`). Settings that a CSS layout replaces are
@@ -938,24 +938,24 @@ Accepted, from [issue #995](https://github.com/suhina-daw/suhina-daw/issues/995)
   the cascade: user-agent sheet, theme, variant, device panel sheets, user sheet
   (`Layer::UserAgent`, which was `Layer::Default`). It styles elements by name, state and
   attribute only, with no classes (but the standard toolbar group classes), ids or variables. It
-  holds the regions' `overflow: hidden`, the default artwork, the sample map's colours and the
+  holds the regions' `overflow: hidden`, the default artwork, the sample map's colors and the
   theme swatch's rounded square. Until the palette goes (section 10 of #995), the palette's
-  values, the text colour of `html, body` and the palette colours of `knob-body`, `fader-cap` and
+  values, the text color of `html, body` and the palette colors of `knob-body`, `fader-cap` and
   `fader-rail` sit beside it in its tier as the host's. A rule of this tier on an element replaces
   what it inherited from a sheet's rule above it, and its value counts as not written by a sheet
-  (`ComputedStyle::authored`): a colour a theme gives a `knob` or a `mixer` does not reach a
-  knob's body or a fader's rail or cap, whose readers take the computed colour, this tier's
+  (`ComputedStyle::authored`): a color a theme gives a `knob` or a `mixer` does not reach a
+  knob's body or a fader's rail or cap, whose readers take the computed color, this tier's
   included (`Entered::computed_color_or`).
 - **Default artwork belongs to the user-agent sheet** (`knob-body { image:
-  url("suhina:knob.body.svg"); }`), on the element that draws it, and takes its colour only from
-  `currentColor`: the `data-suhina-ink` attribute is gone. A control with two colours is two
+  url("suhina:knob.body.svg"); }`), on the element that draws it, and takes its color only from
+  `currentColor`: the `data-suhina-ink` attribute is gone. A control with two colors is two
   elements (`knob-body` and `knob-pointer`, new in the registry, and `fader-cap` and
   `fader-rail`); a button's and a track's symbols are `icon[kind="…"]`. The earlier role
   selectors (`knob.body`, `play`, `solo:on`) still read; Suhina writes the element form.
 - **Including the default artwork** in a theme is an option of *New theme* and *Duplicate*, and
   *Add default artwork* adds what a theme lacks: the SVGs are copied into its `assets/` with a
   rule for each in its `theme.css`.
-- **Sample-map colours are not settings**: the user-agent sheet styles `sample-point[kind="…"]`
+- **Sample-map colors are not settings**: the user-agent sheet styles `sample-point[kind="…"]`
   and the `kind.*` palette tokens are gone.
 - **Quick controls are the theme's `@property` rules with a label**; the variant editor shows
   only those.
@@ -996,7 +996,7 @@ Accepted, from [issue #1370](https://github.com/suhina-daw/suhina-daw/issues/137
 Accepted, from [issue #1417](https://github.com/suhina-daw/suhina-daw/issues/1417), the first
 slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 10 of #995).
 
-- **What these views draw is an element.** Every colour the Launcher, its mixer strips and
+- **What these views draw is an element.** Every color the Launcher, its mixer strips and
   meters, the Arrangement (its ruler, grid, lanes, clips, take lanes, automation lanes and
   envelopes) and the piano roll's grid, notes, ruler and loop row paint is read from the element
   that draws it, with the palette token it used before
@@ -1006,16 +1006,16 @@ slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 
 - **A drawn item's style is read once per kind** (`Look`, from `Name::look` or
   `Builder::look`), outside the loop that draws its items: a grid line drawn a hundred times is
   one element of the style tree, so the tree grows with kinds, not with items.
-- **A line or a mark takes only a colour given to it** (`Look::own_color_or`, `Entered::own_color_or`):
-  the text colour a rule gives a view (`session { color }`) does not reach its lines. Text takes
-  the inherited colour (`Look::color_or`, `Entered::color_or`), as the scoped palette gave it.
+- **A line or a mark takes only a color given to it** (`Look::own_color_or`, `Entered::own_color_or`):
+  the text color a rule gives a view (`session { color }`) does not reach its lines. Text takes
+  the inherited color (`Look::color_or`, `Entered::color_or`), as the scoped palette gave it.
 - **A toggle keeps its lit state.** While a button is on, its fill and ink come from the sheet
   only where a rule for the state (`button[checked]`) makes them differ from the same button with
   only that state off, its pointer states kept (`Builder::enter_against_plain`): neither a rule
   for every `button` nor a `button:hover` rule hides which one is on (`widgets::toggle_inks`,
   `Look::background_unlike`). The comparison is its own chain's style, never the values a drawn
   element held for a transition. The same holds for a clip's `[queued]`, `[selected]` and
-  `[muted]` outlines and fill in a Launcher slot, a picked automation point's `[selected]` colour,
+  `[muted]` outlines and fill in a Launcher slot, a picked automation point's `[selected]` color,
   and a lane's `[checked]` light.
 - **`[queued]` is an attribute** the app gives, as `[playing]` is: a clip or a track's
   stop button waiting for its launch. `:queued` is no longer a pseudo-class.
@@ -1023,7 +1023,7 @@ slice of [#1023](https://github.com/suhina-daw/suhina-daw/issues/1023) (section 
   `start-marker`, `marker`, `time-selection`, `marquee`, `drop-target`, `slot-mark`, `slot-record`,
   `mapping-overlay`, `clip-fade`, `clip-envelope`, `take-header`, `automation-header`,
   `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `device-list`,
-  `device-row`, `scroll-bar`, `pan-centre`, `meter-clip`, `arrangement-tool`, `piano-slice`,
+  `device-row`, `scroll-bar`, `pan-center`, `meter-clip`, `arrangement-tool`, `piano-slice`,
   `piano-row[kind="hover"]`, `piano-note[kind="draft"]`, `velocity[kind="line"]`; Main's header is
   `track-header[kind="main"]`, a track's stop button `slot[kind="stop"]`, **Stop all**
   `scene[kind="stop-all"]`, the Launcher mixer's top line `divider#mixer-splitter`.
@@ -1034,12 +1034,12 @@ Accepted, from [issue #1023](https://github.com/suhina-daw/suhina-daw/issues/102
 shared controls (a track's solo, cue and arm, the kit's own fields' underlines, drop-downs,
 dialog buttons, knobs and dials, the swing slider, sends, fader caps and a typed number) draw
 from their elements as the views do, the palette token as the fallback. Solo, cue and arm are lit
-only by a rule for their state, the colour and the background image of a rule for every `button`
+only by a rule for their state, the color and the background image of a rule for every `button`
 kept off their lit fill, through the whole fade both ways (`widgets::Toggle`,
 `Builder::enter_toggle`, `Entered::paint_over`); the other toggles move to it with their views
 (`widgets::toggle_colors_in`, `toggle_inks`). New kinds are `dropdown[kind="subtle"]` and
 `text-input[kind="typed"]`, which only a rule for the kind reaches, and `slider[checked]`;
-`accent-color` colours a dial's pointer and a field's or a track button's focus.
+`accent-color` colors a dial's pointer and a field's or a track button's focus.
 
 ## Amendment: the browser, the detail panels and the piano roll's keys and toolbar draw from their elements (2026-11-14)
 
@@ -1049,7 +1049,7 @@ action, a device's and a device group's panel, an expanded panel and the piano r
 toolbar, corner and gestures draw from their elements, the palette token as the fallback, so a
 theme that leaves them alone looks as before. Their words read `label` by how much they stand
 out (`hint`, `caption`, `title`, `value`, `error`, `plugin-state`, `head`); `hint` and `caption`
-take only a colour a rule gives them, so a colour a theme gives a whole panel keeps them dimmer
+take only a color a rule gives them, so a color a theme gives a whole panel keeps them dimmer
 than its names. Lit toggles are lit by the base sheet's `[checked]` rules (the follow action's
 switches, a branch's mute and solo, the browser's chips); under [#1448](https://github.com/suhina-daw/suhina-daw/issues/1448)
 a theme's rule for every `button` beats a base rule, so a theme that has one states its lit look
@@ -1059,7 +1059,7 @@ switch, `button#control-device-on`, is an ordinary button: a rule for every `but
 (changed with #1474's review). egui's fields in the browser take `text-input` through `Entered::ui`. The Arrangement's
 header edge is `divider#arrangement-header-splitter`. Where no theme's sheet runs, the piano
 roll's toolbar is laid out with its Toolbar size and measured with the user-agent sheet's padding,
-as it is when the style engine runs. The EQ's curve and the colours a device panel's canvas hands
+as it is when the style engine runs. The EQ's curve and the colors a device panel's canvas hands
 the device SDK still come from the palette.
 
 ## Amendment: the control bar, tabs, menus, Settings and the dialogs draw from their elements (2026-11-15)
@@ -1068,33 +1068,33 @@ Accepted, from [issue #1023](https://github.com/suhina-daw/suhina-daw/issues/102
 slice before the palette goes: the control bar (its words, its keys, mapping and view switches, RAM
 and CPU), the tabs, the menu bar, the status bar, the Settings page and its plug-in manager, the
 start page and every dialog (project, save, unsaved changes, export, updates, missing files,
-loading, closing, quick add, the agent prompt, drops and name clashes), the colour picker, the
+loading, closing, quick add, the agent prompt, drops and name clashes), the color picker, the
 drag pill and the splash draw from their elements, the palette token as the fallback, so a theme
 that leaves them alone looks as before. The rules of the earlier amendments hold: a view reads each
-kind of word once a frame (`label[kind]`: `hint` and `caption` take only a colour given to them;
+kind of word once a frame (`label[kind]`: `hint` and `caption` take only a color given to them;
 names, values and titles inherit), an interactive part is entered with its response, and a lit
 switch is lit only by a rule for its lit state.
-- **Every lit switch keeps its lit state.** The switches that took the palette's colours whole
+- **Every lit switch keeps its lit state.** The switches that took the palette's colors whole
   (a track's on switch in the Arrangement and the mixer, the Arrangement's monitor, take-lanes and
   automation switches, the browser's Auto, a device's On/Off, the computer keyboard, Settings'
   switches, its chosen segments, a plug-in folder's format and a keymap preset) are entered as a
   `button` with `[checked]` and drawn with `widgets::lit_toggle` (`Builder::enter_toggle`,
-  `Toggle::of`), so a rule for every `button` colours their unlit state and leaves them lit.
-  `widgets::toggle_colors` stays only for the controls that already take their lit colours from
+  `Toggle::of`), so a rule for every `button` colors their unlit state and leaves them lit.
+  `widgets::toggle_colors` stays only for the controls that already take their lit colors from
   `Toggle::of` or a `[checked]` comparison and use it as their fallback.
 - **New elements:** `dialog-title` (a dialog's title row), `list-row` (a row a click picks,
-  `[selected]`), `colour-swatch` (the colour picker's swatches), `theme-card` (a theme's card in
+  `[selected]`), `color-swatch` (the color picker's swatches), `theme-card` (a theme's card in
   the picker, `[selected]` for the theme in use). The start page's tabs are `editor-tab#tab-recent`
   and `#tab-templates`. A dialog's progress bar is `progress` and `progress-fill`, the toolbar's
   RAM and CPU `meter` and `meter-level`, a drag pill `tooltip`, a splash a `dialog`. The detail
   area's splitter, `divider#detail-splitter`, takes `[closed]` while the area is closed.
 - **What stays on the palette:** the window background's scaling (`app/background.rs`), the theme
-  editor's palette editing and the colour a track's header takes from its track (`colour_picker::fill`
-  mixes the control colour into it while a track is off): the theme model's slice. A bar's native
+  editor's palette editing and the color a track's header takes from its track (`color_picker::fill`
+  mixes the control color into it while a track is off): the theme model's slice. A bar's native
   line where no sheet runs has no rule to read.
 - **A theme that styles the new elements:** a rule for `button` now reaches the control bar's
   Keys and Map, Settings' Help, Close, Reset, Add, Remove and scan buttons, a dialog's Close and
-  the colour picker's "+", which took the palette's colours before: Suhina Sheet, Meadow and Blocks,
+  the color picker's "+", which took the palette's colors before: Suhina Sheet, Meadow and Blocks,
   which have such a rule, paint these as their buttons.
 - **Where no sheet runs, a Settings page's `overflow: hidden` clips.** Suhina Studio drawn with
   the style engine on and without differ only in the clip rectangles of Settings and the menus
@@ -1113,11 +1113,11 @@ and the palette no longer reaches egui's widgets except as that fallback.
   `Visuals`: `button` (plain, `:hover`, `:active`, `:disabled`) for the widget states
   (`inactive`, `hovered`, `active`, `noninteractive`; `open` takes `:active`, the engine has no
   `:open` state), `button[checked]` for the selection, `text-input` for the text fields' fill and
-  colour. A style scope (`ui_for`) applies the same rules, entered inside it as before; the root
+  color. A style scope (`ui_for`) applies the same rules, entered inside it as before; the root
   applies them to the palette-built `Visuals`. The root's lookups are `Builder::probe`s, which
   leave no node in the style tree, so the budget does not grow.
 - **Root only.** `text-input:focus` (its border: egui outlines a focused field with the selection's
-  stroke, which `button[checked]`'s colour also sets), `menu` (egui frames every menu and pop-up
+  stroke, which `button[checked]`'s color also sets), `menu` (egui frames every menu and pop-up
   with the window's fill, stroke, `menu_corner_radius` and `popup_shadow`, so `menu`'s
   `background-color`, border, `border-radius` and first outer `box-shadow` write those, and
   egui's windows share them) and `scroll-bar` (plain, `:hover`, `:active`: egui draws a scroll
@@ -1134,49 +1134,49 @@ and the palette no longer reaches egui's widgets except as that fallback.
 - **Suhina Studio and the no-rule path.** The default theme runs without the style engine; the
   lookups answer nothing and the `Visuals` are the palette's, as is every built-in theme's that
   has no rule for these elements (`with_no_rule_the_root_visuals_are_the_palettes_in_every_built_in_theme`).
-- **A rule gives only what it says.** A colour and no width (`border-color`) changes an outline's
-  colour and keeps the width it had, and only an authored width (0 too) changes the width: a rule
-  for `button:disabled` that gives a border colour would otherwise make `noninteractive`'s
+- **A rule gives only what it says.** A color and no width (`border-color`) changes an outline's
+  color and keeps the width it had, and only an authored width (0 too) changes the width: a rule
+  for `button:disabled` that gives a border color would otherwise make `noninteractive`'s
   outline, which egui draws its menu separators with, zero-width, and the separators would vanish
   (Suhina Sheet, Meadow and Blocks did). The same holds for `menu`'s border and `text-input:focus`.
   `button[checked]` likewise gives the selection only what differs from the plain `button`: a rule
-  for every `button` is not the selection's, which would otherwise be the colour of every row and
+  for every `button` is not the selection's, which would otherwise be the color of every row and
   hide which one is chosen. Both are in the one mapping, so a style scope takes them too.
 - **A theme that styles them.** A theme's rule for `button`, `button:hover` or `text-input` now
   reaches egui's widgets outside a style scope as well: Suhina Sheet, Meadow and Blocks, which
   have such rules, show them on the widgets the views draw with egui at the root (their menus'
   rows and labels, text fields and tooltips' words), and the selection takes the theme's
-  `button[checked]` or the token's colour in the scopes too (the piano roll, the sample map, the
+  `button[checked]` or the token's color in the scopes too (the piano roll, the sample map, the
   clip's MIDI view, the export dialog); 34 of the painted record's digests change, in the scenes
   clip-midi, context-menu, empty-space-menu, export-dialog, grid-menu, menu, missing-files,
   piano-roll, quick-add, sample-map, settings-menu and tooltip; every other theme's digests are
   unchanged.
 
-## Amendment: a theme's colours are variables, not a palette (2026-11-15)
+## Amendment: a theme's colors are variables, not a palette (2026-11-15)
 
 Accepted, from [issue #1444](https://github.com/suhina-daw/suhina-daw/issues/1444), the sixth
-slice of #1023 after #1433, #1435, #1438, #1440 and #1442: a theme held its colours as a fixed
+slice of #1023 after #1433, #1435, #1438, #1440 and #1442: a theme held its colors as a fixed
 struct with every token filled in, so a saved theme wrote every token and the theme editor edited
 struct fields. It now holds them the way the style sheet does, as custom properties.
 - **A map of what the theme sets.** `Theme.colors` is a `BTreeMap<String, Color32>` keyed by the
   variable's name without its `--` (`window-background`, `accent`, `track-headerBackground`), the
   names `:root { --… }` uses; a JSON theme's `window.background` is read as `window-background`.
-  A colour the theme does not set is not in it. `Theme::transparent_rgb` is keyed the same way.
-- **The effective palette.** `Theme::palette()` is Suhina Studio's colours (`Palette::DARK`) with
+  A color the theme does not set is not in it. `Theme::transparent_rgb` is keyed the same way.
+- **The effective palette.** `Theme::palette()` is Suhina Studio's colors (`Palette::DARK`) with
   the map's over them (`Palette::from_colors`). Everything that painted from `theme.colors`
   (the app's `set_palette`, window opacity, swatches, the style engine's host `:root` block, the
-  device panels' colour snapshot) takes that, so with no change to a theme every built-in theme
+  device panels' color snapshot) takes that, so with no change to a theme every built-in theme
   paints as before: a model change, not a look change. The views' token functions and `Palette`
   itself stay until the views draw from elements alone.
-- **A colour that equals Suhina Studio's is not set.** Reading a theme's sheet (and a variant)
-  puts a colour in the map only when it differs from Suhina Studio's, so Suhina Studio's own map
-  is empty and a saved theme is short. The editor may set a colour to Suhina Studio's value; it
+- **A color that equals Suhina Studio's is not set.** Reading a theme's sheet (and a variant)
+  puts a color in the map only when it differs from Suhina Studio's, so Suhina Studio's own map
+  is empty and a saved theme is short. The editor may set a color to Suhina Studio's value; it
   stays in the map until the theme is read again.
 - **Saving writes only the map.** `theme.css` (`theme_css::sheet`), the native CSS export and a
-  theme's JSON write the colours in the map and no other; a theme that sets none writes no
-  `:root` colour block and no `"colors"` object.
+  theme's JSON write the colors in the map and no other; a theme that sets none writes no
+  `:root` color block and no `"colors"` object.
 - **Old token names are dropped.** `RENAMED` is gone: `--surface-0`, `"line"` and the rest are
-  reported like any name that is not a token. The former track colours and `kind.*` colours keep
+  reported like any name that is not a token. The former track colors and `kind.*` colors keep
   their own notices.
 
 ## Amendment: a base sheet under every theme holds Suhina's design (2026-11-15)
@@ -1186,13 +1186,13 @@ the pull requests that remove the palette (#1023): Suhina's defaults move out of
 ordinary CSS, in a cascade tier of their own under the theme.
 
 1. **The user-agent sheet stays bare** (`crates/theme-package/src/user-agent.css`): no variables
-   and no colours but a plain readable floor (fixed light text on an opaque dark `window`), only
+   and no colors but a plain readable floor (fixed light text on an opaque dark `window`), only
    what keeps every element usable (layout, the regions' `overflow`, the default artwork, the
    floating surfaces' blur, the bars' border widths, the theme swatch's square). It is the floor a
    theme stands on when it opts out of the base sheet, and the base sheet gives the window Suhina's
-   colours over it.
+   colors over it.
 2. **A base sheet holds Suhina's design** (`crates/theme-package/src/base.css`, `BASE_SHEET`) as
-   ordinary rules written with the colour variables (`progress { background-color:
+   ordinary rules written with the color variables (`progress { background-color:
    var(--control-background); }`), in a tier of its own between the user-agent sheet and the
    theme: `Layer::Base`, so the cascade's tiers are user agent, base, theme, variant, device
    panel sheets, user sheet. **Every theme rule beats every base rule**, whatever its
@@ -1202,97 +1202,97 @@ ordinary CSS, in a cascade tier of their own under the theme.
    `button { background-color: … }` overrides the base sheet's `button[checked]` background too,
    while a property the theme does not set keeps the base value, so a theme states the states it
    wants for each property it sets (`button[checked] { background-color: … }`); a theme that sets
-   only colour variables keeps every state. Base declarations are not "authored"
+   only color variables keeps every state. Base declarations are not "authored"
    (`ComputedStyle::authored`, `declared`), as the user agent's are not, so the code that asks
    whether a theme styled something sees only the theme's rules, and a base rule on an element replaces what it inherited from a theme's rule
-   around it, as a user-agent rule does. The colour variables' defaults (Suhina Studio's) are the
+   around it, as a user-agent rule does. The color variables' defaults (Suhina Studio's) are the
    core `@property` registrations (`core.css`, `theme_vars::core_sheet`), in the base tier of
    every cascade, so `var(--accent)` always resolves. The base sheet moves in what was the host's
-   beside the user-agent sheet (the text colour and size of `html, body`, the colours of
-   `knob-body`, `fader-cap` and `fader-rail`, the bars' border colour) and the user-agent sheet's
-   colours (the browser's icons, the sample map's kinds and the muted Arrangement clip's and
+   beside the user-agent sheet (the text color and size of `html, body`, the colors of
+   `knob-body`, `fader-cap` and `fader-rail`, the bars' border color) and the user-agent sheet's
+   colors (the browser's icons, the sample map's kinds and the muted Arrangement clip's and
    track header's grey), each of those now a core variable of its own (`--browser-icon-midi`,
    `--sample-kick`, `--clip-mutedBackground` …) with its earlier value.
 3. **A theme can opt out** of the base sheet with `"base": "none"` in its `theme.json`
    (`ThemeMeta::base`): it then gets the user-agent sheet's bare look, readable text on an opaque
    window, under its own rules. The
-   theme's colour map and the core registrations still apply.
-4. **Colouring a region goes through its variables**, as ordinary CSS does: `mixer {
-   --text-value: gold; }` reaches every part inside the mixer the base sheet colours with
+   theme's color map and the core registrations still apply.
+4. **Coloring a region goes through its variables**, as ordinary CSS does: `mixer {
+   --text-value: gold; }` reaches every part inside the mixer the base sheet colors with
    `--text-value`. A plain `mixer { color: gold }` reaches only what has no rule of its own, so
-   it no longer recolours parts the base sheet styles. The built-in themes' region rules
+   it no longer recolors parts the base sheet styles. The built-in themes' region rules
    (Meadow's `window, session, arrangement` and `toolbar, status-bar`, Sheet's those and
    `detail, device-panel`, Blocks' `detail, device-panel`) set the text variables as well as
    `color` (all but `--text-value`, which the base sheet's fader caps mix in, so their caps
    keep their look).
-5. **No colour in the base sheet is fixed:** every colour declaration reads a variable, so a
+5. **No color in the base sheet is fixed:** every color declaration reads a variable, so a
    theme's variables reach everything, and an element added later matches a theme that never
    heard of it (a test in `suhina-theme-package` checks it; mixing a variable with `black` to
    shade it is allowed).
 
 With it:
 
-- **The colours come from the variables.** The host's `:root { --… }` block that
-  `native_css::begin_frame` built from the palette is gone. A theme's colour map
+- **The colors come from the variables.** The host's `:root { --… }` block that
+  `native_css::begin_frame` built from the palette is gone. A theme's color map
   (`Theme.colors`) is written as a `:root` rule in the base tier, after the base sheet
   (`native_css::set_colors`), so any `:root` in the theme's own sheet beats it. The palette's
-  colour functions (`theme::accent()` …) read a snapshot of the cascade's resolved root
+  color functions (`theme::accent()` …) read a snapshot of the cascade's resolved root
   variables, taken once each time the styles reset, not a table `set_palette` fills; a
   `user.css` that sets `--accent` reaches everything, Suhina Studio included. What is left of
   `set_palette` is egui's light or dark scheme, which #1452 removes with the palette.
 - **Suhina Studio runs the style engine** like every other theme: its sheet is no longer set
   aside, and the engine never stops for want of a sheet. It costs what Glass costs in the
-  budget's scenes. Editing one colour of a theme's map resets the styles once, as a theme
-  change does: the base sheet reads every colour variable, so no change is unread. Resetting
+  budget's scenes. Editing one color of a theme's map resets the styles once, as a theme
+  change does: the base sheet reads every color variable, so no change is unread. Resetting
   only the styles that read the changed variable was not built (it needs the cascade to record
   which variables each style read, through inheritance); the budget holds the one reset, and
   #1456 follows it up.
 - **Window opacity is a value on `window`.** A backdrop image under a translucent window used to
-  rewrite the palette's window, panel and border colours each frame. The host now writes those
+  rewrite the palette's window, panel and border colors each frame. The host now writes those
   three variables, faded (`Color32::gamma_multiply`), in a base-tier rule for `window`
   (`native_css::set_window_opacity`, given before the frame's styles are worked out, so the frame
-  an image first shows in is faded), and the root snapshot carries the same faded colours, so
+  an image first shows in is faded), and the root snapshot carries the same faded colors, so
   the palette's readers and the sheet's agree, byte for byte with what the palette gave
-  (tested at 0, 37, 80 and 100 %, and a translucent colour at every whole percent). A base rule mixing them with `transparent` by a variable was
+  (tested at 0, 37, 80 and 100 %, and a translucent color at every whole percent). A base rule mixing them with `transparent` by a variable was
   not taken: the palette's readers read the variables, and a variable cannot be mixed from its
   own value on the same element.
 - **A transitional scope rule** (removed in #1452 with the palette): entering an element with
-  its own style, the palette scope also takes that element's colour variables that differ from
+  its own style, the palette scope also takes that element's color variables that differ from
   its parent's, so `mixer { --text-value: gold }` reaches the palette's readers inside the mixer
   as well as the base sheet's rules, until each reader moves onto an element.
 - **Readers without a fallback**, `color()`, `background()`, `border()` and `accent()` on
-  `Computed`, `Look` and `Entered`, give the element's computed colour, transparent where the
+  `Computed`, `Look` and `Entered`, give the element's computed color, transparent where the
   window has no style. The progress bar (`progress`, `progress-fill`) and the drop targets' lines
-  (`drop-target[kind="insert"]`, `[kind="area"]`) read their colours with them from base rules,
+  (`drop-target[kind="insert"]`, `[kind="area"]`) read their colors with them from base rules,
   the first parts that have no palette fallback.
 
 ## Amendment: the palette goes (2026-11-15)
 
-The last step of #1023 (#1452). With every view reading its colours from its elements' computed
+The last step of #1023 (#1452). With every view reading its colors from its elements' computed
 styles, nothing reads the palette any more, so it is removed:
 
-- **Gone:** `Palette`, the `palette!` macro, the colour functions (`theme::accent()` …),
+- **Gone:** `Palette`, the `palette!` macro, the color functions (`theme::accent()` …),
   `set_palette`, `use_palette`, the palette's revision, `Theme::palette()`,
   `Palette::from_colors`, `colors_of` and the palette half of a style scope (`local_palette`,
   `set_foreground`, `set_background` and the transitional scope rule of the base-sheet
-  amendment). Nothing in Rust names a colour a view paints.
-- **The tokens are names:** `theme::TOKENS` lists each colour token's name in a theme file and
+  amendment). Nothing in Rust names a color a view paints.
+- **The tokens are names:** `theme::TOKENS` lists each color token's name in a theme file and
   what it is for. Suhina Studio's values are written in one place, the core sheet
   (`suhina_theme_package::CORE_SHEET`, `@property` initial values); `theme::default_color` reads
   them, and `Theme::color` gives a theme's value of a variable (its map's, else Studio's), for
   what reads a theme that is not in use: the theme editor, swatches, thumbnails, the import of
   older files.
-- **An inherited colour is CSS inheritance.** `mixer { color: gold }` reaches what inherits
+- **An inherited color is CSS inheritance.** `mixer { color: gold }` reaches what inherits
   `color` and has no rule of its own; `mixer { --text-value: gold }` reaches every part the base
-  sheet colours with the variable. No scope copies colours into Rust.
+  sheet colors with the variable. No scope copies colors into Rust.
 - **Light or dark, and see-through, come from the computed `window`.** Each time the styles
-  reset (`sync_root_visuals`), the window's computed text colour says whether the theme is light
+  reset (`sync_root_visuals`), the window's computed text color says whether the theme is light
   (egui passes it on to the native window's title bar) and the window's or its panels' computed
   background whether the desktop shows through. `theme::window_fill()` is the window's computed
-  background, for what clears behind the UI outside the style tree (the app's clear colour, the
+  background, for what clears behind the UI outside the style tree (the app's clear color, the
   GPU pass, the painted tests).
-- **Tests and tools set colours as a theme does:** `theme::use_colors` gives the style engine a
-  colour map from the next frame (`native_css::set_colors`), and a test reads what an element or
+- **Tests and tools set colors as a theme does:** `theme::use_colors` gives the style engine a
+  color map from the next frame (`native_css::set_colors`), and a test reads what an element or
   the root resolved (`native_css::root_color`), never a palette.
 
 ## Amendment: the strips lay their parts out in CSS, and control placements go (2026-11-15)
@@ -1308,7 +1308,7 @@ status*) and, for the track headers, the mixer strips and the transport, decisio
   toolbar's transport lay their parts out through the bars' helper (`kit::native_css::row`,
   *Amendment: the window is one grid* and the bars' rows of #1372), with Flexbox and Grid on
   Taffy: the parts are the elements that paint them (`button#control-solo`, `fader#mixer-volume`,
-  `meter`, `track-name`, `track-colour`, `mixer-toggles`), in `group`s that lay them out and paint
+  `meter`, `track-name`, `track-color`, `mixer-toggles`), in `group`s that lay them out and paint
   nothing (`group#mixer-body`, `#mixer-level`, `#header-first`). A strip's parts are laid out by
   their `order`; a bar's items keep the app's order.
 - **The user-agent sheet holds the layout Suhina had**, so nothing moves without a theme rule:
@@ -1350,18 +1350,18 @@ status*) and, for the track headers, the mixer strips and the transport, decisio
 Issue #1022. Suhina no longer writes a README or example sheets into the theme folders it makes,
 the packages it exports or the backups it writes, and *Export template* is gone. The author guide
 is a document of the repository, [`docs/guide/theme-authoring.md`](../guide/theme-authoring.md),
-with every colour token and its Suhina Studio value; a test keeps that table in step with the
+with every color token and its Suhina Studio value; a test keeps that table in step with the
 token registry. A README an author put in a theme's folder is the author's, and travels with it.
 
-## Amendment: a theme declares its colour scheme (2026-11-18)
+## Amendment: a theme declares its color scheme (2026-11-18)
 
 This replaces the amendment of 2026-11-10's refusal of `prefers-color-scheme`. Lightness was
-worked out from the window's computed text colour, an output of the cascade, so a sheet that asked
+worked out from the window's computed text color, an output of the cascade, so a sheet that asked
 for the scheme could flip it on every reset. The scheme is now an input:
 
 - `theme.json` and each variant file say `"color-scheme": "light"` or `"dark"`; a variant that
   says nothing has its theme's, and a theme that says nothing is dark. The variant editor has a
-  *Colour scheme* control for it.
+  *Color scheme* control for it.
 - Every sheet may use `@media (prefers-color-scheme: …)` and `light-dark(<light>, <dark>)`; the
   styles reset when the scheme changes. A `light-dark()` value is checked in both schemes.
 - The native window's scheme (`theme::is_light`) is the declared one.

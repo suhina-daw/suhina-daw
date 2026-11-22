@@ -48,15 +48,14 @@ pub const FIXED: &[(&str, Step)] = &[
     ("piano-roll", piano_roll),
     ("menu", |h| click(h, "File")),
     ("context-menu", context_menu),
-    ("colour-picker", colour_picker),
-    ("colour-picker-field", |h| {
-        colour_picker(h)?;
-        click(h, "› Fine adjustment")
+    ("color-picker", color_picker),
+    ("color-picker-field", |h| {
+        color_picker(h)?;
+        click(h, "View: Field")
     }),
-    ("colour-picker-wheel", |h| {
-        colour_picker(h)?;
-        click(h, "› Fine adjustment")?;
-        click(h, "Wheel")
+    ("color-menu-saved", |h| {
+        context_menu(h)?;
+        click(h, "Next swatches")
     }),
     ("settings", settings),
     ("settings-menu", settings_menu),
@@ -313,13 +312,15 @@ fn context_menu(h: &mut Window) -> Result<(), String> {
     settle(h)
 }
 
-fn colour_picker(h: &mut Window) -> Result<(), String> {
+fn color_picker(h: &mut Window) -> Result<(), String> {
     click(h, "Track Drums")?;
     h.key_press(Key::F2);
     settle(h)?;
-    // Populate history through successful choices, as in the real window.
-    click(h, "Palette #2fd9c4")?;
-    click(h, "Palette #ff9a3c")?;
+    // A saved color, and a palette color chosen, as in the real window.
+    let palette = suhina_session::colors::PALETTE;
+    click(h, &suhina_ui::interaction::color_picker::swatch_name("Palette", palette[6]))?;
+    click(h, "Save current color")?;
+    click(h, &suhina_ui::interaction::color_picker::swatch_name("Palette", palette[0]))?;
     h.remove_cursor();
     settle(h)
 }
@@ -451,7 +452,7 @@ fn with_audio() -> Result<App, String> {
         clips: vec![clip],
     });
     let _ = project.assign_ids();
-    project.fill_track_colours();
+    project.fill_track_colors();
     let mut app = crate::fixed_app();
     app.set_browser_open(false);
     app.set_session(suhina_session::Session::new(project), &[]);

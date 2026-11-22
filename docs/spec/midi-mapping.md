@@ -3,7 +3,7 @@ description: What a MIDI controller can do in Suhina - sources, targets, ranges,
 read_when: MIDI learn, MIDI mapping, map a knob, mapping mode, controller profile, controllers folder, controller_mappings, launch keys, launcher.mappings, Map keys, Map button, mapping.list, mapping.remove, takeover, pick up, relative encoder, 14-bit CC, mapping.add, mapping.learn, controllers.list, gesture, controller feedback, surface program, Lua runner
 type: spec
 status: planned
-last_verified: 2026-11-07
+last_verified: 2026-11-23
 ---
 
 # MIDI controllers and mapping
@@ -310,7 +310,7 @@ When a profile marks a control `"feedback": true` and its controller has an outp
 matching name, Suhina sends the target's value to it after every change from any source: a CC
 value for a range, 127 or 0 for a toggle, and for a clip slot a note velocity that says whether
 the slot is empty, holds a clip, is queued or plays. A value moved by a gesture is not sent back
-to the control that moves it. The velocities a pad needs for its colours are the profile's to say
+to the control that moves it. The velocities a pad needs for its colors are the profile's to say
 (`"states": { "empty": 0, "stopped": 1, "queued": 2, "playing": 3 }`).
 
 ## Surface programs (later)

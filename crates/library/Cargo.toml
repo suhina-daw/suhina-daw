@@ -1,6 +1,6 @@
 [package]
 name = "suhina-library"
-description = "The browser's library: added folders, an index of their files kept up to date, pins, recent items and colour tags"
+description = "The browser's library: added folders, an index of their files kept up to date, pins, recent items and color tags"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

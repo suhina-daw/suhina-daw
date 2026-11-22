@@ -3,7 +3,7 @@ description: Self-contained device canvases, image assets, drawing expressions a
 read_when: custom SDK control, device background, icon, photo, texture, XY pad, drawing API, image asset
 type: spec
 status: current
-last_verified: 2026-11-20
+last_verified: 2026-11-23
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-registry/src/lib.rs
@@ -52,7 +52,7 @@ strip on each axis, up or down, as a strip has no scroll bar (drawings, controls
 axis). The strip starts as tall as the canvas at the strip's width; dragging its header up or down
 changes its height (80 points to the whole main area, kept per device while the app runs) and a
 double click on the header fits it again. A canvas with `"accent_on": true` fills a
-button that is on with the theme's accent rather than the control's active colour. The close button, Escape or a second click on
+button that is on with the theme's accent rather than the control's active color. The close button, Escape or a second click on
 the header button closes it, and it closes by itself when its device is no longer shown (another
 track selected, the device removed). Its controls send the same `device.setParam` as the compact
 panel's, so undo, automation and presets do not depend on which is open. No zoom: canvases
@@ -175,7 +175,7 @@ cargo run -p suhina-device-sdk --example orbit_filter -- target/sdk-examples/orb
 assets, drawing layers, custom controls and a list of parameters hidden from the stock panel.
 Everything is stored in the single JSON `.sd` and then embedded in the project. Old files
 without a canvas use their existing controls. Built-in SDK widgets and stock parameter controls
-read the active Suhina theme at render time; authored drawing colours remain explicit. No external
+read the active Suhina theme at render time; authored drawing colors remain explicit. No external
 paths or executable UI code are read from a device file. Rust authors program panels by constructing the SDK's drawing expressions
 and input bindings. Normalized expressions can select logarithmic mapping explicitly. Standard controls remain available beside the canvas.
 
@@ -202,7 +202,7 @@ a gesture and optional X/Y parameter bindings. Bounds stay inside the canvas. Dr
 are local to the canvas or the control. Layer order is array order; controls draw after layers.
 
 Drawing commands: rectangle, circle, line, path, arc, text, image, four-corner gradient and plot.
-Paths have at most 256 points; filled paths must be convex. Arc tessellation is bounded. Colours are RGBA byte quadruples.
+Paths have at most 256 points; filled paths must be convex. Arc tessellation is bounded. Colors are RGBA byte quadruples.
 A plot is a curve from one expression: `samples` points (2..512) from `from` to `to` along x, each at the height `y`
 gives while the parameter `#x` reads its share of the way, 0 to 1; a part beyond `top` or `bottom` is not drawn, so the line ends at the edge rather than running along it. One expression
 read many times keeps a large response curve small in the file, and each parameter is looked up once per plot.
@@ -240,15 +240,15 @@ A `graphic` widget (`{"kind": "graphic", "drawing": [...]}`) draws its own drawi
 input or binding (a display or a curve that must not catch drags). Drawings of a control without a
 widget are not resolved against the theme as widgets' are; they name the theme's palette as
 `[3, 1, 1]` text, `[3, 1, 2]` panel, `[3, 1, 3]` control, `[3, 1, 4]` border and `[3, 1, 5]`
-accent (any alpha). A drawing coloured `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
+accent (any alpha). A drawing colored `[3, 0, 1]` … `[3, 0, 6]` (any alpha) takes a theme token: `--device-display`
 (a display's dark ground, default `#0a1117`) and `--device-series-1` … `5` (a device's series of
-colours, such as its bands or its operators; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`, `#ffcf7a`,
-`#3fc4e4`), from the custom property of that name as the panel's element sees it (any CSS colour:
-`#rrggbb`, `rgb()`, a named colour, `color-mix()` …), or the default.
+colors, such as its bands or its operators; defaults `#f2a65a`, `#5fd3c0`, `#9fb4ff`, `#ffcf7a`,
+`#3fc4e4`), from the custom property of that name as the panel's element sees it (any CSS color:
+`#rrggbb`, `rgb()`, a named color, `color-mix()` …), or the default.
 A rule on `:root` or `.device-panel` sets a token for every device, one on `#device-<id>` (such as
 `#device-multiband`) for one; the panel works its tokens out once a frame, in its own scope, and the
-expanded panel in the device's too. A token's colour keeps its own alpha, multiplied by the
-drawing's: a translucent theme colour stays translucent, and a drawing at half alpha shows it at
+expanded panel in the device's too. A token's color keeps its own alpha, multiplied by the
+drawing's: a translucent theme color stays translucent, and a drawing at half alpha shows it at
 half of that. A `handle` widget (`{"kind": "handle", "color": [r, g, b, a], "span": [from, to]}`,
 gesture `position`) draws a line where its parameter is, across its bounds (an X binding: a vertical
 line moved sideways; Y: a horizontal one moved up and down), and is grabbed within 7 points of it:
@@ -284,7 +284,7 @@ inside the DSP callback. UI code never loads a user native library or script.
 ## Serialized drawing fields
 
 All drawings have a `kind`. Rectangles are `[x,y,width,height]`, points are `[x,y]`; geometry
-accepts `UiValue` numbers or expression objects. Colours are `[r,g,b,a]` in 0..255.
+accepts `UiValue` numbers or expression objects. Colors are `[r,g,b,a]` in 0..255.
 
 | kind | Required fields | Optional fields |
 | --- | --- | --- |
@@ -295,7 +295,7 @@ accepts `UiValue` numbers or expression objects. Colours are `[r,g,b,a]` in 0..2
 | `arc` | `center`, `radius`, `start`, `end`, `color` | `width` (1); angles in radians |
 | `text` | `position`, `text`, `color`, `size` | `parameter` (none), `decimals` (0) |
 | `image` | `asset`, `rect` | `uv` ([0,0,1,1]), `tint` (white), `tile_size` (none), `fit` (`stretch`) |
-| `gradient` | `rect`, `colors` | Colours ordered top-left, top-right, bottom-right, bottom-left |
+| `gradient` | `rect`, `colors` | Colors ordered top-left, top-right, bottom-right, bottom-left |
 | `plot` | `from`, `to`, `top`, `bottom`, `samples`, `y`, `color` | `width` (1); `y` reads `#x` |
 
 Stroke widths and rectangle corner radii are 0..128; text size is 8..48. Image `fit` also accepts
@@ -372,7 +372,7 @@ triplet/dotted suffixes and sixteenth-note step counts while retaining saved val
 Dial also accepts optional `decimals` (default 0) and `format` (default `number`), and an optional
 `image`: the id of one of the canvas's image assets, drawn as the dial's face — a device's own
 knob. Such a dial draws, inside its bounds, its track and its value's arc (the theme's border and
-accent colours) around the image and the pointer over it (the theme's text colour); its label
+accent colors) around the image and the pointer over it (the theme's text color); its label
 and value keep their places. No theme's knob artwork replaces the image: the device has styled
 its knob, and the theme styles only what a device leaves unstyled. The pointer line takes
 `knob-pointer { color }` where the theme gives one (#1500).
@@ -387,10 +387,10 @@ frames its drop-downs' lists (fill, border, radius, shadow, and `backdrop-filter
 (`transparent` for none), and `knob-pointer { color }` its dials' pointers. A drawing's text takes the sheet's `font-size` in place of its own `size`, at
 the canvas's scale, so a device that sets it keeps a theme's larger text out of its captions.
 A control the sheet gives `display: none` (by its id, `#artwork-light { display: none; }`) is
-neither drawn nor clickable. The sheet asks for the colour scheme the theme variant in use declares
+neither drawn nor clickable. The sheet asks for the color scheme the theme variant in use declares
 with `@media (prefers-color-scheme: light | dark)` and `light-dark(<light>, <dark>)`, so a panel
 with artwork in a light and a dark version hides one under each, and gives its text, buttons
-and lists a colour for each look ([theme-skins.md](theme-skins.md) › colour scheme).
+and lists a color for each look ([theme-skins.md](theme-skins.md) › color scheme).
 
 A button's or a number field's text is centred in the control by the host: its capitals' middle
 on the control's (from the font's own cap height), not the SDK's guess at the line's height, which
@@ -437,7 +437,7 @@ single-line and two-line labels; Stepper arrows adjust by one integer or the dec
 while vertical dragging, keyboard edits and double-click reset remain available. Styling and bindings belong to each instance; no LFO section widget
 exists. The host uses the same gestures, commands, keyboard handling, undo and
 persistence as custom controls. Knobs use Suhina's small circular face, pointer and value;
-the widget palette follows the active theme. Legacy drawing colours remain literal and legacy
+the widget palette follows the active theme. Legacy drawing colors remain literal and legacy
 drawing controls remain readable. A widget and a nonempty custom drawing are mutually exclusive.
 
 ### Host theme CSS and SVG controls
@@ -450,16 +450,16 @@ Interactive drawing roles take hover/active/disabled/focus from the existing nat
 response. SDK bounds, parameter normalization, keyboard gestures, accessible names and
 `device.setParam` dispatch are unchanged.
 
-Typed widget colours are resolved against the scoped palette at render time. SVG
+Typed widget colors are resolved against the scoped palette at render time. SVG
 button backgrounds and corner radii compose with authored CSS: body artwork is
 painted once, followed by CSS gradient/shadow layers, then native foreground labels.
-The body uses control/active colours rather than the foreground text colour.
+The body uses control/active colors rather than the foreground text color.
 CSS foreground/font rules reach vector text, and background/radius/effect rules reach
-rectangle surfaces. Without CSS overrides, authored vector colours stay literal.
+rectangle surfaces. Without CSS overrides, authored vector colors stay literal.
 The theme's SVG `knob.body` / `knob.pointer` and `button` roles also style typed SDK
 Knob, Dial and Button faces. Native labels/readouts remain visible; pointers keep the
 SDK's parameter-derived angle. Missing artwork keeps the corresponding native drawing.
-Opaque and translucent palette colours are passed as unmultiplied RGBA. This affects
+Opaque and translucent palette colors are passed as unmultiplied RGBA. This affects
 presentation only and does not add executable code to an SDK device file.
 
 `Panel { label }` provides a passive themed section surface, border and optional

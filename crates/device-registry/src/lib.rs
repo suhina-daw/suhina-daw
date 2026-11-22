@@ -604,9 +604,9 @@ pub fn pack_bytes() -> usize {
     PACK_FILES.iter().map(|(_, _, bytes)| bytes.len()).sum()
 }
 
-/// The pack's provenance and licence records, `(library folder, pack folder, file name,
+/// The pack's provenance and license records, `(library folder, pack folder, file name,
 /// bytes)`, written beside the installed files at unpack: the README that says where every
-/// file came from and under what licence, and the licence texts the collected IRs were
+/// file came from and under what license, and the license texts the collected IRs were
 /// published under — a redistribution keeps them beside the files ([ADR 0036] › 6). A record
 /// the user already carries is never overwritten, like a pack file's.
 pub fn pack_records() -> Vec<(&'static str, &'static str, &'static str, &'static [u8])> {

@@ -215,7 +215,7 @@ struct Keys {
     sustain: bool,
     /// Keys released while the pedal is down, sounding until it comes up.
     sustained: [bool; 128],
-    /// The pitch bend is away from the centre, or the pressure above none: what a track that
+    /// The pitch bend is away from the center, or the pressure above none: what a track that
     /// stops hearing the source is set back from, so its instrument is not left bent.
     bent: bool,
     pressed: bool,

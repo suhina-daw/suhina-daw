@@ -3,7 +3,7 @@ description: Experimental live modal backdrop and optical coatings for track and
 read_when: glass effect, backdrop blur, rendering materials, Aero
 type: plan
 status: draft
-last_verified: 2026-11-16
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/kit/**
   - apps/suhina/src/main.rs
@@ -26,7 +26,7 @@ edge lens, independently implemented in the shared kit.
 
 [Microsoft Acrylic](https://learn.microsoft.com/en-us/windows/apps/design/style/acrylic)
 also builds depth from layered background, blur and tint. In the dense content layer,
-combine a source-coloured body gradient with the rim rather than replacing the body
+combine a source-colored body gradient with the rim rather than replacing the body
 with edge lighting alone. The body has a broad upper reflection, a shaded lower body
 and a weaker light return at the bottom. The reflection is slightly directional,
 without a hard glossy stripe across notes or waveforms.
@@ -51,7 +51,7 @@ The blur is separable, 19 taps per direction, sigma 3 downsampled pixels. The lo
 side is bounded at 1024 physical pixels. Three targets, sampler and bind groups are retained
 until their dimensions change; the main renderer's blurred and sharp texture IDs are reused
 when resized. The sharp view reinterprets the sRGB source as unorm so egui samples the
-encoded colour values without a second decode; no additional capture or render target is needed.
+encoded color values without a second decode; no additional capture or render target is needed.
 No swapchain readback, previous frame or recursive rendering is used.
 
 The UI-facing provider and independent Panel/Track/Clip options live in
@@ -64,7 +64,7 @@ The centre has zero displacement and zero sharp-overlay opacity. All labels and 
 are painted afterward. Missing sharp sources fall back to the blurred current backdrop.
 Arrangement and Launcher track headers and clip backgrounds get a lightweight optical
 coating (a narrow rounded rim with directional highlights, an inner shade and a
-weaker opposing light return, over a source-coloured directional body gradient),
+weaker opposing light return, over a source-colored directional body gradient),
 painted before labels, controls,
 notes and waveforms. A second, lazy GPU capture renders only visible surface bodies and their theme gradients,
 excluding labels, notes, waveforms and controls. Deferred edge meshes are inserted before
@@ -88,7 +88,7 @@ of the window with that dialog in it, made only in the frames that need it; its 
 the first time and kept, as the others' are), fading in as egui fades the
 surface in (its area's fade, worked out
 again from egui's area state); in a see-through window the pixels under it are cleared first, so
-the image keeps the window's alpha. A surface is found by its layer, not its colour: every layer
+the image keeps the window's alpha. A surface is found by its layer, not its color: every layer
 at egui's popup or tooltip order is one, unless the app declared it its own (`kit::floating`,
 the only caller of `egui::Area::new`); its frame is the layer's first shape. Dialogs place their
 image under their box themselves (`kit::floating::dialog`). The element's `backdrop-filter`
@@ -123,7 +123,7 @@ linear-light checkerboard mean, impulse symmetry and a changed frame at a new si
 GPU readback exists only in that test, not in the application path. Kit tests cover
 default/tiny/reduced-effects solid rendering, removal of an old backdrop on failure,
 bounded premultiplied rim geometry and intensity scaling at small sizes.
-The body-gradient regression also checks shading on light and dark source colours,
+The body-gradient regression also checks shading on light and dark source colors,
 coverage between the rims and a solid fallback for invalid/disabled inputs.
 Settings-window (7, including live independent strength controls and persistence) and constrained-pane (16) regression tests also passed, as did Clippy
 for both the application and UI with all targets. These checks do not replace visual QA
@@ -187,15 +187,15 @@ availability. Reduced effects and high contrast still suppress surface materials
 
 The kit clips the rectangle against each pair of stop planes and triangulates those
 polygons. Intermediate stops remain exact at diagonal angles without a fixed-resolution
-grid. Colours interpolate premultiplied RGBA. Geometry is bounded by eight stops, and
+grid. Colors interpolate premultiplied RGBA. Geometry is bounded by eight stops, and
 all polygons stay within the surface. This changes appearance only, never project RGB
-colours or creation defaults.
+colors or creation defaults.
 
 Private background image decoding, filtering and placement live in separate modules under
 `crates/ui/src/app/background/`. The decoded source is retained while blur or window size
 changes. One bounded worker owns filtering; only the current request may publish a texture.
 Blur uses premultiplied alpha and is converted from logical display pixels to texture pixels.
-Settings uses its original theme base, not the main-window opacity-scaled colour.
+Settings uses its original theme base, not the main-window opacity-scaled color.
 While a private image is displayed, surfaces use ordinary blending over the image rather than
 replacing its pixels with desktop transparency. Removing the image restores replacement fills
 on an alpha-capable host. Each liquid capture keeps only the shared textures used by its current

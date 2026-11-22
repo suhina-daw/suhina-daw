@@ -131,7 +131,7 @@ fn is_image(shape: &egui::Shape) -> bool {
     matches!(shape, egui::Shape::Rect(r) if r.fill_texture_id() == TextureId::User(7))
 }
 
-/// A popup's frame in another colour than egui's window fill, as a theme gives one.
+/// A popup's frame in another color than egui's window fill, as a theme gives one.
 fn odd_menu(ctx: &Context, id: &str, order: egui::Order, at: egui::Pos2) {
     super::super::floating::area(ctx, Id::unique(id), super::super::floating::Kind::Popup)
         .order(order)
@@ -142,7 +142,7 @@ fn odd_menu(ctx: &Context, id: &str, order: egui::Order, at: egui::Pos2) {
 }
 
 #[test]
-fn popups_and_tooltips_get_the_window_blurred_under_their_frames_whatever_their_colour() {
+fn popups_and_tooltips_get_the_window_blurred_under_their_frames_whatever_their_color() {
     let (shapes, calls, host) = floating_frames(None, |ctx| {
         odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0));
         odd_menu(ctx, "tooltip", egui::Order::Tooltip, pos2(200.0, 20.0));
@@ -375,9 +375,9 @@ fn box_shadow_none_removes_egui_s_shadow() {
     assert!(!shapes.iter().any(|s| matches!(s, egui::Shape::Rect(r) if r.blur_width > 0.0)), "{shapes:?}");
 }
 
-/// A `border-color` alone colours egui's own stroke: the width stays egui's.
+/// A `border-color` alone colors egui's own stroke: the width stays egui's.
 #[test]
-fn border_color_alone_colours_egui_s_stroke() {
+fn border_color_alone_colors_egui_s_stroke() {
     let (shapes, _, _) = floating_frames(Some("popup { border-color: #ff0000; }"), |ctx| {
         odd_menu(ctx, "menu", egui::Order::Foreground, pos2(20.0, 20.0))
     });
@@ -486,7 +486,7 @@ fn content_lenses_share_one_current_substrate_and_do_not_poison_panel_capture() 
 }
 
 #[test]
-fn coloured_gradient_keeps_the_fill_opacity() {
+fn colored_gradient_keeps_the_fill_opacity() {
     let rect = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(220.0, 64.0));
     for alpha in [0, 64, 128, 255] {
         let base = Color32::from_rgba_unmultiplied(120, 160, 200, alpha);
@@ -496,7 +496,7 @@ fn coloured_gradient_keeps_the_fill_opacity() {
 }
 
 #[test]
-fn edge_refraction_bends_current_backdrop_without_moving_the_centre() {
+fn edge_refraction_bends_current_backdrop_without_moving_the_center() {
     let screen = Rect::from_min_size(pos2(10.0, 20.0), egui::vec2(800.0, 600.0));
     let rect = Rect::from_min_size(pos2(50.0, 60.0), egui::vec2(400.0, 300.0));
     let backdrop = Backdrop { screen, texture: TextureId::User(1), sharp_texture: Some(TextureId::User(2)) };
@@ -529,7 +529,7 @@ fn edge_refraction_bends_current_backdrop_without_moving_the_centre() {
 }
 
 #[test]
-fn coloured_body_retains_a_gradient_between_the_rims() {
+fn colored_body_retains_a_gradient_between_the_rims() {
     let rect = Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(220.0, 64.0));
     for base in [Color32::from_rgb(204, 210, 175), Color32::from_rgb(45, 60, 80)] {
         let mesh = body_mesh(rect, base, 1.0);
@@ -546,7 +546,7 @@ fn coloured_body_retains_a_gradient_between_the_rims() {
 }
 
 #[test]
-fn optical_rim_is_bounded_and_leaves_the_centre_clear() {
+fn optical_rim_is_bounded_and_leaves_the_center_clear() {
     for size in [egui::vec2(13.0, 14.0), egui::vec2(220.0, 64.0), egui::vec2(1600.0, 200.0)] {
         let rect = Rect::from_min_size(pos2(30.0, 50.0), size);
         let mesh = rim_mesh(rect, 1.0);

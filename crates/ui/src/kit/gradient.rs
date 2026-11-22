@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Bounded, theme-owned surface gradients. Colours are overlays, never project edits.
+//! Bounded, theme-owned surface gradients. Colors are overlays, never project edits.
 
 use egui::{Color32, Rect, vec2};
 use serde_json::{Value, json};
@@ -70,7 +70,7 @@ impl Gradients {
             let Some(value) = root.get(key) else { continue };
             *slot = Gradient::from_json(value);
             if slot.is_none() {
-                warnings.push(format!("gradients.{key}: use angle 0–360 and 2–8 stops with position 0–100 and colour"));
+                warnings.push(format!("gradients.{key}: use angle 0–360 and 2–8 stops with position 0–100 and color"));
             }
         }
         for key in root.keys().filter(|key| !matches!(key.as_str(), "panels" | "tracks" | "clips")) {
@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn diagonal_stops_keep_exact_colours_and_bounded_geometry() {
+    fn diagonal_stops_keep_exact_colors_and_bounded_geometry() {
         let gradient = Gradient {
             angle: 37,
             stops: vec![

@@ -18,7 +18,7 @@ document describes its panel and what the device hands it.
 
 - **Sources:** Suhina's own design. The idea of a compressor display that switches between a
   transfer curve, a scrolling activity view and meters alone is common to many compressors and is
-  observed from their published screenshots; the layout, colours and behaviour here are our own.
+  observed from their published screenshots; the layout, colors and behavior here are our own.
 
 ## The panel
 

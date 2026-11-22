@@ -62,7 +62,7 @@ fn mixer_and_name_css_materials_override_native_tint_and_paint_gradients() {
         });
         let grid = TrackGrid::build(&crate::demo::demo_project(), None);
         let name_fill = if name_gradient {
-            colour_picker::fill(grid.columns[0].color, false)
+            color_picker::fill(grid.columns[0].color, false)
         } else {
             Color32::from_rgb(0x20, 0x30, 0x40)
         };
@@ -154,13 +154,13 @@ fn mixer_toggles_standing_up_stack_solo_cue_and_arm() {
 fn a_theme_lays_the_parts_out_and_hides_them() {
     let original = styled("", theme::TRACK_COLUMN, 340.0);
     let moved = styled(
-        "mixer meter { order: -1; margin: 0 4px 0 0; } mixer track-colour { display: none; } \
+        "mixer meter { order: -1; margin: 0 4px 0 0; } mixer track-color { display: none; } \
          #mixer-pan { margin-left: 5px; width: 40px; }",
         theme::TRACK_COLUMN,
         340.0,
     );
     let (fader, meter) = (moved.fader.unwrap(), moved.meter.unwrap());
-    // The meter goes first in the centred row, before the scale and the fader.
+    // The meter goes first in the centered row, before the scale and the fader.
     assert!(meter.left() < original.scale.unwrap().left(), "the meter before the fader");
     assert!(fader.left() >= meter.right() + 4.0);
     assert!(moved.band.is_none());
@@ -305,7 +305,7 @@ fn wide_meters_fit_track_return_and_main_strips() {
                 assert!(meter.left() >= fader.right() + 4.0);
                 assert!(meter.right() <= rect.right() - PAD);
                 assert_eq!(meter.width(), METER_WIDTH);
-                // Every strip centres its fader, a track's as Main's (#1487 B19).
+                // Every strip centers its fader, a track's as Main's (#1487 B19).
                 assert!((fader.center().x - rect.center().x).abs() < 0.01, "{width}: {fader:?}");
             }
         }
@@ -347,7 +347,7 @@ fn a_send_takes_its_class_and_its_own_id() {
     use crate::kit::{native_css, skin};
     let grid = TrackGrid::build(&crate::demo::demo_project(), None);
     let column = grid.columns.iter().find(|c| !c.sends.is_empty()).expect("the demo has a track with sends");
-    for (css, colour) in [
+    for (css, color) in [
         ("send { background-color: #00FF00; }", Color32::from_rgb(0, 0xFF, 0)),
         ("send { background-color: #00FF00; } #mixer-send-1 { background-color: #FF0000; }", Color32::RED),
     ] {
@@ -377,7 +377,7 @@ fn a_send_takes_its_class_and_its_own_id() {
             found = output
                 .shapes
                 .iter()
-                .any(|shape| matches!(&shape.shape, egui::Shape::Rect(shape) if shape.fill == colour));
+                .any(|shape| matches!(&shape.shape, egui::Shape::Rect(shape) if shape.fill == color));
             output.textures_delta.clear();
         }
         assert!(found, "{css}");

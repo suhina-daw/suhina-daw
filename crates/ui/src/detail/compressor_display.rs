@@ -83,7 +83,7 @@ impl View {
     }
 }
 
-/// The theme's colours the display draws with beyond the canvas's own: the display's ground
+/// The theme's colors the display draws with beyond the canvas's own: the display's ground
 /// (`--device-display`), the gain reduction's (`--device-series-1`) and the levels'
 /// (`--device-series-2`).
 #[derive(Debug, Clone, Copy)]
@@ -272,10 +272,10 @@ fn areas(display: Rect, view: View) -> Areas {
         let third = body.width() / 3.0;
         let width = (third * 0.38).clamp(12.0, 34.0);
         let meter = |i: f32| {
-            let centre = body.left() + third * (i + 0.5);
+            let center = body.left() + third * (i + 0.5);
             Rect::from_min_max(
-                Pos2::new(centre - width / 2.0, body.top()),
-                Pos2::new(centre + width / 2.0, body.bottom()),
+                Pos2::new(center - width / 2.0, body.top()),
+                Pos2::new(center + width / 2.0, body.bottom()),
             )
         };
         let input = meter(0.0);
@@ -324,7 +324,7 @@ pub(crate) fn show(
     let view = tabs(ui, display, id, &values, palette);
     let areas = areas(display, view);
     let painter = ui.painter_at(display);
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let live = values.live.unwrap_or(Live {
         detector: READOUT_FLOOR_DB,
         output: READOUT_FLOOR_DB,
@@ -407,7 +407,7 @@ pub(crate) fn show(
 /// The tab row: the three views at the left, the key's state and the gain reduction at the
 /// right. Returns the view that shows.
 fn tabs(ui: &mut egui::Ui, display: Rect, id: egui::Id, values: &Values, palette: Palette) -> View {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let painter = ui.painter_at(display);
     painter.rect_filled(display, 3.0, palette.display);
     let state = id.with("view");
@@ -469,7 +469,7 @@ fn tabs(ui: &mut egui::Ui, display: Rect, id: egui::Id, values: &Values, palette
 
 /// A level meter filling from the bottom, with a line at 0 dB.
 fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     painter.rect_filled(rect, 1.0, colors.window_background);
     let top = level_y(db, rect);
     if top < rect.bottom() {
@@ -487,7 +487,7 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
 /// The large meters' scales: dB beside the input and output meters, the reduction's beside its
 /// own.
 fn meter_scales(painter: &egui::Painter, areas: &Areas, palette: Palette) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let font = theme::ui_font(8.0);
     for db in [0.0, -12.0, -24.0, -36.0, -48.0] {
         let text = if db == 0.0 { "0".to_string() } else { fixed(db, 0) };
@@ -520,7 +520,7 @@ fn meter_scales(painter: &egui::Painter, areas: &Areas, palette: Palette) {
 
 /// The gain-reduction meter hanging from the top.
 fn reduction_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     painter.rect_filled(rect, 1.0, colors.window_background);
     let bottom = reduction_y(db, rect);
     if bottom > rect.top() + 0.5 {
@@ -530,7 +530,7 @@ fn reduction_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palett
 
 /// The level grid behind a view: a line every 12 dB, 0 dB brighter.
 fn level_grid(painter: &egui::Painter, rect: Rect, vertical: bool) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let mut db = RANGE.0;
     while db <= RANGE.1 {
         let color =
@@ -561,7 +561,7 @@ fn fill_to(points: &[Pos2], edge: f32, color: Color32) -> Shape {
 }
 
 fn draw_curve(painter: &egui::Painter, rect: Rect, values: &Values, live: &Live, palette: Palette) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     level_grid(painter, rect, true);
     // The knee: a faint band across the levels it bends over.
     if values.knee > 0.0 {
@@ -607,7 +607,7 @@ fn draw_curve(painter: &egui::Painter, rect: Rect, values: &Values, live: &Live,
 }
 
 fn draw_activity(painter: &egui::Painter, rect: Rect, values: &Values, history: &History, now: f64, palette: Palette) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     level_grid(painter, rect, false);
     let clipped = painter.with_clip_rect(rect.intersect(painter.clip_rect()));
     let x = |time: f64| rect.right() - ((now - time) / HISTORY_SECONDS).clamp(0.0, 1.0) as f32 * rect.width();
@@ -733,7 +733,7 @@ fn threshold_arrow(
     actions: &mut Vec<Action>,
     id: egui::Id,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let painter = ui.painter_at(areas.arrow.union(areas.input).expand(2.0));
     let y = level_y(values.threshold, areas.input);
     let grab = Rect::from_min_max(
@@ -788,7 +788,7 @@ fn drag_ring(
     actions: &mut Vec<Action>,
     id: egui::Id,
 ) {
-    let colors = super::device_canvas::colours();
+    let colors = super::device_canvas::colors();
     let painter = ui.painter_at(rect.expand(8.0));
     let position = Pos2::new(level_x(values.threshold, rect), level_y(values.curve(values.threshold), rect));
     let caption = format!("Threshold {} dB, ratio {} : 1", fixed(values.threshold, 1), fixed(values.ratio, 1));
@@ -858,7 +858,7 @@ fn drag_line(
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &caption));
     if response.hovered() || response.dragged() {
-        let colors = super::device_canvas::colours();
+        let colors = super::device_canvas::colors();
         ui.painter_at(rect)
             .line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(2.0, colors.accent));
     }

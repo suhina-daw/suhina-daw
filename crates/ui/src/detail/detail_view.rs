@@ -279,7 +279,7 @@ fn chain_row(
     }
     // After the last panel, as tall as the panels, the slot a dropped effect goes in: a + in
     // `drop-target[kind="append"]`, in the chain's row so it scrolls with it and never covers a
-    // panel (#1487 L11, B13: a hint centred in the room left ran over the last panel).
+    // panel (#1487 L11, B13: a hint centered in the room left ran over the last panel).
     let append = Rect::from_min_size(Pos2::new(x, area.top()), Vec2::new(APPEND_SLOT, tallest.min(area.height())));
     if append.right() >= area.left() && append.left() <= area.right() {
         append_slot(ui, &painter.with_clip_rect(area), append, chain.track);
@@ -888,9 +888,9 @@ pub fn show_ara_editor(
         }
         _ => format!("{}: {}", device.name, plugin.line),
     };
-    let centre = area.center();
+    let center = area.center();
     painter.text(
-        centre - Vec2::new(0.0, BUTTON_HEIGHT),
+        center - Vec2::new(0.0, BUTTON_HEIGHT),
         Align2::CENTER_CENTER,
         text,
         theme::ui_font(theme::TEXT),
@@ -899,8 +899,8 @@ pub fn show_ara_editor(
     let count = buttons.len() as f32;
     let width = count * BUTTON_WIDTH + (count - 1.0).max(0.0) * PAD;
     for (index, (label, action)) in buttons.into_iter().enumerate() {
-        let left = centre.x - width / 2.0 + index as f32 * (BUTTON_WIDTH + PAD);
-        let rect = Rect::from_min_size(Pos2::new(left, centre.y + PAD / 2.0), Vec2::new(BUTTON_WIDTH, BUTTON_HEIGHT));
+        let left = center.x - width / 2.0 + index as f32 * (BUTTON_WIDTH + PAD);
+        let rect = Rect::from_min_size(Pos2::new(left, center.y + PAD / 2.0), Vec2::new(BUTTON_WIDTH, BUTTON_HEIGHT));
         ara_button(ui, &painter, rect, (track, label), label, &device.name, action, actions);
     }
 }
@@ -951,11 +951,11 @@ fn append_slot(ui: &Ui, painter: &egui::Painter, rect: Rect, track: TrackId) {
         crate::kit::element::DROP_TARGET.attribute("kind", "append").pointer(response.hovered(), false, false).enter();
     let boxed = el.paint(painter, rect);
     let ink = el.look().color();
-    let centre = boxed.content.center();
+    let center = boxed.content.center();
     let arm = (boxed.content.width().min(boxed.content.height()) / 2.0 - 4.0).clamp(2.0, 6.0).round();
     let stroke = egui::Stroke::new(1.5, ink);
-    painter.hline(egui::Rangef::new(centre.x - arm, centre.x + arm), centre.y, stroke);
-    painter.vline(centre.x, egui::Rangef::new(centre.y - arm, centre.y + arm), stroke);
+    painter.hline(egui::Rangef::new(center.x - arm, center.x + arm), center.y, stroke);
+    painter.vline(center.x, egui::Rangef::new(center.y - arm, center.y + arm), stroke);
     drop(el);
     response.on_hover_text(APPEND_HINT);
 }

@@ -1005,7 +1005,7 @@ fn a_carried_launch_mark_press_takes_the_focus_off_a_selected_track() {
 /// Needs an audio device, so it is ignored by default, like the preview test.
 #[test]
 #[ignore]
-fn launching_a_clip_greys_the_arrangement_until_back_to_arrangement() {
+fn launching_a_clip_grays_the_arrangement_until_back_to_arrangement() {
     let mut session = Session::new(demo_project());
     let player = suhina_output::open_chosen(
         session.project(),
@@ -1202,7 +1202,7 @@ fn rename_in_a_slots_menu_edits_the_name_on_the_slot_and_ctrl_r_does_too() {
 }
 
 /// A slot's right-click menu deletes its clip, MIDI or audio, as the Delete key does, in one
-/// undo step; an empty slot's Delete is greyed out (#842).
+/// undo step; an empty slot's Delete is grayed out (#842).
 #[test]
 fn a_slots_context_menu_deletes_its_clip() {
     // A MIDI clip: Walk, in Bass's second slot.
@@ -1434,4 +1434,31 @@ fn a_selected_column_s_thicker_top_border_keeps_its_first_slot_whole() {
         "the selected column's first slot is cut: {selected:?} against {other:?}"
     );
     assert_eq!(pointer(selected).map(|r| r.height()), Some(other.height()), "and takes the pointer whole");
+}
+
+/// A launcher clip's menu carries the palette: a swatch gives the clip its color, one undo step,
+/// and Track color hands it back to its track's.
+#[test]
+fn a_slots_menu_colors_its_clip_and_track_color_hands_it_back() {
+    let mut harness = window(demo_app());
+    let walk_color = |harness: &egui_kittest::Harness<'_, App>| {
+        let project = harness.state().session().map(|s| s.project().clone()).unwrap();
+        let column = project.launcher.columns.iter().find(|c| c.track == suhina_engine::model::TrackId(2)).unwrap();
+        column.slots[1].clip.as_ref().unwrap().color
+    };
+    let first = suhina_session::colors::PALETTE[0];
+    let label = format!("Color #{:02x}{:02x}{:02x}", first.0, first.1, first.2);
+    harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
+    harness.run();
+    harness.get_by_label(&label).click();
+    harness.run();
+    assert_eq!(walk_color(&harness), Some(first), "the swatch colors the slot's clip");
+    harness.get_by_label("Launch Walk on Bass (scene 2)").click_secondary();
+    harness.run();
+    harness.get_by_label("Track color").click();
+    harness.run();
+    assert_eq!(walk_color(&harness), None, "Track color hands it back");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(walk_color(&harness), Some(first), "one undo brings the swatch's color back");
 }

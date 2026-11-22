@@ -1372,7 +1372,7 @@ fn a_file_state_handed_back_keeps_the_library_relative_form() {
 /// Windows below).
 #[test]
 fn a_relative_state_stores_its_plain_forward_slash_form() {
-    let dir = temp_dir("relative-state-normalised");
+    let dir = temp_dir("relative-state-normalized");
     let mut session = Session::new(blank_project());
     session.set_library_base(dir.clone());
     run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
@@ -1395,7 +1395,7 @@ fn a_relative_state_stores_its_plain_forward_slash_form() {
 
 /// A Windows caller's backslash text (`Sounds\NAM\…` from MCP or the CLI) stores forward
 /// slashed ([ADR 0036] › 4, the review), so the state opens on every machine's base. Windows
-/// only: the separators the component join normalises are the caller's own.
+/// only: the separators the component join normalizes are the caller's own.
 #[cfg(windows)]
 #[test]
 fn a_windows_backslash_state_stores_forward_slashed() {

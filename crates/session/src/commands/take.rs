@@ -25,7 +25,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "color",
                 ParamType::Text,
-                "the colour the part takes on the track, \"#rrggbb\" (the take lane's), so the track shows which take each part came from",
+                "the color the part takes on the track, \"#rrggbb\" (the take lane's), so the track shows which take each part came from",
             ),
         ],
         kind: CommandKind::EDIT,
@@ -34,7 +34,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "take.setColor",
-        label: "Set a take lane's colour and the colour of its parts on the track (Recolor lane), or one piece of the take's and its parts' (Recolor); null gives them the lane's or the palette's again",
+        label: "Set a take lane's color and the color of its parts on the track (Recolor lane), or one piece of the take's and its parts' (Recolor); null gives them the lane's or the palette's again",
         params: &[
             TRACK,
             param("take", ParamType::Integer, "the take's number on the track, from 1"),
@@ -269,8 +269,8 @@ fn comp_take(session: &mut Session, params: &Value) -> Result<Value, CommandErro
 }
 
 /// Lays the part of take `index` (in `arrangement.takes`) from `from` to `to` on `track`'s lane,
-/// over what it covers, as new clips in `color`, or the take's own colour when it has one; a part
-/// with neither shows its take's colour in the window. An audio part gets fades of `fade` beats,
+/// over what it covers, as new clips in `color`, or the take's own color when it has one; a part
+/// with neither shows its take's color in the window. An audio part gets fades of `fade` beats,
 /// so its edges never click and it crossfades that long with a part of another take it meets
 /// (#1078). Returns the clips' ids.
 fn comp_part(
@@ -326,10 +326,10 @@ fn comp_part(
     Ok(clips)
 }
 
-/// `take.setColor {track, take, color, piece?}`: the take lane's colour and its parts' on the
-/// track (Recolor lane, #989), its pieces' own colours given up; with `piece` (from 0, a split
-/// take has several), that piece's colour and its parts' alone (Recolor). `null` gives them the
-/// lane's or the palette's colour again.
+/// `take.setColor {track, take, color, piece?}`: the take lane's color and its parts' on the
+/// track (Recolor lane, #989), its pieces' own colors given up; with `piece` (from 0, a split
+/// take has several), that piece's color and its parts' alone (Recolor). `null` gives them the
+/// lane's or the palette's color again.
 fn set_take_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let p = &mut session.project;
     let track = track_id(p, params)?;

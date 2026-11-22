@@ -1,9 +1,9 @@
 ---
-description: How the sample map behaves: samples laid out by how they sound, coloured by kind, as a cloud or a grid, previewed by pointing, dragged into the project; NKS preset previews in the same map
+description: How the sample map behaves: samples laid out by how they sound, colored by kind, as a cloud or a grid, previewed by pointing, dragged into the project; NKS preset previews in the same map
 read_when: sample map, similarity, sound map, browse by sound, t-SNE, UMAP, point cloud, grid layout, similar samples, kick snare hat categories, audio features, MFCC, NKS, preset previews, soundmap commands
 type: spec
 status: draft
-last_verified: 2026-11-10
+last_verified: 2026-11-23
 covers:
   - crates/soundmap/**
   - crates/session/src/soundmap.rs
@@ -41,9 +41,9 @@ presets that come with audio previews (NKS) take part in the same map.
 Two existing products show the idea in two forms. In our own words:
 
 1. **A free cloud.** Every sample is a small dot; the dots form a cloud in which similar
-   sounds are near each other. The dot's colour says what kind of sound it is (kick, snare and
-   clap, hats and so on); colours blend where the kinds meet. The samples the instrument is
-   using are drawn as larger dots in the colour of the slot that uses them. A search field sits
+   sounds are near each other. The dot's color says what kind of sound it is (kick, snare and
+   clap, hats and so on); colors blend where the kinds meet. The samples the instrument is
+   using are drawn as larger dots in the color of the slot that uses them. A search field sits
    above the cloud; zoom in, zoom out and fit buttons at a corner; a small overview of the cloud
    beside the slots.
 2. **A grid.** The same idea with every dot snapped to a cell of a grid, one sample per cell,
@@ -66,7 +66,7 @@ Both play a sample as soon as the pointer is over it.
   when their features are close.
 - **Layout:** the position of every point, computed from the features of the scope.
 - **Kind:** what sort of sound an item is (kick, snare, hat…): set by hand, from its name, or
-  recognised from its sound (*Kinds and colours*).
+  recognised from its sound (*Kinds and colors*).
 
 ## Where the map is shown
 
@@ -173,13 +173,13 @@ number of points in view:
 - **Density** when more than 20 000 points are in view. The view is divided into cells of 3 by 3
   screen pixels. Each point is spread over the cells around it with a small Gaussian kernel (about 6
   pixels each way), and the raster is drawn with linear filtering, so a cluster reads as a soft
-  cloud rather than blocks. Each cell is coloured by the mix of the kinds of the points near it
-  (each kind's colour weighted by its count and its alpha). Its opacity grows with the logarithm of
+  cloud rather than blocks. Each cell is colored by the mix of the kinds of the points near it
+  (each kind's color weighted by its count and its alpha). Its opacity grows with the logarithm of
   the count, fading out towards a cluster's edge and full in the densest cell in view, times the
-  points' colours' average alpha, so a theme's translucent kind colour stays translucent. Clusters
-  then show as coloured regions, and where kinds meet, their colours blend. Dimmed points (search,
+  points' colors' average alpha, so a theme's translucent kind color stays translucent. Clusters
+  then show as colored regions, and where kinds meet, their colors blend. Dimmed points (search,
   tags, legend, Show similar) count only as a faint grey under the others (the theme's hint text
-  colour, its alpha kept). Points that need to be seen one by one are drawn on top as dots: the
+  color, its alpha kept). Points that need to be seen one by one are drawn on top as dots: the
   selected ones, the ones in use, the similar ones, and the one under the pointer or last previewed.
   Pointing, clicking, dragging and the tooltip work on the points as before.
 - **Dots** when 20 000 points or fewer are in view. The dots grow as the points spread out: the
@@ -206,8 +206,8 @@ that sit in several places are named in each of them.
   candidates.
 - The label sits at the cluster's item nearest to the cluster's centre. Its size grows with the
   cluster's size (the logarithm of its count), from the map's label size up to 1.7 times it.
-  It is written in the light text colour with a dark shadow, since it sits on its own kind's
-  colour.
+  It is written in the light text color with a dark shadow, since it sits on its own kind's
+  color.
 - **Labels never overlap.** They are placed from the largest cluster down. A label that would
   overlap one already placed is moved up or down by its own height and a small gap. If neither
   place is free, it is left out for this zoom. Zooming in makes room, and smaller clusters appear. A label
@@ -224,7 +224,7 @@ the density view the dimmed kinds are drawn as faint grey, so the shown kinds st
 the rest of the library. The legend's counts and the clusters are computed when the points
 change, not every frame.
 
-## Kinds and colours
+## Kinds and colors
 
 Every item has a kind. The kinds and the words in names that give them:
 
@@ -248,10 +248,10 @@ Every item has a kind. The kinds and the words in names that give them:
 | Effect | fx, sfx, riser, impact, sweep, noise |
 | Other | anything else |
 
-**Colours.** Each dot is a `sample-point` element with a `kind` attribute (`kick`, `snare`,
+**Colors.** Each dot is a `sample-point` element with a `kind` attribute (`kick`, `snare`,
 `clap`, `closedHat`, `openHat`, `hat`, `rim`, `tom`, `crash`, `ride`, `cymbal`, `percussion`,
-`bass`, `tonal`, `vocal`, `effect`, `other`), and its colour is the element's `color`. Suhina's
-user-agent sheet gives each kind its colour (`sample-point[kind="kick"] { color: #D06E5E; }`,
+`bass`, `tonal`, `vocal`, `effect`, `other`), and its color is the element's `color`. Suhina's
+user-agent sheet gives each kind its color (`sample-point[kind="kick"] { color: #D06E5E; }`,
 [theme skins](theme-skins.md) › The user-agent sheet); a theme may restyle them. They are not
 theme settings or palette tokens.
 
@@ -291,16 +291,16 @@ theme settings or palette tokens.
   background so the item moves to its kind's region, and the tooltip says "set by hand". It is
   kept beside the feature caches (`kinds.txt`, by the file's path), survives analysing the file
   again and every new layout, and teaches the map that kind like a file name does.
-- Each kind has a colour from Suhina's own palette (the design brief's track colours, extended),
+- Each kind has a color from Suhina's own palette (the design brief's track colors, extended),
   chosen so that neighbouring kinds (kick and bass, snare and clap, the hats) are told apart.
 - **Labels.** Each cluster of a kind is named over its region, without overlapping another
   label: *Many items* › Labels. Labels fade out when zoomed in far enough to read point names.
-- **Legend:** a row under the map with each kind, its colour and its count. Clicking a kind dims
+- **Legend:** a row under the map with each kind, its color and its count. Clicking a kind dims
   all others (Ctrl+click: several); clicking it again stops.
 
 ## Points
 
-- A point is a dot (cloud) or a filled cell (grid) in its kind's colour.
+- A point is a dot (cloud) or a filled cell (grid) in its kind's color.
 - **Size** in the map's top bar (25 to 400 %, kept) makes the dots smaller or larger; their
   places do not change, so smaller dots stand further apart. In the density view it sets how far
   each point is spread: below 75 % not at all, so neighbouring points stand apart, and further
@@ -330,7 +330,7 @@ theme settings or palette tokens.
 | Mouse wheel | Zooms around the pointer (Ctrl+wheel is not needed). |
 | Double-click empty space, the Fit button | Fits all points in view. |
 | Arrow keys | Moves the selection to the nearest point in that direction and previews it; with Show similar on, Up and Down step through the similar list instead. |
-| Right-click a point | Menu: **Show similar**, Pin or Unpin, Tag ▸, Kind ▸ (*Kinds and colours* › Set by hand), Show in folder (switches to the list with the item selected), **Copy to folder…** (the point, or every selected point when it is one of them, copied into a folder the system's dialog picks: [`browser.md`](browser.md) › Copying samples out). |
+| Right-click a point | Menu: **Show similar**, Pin or Unpin, Tag ▸, Kind ▸ (*Kinds and colors* › Set by hand), Show in folder (switches to the list with the item selected), **Copy to folder…** (the point, or every selected point when it is one of them, copied into a folder the system's dialog picks: [`browser.md`](browser.md) › Copying samples out). |
 | Drag points out of every Suhina window | The samples become a drag of files that the file manager or the desktop copies where they are dropped; the originals stay. As from the list: [`browser.md`](browser.md) › Copying samples out. |
 
 **Show similar** rings the 16 items nearest to the clicked one by features (not by position on
@@ -408,7 +408,7 @@ Studied for the method; no code is taken from them unless its licence allows and
 so.
 
 - **AudioStellar** (GPL-3.0-or-later, C++): a folder of samples analysed (spectrum, MFCC),
-  reduced (PCA, t-SNE or UMAP), clustered, shown as a coloured cloud played by pointing. The
+  reduced (PCA, t-SNE or UMAP), clustered, shown as a colored cloud played by pointing. The
   nearest open equivalent of this view.
 - **FluCoMa** (BSD-3-Clause, C++): corpus maps from MFCC, spectral shape, loudness and pitch
   statistics, standardised, reduced with UMAP or MDS, a k-d tree for neighbours, and a grid
