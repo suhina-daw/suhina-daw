@@ -7,7 +7,7 @@ arrangement-scrolled suhina-sheet 81615f532853c8a3
 browser suhina-sheet 120463dd2484343d
 browser-plug-ins suhina-sheet 1cbb451ca46e6ae1
 browser-search suhina-sheet cb9a9216783d9295
-clip-audio suhina-sheet 7bd685001e443c19
+clip-audio suhina-sheet ae2308c3a40e171d
 clip-midi suhina-sheet 6ea8468b271e5c63
 color-menu-saved suhina-sheet 12e30600f1a45fdd
 color-picker suhina-sheet 47af4315ebdfe3ce
@@ -52,7 +52,7 @@ settings-appearance suhina-sheet bc5888a88e0fa3d1
 settings-audio suhina-sheet ffba46b413b527a5
 settings-browser suhina-sheet 843fca5616f0ff61
 settings-devices suhina-sheet 79c3e455fba1592f
-settings-keys suhina-sheet 5672d7db24152a57
+settings-keys suhina-sheet 9dcea697d22621a7
 settings-launcher suhina-sheet 7912f2cad03f6237
 settings-menu suhina-sheet 5df41d82863bea8f
 settings-midi suhina-sheet 017745c99686126a

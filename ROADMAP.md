@@ -354,6 +354,14 @@ refused or suspended, never by losing its edits.
   and name over the pictures; `--coverage` lists the theme's rules that matched no element in any
   scene.
 
+- Audio editor: double-click an audio clip to see its whole file large under a bar, beat and
+  sixteenth ruler, with its warp markers. Add a marker by double-clicking the waveform, drag it to
+  stretch or squeeze the sound on either side (on the grid, Alt for free), double-click it or
+  click it and press Delete to remove it, place a marker on every transient with one click, and
+  reset the warp from the clip panel. The clip panel is resizable, has six warp
+  modes, and a clip's end follows the audio when it is stretched. Dragging the ruler zooms and
+  scrolls, with a magnifier for the pointer.
+
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and
   macOS for every change; macOS does not block merging yet.

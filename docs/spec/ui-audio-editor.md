@@ -3,7 +3,7 @@ description: Functional spec of the audio editor in the detail area: what a doub
 read_when: audio editor, audio clip editor, waveform view, big waveform, detail area waveform, double-click audio clip, warp markers, add warp marker, move warp marker, delete warp marker, warp markers at transients, reset warp, align snares, audio ruler, audio grid, waveform color
 type: spec
 status: draft
-last_verified: 2026-11-16
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/detail/audio_editor.rs
   - crates/ui/src/app/detail_area.rs
