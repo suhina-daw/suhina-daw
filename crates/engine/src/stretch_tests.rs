@@ -201,7 +201,7 @@ fn grains_read_the_next_loop_pass_past_a_loop_end() {
     let samples = (0..5 * SR as usize).map(|i| i as f32 / 100_000.0).collect();
     let data = Arc::new(AudioData { sample_rate: SR, channels: 1, samples });
     let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Texture);
-    let frame = |f: f64| f / 100_000.0;
+    let frame = |f: f64| (f / 100_000.0) as f32;
     // Eight beats from beat 3: the loop is passed and comes round again.
     let Some(voice) = StretchVoice::new(&with(&clip(8.0, 3.0, Some((2.0, 6.0))), &r), Arc::clone(&data), 120.0, SR)
     else {

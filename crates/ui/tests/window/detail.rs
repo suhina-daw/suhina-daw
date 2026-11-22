@@ -616,13 +616,16 @@ fn the_audio_editors_menu_grays_what_has_nothing_to_act_on() {
     harness.get_by_label("Audio editor").click_secondary();
     harness.run();
     // Two markers, which a warped clip keeps, and no time selection.
-    assert!(harness.get_by_label("Delete").accesskit_node().is_disabled(), "Delete is grayed");
-    assert!(harness.get_by_label("Loop selection").accesskit_node().is_disabled());
+    assert!(
+        egui_kittest::kittest::NodeT::accesskit_node(&harness.get_by_label("Delete")).is_disabled(),
+        "Delete is grayed"
+    );
+    assert!(egui_kittest::kittest::NodeT::accesskit_node(&harness.get_by_label("Loop selection")).is_disabled());
     harness.get_by_label("Delete").click();
     harness.run();
     assert_eq!(loop_markers(&harness).len(), 2, "a grayed item does nothing");
     // The menu is still open: a click on a grayed item does not close it.
-    assert!(!harness.get_by_label("Add warp marker here").accesskit_node().is_disabled());
+    assert!(!egui_kittest::kittest::NodeT::accesskit_node(&harness.get_by_label("Add warp marker here")).is_disabled());
     harness.get_by_label("Add warp marker here").click();
     harness.run();
     assert_eq!(loop_markers(&harness).len(), 3, "a marker where the menu was opened");
