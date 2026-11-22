@@ -602,3 +602,9 @@ fn a_deleted_variant_or_theme_goes_to_the_trash() {
     assert!(!themes.join("ink").exists());
     let _clean = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_file_uri_writes_spaces_and_other_letters_as_bytes() {
+    assert_eq!(file_uri(Path::new("/home/me/My Samples/kick #1.wav")), "file:///home/me/My%20Samples/kick%20%231.wav");
+    assert_eq!(file_uri(Path::new("/äö,x")), "file:///%C3%A4%C3%B6%2Cx");
+}

@@ -765,11 +765,53 @@ pub fn reveal(path: &Path, select: bool) -> Result<(), String> {
         c.arg(path);
         c
     } else {
+        // The desktop's file manager selects the file when it offers the freedesktop
+        // FileManager1 service (Nautilus, Dolphin, Nemo, Caja, Thunar and others do); where none
+        // answers, its folder is opened.
+        if select && show_items(path) {
+            return Ok(());
+        }
         let mut c = std::process::Command::new("xdg-open");
         c.arg(if select { path.parent().unwrap_or(path) } else { path });
         c
     };
     command.spawn().map(|_| ()).map_err(|e| format!("could not show {}: {e}", path.display()))
+}
+
+/// Asks the desktop's file manager over D-Bus to show `path` selected
+/// (`org.freedesktop.FileManager1.ShowItems`, the freedesktop file manager interface); whether one
+/// answered. Waits for `dbus-send`'s answer, which comes at once.
+fn show_items(path: &Path) -> bool {
+    let Ok(absolute) = std::path::absolute(path) else { return false };
+    let uri = file_uri(&absolute);
+    std::process::Command::new("dbus-send")
+        .args([
+            "--session",
+            "--print-reply",
+            "--dest=org.freedesktop.FileManager1",
+            "/org/freedesktop/FileManager1",
+            "org.freedesktop.FileManager1.ShowItems",
+        ])
+        .arg(format!("array:string:{uri}"))
+        .arg("string:")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// `path` as a `file://` URI: each byte outside the unreserved characters and `/` written as
+/// `%XX`, so spaces and non-ASCII names reach the file manager whole.
+fn file_uri(path: &Path) -> String {
+    let mut uri = String::from("file://");
+    for byte in path.to_string_lossy().bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~/".contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
 }
 
 /// A theme's name in a package path: the file's stem, or the folder of a `theme.css`.

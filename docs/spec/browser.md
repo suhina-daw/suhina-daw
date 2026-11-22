@@ -195,8 +195,12 @@ window does (Settings › Projects and backups › Open projects in).
 click anywhere on the entry sets or clears it; a *New tag…* field that
 makes a tag in the next default colour and sets it at once — clicks inside the menu, in the
 field included, do not close it; a click outside does, and every button closes it by its
-action); Show in folder (a file: selects its folder
-as the place); Refresh (a folder: lists it again from disk).
+action); Go to folder (a file: selects its folder
+as the place, in the browser); **Show in Explorer** (**Show in Finder** on macOS, **Show in folder**
+on Linux: the file or folder in the system's file manager, the file selected there; on Linux the
+desktop's file manager is asked through its `org.freedesktop.FileManager1` service to select it,
+and where none answers its folder is opened with `xdg-open`); Refresh (a folder: lists it again
+from disk).
 
 ## Search field keys
 

@@ -722,6 +722,10 @@ pub struct App {
     /// Samples a drag carried out of every Suhina window, for the desktop app to hand the
     /// system as a drag of files the file manager copies (#865).
     drag_out: Option<Vec<PathBuf>>,
+    /// Whether files dragged in from the system go onto one track each, as the label beside the
+    /// pointer said in the last frame they hovered: the drop does what the label said, though the
+    /// window, given the focus by the drop, reads the keys afresh (`App::system_drag`).
+    system_separate: Option<bool>,
     pending_drop: Option<PendingDrop>,
     /// Where the detail area is this frame and the track it shows, for drops on its devices.
     detail_drop: Option<(Rect, TrackId)>,
@@ -927,6 +931,7 @@ impl App {
             map_window: MapWindow::default(),
             copy_to: Vec::new(),
             drag_out: None,
+            system_separate: None,
             pending_drop: None,
             detail_drop: None,
             expanded_panel: None,
@@ -1504,7 +1509,8 @@ impl App {
         self.recovery_open.take()
     }
 
-    /// A backup to show in the file manager.
+    /// A file or folder to show in the system's file manager, selected there where it can be: a
+    /// backup, a plug-in's file, a missing file's folder, or a browser row.
     pub fn take_reveal_request(&mut self) -> Option<PathBuf> {
         self.reveal.take()
     }
@@ -3618,6 +3624,10 @@ impl App {
             (false, false) => Some((dropped, true)),
             (false, true) => Some((self.hovered_files(ui), false)).filter(|(items, _)| !items.is_empty()),
         };
+        // No files from the system over the window: the next drag starts with the keys as they are.
+        if system.is_none() {
+            self.system_separate = None;
+        }
         // The lines over and under the views, in their `border-color` (the palette's line colour).
         // A private image is already painted underneath the window: its transparent regions stay
         // visible instead of being covered with separator ink.
