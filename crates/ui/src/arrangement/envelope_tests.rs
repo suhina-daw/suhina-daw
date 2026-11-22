@@ -181,7 +181,8 @@ fn a_drag_ends_when_the_drawing_it_started_in_stops() {
         shown.push(points_now(ui.ctx(), clip, &committed));
     });
     output.textures_delta.clear();
-    assert_eq!(shown, vec![moved.clone(), moved, committed.clone(), committed.clone(), committed]);
+    // One look per pass after the first: the drag, its grace pass, then the envelope as set.
+    assert_eq!(shown, vec![moved.clone(), moved, committed.clone(), committed]);
     assert_eq!(left, vec![(false, false)], "the draft and its lift went");
 }
 
