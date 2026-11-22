@@ -29,7 +29,7 @@ use super::native_css::HostState;
 pub use super::native_css::Computed;
 
 /// A state the app knows about an element, given to the sheet as an attribute (`[checked]`,
-/// `[selected]`). An element's colour is [`Builder::color`].
+/// `[selected]`). An element's color is [`Builder::color`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Attr {
     /// A toggle that is on: a switched-on button, the chosen tool, tab or row.
@@ -137,7 +137,7 @@ impl Name {
     pub fn attr<'a>(self, attr: Attr, on: bool) -> Builder<'a> {
         self.builder().attr(attr, on)
     }
-    /// The element's own colour (a track's, a clip's), as the sheet's `[color]`.
+    /// The element's own color (a track's, a clip's), as the sheet's `[color]`.
     pub fn color<'a>(self, color: Color32) -> Builder<'a> {
         self.builder().color(color)
     }
@@ -197,7 +197,7 @@ pub struct Builder<'a> {
     /// A device panel's own sheet.
     sheet: Option<&'a str>,
     color: Option<Color32>,
-    /// Attributes with a value the app gives the element besides its colour (`kind`).
+    /// Attributes with a value the app gives the element besides its color (`kind`).
     attributes: Vec<(&'static str, &'a str)>,
     native: Native,
 }
@@ -238,7 +238,7 @@ impl<'a> Builder<'a> {
         self.sheet = source;
         self
     }
-    /// The element's own colour, given to the sheet as `[color="#rrggbb"]` (or `#rrggbbaa`).
+    /// The element's own color, given to the sheet as `[color="#rrggbb"]` (or `#rrggbbaa`).
     pub fn color(mut self, color: Color32) -> Self {
         self.color = Some(color);
         self
@@ -327,9 +327,9 @@ impl<'a> Builder<'a> {
 
     /// The element entered with `attr` `on`, and while it is on, the [`Look`] of the very same
     /// element with only `attr` off: its id, response (so its `:hover`, `:active` and focus),
-    /// pointer states, colour, attributes and other states kept. That is what
+    /// pointer states, color, attributes and other states kept. That is what
     /// [`Look::themed_unlike`] and the others compare a state's rule with, so only a rule for
-    /// the state itself (`button[checked]`) counts as the state's colour, not one for the
+    /// the state itself (`button[checked]`) counts as the state's color, not one for the
     /// pointer's state (`button:hover`) or for every such element.
     pub fn enter_against_plain(self, attr: Attr, on: bool) -> (Entered, Option<Look>) {
         // Looked up first, so it is the last node when it is taken out again.
@@ -391,19 +391,19 @@ pub struct Sides {
     pub entered_lit: bool,
 }
 
-/// What a sheet says about a kind of drawn item (a grid line, a slot's mark): its computed colours,
-/// the base sheet's included, or for a reader that asks for one, a fallback colour where no rule of
+/// What a sheet says about a kind of drawn item (a grid line, a slot's mark): its computed colors,
+/// the base sheet's included, or for a reader that asks for one, a fallback color where no rule of
 /// a theme reaches the item (#1417).
 #[derive(Clone, Debug, Default)]
 pub struct Look(Option<Computed>);
 
-/// Which of an element's colours a [`Look`] reads where a theme's rule gives it.
+/// Which of an element's colors a [`Look`] reads where a theme's rule gives it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Paint {
     /// Its text `color`, inherited from a sheet's rule around it too.
     Color,
     /// Its own `color`: one a rule on the element itself sets, even when it equals the inherited
-    /// one. A line or a mark does not take the text colour a view's rule gives everything in it.
+    /// one. A line or a mark does not take the text color a view's rule gives everything in it.
     OwnColor,
     /// Its `background-color`.
     Background,
@@ -414,7 +414,7 @@ pub enum Paint {
 }
 
 impl Paint {
-    /// The colour `style` has for this paint, where a theme's rule gives it (the base sheet's does
+    /// The color `style` has for this paint, where a theme's rule gives it (the base sheet's does
     /// not count).
     fn themed(self, style: &Computed) -> Option<Color32> {
         let (set, color) = match self {
@@ -451,7 +451,7 @@ impl Look {
     }
 
     /// The item's computed `color`, the base and user-agent sheets' included: for an element whose
-    /// colour those sheets give (`knob-body`, `fader-cap`, `sample-point[kind]`), so a colour a
+    /// color those sheets give (`knob-body`, `fader-cap`, `sample-point[kind]`), so a color a
     /// theme gives an element around it does not reach it. `fallback` only where no sheet styles
     /// the window.
     pub fn computed_color_or(&self, fallback: Color32) -> Color32 {
@@ -466,7 +466,7 @@ impl Look {
         self.0.as_ref().map_or(fallback, Computed::background)
     }
 
-    /// The item's colour `paint`, where a theme's rule gives it one.
+    /// The item's color `paint`, where a theme's rule gives it one.
     pub fn themed(&self, paint: Paint) -> Option<Color32> {
         self.0.as_ref().and_then(|style| paint.themed(style))
     }
@@ -481,7 +481,7 @@ impl Look {
         self.themed(Paint::OwnColor)
     }
 
-    /// The item's text colour, inherited from a sheet's rule around it too; else `token`.
+    /// The item's text color, inherited from a sheet's rule around it too; else `token`.
     pub fn color_or(&self, token: Color32) -> Color32 {
         self.themed(Paint::Color).unwrap_or(token)
     }
@@ -513,14 +513,14 @@ impl Look {
         self.0.as_ref()
     }
 
-    /// The item's colour `paint` in a state (`[checked]`, `[queued]`) where it differs from
-    /// `plain`, the same item without the state; else `token`, the state's own colour. A rule for
+    /// The item's color `paint` in a state (`[checked]`, `[queued]`) where it differs from
+    /// `plain`, the same item without the state; else `token`, the state's own color. A rule for
     /// every `button` then does not hide which one is on: only a rule for the state does.
     pub fn unlike(&self, plain: &Look, paint: Paint, token: Color32) -> Color32 {
         self.themed_unlike(plain, paint).unwrap_or(token)
     }
 
-    /// [`Look::unlike`] with no token: `None` where the state has no colour `paint` of its own.
+    /// [`Look::unlike`] with no token: `None` where the state has no color `paint` of its own.
     pub fn themed_unlike(&self, plain: &Look, paint: Paint) -> Option<Color32> {
         self.themed(paint).filter(|own| Some(*own) != plain.themed(paint))
     }
@@ -655,7 +655,7 @@ impl Entered {
 
     /// [`Entered::paint_with`] with `native.fill` in place of the sheet's `background-color`, and
     /// `image` (0 to 1) of its background image: for a toggle whose caller worked out its fill
-    /// from the element already ([`super::widgets::Toggle`]), so neither the colour nor the image
+    /// from the element already ([`super::widgets::Toggle`]), so neither the color nor the image
     /// of a rule for every such control covers the lit state's fill.
     pub fn paint_over(&self, painter: &Painter, rect: Rect, native: Native, image: f32) -> Boxed {
         self.finish();
@@ -795,7 +795,7 @@ impl Entered {
         self.look().color_or(fallback)
     }
 
-    /// [`Look::own_color_or`] of the element: a colour the app gives by state (an error, the shown
+    /// [`Look::own_color_or`] of the element: a color the app gives by state (an error, the shown
     /// tab) where no rule on the element gives one.
     pub fn own_color_or(&self, fallback: Color32) -> Color32 {
         self.look().own_color_or(fallback)
@@ -821,7 +821,7 @@ impl Entered {
         self.look().border_or(fallback)
     }
 
-    /// The [`Look`] of the element, for the colours of what it draws inside itself.
+    /// The [`Look`] of the element, for the colors of what it draws inside itself.
     pub fn look(&self) -> Look {
         Look(self.style())
     }
@@ -832,7 +832,7 @@ impl Entered {
         Look(super::native_css::probe_hovered(self.scope.node, hovered))
     }
 
-    /// A colour of the element `amount` (0 to 1) of the way from its resting style to its hovered
+    /// A color of the element `amount` (0 to 1) of the way from its resting style to its hovered
     /// one (`:hover`), `read` out of each ([`Look::background`], [`Look::color`]): the fade an
     /// animated hover draws. The element's own style is one end where it is in that state, so a
     /// control at rest, or fully hovered, looks the other end up only while it fades.
@@ -865,7 +865,7 @@ impl Entered {
     }
 
     /// Paints the element as the root of a window of its own ([`super::own_window`]), as CSS
-    /// paints a page's root on its canvas. Its background colour and gradients cover all of
+    /// paints a page's root on its canvas. Its background color and gradients cover all of
     /// `rect`, in the window's own `corners`. Its border, `border-radius`, shadows and
     /// `backdrop-filter` are not drawn: the system draws the window's edge, and nothing of
     /// Suhina's is behind it. Returns where its contents go: `rect` less its `padding`.
@@ -929,7 +929,7 @@ impl Entered {
         super::style_class::readable_on(self.style(), background)
     }
 
-    /// egui's own widgets in `ui` styled as this element: its colour, font size, radius, border and
+    /// egui's own widgets in `ui` styled as this element: its color, font size, radius, border and
     /// fill, and the sheet's `button` and `text-input` rules for the widgets inside it.
     pub fn ui<'u>(&self, ui: &'u mut egui::Ui) -> super::style_class::UiStyle<'u> {
         super::style_class::ui_for(ui, self.style(), self.is_surface())
@@ -964,14 +964,14 @@ pub(crate) fn row_line() -> Color32 {
 }
 
 /// Dim words (a device's kind, an empty area's note, a heading's rule): `label[kind="hint"]`'s
-/// `color`. Its own, not inherited: a colour a theme gives a whole view keeps them dimmer than the
+/// `color`. Its own, not inherited: a color a theme gives a whole view keeps them dimmer than the
 /// text beside them.
 pub(crate) fn hint_ink() -> Color32 {
     LABEL.attribute("kind", "hint").look().color()
 }
 
 /// A control's name over it, a figure's name: `label[kind="caption"]`'s `color`. Its own, as a
-/// hint's: a colour a theme gives the whole view keeps it apart from the values.
+/// hint's: a color a theme gives the whole view keeps it apart from the values.
 pub(crate) fn caption_ink() -> Color32 {
     LABEL.attribute("kind", "caption").look().color()
 }
@@ -1074,7 +1074,7 @@ names! {
     TRACK_HEADER = "track-header";
     TRACK_NAME = "track-name";
     TRACK_NUMBER = "track-number";
-    TRACK_COLOUR = "track-colour";
+    TRACK_COLOR = "track-color";
     FOLD = "fold";
     ADD_TRACK = "add-track";
     TRACK_LANE = "track-lane";

@@ -438,7 +438,7 @@ fn draw_export(
     let note = Rect::from_min_size(Pos2::new(panel.left(), y), Vec2::new(panel.width(), LINE));
     let path = Path::new(state.path.trim());
     let empty = path.as_os_str().is_empty();
-    let (text, colour) = if state.busy {
+    let (text, color) = if state.busy {
         ("Exporting…".to_string(), hint)
     } else if let Some(said) = state.refusal().filter(|_| !empty) {
         (said.to_string(), fault)
@@ -460,7 +460,7 @@ fn draw_export(
         };
         (format!("{} at {} Hz{}", format.to_uppercase(), rate, what), hint)
     };
-    widgets::text_in(&painter, note, Align2::LEFT_CENTER, &text, small, colour);
+    widgets::text_in(&painter, note, Align2::LEFT_CENTER, &text, small, color);
 
     // While the export renders on its worker the buttons wait: the job was sent whole, and
     // cancelling it is the render matrix's slice. While the states are being gathered the

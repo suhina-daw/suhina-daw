@@ -14,13 +14,13 @@ fn transparent_rgb_survives_theme_round_trip() {
 }
 
 #[test]
-fn legacy_and_inherited_transparent_colours_keep_rgb_when_saved() {
+fn legacy_and_inherited_transparent_colors_keep_rgb_when_saved() {
     let (theme, warnings) =
         Theme::from_json(r##"{"colors":{"window.background":"#FF804000","text.primary":"#20A04000"}}"##);
     assert!(warnings.is_empty());
     let saved: Value = serde_json::from_str(&theme.to_json()).unwrap();
     assert_eq!(saved["colors"]["window.background"], "#FF804000");
-    // Text inherits the background's colour but never its alpha: it would vanish.
+    // Text inherits the background's color but never its alpha: it would vanish.
     assert_eq!(saved["colors"]["text.onColorDark"], "#FF8040");
     for key in ["text.primary", "browser.text.primary", "text.onColorLight"] {
         assert_eq!(saved["colors"][key], "#20A04000");
@@ -32,11 +32,11 @@ fn legacy_and_inherited_transparent_colours_keep_rgb_when_saved() {
 }
 
 #[test]
-fn translucent_theme_colours_preserve_alpha_in_files() {
-    for colour in [Color32::from_rgba_unmultiplied(100, 150, 200, 128), Color32::TRANSPARENT, rgb(0xAABBCC)] {
-        assert_eq!(parse_hex(&hex(colour)), Some(colour));
+fn translucent_theme_colors_preserve_alpha_in_files() {
+    for color in [Color32::from_rgba_unmultiplied(100, 150, 200, 128), Color32::TRANSPARENT, rgb(0xAABBCC)] {
+        assert_eq!(parse_hex(&hex(color)), Some(color));
         let mut theme = Theme::default();
-        theme.colors.insert("grid-major".into(), colour);
+        theme.colors.insert("grid-major".into(), color);
         assert_eq!(Theme::from_json(&theme.to_json()), (theme, Vec::new()));
     }
     assert!(parse_hex("#1234567").is_none());
@@ -44,7 +44,7 @@ fn translucent_theme_colours_preserve_alpha_in_files() {
 }
 
 #[test]
-fn former_track_colours_are_left_behind_quietly_and_materials_round_trip() {
+fn former_track_colors_are_left_behind_quietly_and_materials_round_trip() {
     // Every file an earlier version saved has them: they go without a word, so the file still
     // converts to a theme.css.
     let (old, warnings) = Theme::from_json(
@@ -97,7 +97,7 @@ fn example_themes_embed_their_paint_and_all_editable_artwork() {
 }
 
 #[test]
-fn a_theme_sheet_that_sets_the_former_track_colours_is_told_they_are_not_read() {
+fn a_theme_sheet_that_sets_the_former_track_colors_is_told_they_are_not_read() {
     let meta = ThemeMeta::new("Old", DEFAULT_SWATCH);
     let (_, warnings) =
         from_folder(meta, ":root { --track-3: #010203; --clip-audioDefault: #040506; --track-9: #000; }");
@@ -124,7 +124,7 @@ fn a_theme_survives_a_round_trip() {
 }
 
 #[test]
-fn a_theme_file_needs_only_the_colours_it_changes() {
+fn a_theme_file_needs_only_the_colors_it_changes() {
     let (theme, warnings) = Theme::from_json(r##"{ "name": "Blue", "colors": { "accent": "#3366ff" } }"##);
     assert!(warnings.is_empty());
     assert_eq!(theme.name, "Blue");
@@ -136,7 +136,7 @@ fn a_theme_file_needs_only_the_colours_it_changes() {
 }
 
 #[test]
-fn bad_values_keep_the_built_in_colours() {
+fn bad_values_keep_the_built_in_colors() {
     let text =
         r##"{ "name": 3, "colors": { "accent": "blue", "surface.9": "#000000", "border": "#12345" }, "font": 1 }"##;
     let (theme, warnings) = Theme::from_json(text);
@@ -147,7 +147,7 @@ fn bad_values_keep_the_built_in_colours() {
 }
 
 #[test]
-fn colours_are_written_and_read_as_hex() {
+fn colors_are_written_and_read_as_hex() {
     assert_eq!(hex(rgb(0x1D1C1A)), "#1D1C1A");
     assert_eq!(parse_hex("#a6a3ff"), Some(rgb(0xA6A3FF)));
     assert_eq!(parse_hex("A6A3FF"), Some(rgb(0xA6A3FF)));
@@ -166,7 +166,7 @@ fn the_first_token_names_are_no_longer_read() {
     assert_eq!(theme.color("border"), studio("border"));
     assert_eq!(theme.color("accent"), rgb(0x070809));
     // In a style sheet the old name is a custom property of the theme's own, like any other that
-    // is not a token: it colours nothing.
+    // is not a token: it colors nothing.
     let (theme, _) = from_css(":root { --surface-0: #010203; --accent: #070809; }");
     assert_eq!(theme.color("window-background"), studio("window-background"));
     assert_eq!(theme.color("accent"), rgb(0x070809));
@@ -177,10 +177,10 @@ fn the_first_token_names_are_no_longer_read() {
     assert!(theme.colors.is_empty());
 }
 
-/// The variant's declared colour scheme, not its colours, sets the native window's: dark text
+/// The variant's declared color scheme, not its colors, sets the native window's: dark text
 /// declared dark stays dark, and a sheet that asks for the scheme with `light-dark()` sees it.
 #[test]
-fn the_declared_colour_scheme_sets_the_native_windows_scheme() {
+fn the_declared_color_scheme_sets_the_native_windows_scheme() {
     let ctx = egui::Context::default();
     let suhina_light = built_in_themes().into_iter().find(|(id, _)| *id == "suhina-light").unwrap().1;
     assert!(suhina_light.light());
@@ -189,7 +189,7 @@ fn the_declared_colour_scheme_sets_the_native_windows_scheme() {
     in_style_frame(&ctx, |_| ());
     assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::Light);
     assert!(is_light());
-    // The same colours declared dark: the scheme follows the declaration.
+    // The same colors declared dark: the scheme follows the declaration.
     let mut dark = suhina_light.skin.clone();
     dark.light = false;
     super::super::skin::configure(&dark);
@@ -212,10 +212,10 @@ fn the_declared_colour_scheme_sets_the_native_windows_scheme() {
     in_style_frame(&ctx, |_| ());
 }
 
-/// Every theme and variant that comes with Suhina declares the colour scheme its text is made
+/// Every theme and variant that comes with Suhina declares the color scheme its text is made
 /// for: dark text on a light look.
 #[test]
-fn a_built_in_themes_declared_colour_scheme_matches_its_text() {
+fn a_built_in_themes_declared_color_scheme_matches_its_text() {
     let themes = built_in_themes().into_iter().map(|(id, theme)| (id.to_owned(), theme));
     let mut wrong = Vec::new();
     for (id, theme) in themes.chain(built_in_variants()) {
@@ -249,7 +249,7 @@ fn the_themes_that_come_with_suhina_read_whole() {
         assert!(!sheet.contains("theme {"), "{id}: the name is theme.json's");
         assert_eq!(theme.name, ThemeMeta::parse(&folder[META]).unwrap().0.name, "{id}");
         assert!(theme.swatch.is_some() && theme.picture.is_some(), "{id}");
-        // Every colour is written out, so none falls back to Suhina Studio by mistake.
+        // Every color is written out, so none falls back to Suhina Studio by mistake.
         for (key, _) in TOKENS {
             assert!(sheet.contains(&format!("  --{}: ", key.replace('.', "-"))), "{id} leaves out {key}");
         }
@@ -258,7 +258,7 @@ fn the_themes_that_come_with_suhina_read_whole() {
         assert!(is_built_in(id));
         assert!(id == BUILT_IN || theme.name != Theme::default().name, "{id}");
         if id == BUILT_IN {
-            // Its sheet sets only colours, and it runs the style engine like every theme (#1448).
+            // Its sheet sets only colors, and it runs the style engine like every theme (#1448).
             assert!(
                 sheet
                     .split(":root")
@@ -273,7 +273,7 @@ fn the_themes_that_come_with_suhina_read_whole() {
 }
 
 #[test]
-fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
+fn suhina_sheet_takes_its_colors_from_its_two_accent_shades() {
     use super::super::theme_vars::{Variant, with_variant};
     let (_, sheet) = built_in_themes().into_iter().find(|(id, _)| *id == "suhina-sheet").unwrap();
     let labels: Vec<_> = sheet.vars.declared.iter().filter_map(|p| p.label.clone()).collect();
@@ -287,7 +287,7 @@ fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
     };
     let (rose, warnings) = with_variant(&sheet, Some(&variant));
     assert!(warnings.is_empty(), "{warnings:?}");
-    // Colours that say what something is or holds stay, and the paper stays white.
+    // Colors that say what something is or holds stay, and the paper stays white.
     let fixed = [
         "track.",
         "clip.",
@@ -306,7 +306,7 @@ fn suhina_sheet_takes_its_colours_from_its_two_accent_shades() {
         }
     }
     assert_eq!(rose.swatch, Some(rgb(0xA02050)));
-    // Nothing in its rules or its artwork is a fixed colour of its own, the green panel included.
+    // Nothing in its rules or its artwork is a fixed color of its own, the green panel included.
     let css = include_str!("../../themes/suhina-sheet/theme.css");
     let rules = &css[css.find("@layer").unwrap()..];
     let browser =
@@ -335,7 +335,7 @@ fn suhina_glass_clears_its_window_as_far_as_its_glassiness_says() {
     assert_eq!(window_alpha("0"), 255);
     assert_eq!(window_alpha("18"), 209);
     assert_eq!(window_alpha("60"), 102);
-    // The swatch is the colour, whatever shows through it.
+    // The swatch is the color, whatever shows through it.
     assert_eq!(glass.swatch, Some(rgb(0x0B2638)));
     assert_eq!(glass.color("border").a(), 255);
 }
@@ -397,10 +397,10 @@ fn studio_themes_keep_text_readable_and_round_trip() {
 }
 
 #[test]
-fn text_never_takes_a_background_colour_in_files_from_before_text_inverse() {
+fn text_never_takes_a_background_color_in_files_from_before_text_inverse() {
     let (old, warnings) = Theme::from_json(r##"{"colors":{"window.background":"#10203080","text.value":"#ABCDEF"}}"##);
     assert!(warnings.is_empty());
-    // Text on lit fills keeps the window's colour, opaque, and the chosen option its fill.
+    // Text on lit fills keeps the window's color, opaque, and the chosen option its fill.
     assert_eq!(old.color("text-inverse"), rgb(0x102030));
     assert_eq!(old.color("control-selectedBackground"), rgb(0xABCDEF));
     let (new, _) = Theme::from_json(
@@ -451,15 +451,15 @@ fn every_token_has_its_own_name() {
     keys.sort_unstable();
     keys.dedup();
     assert_eq!(keys.len(), TOKENS.len());
-    // Each is a colour the core sheet registers, with Suhina Studio's value.
+    // Each is a color the core sheet registers, with Suhina Studio's value.
     for (key, _) in TOKENS {
         assert!(default_color(&variable_name(key)).is_some(), "{key}");
     }
 }
 
 #[test]
-fn text_on_a_colour_is_the_text_token_that_stands_out_more() {
-    // The default track colours are light: names on them are dark.
+fn text_on_a_color_is_the_text_token_that_stands_out_more() {
+    // The default track colors are light: names on them are dark.
     let ctx = egui::Context::default();
     use_colors(&ctx, &Colors::new());
     for fill in [rgb(0xFF9A3C), rgb(0x2FD9C4)] {
@@ -515,7 +515,7 @@ fn palette_and_steps_keep_readable_inks_on_composited_track_fills() {
 }
 
 #[test]
-fn the_automation_pin_is_a_themes_own_colour_and_older_files_get_their_accent() {
+fn the_automation_pin_is_a_themes_own_color_and_older_files_get_their_accent() {
     let (theme, warnings) = Theme::from_json(r##"{"colors":{"accent":"#123456"}}"##);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(theme.color("automation-pin"), rgb(0x123456));
@@ -530,7 +530,7 @@ fn the_automation_pin_is_a_themes_own_colour_and_older_files_get_their_accent() 
 }
 
 #[test]
-fn independent_text_roles_round_trip_and_old_themes_keep_their_colours() {
+fn independent_text_roles_round_trip_and_old_themes_keep_their_colors() {
     let (mut theme, warnings) = Theme::from_json(
         r##"{"colors":{"text.primary":"#EEDDAA","text.secondary":"#998877","window.background":"#112233"}}"##,
     );
@@ -551,7 +551,7 @@ fn independent_text_roles_round_trip_and_old_themes_keep_their_colours() {
 }
 
 #[test]
-fn the_colours_in_use_change_with_the_theme() {
+fn the_colors_in_use_change_with_the_theme() {
     let ctx = egui::Context::default();
     use_colors(&ctx, &[("accent".to_owned(), rgb(0x00FF00))].into());
     assert_eq!(root_in(&ctx, "--accent"), rgb(0x00FF00));
@@ -574,15 +574,15 @@ fn a_toolbar_in_theme_json_lists_a_module_once_and_bounds_its_offsets() {
 }
 
 #[test]
-fn the_core_sheet_registers_every_colour_token_and_base_colour() {
+fn the_core_sheet_registers_every_color_token_and_base_color() {
     // The core sheet is suhina-theme-package's (`CORE_SHEET`), the one place Suhina Studio's
-    // colours are written: the package checks, the CLI and the app read the same values.
+    // colors are written: the package checks, the CLI and the app read the same values.
     assert_eq!(super::super::theme_vars::core_sheet(), suhina_theme_package::CORE_SHEET);
     for (key, _) in TOKENS {
         let property = super::super::theme_vars::token_property(key);
         assert!(suhina_theme_package::CORE_SHEET.contains(&format!("@property {property} ")), "{key}");
     }
-    for (name, value) in super::super::theme_vars::BASE_COLOURS {
+    for (name, value) in super::super::theme_vars::BASE_COLORS {
         assert_eq!(default_color(&name[2..]).map(hex), parse_hex(value).map(hex), "{name}");
     }
 }
@@ -600,8 +600,8 @@ fn toolbar_rules_in_a_current_sheet_are_not_read_and_are_named_once() {
     assert_eq!(theme.skin.toolbar.unwrap().hidden, ["tempo"]);
 }
 
-/// A sample-map colour given as a `kind.*` colour token, which is gone, is not read silently: the
-/// notice says the colours are `sample-point` rules now, in a sheet and in a theme file alike.
+/// A sample-map color given as a `kind.*` color token, which is gone, is not read silently: the
+/// notice says the colors are `sample-point` rules now, in a sheet and in a theme file alike.
 #[test]
 fn a_former_kind_token_gets_a_notice_naming_its_sample_point_rule() {
     let (_, warnings) = from_css(":root { --kind-kick: #FF0000; --kind-closedHat: #00FF00; --kind-ness: #0000FF; }");
@@ -611,12 +611,12 @@ fn a_former_kind_token_gets_a_notice_naming_its_sample_point_rule() {
     assert!(warnings.iter().any(|w| w.starts_with("--kind-closedHat is no longer read")), "{warnings:?}");
     let (_, warnings) = Theme::from_json(r##"{"colors":{"kind.snare":"#123456","kind.nothing":"#123456"}}"##);
     assert!(warnings.iter().any(|w| w.contains("sample-point[kind=\"snare\"]")), "{warnings:?}");
-    assert!(warnings.iter().any(|w| w == "kind.nothing is not a colour token"), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w == "kind.nothing is not a color token"), "{warnings:?}");
 }
 
-/// The guide's examples for track and clip colours are rules a theme can use as written.
+/// The guide's examples for track and clip colors are rules a theme can use as written.
 #[test]
-fn the_author_guide_s_track_and_clip_colour_examples_read_without_warnings() {
+fn the_author_guide_s_track_and_clip_color_examples_read_without_warnings() {
     let readme = guide();
     let from = readme.find("### Tracks").unwrap();
     let to = readme[from..].find("piano-grid {").unwrap() + from;
@@ -629,13 +629,13 @@ fn the_author_guide_s_track_and_clip_colour_examples_read_without_warnings() {
 }
 
 /// A sheet from an earlier version that reads the variables the app set on tracks, or gives
-/// artwork chosen by a track's colour, is told that neither is used any more.
+/// artwork chosen by a track's color, is told that neither is used any more.
 #[test]
-fn a_sheet_reading_former_track_variables_or_colour_artwork_is_told() {
-    let sheet = "track-name { background-color: var(--track-colour); } \
+fn a_sheet_reading_former_track_variables_or_color_artwork_is_told() {
+    let sheet = "track-name { background-color: var(--track-color); } \
                  track.body.color-ff9a3c { image: url(\"assets/orange.svg\"); }";
     let (_, warnings) = from_folder(ThemeMeta::new("Old", DEFAULT_SWATCH), sheet);
-    assert!(warnings.iter().any(|w| w.starts_with("--track-colour no longer set")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.starts_with("--track-color no longer set")), "{warnings:?}");
     assert!(warnings.iter().any(|w| w.starts_with("track.body.color-ff9a3c not used")), "{warnings:?}");
     let (_, warnings) =
         from_folder(ThemeMeta::new("New", DEFAULT_SWATCH), "track-name { color: attr(color type(<color>)); }");
@@ -643,7 +643,7 @@ fn a_sheet_reading_former_track_variables_or_colour_artwork_is_told() {
 }
 
 #[test]
-fn a_theme_file_holds_only_the_colours_the_theme_sets() {
+fn a_theme_file_holds_only_the_colors_the_theme_sets() {
     let (theme, warnings) = Theme::from_json(r##"{"colors":{"grid.major":"#102030","recording":"#405060"}}"##);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(theme.colors.keys().map(String::as_str).collect::<Vec<_>>(), ["grid-major", "recording"]);
@@ -652,11 +652,11 @@ fn a_theme_file_holds_only_the_colours_the_theme_sets() {
     assert_eq!(written, ["grid.major", "recording"]);
     assert_eq!(Theme::from_json(&theme.to_json()), (theme, Vec::new()));
     let saved: Value = serde_json::from_str(&Theme::default().to_json()).unwrap();
-    assert!(saved.get("colors").is_none(), "a theme that sets nothing has no colour block");
+    assert!(saved.get("colors").is_none(), "a theme that sets nothing has no color block");
 }
 
 #[test]
-fn a_themes_colours_are_suhina_studios_with_its_own_over_them() {
+fn a_themes_colors_are_suhina_studios_with_its_own_over_them() {
     for (key, _) in TOKENS {
         assert_eq!(Theme::default().color(&variable_name(key)), studio(&variable_name(key)), "{key}");
     }

@@ -97,7 +97,7 @@ const KEY_GAP: f32 = 16.0;
 
 /// A row of a menu as wide as the menu or its words (the menu grows to the widest), `extra`
 /// more at its right end: lit with the pointer's fill under the pointer, with the chosen one's
-/// fill while `checked`, its words in the entry's `color` (on the chosen fill, the colour that
+/// fill while `checked`, its words in the entry's `color` (on the chosen fill, the color that
 /// reads on it unless the theme gives one). `face` says its font and height, and the key shown
 /// at its right end in the hint ink; a row that is not enabled takes no click and is drawn in
 /// the entry's disabled color (the hint ink unless the theme gives one).

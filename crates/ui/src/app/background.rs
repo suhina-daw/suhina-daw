@@ -52,7 +52,7 @@ impl Background {
 
     /// Takes in a backdrop image that finished loading (or starts loading one) and gives the
     /// window's opacity over it to the style engine, which fades the window's, the panels' and the
-    /// lines' colours by it. Called before the frame's styles are worked out
+    /// lines' colors by it. Called before the frame's styles are worked out
     /// (`native_css::frame_with_motion`), so the frame an image first shows in is faded already.
     pub(super) fn prepare(&mut self, ui: &Ui, settings: &crate::settings::Settings) -> Result<(), String> {
         let skin = crate::kit::skin::current();
@@ -77,7 +77,7 @@ impl Background {
 
     /// Paints the backdrop image [`Self::prepare`] took in, if there is one, under the window.
     pub(super) fn update(&mut self, ui: &Ui) {
-        // The theme's own window colour, before the opacity fades it.
+        // The theme's own window color, before the opacity fades it.
         let base = crate::kit::native_css::root_color("--window-background")
             .unwrap_or_else(|| crate::kit::element::app_fill("window"));
         crate::kit::liquid::set_panel_base(ui.ctx(), base);
@@ -170,7 +170,7 @@ impl Background {
         Ok(self.texture.is_some())
     }
 
-    /// Paints the image taken in, if there is one, over the window's opaque colour.
+    /// Paints the image taken in, if there is one, over the window's opaque color.
     fn draw(&self, ui: &Ui) {
         let Some(texture) = &self.texture else { return };
         let rect = ui.max_rect();

@@ -6,7 +6,7 @@
 //! shapes, so it finds a cut whatever code painted the text.
 //!
 //! A text painted twice at the same place, each copy clipped to one side (a value over a fill, in
-//! two colours), is one text: it is cut only where no copy shows it, so clips that touch
+//! two colors), is one text: it is cut only where no copy shows it, so clips that touch
 //! join, in whatever order they are painted, and a gap or a corner left bare is a cut. A text wholly outside its clip shows nothing and is not listed, so a label
 //! pushed out of sight entirely is not found here.
 
@@ -57,7 +57,7 @@ struct Painted<'a> {
 }
 
 /// Where a text is painted (with the transform its shape is painted under), at what angle and what it says: two shapes with the same key are
-/// copies of one text, in whatever colours.
+/// copies of one text, in whatever colors.
 type Key<'a> = ([u32; 2], [u32; 4], u32, [u32; 3], &'a str);
 
 fn key(text: &TextShape, transform: TSTransform) -> Key<'_> {

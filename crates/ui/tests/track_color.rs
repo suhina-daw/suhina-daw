@@ -16,7 +16,7 @@ use serde_json::json;
 use suhina_engine::model::Rgb;
 use suhina_session::Session;
 use suhina_ui::demo::demo_project;
-use suhina_ui::kit::selection::{SelectionColour, SelectionLook};
+use suhina_ui::kit::selection::{SelectionColor, SelectionLook};
 use suhina_ui::kit::widgets::Action;
 use suhina_ui::{App, interaction::color_picker, kit::theme};
 
@@ -114,7 +114,7 @@ fn arrangement_header_surfaces_follow_custom_theme_tokens() {
 #[test]
 fn with_clips_own_color_a_selected_header_keeps_its_theme_surface_and_track_color() {
     let mut harness = arrangement();
-    selection_color(&mut harness, SelectionColour::Own, Color32::BLACK);
+    selection_color(&mut harness, SelectionColor::Own, Color32::BLACK);
     let before = harness.state().session().unwrap().project().clone();
     harness.get_by_label("Track Drums").click();
     harness.run();
@@ -657,7 +657,7 @@ fn a_lane_that_hides_its_overflow_leaves_the_header_and_the_automation_lanes_alo
 }
 
 /// Sets Settings › Appearance › Selection color to `mode`, with `custom` for Custom.
-fn selection_color(harness: &mut Harness<'static, App>, mode: SelectionColour, custom: Color32) {
+fn selection_color(harness: &mut Harness<'static, App>, mode: SelectionColor, custom: Color32) {
     let ctx = harness.ctx.clone();
     let mut settings = harness.state().settings().clone();
     settings.view.selection = SelectionLook { mode, custom };
@@ -745,7 +745,7 @@ fn a_clip_picked_in_its_body_takes_the_selection_color_and_its_name_bar_keeps_it
 #[test]
 fn with_clips_own_color_two_selected_clips_keep_their_own_colors() {
     let mut harness = arrangement();
-    selection_color(&mut harness, SelectionColour::Own, PICKED);
+    selection_color(&mut harness, SelectionColor::Own, PICKED);
     let (beat, walk) = ("Clip Beat B on Drums at bar 17", "Clip Walk on Bass at bar 17");
     pick(&mut harness, beat, true, Modifiers::NONE);
     pick(&mut harness, walk, true, Modifiers::COMMAND);
@@ -761,18 +761,18 @@ fn with_clips_own_color_two_selected_clips_keep_their_own_colors() {
 #[test]
 fn a_custom_selection_color_fills_headers_and_clips_and_from_theme_gives_the_themes_back() {
     let mut harness = arrangement();
-    selection_color(&mut harness, SelectionColour::Custom, PICKED);
+    selection_color(&mut harness, SelectionColor::Custom, PICKED);
     pick(&mut harness, "Track Drums", false, Modifiers::NONE);
     let header = harness.get_by_label("Track Drums").rect();
     assert!(filled_with(&harness, header, PICKED), "the header takes the chosen color");
     let beat = "Clip Beat B on Drums at bar 17";
     pick(&mut harness, beat, true, Modifiers::NONE);
     assert_eq!(fill_of(&harness, harness.get_by_label(beat).rect()), Some(PICKED), "the clip too");
-    selection_color(&mut harness, SelectionColour::Theme, PICKED);
+    selection_color(&mut harness, SelectionColor::Theme, PICKED);
     assert_eq!(fill_of(&harness, harness.get_by_label(beat).rect()), Some(live("selection-background")));
 
     let mut launcher = window();
-    selection_color(&mut launcher, SelectionColour::Custom, PICKED);
+    selection_color(&mut launcher, SelectionColor::Custom, PICKED);
     pick(&mut launcher, "Track Drums", false, Modifiers::NONE);
     pick(&mut launcher, "Track Bass", false, Modifiers::COMMAND);
     for label in ["Track Drums", "Track Bass"] {

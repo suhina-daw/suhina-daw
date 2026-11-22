@@ -130,7 +130,7 @@ fn shapes(h: &Harness<'static, App>) -> Vec<(Rect, Shape)> {
     out
 }
 
-/// The note marks painted inside `clip` and seen there: 2 px lines under its 2 px colour strip.
+/// The note marks painted inside `clip` and seen there: 2 px lines under its 2 px color strip.
 fn note_marks(h: &Harness<'static, App>, clip: Rect) -> usize {
     shapes(h)
         .into_iter()

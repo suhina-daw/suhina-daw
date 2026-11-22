@@ -27,7 +27,7 @@ fn several_tracks_change_atomically_and_round_trip_with_one_undo() {
 }
 
 #[test]
-fn malformed_colour_or_target_never_partially_changes_the_selection() {
+fn malformed_color_or_target_never_partially_changes_the_selection() {
     let mut session = Session::new(blank_project());
     let before = session.project().clone();
     for params in [
@@ -47,17 +47,17 @@ fn malformed_colour_or_target_never_partially_changes_the_selection() {
 }
 
 #[test]
-fn live_colour_gestures_merge_until_release_and_noops_add_nothing() {
+fn live_color_gestures_merge_until_release_and_noops_add_nothing() {
     let mut session = Session::new(blank_project());
     let before = session.project().clone();
-    for colour in ["#123456", "#654321", "#abcdef"] {
-        run(&mut session, "track.setColor", json!({"tracks":[1,2],"color":colour,"gesture":"colour"})).unwrap();
+    for color in ["#123456", "#654321", "#abcdef"] {
+        run(&mut session, "track.setColor", json!({"tracks":[1,2],"color":color,"gesture":"color"})).unwrap();
         assert_eq!(session.undo_steps().0, 1);
     }
-    run(&mut session, "history.endGesture", json!({"gesture":"colour"})).unwrap();
+    run(&mut session, "history.endGesture", json!({"gesture":"color"})).unwrap();
     run(&mut session, "track.setColor", json!({"tracks":[1,2],"color":"#abcdef"})).unwrap();
     assert_eq!(session.undo_steps().0, 1);
-    run(&mut session, "track.setColor", json!({"track":1,"color":"#000000","gesture":"colour"})).unwrap();
+    run(&mut session, "track.setColor", json!({"track":1,"color":"#000000","gesture":"color"})).unwrap();
     assert_eq!(session.undo_steps().0, 2);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().track(TrackId(1)).unwrap().color, Some(Rgb(171, 205, 239)));

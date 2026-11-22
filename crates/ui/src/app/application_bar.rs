@@ -232,7 +232,7 @@ mod tests {
         );
     }
 
-    /// The colour the bar's text containing `text` is painted in, under `css`.
+    /// The color the bar's text containing `text` is painted in, under `css`.
     fn ink_of(css: &str, text: &str) -> Option<egui::Color32> {
         crate::kit::native_css::set_user_sheet(Some(css.into()));
         let mut harness = Harness::builder().allow_missing_glyphs().with_size((640.0, 28.0)).build_ui(|ui| {

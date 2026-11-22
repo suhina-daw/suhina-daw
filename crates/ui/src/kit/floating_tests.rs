@@ -30,7 +30,7 @@ fn an_area_fades_in_exactly_as_egui_fades_it_and_a_bare_layer_is_shown_whole() {
             ours = shown(ui.ctx(), Id::unique("menu"));
         });
         output.textures_delta.clear();
-        // Exactly: `frame_styled` tells egui's frame by its colour faded by this much.
+        // Exactly: `frame_styled` tells egui's frame by its color faded by this much.
         if frame > 0 {
             assert_eq!(egui_s.to_bits(), ours.to_bits(), "at {time}: egui {egui_s}, ours {ours}");
         }

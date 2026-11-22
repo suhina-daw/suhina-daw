@@ -3,7 +3,7 @@ description: How versions are numbered, how release builds, the nightly and test
 read_when: release, version, release candidate, tag, binaries, release workflow, nightly, past nightlies, development build, download, test build, pull request build, try a pull request, merge queue, squash merge, ready to merge label, auto-merge, update branch, merging many pull requests, batch build, Discord announcement, Discord bot, testing forum, merged thread, release notes, changelog, pull_request_target, Actions event policy, slow CI tests, nextest, test partitions
 type: howto
 status: current
-last_verified: 2026-11-19
+last_verified: 2026-11-23
 covers:
   - .github/workflows/ci.yml
   - .config/nextest.toml
@@ -474,7 +474,7 @@ once nextest is installed (`cargo install cargo-nextest --locked`).
 its own test under `scenes::layouts` in `apps/theme-render/tests/scenes.rs`. Each test drives every
 scene, on its own test thread; nextest can distribute the four themes over the three partitions
 instead of assigning their combined test to one runner. The built-in theme list and those tests
-come from the same table. The colour-only guard still rejects an unlisted theme with layout
+come from the same table. The color-only guard still rejects an unlisted theme with layout
 properties or artwork, and the other bundled themes still drive the launcher. This changes
 scheduling, not the scenes, assertions or drawing recordings.
 

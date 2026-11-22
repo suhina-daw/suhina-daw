@@ -39,7 +39,7 @@ fn native(rect: Rect, has_sends: bool, input: bool, shared: Shared, main: bool, 
         Pos2::new(inner.right(), toggle_bottom),
     );
     let mut parts = Native {
-        band: Some(Rect::from_min_size(rect.min, Vec2::new(COLOUR_BAND, rect.height()))),
+        band: Some(Rect::from_min_size(rect.min, Vec2::new(COLOR_BAND, rect.height()))),
         toggles: Some(toggles),
         ..Default::default()
     };

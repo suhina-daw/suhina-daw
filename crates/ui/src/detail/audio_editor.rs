@@ -14,7 +14,7 @@ use suhina_engine::model::{Clip, ClipId, Project, TrackId};
 
 use crate::arrangement::timeline::{AudioView, audio_view};
 use crate::detail::piano_roll_grid::{GridMode, PianoGrid, Width};
-use crate::interaction::grid::track_colour;
+use crate::interaction::grid::track_color;
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::element::{caption_ink, hint_ink, title_ink};
 use crate::kit::theme;
@@ -119,7 +119,7 @@ fn audio_clip_from(project: &Project, track: TrackId, clip: &Clip) -> Option<Aud
     let position = project.tracks.iter().position(|t| t.id == track)?;
     // The clip's own color when it has one; its track's otherwise (`Clip::color`).
     let color = clip.color.unwrap_or_else(|| {
-        project.tracks.get(position).map(|track| track_colour(track, position)).unwrap_or(suhina_session::colors::MIDI)
+        project.tracks.get(position).map(|track| track_color(track, position)).unwrap_or(suhina_session::colors::MIDI)
     });
     let ts = project.transport.time_signature;
     let bar_beats =
@@ -951,7 +951,7 @@ impl AudioEditorState {
 #[derive(Clone, Copy)]
 pub struct Env<'a> {
     pub waveforms: &'a Waveforms,
-    /// Settings › Clip editor › Audio editor waveform colour is Theme: the waveform takes the
+    /// Settings › Clip editor › Audio editor waveform color is Theme: the waveform takes the
     /// theme's `clip-waveform` color instead of the clip's.
     pub theme_waveform: bool,
     /// Settings › Clip editor › Audio editor › Drag warp markers by their line: a marker's line down
@@ -1095,10 +1095,10 @@ fn with_address(address: &Value, own: Value) -> Value {
     Value::Object(map)
 }
 
-/// The color the waveform is drawn in, as Settings › Clip editor › Audio editor waveform colour
+/// The color the waveform is drawn in, as Settings › Clip editor › Audio editor waveform color
 /// says: the clip's color (its own, else its track's, as the Arrangement colors the clip), or
 /// the theme's: its `clip-waveform` color where it gives one, else a neutral ink that reads on
-/// the editor's `panel` (the clip's color there made Theme look the same as Track colour).
+/// the editor's `panel` (the clip's color there made Theme look the same as Track color).
 fn waveform_ink(theme: bool, clip: Color32, panel: Color32) -> Color32 {
     if theme {
         crate::kit::element::CLIP_WAVEFORM.enter().color_or(theme::text_on(panel.to_opaque()).gamma_multiply(0.7))

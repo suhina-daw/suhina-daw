@@ -71,7 +71,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setColorMany",
-        label: "Give several clips, in the arrangement or in clip slots, a colour of their own, or their tracks' colour again, as one undo step",
+        label: "Give several clips, in the arrangement or in clip slots, a color of their own, or their tracks' color again, as one undo step",
         params: &[CLIPS, param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for each track's color"), GESTURE],
         kind: CommandKind::EDIT,
         run: set_clips_color,
@@ -269,10 +269,10 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setColor",
-        label: "Give a clip a colour of its own (by id, an arrangement clip or a slot's, or by index), or every clip of a track one when neither is given; \"none\" makes them show the track's colour again",
+        label: "Give a clip a color of its own (by id, an arrangement clip or a slot's, or by index), or every clip of a track one when neither is given; \"none\" makes them show the track's color again",
         params: &[
             CLIP_TRACK,
-            param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for the track's colour"),
+            param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for the track's color"),
             CLIP,
             optional(
                 "index",
@@ -345,7 +345,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "color",
                 ParamType::Text,
-                "\"#rrggbb\": the colour they show now, kept on the other track by those with none of their own",
+                "\"#rrggbb\": the color they show now, kept on the other track by those with none of their own",
             ),
             optional(
                 "copy",
@@ -430,7 +430,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "color",
                 ParamType::Text,
-                "\"#rrggbb\": the colour the clip shows now, which it keeps on another track when it has none of its own",
+                "\"#rrggbb\": the color the clip shows now, which it keeps on another track when it has none of its own",
             ),
         ],
         kind: CommandKind::EDIT,
@@ -1800,7 +1800,7 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         Some(_) => track_at(&session.project, params, "toTrack")?,
         None => track,
     };
-    // The colour the clip shows on its track, kept when it goes to another (`color`).
+    // The color the clip shows on its track, kept when it goes to another (`color`).
     let keep = match Args::new(params).value("color") {
         None => None,
         Some(_) => crate::clip_color::parse_color(params, "color")?,

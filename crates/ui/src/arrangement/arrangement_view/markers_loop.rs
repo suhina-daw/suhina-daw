@@ -43,7 +43,7 @@ pub(super) fn marker_flags(
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Marker {}", marker.name)));
         let dragged = state.gesture.marker().is_some_and(|&(i, _)| i == marker.index);
         // `marker`, `[checked]` while it is dragged: its tag's background, its line's border
-        // colour and its name's colour.
+        // color and its name's color.
         let el = crate::kit::element::MARKER.response(&response).attr(crate::kit::element::Checked, dragged).enter();
         painter.rect_filled(tag, 0.0, el.background());
         painter.vline(x, row.y_range(), theme::hairline(el.border()));

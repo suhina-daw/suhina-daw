@@ -40,7 +40,7 @@ fn themes_are_written_read_and_seen_when_they_change() {
     let ids: Vec<_> = entries.iter().map(|e| e.id.as_str()).collect();
     assert_eq!(ids, ["b-bad", "night"]);
     assert!(entries.get(1).is_some_and(|e| same_look(&e.theme, &night())));
-    // The theme with a colour it cannot read, and that it stays JSON until it reads whole.
+    // The theme with a color it cannot read, and that it stays JSON until it reads whole.
     assert_eq!(warnings.len(), 2, "{warnings:?}");
 
     files.checked = None;

@@ -3,7 +3,7 @@
 
 //! The themes the user can pick from: those that come with Suhina and those read from theme
 //! files, and what Settings › Appearance › Themes does with them. The app reads and writes the
-//! files; this keeps the list, says what to do with the files, and picks the colours to draw with.
+//! files; this keeps the list, says what to do with the files, and picks the colors to draw with.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -85,7 +85,7 @@ pub struct Themes {
 struct Draft {
     id: String,
     name: Option<String>,
-    /// The colour scheme chosen in the editor, when one was.
+    /// The color scheme chosen in the editor, when one was.
     light: Option<bool>,
     values: BTreeMap<String, String>,
     theme: Theme,

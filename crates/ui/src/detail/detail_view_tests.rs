@@ -2214,11 +2214,11 @@ fn the_slot_after_a_chains_last_device_never_covers_it() {
             shapes = output.shapes;
         }
         crate::kit::skin::configure(&crate::kit::skin::Skin::default());
-        let fills = |colour: egui::Color32| -> Vec<Rect> {
+        let fills = |color: egui::Color32| -> Vec<Rect> {
             shapes
                 .iter()
                 .filter_map(|s| match &s.shape {
-                    egui::Shape::Rect(r) if r.fill == colour => Some(r.rect),
+                    egui::Shape::Rect(r) if r.fill == color => Some(r.rect),
                     _ => None,
                 })
                 .collect()
@@ -2338,7 +2338,7 @@ fn sidechain_to_searches_the_keyed_devices() {
             let menu = TrackMenu {
                 track: TrackId(1),
                 name: "Kick",
-                colour: suhina_engine::model::Rgb(200, 100, 50),
+                color: suhina_engine::model::Rgb(200, 100, 50),
                 is_group: false,
                 is_return: false,
                 selection: &[],

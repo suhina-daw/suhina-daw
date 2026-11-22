@@ -1542,7 +1542,7 @@ fn detail_height_in(height: f32, room: f32, needs: f32, least: f32) -> f32 {
 
 /// The detail area's splitter: a strip with a grip across its middle, `#detail-splitter` (a
 /// `divider`, with `:hover` and `:active`). The strip takes the element's `background-color` and
-/// the grip its `color`; without them, the control background and the hint colour.
+/// the grip its `color`; without them, the control background and the hint color.
 fn paint_splitter(ui: &Ui, splitter: Rect, style: &crate::kit::element::Entered, stacked: bool) {
     let painter = ui.painter_at(splitter);
     painter.rect_filled(splitter, 0.0, style.background());

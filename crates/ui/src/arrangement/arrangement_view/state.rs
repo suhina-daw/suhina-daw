@@ -165,7 +165,7 @@ pub struct ArrangementViewState {
     /// Tracks whose take lanes are folded away (Hide take lanes in the lane's menu).
     pub takes_hidden: HashSet<TrackId>,
     /// The take piece a right-click on a take lane was over (track, take number, piece from 0),
-    /// which the lane's Recolor colours (#989).
+    /// which the lane's Recolor colors (#989).
     pub(super) take_piece: Option<(TrackId, usize, usize)>,
     /// The height a take lane was dragged to (its track and number, #1078); the rest are as tall
     /// as a track.
@@ -340,10 +340,10 @@ pub struct ArrangementViewState {
     /// Edit gain envelope asked for on this clip (Alt+E): switched on the next frame.
     pub toggle_envelope: Option<suhina_engine::model::ClipId>,
     pub waveform_appearance: crate::settings::view_settings::WaveformAppearance,
-    pub audio_colour_strength: u8,
+    pub audio_color_strength: u8,
     /// This frame's grid lines, as clips draw them through their bodies: (x, is a bar line).
     pub(crate) clip_grid: std::sync::Arc<Vec<(f32, bool)>>,
-    pub header_colour_strength: u8,
+    pub header_color_strength: u8,
     /// Where the last click in a lane or a clip's body put the play start, on which track: a
     /// thin line there in that lane while the play start is still there.
     pub insert: Option<(TrackId, f64)>,
@@ -442,9 +442,9 @@ impl Default for ArrangementViewState {
             waveform_zoom: 1.0,
             toggle_envelope: None,
             waveform_appearance: crate::settings::view_settings::WaveformAppearance::default(),
-            audio_colour_strength: 82,
+            audio_color_strength: 82,
             clip_grid: std::sync::Arc::default(),
-            header_colour_strength: 82,
+            header_color_strength: 82,
             insert: None,
             open_devices: None,
             automation: LanesState::default(),
@@ -1125,19 +1125,19 @@ impl ArrangementViewState {
 }
 
 /// How this frame draws clips: the grid lines through their bodies, the waveform zoom and look,
-/// how strongly an audio clip takes its colour. Handed to the clip painter as a value, where it
+/// how strongly an audio clip takes its color. Handed to the clip painter as a value, where it
 /// read them from egui's memory (#764 › 12).
 #[derive(Clone)]
 pub(crate) struct ClipLook {
     pub(crate) grid: std::sync::Arc<Vec<(f32, bool)>>,
     pub(crate) waveform_zoom: f32,
     pub(crate) waveform_appearance: crate::settings::view_settings::WaveformAppearance,
-    pub(crate) audio_colour_strength: u8,
+    pub(crate) audio_color_strength: u8,
     /// The piano roll's time selection and the clip it is on ([`ArrangementViewState::editor_span`]).
     pub(crate) editor_span: Option<(ClipId, f64, f64)>,
     /// The time selection's span in beats, when it is over the clip's track and its whole row
     /// ([`ArrangementViewState::clip_look_on`]): that stretch of the clip's body is drawn in the
-    /// selection colour.
+    /// selection color.
     pub(crate) time_lit: Option<(f64, f64)>,
     /// The looks of a clip's parts (its name, waveform or notes, fades), read once this frame for
     /// each kind of clip there is in each track's lane ([`ClipKind`]): the style tree grows with
@@ -1156,7 +1156,7 @@ pub(crate) struct ClipLook {
 /// ([`ClipLook::parts`]).
 pub(crate) type ClipPartsCache = std::rc::Rc<std::cell::RefCell<HashMap<(TrackId, bool, ClipKind), ClipParts>>>;
 
-/// What a clip's parts can be styled by: its states and its colour, and whether it holds audio.
+/// What a clip's parts can be styled by: its states and its color, and whether it holds audio.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ClipKind {
     pub(crate) color: egui::Color32,
@@ -1183,7 +1183,7 @@ impl ArrangementViewState {
             grid: std::sync::Arc::clone(&self.clip_grid),
             waveform_zoom: self.waveform_zoom,
             waveform_appearance: self.waveform_appearance,
-            audio_colour_strength: self.audio_colour_strength,
+            audio_color_strength: self.audio_color_strength,
             editor_span: self.editor_span,
             time_lit: None,
             parts: std::rc::Rc::clone(&self.clip_parts),

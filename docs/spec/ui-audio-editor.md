@@ -1,6 +1,6 @@
 ---
-description: Functional spec of the audio editor in the detail area: what a double-clicked audio clip shows (its whole file across the content's beats under a bar, beat and sixteenth ruler, the played part lit, the loop's edges), the waveform colour, zoom and scroll, and editing warp markers (add, place on transients, drag, remove with a double-click or Delete, reset warp)
-read_when: audio editor, audio clip editor, waveform view, big waveform, detail area waveform, double-click audio clip, warp markers, add warp marker, move warp marker, delete warp marker, warp markers at transients, reset warp, align snares, audio ruler, audio grid, waveform colour
+description: Functional spec of the audio editor in the detail area: what a double-clicked audio clip shows (its whole file across the content's beats under a bar, beat and sixteenth ruler, the played part lit, the loop's edges), the waveform color, zoom and scroll, and editing warp markers (add, place on transients, drag, remove with a double-click or Delete, reset warp)
+read_when: audio editor, audio clip editor, waveform view, big waveform, detail area waveform, double-click audio clip, warp markers, add warp marker, move warp marker, delete warp marker, warp markers at transients, reset warp, align snares, audio ruler, audio grid, waveform color
 type: spec
 status: draft
 last_verified: 2026-11-16
@@ -108,12 +108,12 @@ on a beat:
   `bar.beat.sixteenth`, both following the pointer exactly: nothing jumps from one transient or
   grid line to the next as it moves, and over the waveform nothing on the marker lane answers it.
 
-The numbers and the strip take the theme's `label` and `detail-fill`; the lines are drawn from the panel's colour.
+The numbers and the strip take the theme's `label` and `detail-fill`; the lines are drawn from the panel's color.
 
 ### The loop row
 
 A strip under the ruler (10 points) with the clip's loop as a bar, an arrow pointing in at each
-end, in the clip's colour; with the loop off the bar is gray over the part the clip plays. The
+end, in the clip's color; with the loop off the bar is gray over the part the clip plays. The
 loop's edges also run as lines down the marker lane and the waveform.
 
 | Gesture | Effect |
@@ -138,7 +138,7 @@ undo step.
 A strip under the ruler (14 points) that holds:
 
 - **Warp markers**: a flag (a small block pointing down) for each marker of a warped clip, in the
-  clip's colour, with its line down the waveform; the marker the pointer is on, the ones picked and
+  clip's color, with its line down the waveform; the marker the pointer is on, the ones picked and
   the ones being dragged are drawn in the title ink, their line wider, and the pointer is a two-way
   arrow over a marker and while one is dragged. With two or more picked, a band in the title ink runs along the lane from the first of them to the last, a bar along its top joining their flags. The flag takes hold of the marker; the line does
   only with *Drag warp markers by their line* on (off by default), so a drag beside a line paints
@@ -165,7 +165,7 @@ A strip under the ruler (14 points) that holds:
 
 - **The part the clip plays** is lit: from its start (the offset) to its loop's end, or to where
   its length reaches. What it does not play is dimmed.
-- **Loop**: a line in the clip's colour at each edge of the loop.
+- **Loop**: a line in the clip's color at each edge of the loop.
 - **Warp markers** (› The marker lane): a clip that is not warped has none, and says *Warp is
   off*: turn Warp on in the clip panel.
 - **The time selection**: tinted over the waveform, with its edges and a bar along the ruler's
@@ -178,15 +178,15 @@ A strip under the ruler (14 points) that holds:
   engine plays them) are drawn as they play, and the file's place on the beats is read through
   those of them that rise, so such a clip is still shown and edited.
 
-### Waveform colour
+### Waveform color
 
-The waveform follows **Settings › Clip editor › Audio editor › Audio editor waveform colour**, its
-own setting: the Arrangement's *Waveform and note colour* chooses an ink for drawing over a clip's
-coloured body, which this view has none of.
+The waveform follows **Settings › Clip editor › Audio editor › Audio editor waveform color**, its
+own setting: the Arrangement's *Waveform and note color* chooses an ink for drawing over a clip's
+colored body, which this view has none of.
 
 | Setting | The editor's waveform |
 |---|---|
-| Track colour (the default) | The clip's colour: its own when it has one, else its track's, as the Arrangement colours the clip |
+| Track color (the default) | The clip's color: its own when it has one, else its track's, as the Arrangement colors the clip |
 | Theme | The theme's `clip-waveform` `color` where a theme gives one; else a neutral ink that reads on the editor's panel |
 
 ## Warp markers

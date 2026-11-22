@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! What the Launcher, the mixer, the Arrangement, the browser and the detail panels draw is each an
-//! element a theme styles on its own (#1417, #1023): a rule for one reaches what it paints, and nothing else takes its colour.
+//! element a theme styles on its own (#1417, #1023): a rule for one reaches what it paints, and nothing else takes its color.
 
 use super::*;
 
-/// Every colour the window painted in its last frame: fills, strokes, lines and text.
+/// Every color the window painted in its last frame: fills, strokes, lines and text.
 fn painted(h: &Harness<'static, App>) -> Vec<egui::Color32> {
     fn walk(shape: &egui::Shape, found: &mut Vec<egui::Color32>) {
         match shape {
@@ -54,7 +54,7 @@ fn painted_at(h: &Harness<'static, App>, color: egui::Color32) -> Vec<egui::Rect
     found
 }
 
-/// A colour no theme or track uses, the `n`-th of a set.
+/// A color no theme or track uses, the `n`-th of a set.
 fn odd(n: u8) -> egui::Color32 {
     egui::Color32::from_rgb(0x13, 0x57, n)
 }
@@ -64,8 +64,8 @@ fn hex(color: egui::Color32) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
 
-/// Shows `h` with `rules` (selector, property, colour) as the user's sheet, then every rule's
-/// colour that no shape painted.
+/// Shows `h` with `rules` (selector, property, color) as the user's sheet, then every rule's
+/// color that no shape painted.
 fn missing(h: &mut Harness<'static, App>, rules: &[(&str, &str, egui::Color32)]) -> Vec<String> {
     let css: String = rules
         .iter()
@@ -144,7 +144,7 @@ fn a_rule_for_every_arrangement_tool_needs_a_checked_rule_to_keep_the_chosen_one
     let general = format!("arrangement-tool {{ background-color: {}; }}", hex(odd(31)));
     assert_eq!(fills(&mut h, &general), (tools, 0), "a rule for every tool is the chosen one's fill too");
     let chosen = format!("{general} arrangement-tool[checked] {{ background-color: {}; }}", hex(odd(32)));
-    assert_eq!(fills(&mut h, &chosen), (tools - 1, 1), "a rule for `[checked]` recolours it");
+    assert_eq!(fills(&mut h, &chosen), (tools - 1, 1), "a rule for `[checked]` recolors it");
 }
 
 /// Shows `h` with `css` as the user's sheet for a few frames, and how many painted fills, strokes,
@@ -165,11 +165,11 @@ fn count_with(h: &mut Harness<'static, App>, css: &str, color: egui::Color32) ->
 #[test]
 fn a_clip_picked_in_its_body_takes_its_own_selected_rule() {
     let mut h = arrangement_app();
-    // The outline is how a clip picked in its body shows with Selection colour › Clip's own
-    // colour; with a selection colour it is filled with it instead.
+    // The outline is how a clip picked in its body shows with Selection color › Clip's own
+    // color; with a selection color it is filled with it instead.
     let ctx = h.ctx.clone();
     let mut settings = h.state().settings().clone();
-    settings.view.selection.mode = suhina_ui::kit::selection::SelectionColour::Own;
+    settings.view.selection.mode = suhina_ui::kit::selection::SelectionColor::Own;
     h.state_mut().set_settings(&ctx, settings);
     h.run();
     let body = h.get_by_label("Clip Beat B on Drums at bar 17").rect().left_center() + egui::vec2(64.0, 0.0);
@@ -182,11 +182,11 @@ fn a_clip_picked_in_its_body_takes_its_own_selected_rule() {
     assert_eq!(missing(&mut h, &[("clip[color][selected]", "border-color", odd(41))]), Vec::<String>::new());
 }
 
-/// A take's name is drawn in its header's text colour: `take-header { color }` reaches the name
+/// A take's name is drawn in its header's text color: `take-header { color }` reaches the name
 /// itself, and the header's buttons, which sit on its background, inherit it as their glyphs'
-/// colour where no rule of theirs sets one (#1428 review).
+/// color where no rule of theirs sets one (#1428 review).
 #[test]
-fn a_take_s_name_takes_its_header_s_colour() {
+fn a_take_s_name_takes_its_header_s_color() {
     let mut h = super::arrangement::window_with_drums_takes(16.0);
     assert!(h.query_by_label("Solo Drums Take 1").is_some(), "the take lanes are shown");
     let css = format!("take-header {{ color: {}; }}", hex(odd(42)));
@@ -194,7 +194,7 @@ fn a_take_s_name_takes_its_header_s_colour() {
     for _ in 0..4 {
         h.step();
     }
-    // The colours of the texts that read `text` inside a take's header (its clips carry names
+    // The colors of the texts that read `text` inside a take's header (its clips carry names
     // of their own), each text once.
     let headers: Vec<egui::Rect> = [("Drums Take 1", "Solo Drums Take 1"), ("Drums Take 2", "Solo Drums Take 2")]
         .iter()
@@ -225,7 +225,7 @@ fn a_take_s_name_takes_its_header_s_colour() {
     let solo = texts(&h, "S");
     suhina_ui::kit::native_css::set_user_sheet(None);
     for (n, name) in names.iter().enumerate() {
-        assert_eq!(name, &[odd(42)], "take {}'s name is drawn once, in the header's colour", n + 1);
+        assert_eq!(name, &[odd(42)], "take {}'s name is drawn once, in the header's color", n + 1);
     }
     assert_eq!(solo.iter().filter(|ink| **ink == odd(42)).count(), 2, "each take's Solo inherits it");
 }
@@ -263,7 +263,7 @@ fn a_hover_rule_is_the_hovered_chosen_tool_s_fill_too() {
     let hover = format!("arrangement-tool:hover {{ background-color: {}; }}", hex(odd(45)));
     assert_eq!(count_with(&mut h, &hover, odd(45)), 1, "the hovered chosen tool takes the hover rule");
     let lit = format!("{hover} arrangement-tool[checked]:hover {{ background-color: {}; }}", hex(odd(46)));
-    assert_eq!(count_with(&mut h, &lit, odd(46)), 1, "a rule for the hovered `[checked]` tool recolours it");
+    assert_eq!(count_with(&mut h, &lit, odd(46)), 1, "a rule for the hovered `[checked]` tool recolors it");
 }
 
 /// How many rectangles the window stroked with `color`, with the user's sheet `css`.
@@ -305,7 +305,7 @@ fn a_clip_picked_in_its_body_keeps_its_own_background_with_a_transition() {
     assert_eq!(count_with(&mut h, &css, odd(51)), 0, "the body is not drawn as selected");
 }
 
-/// A `clip:hover` rule's border colour is the hovered selected slot clip's outline too: the base
+/// A `clip:hover` rule's border color is the hovered selected slot clip's outline too: the base
 /// sheet's `clip[selected]` outline is hidden by it, so a theme states `clip[selected]:hover`
 /// (#1450).
 #[test]
@@ -319,7 +319,7 @@ fn a_hover_rule_is_a_slot_clip_s_selected_outline_too() {
     let hover = format!("clip:hover {{ border-color: {}; }}", hex(odd(52)));
     assert_eq!(strokes_with(&mut h, &hover, odd(52)), 1, "the outline takes the hover rule");
     let selected = format!("{hover} clip[selected]:hover {{ border-color: {}; }}", hex(odd(53)));
-    assert_eq!(strokes_with(&mut h, &selected, odd(53)), 1, "a `[selected]` rule recolours it");
+    assert_eq!(strokes_with(&mut h, &selected, odd(53)), 1, "a `[selected]` rule recolors it");
 }
 
 /// A rule for every clip's `color` is not a selected clip's outline, but its `background-color` is
@@ -340,7 +340,7 @@ fn a_rule_for_every_slot_clip_needs_a_muted_rule_to_keep_the_deactivated_clip_gr
     h.hover_at(egui::pos2(1.0, 1.0));
     h.run();
     let ink = format!("clip {{ color: {}; }}", hex(odd(54)));
-    assert_eq!(strokes_with(&mut h, &ink, odd(54)), 0, "the outline is not the clips' colour");
+    assert_eq!(strokes_with(&mut h, &ink, odd(54)), 0, "the outline is not the clips' color");
     let fill = format!("clip {{ background-color: {}; }}", hex(odd(55)));
     assert_eq!(count_with(&mut h, &fill, odd(55)), 1, "the deactivated clip takes the clips' fill");
     let muted = format!("{fill} clip[muted] {{ background-color: {}; }}", hex(odd(56)));
@@ -349,7 +349,7 @@ fn a_rule_for_every_slot_clip_needs_a_muted_rule_to_keep_the_deactivated_clip_gr
 }
 
 /// The muted grays are variables of the base sheet: setting `--clip-mutedBackground` or
-/// `--track-headerMutedBackground` recolours a muted track's Arrangement clips and header, and a
+/// `--track-headerMutedBackground` recolors a muted track's Arrangement clips and header, and a
 /// theme's own `arrangement clip[muted]` rule still wins over the variable (#1474 review).
 #[test]
 fn the_muted_gray_variables_reach_the_arrangement() {
@@ -387,7 +387,7 @@ fn the_muted_gray_variables_reach_the_arrangement() {
 /// A `color` rule for every tool is the chosen tool's ink too: a theme that wants it apart states
 /// `arrangement-tool[checked]` (#1450).
 #[test]
-fn a_colour_rule_for_every_tool_is_the_chosen_one_s_ink_too() {
+fn a_color_rule_for_every_tool_is_the_chosen_one_s_ink_too() {
     let mut h = arrangement_app();
     let mut settings = suhina_ui::settings::Settings::default();
     settings.view.arrangement_toolbar = true;
@@ -401,7 +401,7 @@ fn a_colour_rule_for_every_tool_is_the_chosen_one_s_ink_too() {
         h.step();
     }
     let range = h.get_by_label("Arrangement tool Select").rect();
-    // The icons painted in the rule's colour, by the tool button they are in.
+    // The icons painted in the rule's color, by the tool button they are in.
     let mut inked = std::collections::BTreeSet::new();
     let left = range.left();
     let pitch = h.get_by_label("Arrangement tool Range").rect().left() - left;
@@ -409,7 +409,7 @@ fn a_colour_rule_for_every_tool_is_the_chosen_one_s_ink_too() {
         match shape {
             egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, color, found)),
             other => {
-                let colours = {
+                let colors = {
                     let mut c = Vec::new();
                     match other {
                         egui::Shape::LineSegment { stroke, .. } => c.push(stroke.color),
@@ -427,7 +427,7 @@ fn a_colour_rule_for_every_tool_is_the_chosen_one_s_ink_too() {
                     }
                     c
                 };
-                if colours.contains(&color) {
+                if colors.contains(&color) {
                     found.push(other.visual_bounding_rect());
                 }
             }
@@ -439,13 +439,13 @@ fn a_colour_rule_for_every_tool_is_the_chosen_one_s_ink_too() {
     for rect in found.iter().filter(|r| r.center().y >= range.top() && r.center().y <= range.bottom()) {
         inked.insert(((rect.center().x - left) / pitch).floor() as i32);
     }
-    assert_eq!(inked.len(), tools, "every tool takes the colour: {inked:?}");
+    assert_eq!(inked.len(), tools, "every tool takes the color: {inked:?}");
 }
 
 /// A `color` rule for the monitor buttons is the lit one's label ink too: a theme that wants it
 /// apart states `[checked]` (#1450).
 #[test]
-fn a_colour_rule_for_the_monitor_buttons_is_the_lit_one_s_label_ink_too() {
+fn a_color_rule_for_the_monitor_buttons_is_the_lit_one_s_label_ink_too() {
     let mut project = demo_project();
     project.tracks[0].content = suhina_engine::model::ContentKinds { notes: false, audio: true };
     let mut app = App::new();
@@ -473,7 +473,7 @@ fn a_colour_rule_for_the_monitor_buttons_is_the_lit_one_s_label_ink_too() {
         }
     }
     suhina_ui::kit::native_css::set_user_sheet(None);
-    assert_eq!(inked.len(), 3, "all three take the colour: {inked:?}");
+    assert_eq!(inked.len(), 3, "all three take the color: {inked:?}");
 }
 
 /// The fills of the rectangles painted exactly over `rect` in the last frame.
@@ -626,7 +626,7 @@ fn the_pitch_dial_and_a_typed_number_take_their_rules() {
 
 /// A text field's and a drop-down's underline is their `border-color` (#1023).
 #[test]
-fn a_field_s_underline_takes_its_border_colour() {
+fn a_field_s_underline_takes_its_border_color() {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
     let mut h = window(app);
@@ -634,12 +634,12 @@ fn a_field_s_underline_takes_its_border_colour() {
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
 }
 
-/// A track header's routing fields take the colours of the header: a rule for every `dropdown`
+/// A track header's routing fields take the colors of the header: a rule for every `dropdown`
 /// leaves them alone, one for `dropdown[kind="subtle"]` reaches them (#1023).
 #[test]
 fn a_routing_field_takes_only_its_own_kind_s_rule() {
     let mut h = arrangement_app();
-    // The colours of the lines along the bottom of the corner's Resize all field.
+    // The colors of the lines along the bottom of the corner's Resize all field.
     let underline = |h: &mut Harness<'static, App>, css: String| {
         suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
         for _ in 0..4 {
@@ -748,7 +748,7 @@ fn a_rule_for_every_text_field_is_a_typed_number_s_until_it_has_its_own() {
     h.event(egui::Event::Text("3".into()));
     h.run();
     let dial = h.get_by_label_contains("Pitch: ").rect();
-    // The typed number's fill, and every text colour over the dial.
+    // The typed number's fill, and every text color over the dial.
     let typed = |h: &mut Harness<'static, App>, css: String| {
         suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
         for _ in 0..4 {
@@ -813,10 +813,10 @@ fn a_clip_panel_s_words_lines_and_menus_take_their_own_rules() {
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
 }
 
-/// A colour a theme gives a whole clip column reaches its titles, not its dim words: `hint` and
-/// `caption` take only a colour given to them (#1023).
+/// A color a theme gives a whole clip column reaches its titles, not its dim words: `hint` and
+/// `caption` take only a color given to them (#1023).
 #[test]
-fn a_colour_for_a_whole_clip_column_leaves_its_dim_words_dim() {
+fn a_color_for_a_whole_clip_column_leaves_its_dim_words_dim() {
     let mut h = walk_picked();
     let css = format!("clip-info {{ color: {}; }}", hex(odd(79)));
     suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
@@ -825,7 +825,7 @@ fn a_colour_for_a_whole_clip_column_leaves_its_dim_words_dim() {
     }
     let shown = painted(&h);
     suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(shown.contains(&odd(79)), "the titles take the area's colour");
+    assert!(shown.contains(&odd(79)), "the titles take the area's color");
     let (caption, hint) = (
         suhina_ui::kit::theme::default_color("text-secondary").unwrap(),
         suhina_ui::kit::theme::default_color("text-hint").unwrap(),
@@ -927,8 +927,8 @@ fn the_header_edge_is_a_divider_that_still_resizes_the_headers() {
     assert!((after - before - 40.0).abs() < 1.0, "the edge moved with the drag: {before} to {after}");
 }
 
-/// The text colours painted with their galley's top-left inside `rect` in the last frame.
-fn text_colours_at(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
+/// The text colors painted with their galley's top-left inside `rect` in the last frame.
+fn text_colors_at(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
     fn walk(shape: &egui::Shape, rect: egui::Rect, found: &mut Vec<egui::Color32>) {
         match shape {
             egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, rect, found)),
@@ -944,10 +944,10 @@ fn text_colours_at(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Col
     found
 }
 
-/// The browser's new-folder field is `text-input#browser-new-folder`: a rule for that id colours
+/// The browser's new-folder field is `text-input#browser-new-folder`: a rule for that id colors
 /// the text typed in it (#1438).
 #[test]
-fn the_browser_s_new_folder_field_takes_its_own_id_s_text_colour() {
+fn the_browser_s_new_folder_field_takes_its_own_id_s_text_color() {
     let mut app = demo_app();
     app.set_browser_open(true);
     let mut h = window(app);
@@ -960,7 +960,7 @@ fn the_browser_s_new_folder_field_takes_its_own_id_s_text_colour() {
 }
 
 /// The browser's filter chips are drawn inside the browser: a rule scoped to it reaches their
-/// words, which are the chip's own colour, `button[kind="chip"]` (#1438, #1451).
+/// words, which are the chip's own color, `button[kind="chip"]` (#1438, #1451).
 #[test]
 fn a_rule_scoped_to_the_browser_reaches_the_filter_chips_words() {
     let mut h = browser_with_chips();
@@ -970,7 +970,7 @@ fn a_rule_scoped_to_the_browser_reaches_the_filter_chips_words() {
     for _ in 0..4 {
         h.step();
     }
-    let words = text_colours_at(&h, h.get_by_label("Recent Samples").rect());
+    let words = text_colors_at(&h, h.get_by_label("Recent Samples").rect());
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(words.contains(&odd(111)), "an unlit chip's words take the browser's rule: {words:?}");
 }
@@ -1169,7 +1169,7 @@ fn a_rule_for_every_button_needs_a_checked_rule_to_keep_settings_chosen_preset_l
     assert!(unlit.contains(&odd(141)), "an unchosen one keeps the rule: {unlit:?}");
 }
 
-/// A rule for every `button` colours Settings' yes/no switches, lit ones too; a theme states
+/// A rule for every `button` colors Settings' yes/no switches, lit ones too; a theme states
 /// the lit look with `button[kind="switch"][checked]`, which only the lit ones take (#1440).
 #[test]
 fn a_rule_for_every_button_needs_a_checked_rule_to_keep_settings_switches_lit() {
@@ -1252,7 +1252,7 @@ fn the_detail_splitter_takes_closed_only_while_the_area_is_closed() {
     assert_ne!(first, second, "[closed] reaches the splitter of the closed area only");
 }
 
-/// The colours of the text painted inside `rect` in the last frame.
+/// The colors of the text painted inside `rect` in the last frame.
 fn inks_in(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
     fn walk(shape: &egui::Shape, rect: egui::Rect, found: &mut Vec<egui::Color32>) {
         match shape {
@@ -1398,7 +1398,7 @@ fn a_text_field_outside_any_scope_takes_the_text_input_rule() {
     });
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert_eq!(h.ctx.global_style().visuals.text_edit_bg_color, Some(odd(51)));
-    assert!(filled_with(&h, odd(51)) > 0, "the field is filled with the rule's colour");
+    assert!(filled_with(&h, odd(51)) > 0, "the field is filled with the rule's color");
 }
 
 /// An open egui menu, which egui frames with the root's window fill, takes the sheet's `menu` rule
@@ -1416,7 +1416,7 @@ fn an_open_egui_menu_takes_the_menu_rule_at_the_root() {
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert_eq!(h.ctx.global_style().visuals.window_fill, odd(52));
     assert!(h.query_by_label("An entry").is_some(), "the menu is open");
-    assert!(filled_with(&h, odd(52)) > 0, "its frame is filled with the rule's colour");
+    assert!(filled_with(&h, odd(52)) > 0, "its frame is filled with the rule's color");
 
     let mut window = window(demo_app());
     suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
@@ -1425,7 +1425,7 @@ fn an_open_egui_menu_takes_the_menu_rule_at_the_root() {
     window.run_steps(3);
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert_eq!(window.ctx.global_style().visuals.window_fill, odd(52));
-    assert!(filled_with(&window, odd(52)) > 0, "the File menu is filled with the rule's colour");
+    assert!(filled_with(&window, odd(52)) > 0, "the File menu is filled with the rule's color");
 }
 
 /// The window with the Keys track's device chain shown and its first device carried to the end of
@@ -1468,7 +1468,7 @@ fn put_down(h: &mut Harness<'static, App>) {
     });
 }
 
-/// A drop target's line takes its colour from the base sheet's rule, which reads `--accent`: a
+/// A drop target's line takes its color from the base sheet's rule, which reads `--accent`: a
 /// `user.css` that sets the variable reaches it in Suhina Studio, with no rule for the line (#1448).
 #[test]
 fn a_user_sheet_s_accent_reaches_a_drop_target_line_in_suhina_studio() {
@@ -1480,7 +1480,7 @@ fn a_user_sheet_s_accent_reaches_a_drop_target_line_in_suhina_studio() {
     });
     assert_eq!(line.len(), 1, "one insert line: {line:?}");
     let accent = under(&mut h, format!(":root {{ --accent: {}; }}", hex(odd(130))), |h| painted_at(h, odd(130)));
-    assert!(accent.contains(&line[0]), "the accent is the line's colour: {accent:?} and {line:?}");
+    assert!(accent.contains(&line[0]), "the accent is the line's color: {accent:?} and {line:?}");
     // With the sheet put away, the line is back to Suhina Studio's accent.
     for _ in 0..4 {
         h.step();
@@ -1503,11 +1503,11 @@ fn a_theme_rule_beats_the_base_sheet_s_less_specific_or_layered() {
         let mut h = carrying_a_device(Some(theme));
         let shown = painted(&h);
         put_down(&mut h);
-        assert!(shown.contains(&odd(131)), "{css}: the theme's colour is the line's");
+        assert!(shown.contains(&odd(131)), "{css}: the theme's color is the line's");
     }
 }
 
-/// Colouring a region goes through its variables: `mixer { --text-value: … }` reaches a field in
+/// Coloring a region goes through its variables: `mixer { --text-value: … }` reaches a field in
 /// the mixer, its volume's readout (#1448).
 #[test]
 fn a_mixer_s_text_value_variable_reaches_a_field_in_the_mixer() {
@@ -1516,9 +1516,9 @@ fn a_mixer_s_text_value_variable_reaches_a_field_in_the_mixer() {
 }
 
 /// A theme's rule beats each rule the base sheet gives the shared controls, whatever its
-/// specificity: one rule for each element the sheet gives colours to, in a window that shows it,
-/// and its colour is painted (#1449). A fader's cap and a meter's level are not here: what they
-/// paint is shades worked out from the colour, not the colour, which the style tests read.
+/// specificity: one rule for each element the sheet gives colors to, in a window that shows it,
+/// and its color is painted (#1449). A fader's cap and a meter's level are not here: what they
+/// paint is shades worked out from the color, not the color, which the style tests read.
 #[test]
 fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
     fn audio_clip() -> Harness<'static, App> {
@@ -1664,7 +1664,7 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_its_lit_buttons() {
         // recorded painted digests hold them), which this test pins so a change is a decision.
         let switch = h.get_by_label("Turn Drums off").rect();
         let fill = suhina_ui::kit::theme::default_color("control-selectedBackground").unwrap();
-        let inks = text_colours_at(&h, switch);
+        let inks = text_colors_at(&h, switch);
         suhina_ui::kit::native_css::set_user_sheet(None);
         assert!(!inks.is_empty(), "{id}: the lit switch shows its number");
         match expected_ink {
@@ -1727,9 +1727,9 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_monitor_
     }
 }
 
-/// Colouring a region goes through its variables: `window { --text-hint: … }` reaches the hint
+/// Coloring a region goes through its variables: `window { --text-hint: … }` reaches the hint
 /// words inside it (an empty detail panel's note) and a switch's dim words, which the base sheet
-/// colours with the same variable: a track that is off, its number (#1449).
+/// colors with the same variable: a track that is off, its number (#1449).
 #[test]
 fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
     let mut h = lit_drums();
@@ -1744,11 +1744,11 @@ fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
     for _ in 0..4 {
         h.step();
     }
-    let toggle = text_colours_at(&h, switch);
-    // The colours of the hint's words: the empty detail panel's note.
-    fn colours_of(shape: &egui::Shape, words: &str, found: &mut Vec<egui::Color32>) {
+    let toggle = text_colors_at(&h, switch);
+    // The colors of the hint's words: the empty detail panel's note.
+    fn colors_of(shape: &egui::Shape, words: &str, found: &mut Vec<egui::Color32>) {
         match shape {
-            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| colours_of(shape, words, found)),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| colors_of(shape, words, found)),
             egui::Shape::Text(text) if text.galley.text() == words => {
                 found.extend(text.galley.job.sections.iter().map(|section| section.format.color));
             }
@@ -1759,7 +1759,7 @@ fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
     h.output()
         .shapes
         .iter()
-        .for_each(|shape| colours_of(&shape.shape, "Select a track or a clip to see it here", &mut hint));
+        .for_each(|shape| colors_of(&shape.shape, "Select a track or a clip to see it here", &mut hint));
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(!toggle.is_empty() && toggle.iter().all(|c| *c == odd(151)), "the off switch's number: {toggle:?}");
     assert!(!hint.is_empty() && hint.iter().all(|c| *c == odd(151)), "the hint's words: {hint:?}");
@@ -1774,9 +1774,9 @@ fn tall_mixer() -> Harness<'static, App> {
     window(app)
 }
 
-/// A theme's rule for each element the base sheet colours in the Launcher, the mixer, the control
+/// A theme's rule for each element the base sheet colors in the Launcher, the mixer, the control
 /// bar and the Arrangement (#1450) is painted: a rule beats the base sheet's, whatever it says.
-/// Each rule has a colour of its own, so a rule that reaches nothing is named.
+/// Each rule has a color of its own, so a rule that reaches nothing is named.
 #[test]
 fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_launcher_the_mixer_and_the_arrangement() {
     type Scene = (&'static str, Harness<'static, App>, Vec<(&'static str, &'static str)>);
@@ -1844,7 +1844,7 @@ fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_launcher_the_mixer_and_the_
     }
 }
 
-/// Colouring a region goes through its variables in the Launcher and the mixer too: a scene's
+/// Coloring a region goes through its variables in the Launcher and the mixer too: a scene's
 /// number, a fader's value and a pan field's value take the variables of the region they are in
 /// (#1450).
 #[test]
@@ -1862,10 +1862,10 @@ fn a_region_s_variables_reach_the_launcher_s_and_the_mixer_s_parts() {
     }
     let shown = painted(&h);
     suhina_ui::kit::native_css::set_user_sheet(None);
-    for (what, colour) in
+    for (what, color) in
         [("the scene numbers", odd(181)), ("a fader's value", odd(182)), ("a pan field's value", odd(183))]
     {
-        assert!(shown.contains(&colour), "{what} take their region's variable");
+        assert!(shown.contains(&color), "{what} take their region's variable");
     }
 }
 
@@ -1900,8 +1900,8 @@ fn browser_with_chips() -> Harness<'static, App> {
 }
 
 /// A theme's rule beats each rule the base sheet gives the detail panels, the piano roll and the
-/// browser, whatever its specificity: one rule for each element the sheet gives colours to, in a
-/// window that shows it, and its colour is painted (#1451).
+/// browser, whatever its specificity: one rule for each element the sheet gives colors to, in a
+/// window that shows it, and its color is painted (#1451).
 #[test]
 fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_detail_area_and_the_browser() {
     type Scene = (&'static str, Harness<'static, App>, Vec<(&'static str, &'static str)>);
@@ -2000,8 +2000,8 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_chip() {
     }
 }
 
-/// The colours of the words `words` painted in the last frame.
-fn colours_of_words(h: &Harness<'static, App>, words: &str) -> Vec<egui::Color32> {
+/// The colors of the words `words` painted in the last frame.
+fn colors_of_words(h: &Harness<'static, App>, words: &str) -> Vec<egui::Color32> {
     fn walk(shape: &egui::Shape, words: &str, found: &mut Vec<egui::Color32>) {
         match shape {
             egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, words, found)),
@@ -2016,20 +2016,20 @@ fn colours_of_words(h: &Harness<'static, App>, words: &str) -> Vec<egui::Color32
     found
 }
 
-/// Shows `h` with `css` as the user's sheet, then the colours of the words `words`.
+/// Shows `h` with `css` as the user's sheet, then the colors of the words `words`.
 fn words_under(h: &mut Harness<'static, App>, css: String, words: &str) -> Vec<egui::Color32> {
     suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
     for _ in 0..4 {
         h.step();
     }
-    let found = colours_of_words(h, words);
+    let found = colors_of_words(h, words);
     suhina_ui::kit::native_css::set_user_sheet(None);
     found
 }
 
-/// Colouring a region goes through its variables: `--text-value` given to the piano roll reaches
+/// Coloring a region goes through its variables: `--text-value` given to the piano roll reaches
 /// its ruler's bar numbers, given to a device's panel its values, which the base sheet
-/// colours with that variable; `--browser-text-secondary` given to the browser its secondary words
+/// colors with that variable; `--browser-text-secondary` given to the browser its secondary words
 /// (#1451).
 #[test]
 fn a_region_s_variables_reach_the_ruler_s_numbers_a_device_s_values_and_the_browser_s_words() {
@@ -2054,7 +2054,7 @@ fn settings_on(page: &str) -> Harness<'static, App> {
 }
 
 /// A theme's rule beats each rule the base sheet gives the app's bars, Settings, the dialogs and
-/// egui's own widgets (#1452): every one paints in the colour the theme gives it.
+/// egui's own widgets (#1452): every one paints in the color the theme gives it.
 #[test]
 fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_bars_settings_and_dialogs() {
     type Scene = (&'static str, Harness<'static, App>, Vec<(&'static str, &'static str)>);
@@ -2150,9 +2150,9 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_preset()
     }
 }
 
-/// Colouring a region goes through its variables: `--text-secondary` given to the toolbar reaches
+/// Coloring a region goes through its variables: `--text-secondary` given to the toolbar reaches
 /// its time signature's slash between the two numbers (#1269), given to Settings the names of the pages not shown, which the base sheet
-/// colours with that variable (#1452).
+/// colors with that variable (#1452).
 #[test]
 fn a_region_s_variables_reach_the_toolbar_s_signature_and_settings_pages() {
     let mut h = window(demo_app());

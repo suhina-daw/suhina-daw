@@ -481,7 +481,7 @@ pub struct Place {
     pub rect: Rect,
     pub origin: f32,
     pub beat_width: f32,
-    /// The ink that reads on the clip's colour, as its name has: white on most, black on a
+    /// The ink that reads on the clip's color, as its name has: white on most, black on a
     /// light one. The line and the points are drawn in it.
     pub ink: egui::Color32,
     /// Where the envelope is drawn (the Arrangement, the audio editor), told apart in its widgets'
@@ -532,7 +532,7 @@ pub fn show(
     // The gain envelope's points and their line while it is edited: `clip-envelope`'s `color`.
     let look = crate::kit::element::CLIP_ENVELOPE.look();
     let ink = look.color();
-    // The edited line and the points at rest take the element's colour where a rule gives one.
+    // The edited line and the points at rest take the element's color where a rule gives one.
     let line_ink = if edit { look.own_color_or(line_ink) } else { line_ink };
     // Over a halo of the other of black and white, so they read on the waveform too.
     let [r, g, b, _] = line_ink.to_srgba_unmultiplied();

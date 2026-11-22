@@ -215,7 +215,7 @@ pub(super) fn dashed_outline(painter: &egui::Painter, rect: Rect, color: Color32
 }
 
 /// What the theme's sheet says for one part of the piano roll (`docs/spec/theme-skins.md` ›
-/// Piano roll): its background, border, text colour and radius, each only when the sheet sets it.
+/// Piano roll): its background, border, text color and radius, each only when the sheet sets it.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct PartStyle {
     pub(crate) background: Option<Color32>,
@@ -261,7 +261,7 @@ pub(super) fn draw(
     use crate::kit::element::Attr;
     // The theme's parts: `piano-grid` (its border-color for the lines), `piano-row` and
     // `piano-row-black`, `piano-key` and `piano-key-black`, `piano-note` (`[selected]`,
-    // `[muted]`; the `piano-roll` has the clip's colour as `[color]`), `velocity`.
+    // `[muted]`; the `piano-roll` has the clip's color as `[color]`), `velocity`.
     let grid_style = part_style("piano-grid", &[]);
     let row_style = part_style("piano-row", &[]);
     let black_row_style = part_style("piano-row-black", &[]);
@@ -271,7 +271,7 @@ pub(super) fn draw(
     // What a selected note is lit with where the sheet gives it no background: its `accent-color`.
     let selected_accent = crate::kit::element::PIANO_NOTE.attr(Attr::Selected, true).look().accent();
     // The notes' own inks, which a theme's rule for a note's text does not reach: the outline and
-    // the plain colour of a selected note, the dashes of a muted one, the name on a note.
+    // the plain color of a selected note, the dashes of a muted one, the name on a note.
     let outline = crate::kit::element::PIANO_NOTE.attribute("kind", "outline").look().color();
     let dashes = crate::kit::element::PIANO_NOTE.attribute("kind", "dashes").look().color();
     let name_ink = |strong: bool| {
@@ -280,7 +280,7 @@ pub(super) fn draw(
     let (name_on_light, name_on_dark) = (name_ink(true), name_ink(false));
     let rows = scale_view::RowBase::look();
     // What a note is seen against: the grid under it and its key's row, so its fill and its name
-    // can be kept readable where the clip's colour comes close to them.
+    // can be kept readable where the clip's color comes close to them.
     let grid_background = grid_style.background.unwrap_or_else(|| crate::detail::detail_fill("window"));
     let grid_background = composite_note_color(el.background_or(Color32::TRANSPARENT), grid_background);
     let row_fill = |key| {
@@ -291,8 +291,8 @@ pub(super) fn draw(
             _ => scale_view::row_fill(highlighted, key, is_black(key), clip.color, rows),
         }
     };
-    // The velocity stems: a line takes only the colour its own rule declares, not the text
-    // colour of the `piano-roll` around it, so muted and selected stems keep their distinction.
+    // The velocity stems: a line takes only the color its own rule declares, not the text
+    // color of the `piano-roll` around it, so muted and selected stems keep their distinction.
     let velocity_look = crate::kit::element::VELOCITY.look();
     let muted_stem = crate::kit::element::VELOCITY.attr(crate::kit::element::Muted, true).look();
     let selected_stem = crate::kit::element::VELOCITY.attr(crate::kit::element::Selected, true).look();
@@ -302,7 +302,7 @@ pub(super) fn draw(
         crate::kit::element::PIANO_GRID.look().border(),
         crate::kit::element::PIANO_GRID.attribute("kind", "strong").look().border(),
     );
-    let line_colour = |strong: bool| {
+    let line_color = |strong: bool| {
         grid_style.border.map_or_else(
             || if strong { strong_line } else { weak_line },
             |c| {
@@ -334,7 +334,7 @@ pub(super) fn draw(
                 .unwrap_or_else(|| hover_row.background().gamma_multiply(0.05));
             grid_painter.rect_filled(row, 0.0, tint);
         }
-        grid_painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(line_colour(key % 12 == 0)));
+        grid_painter.hline(row.x_range(), row.bottom() - 0.5, theme::hairline(line_color(key % 12 == 0)));
     }
     draw_ranges(&grid_painter, layout, state);
 
@@ -348,13 +348,13 @@ pub(super) fn draw(
     lane_painter.rect_filled(layout.lane, 0.0, lane_background);
     for (beat, on_bar) in grid.lines(first_beat, last_beat, MAX_LINES) {
         let x = layout.x_of(beat).round() + 0.5;
-        let color = line_colour(on_bar);
+        let color = line_color(on_bar);
         grid_painter.vline(x, layout.grid.y_range(), theme::hairline(color));
         lane_painter.vline(x, layout.lane.y_range(), theme::hairline(color));
     }
     // The ruler, `ruler`, entered after the grid's lines (it does not hold them) and kept while its
     // lines and numbers are drawn: `ruler-tick` and `ruler-number` inside it, as in the
-    // Arrangement, so `ruler > ruler-number` reaches them and they inherit its text colour.
+    // Arrangement, so `ruler > ruler-number` reaches them and they inherit its text color.
     let ruler = crate::kit::element::RULER.enter();
     painter.rect_filled(layout.ruler, 0.0, ruler.background_or(crate::detail::detail_fill("panel")));
     let ruler_painter = painter.with_clip_rect(layout.ruler);
@@ -497,7 +497,7 @@ pub(super) fn draw(
             } else if selected {
                 selected_stem.color()
             } else {
-                // Kept visible against the lane, as a dark clip colour on a dark lane is not.
+                // Kept visible against the lane, as a dark clip color on a dark lane is not.
                 visible_note_fill(velocity_look.own_color_or(clip.color), lane_background, 1.0)
             };
             // With notes selected, the others step back, so the selection's stems stand out.
@@ -534,7 +534,7 @@ pub(super) fn draw(
             fill
         };
         grid_painter.rect_filled(rect, radius, fill);
-        // A muted note's edge is its dashes alone: a solid edge under them in the same colour would
+        // A muted note's edge is its dashes alone: a solid edge under them in the same color would
         // hide them. A selected one keeps its selection's edge.
         if let Some(border) = style.border.filter(|_| selected || !muted) {
             grid_painter.rect_stroke(rect, radius, Stroke::new(1.0, border), StrokeKind::Inside);
@@ -547,7 +547,7 @@ pub(super) fn draw(
         }
         // Every note says which it is; on a block too small for its name, as much as fits.
         // The theme's name ink for a strong or a faint note, kept where it reads on the note as
-        // seen over its row; otherwise the readable ink for that colour.
+        // seen over its row; otherwise the readable ink for that color.
         let shown_fill = composite_note_color(fill, background);
         let themed = if alpha >= 0.55 { name_on_light } else { name_on_dark };
         let ink = if theme::text_contrast(themed, shown_fill) >= 4.5 { themed } else { theme::text_on(shown_fill) };
@@ -766,7 +766,7 @@ fn composite_note_color(color: Color32, background: Color32) -> Color32 {
     Color32::from_rgb(blend(r, br), blend(g, bg), blend(b, bb))
 }
 
-/// Keep an active note visible without changing the stored clip colour.
+/// Keep an active note visible without changing the stored clip color.
 fn visible_note_fill(color: Color32, background: Color32, alpha: f32) -> Color32 {
     let fill = composite_note_color(color.gamma_multiply(alpha), background);
     let target = theme::text_on(background);

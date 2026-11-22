@@ -33,18 +33,18 @@ following event 43; event 239 is its name. Red is (96,34,32), blue (73,130,185).
 Grouping the second row changes byte 46 of its 238 record from 0 to 1:
 it belongs to the nearest preceding ungrouped row. This is presentation,
 not a mixer routing instruction. Pattern event 150 uses an FF high byte
-for a custom colour (public Lemon Studio reader at the revision cited below).
-Projects from FL versions without the flag events (41, 42 and 43) keep their colours with
-no flag: a colour is used unless a flag says it is off. FL's untouched greys, (92,101,106)
+for a custom color (public Lemon Studio reader at the revision cited below).
+Projects from FL versions without the flag events (41, 42 and 43) keep their colors with
+no flag: a color is used unless a flag says it is off. FL's untouched greys, (92,101,106)
 for a channel, (74,82,88) for a mixer insert and (72,81,86) for a playlist row (also on some
-channels), are FL's look rather than a choice, so they come in as no colour. A track left
-without one then gets the colour a new Suhina track of its kind gets (audio or MIDI), and a
-folder or group the colour of its first member that has one, so a family reads as one
-(authored-project observation, a 2023 FL project with coloured channels and rows and no flag
+channels), are FL's look rather than a choice, so they come in as no color. A track left
+without one then gets the color a new Suhina track of its kind gets (audio or MIDI), and a
+folder or group the color of its first member that has one, so a family reads as one
+(authored-project observation, a 2023 FL project with colored channels and rows and no flag
 events, 2026-11-18).
-An explicit playlist row colour takes precedence for both its placements and the
-source track on its first placement. Pattern, sample and source colours are used
-only when the represented playlist row has no custom colour.
+An explicit playlist row color takes precedence for both its placements and the
+source track on its first placement. Pattern, sample and source colors are used
+only when the represented playlist row has no custom color.
 
 Playlist groups become channel-less presentation folders (a track's `folder` field, #1416). Existing mixer families remain intact inside a
 folder when all their placements belong there; a family shared across folders
@@ -103,11 +103,11 @@ or unsupported ratios leave an explicit warning instead of inventing the sample 
 Channel mixer assignment is event 104 (or signed byte 22 in legacy files). It selects one
 shared mixer bus, never a copied effect chain. Mixer blocks start with event 236 and its
 preceding name/color header. Event 204 names a bus and 235 lists enabled destinations.
-Event 149 carries its BGR colour when event 42 enables the custom colour (the pinned
-os-flp mixer reader). Retained buses and returns keep that colour unless their represented
-playlist row has a custom colour: playlist colour takes precedence over source and mixer
-colours, including a bus family's first represented row. A placement's playlist colour also
-overrides its pattern or sample colour. Mixer, source and pattern colours are fallbacks.
+Event 149 carries its BGR color when event 42 enables the custom color (the pinned
+os-flp mixer reader). Retained buses and returns keep that color unless their represented
+playlist row has a custom color: playlist color takes precedence over source and mixer
+colors, including a bus family's first represented row. A placement's playlist color also
+overrides its pattern or sample color. Mixer, source and pattern colors are fallbacks.
 201/213 followed by slot marker 98 describe ordered effects. Parameter event 225 contains
 12-byte records: parameter id at 4, kind at 5, location u16 at 6, signed value at 8.
 Location is 0x7000 + bus*64 + slot (0x2000 in legacy files). Kind 0x1f parameter

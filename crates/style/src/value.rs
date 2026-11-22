@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Typed native values. No renderer, pixels, or toolkit-specific colour types.
+//! Typed native values. No renderer, pixels, or toolkit-specific color types.
 use cssparser::{Parser, Token};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -13,17 +13,17 @@ pub enum Color {
 impl Color {
     pub fn parse(source: &str) -> Result<Self, String> {
         let mut parser = Parser::new(source);
-        let color = match parser.next().map_err(|_| "Expected colour")?.clone() {
+        let color = match parser.next().map_err(|_| "Expected color")?.clone() {
             Token::Hash(hex) | Token::IDHash(hex) => {
                 let (r, g, b, a) =
-                    cssparser::color::parse_hash_color(hex.as_bytes()).map_err(|_| "Invalid hex colour")?;
+                    cssparser::color::parse_hash_color(hex.as_bytes()).map_err(|_| "Invalid hex color")?;
                 Self::Rgba([r, g, b, cssparser::color::clamp_unit_f32(a)])
             }
             Token::Ident(name) if name.eq_ignore_ascii_case("currentcolor") => Self::Current,
             Token::Ident(name) if name.eq_ignore_ascii_case("transparent") => Self::Rgba([0; 4]),
             Token::Ident(name) => {
                 let (r, g, b) =
-                    cssparser::color::parse_named_color(&name.to_ascii_lowercase()).map_err(|_| "Unknown colour")?;
+                    cssparser::color::parse_named_color(&name.to_ascii_lowercase()).map_err(|_| "Unknown color")?;
                 Self::Rgba([r, g, b, 255])
             }
             Token::Function(name) if name.eq_ignore_ascii_case("rgb") || name.eq_ignore_ascii_case("rgba") => {
@@ -45,9 +45,9 @@ impl Color {
             Token::Function(name) if name.eq_ignore_ascii_case("contrast-color") => {
                 Self::Rgba(crate::sheet::nested(&mut parser, contrast)?)
             }
-            _ => return Err("Unsupported colour value".into()),
+            _ => return Err("Unsupported color value".into()),
         };
-        parser.expect_exhausted().map_err(|_| "Unexpected colour suffix")?;
+        parser.expect_exhausted().map_err(|_| "Unexpected color suffix")?;
         Ok(color)
     }
 }
@@ -93,7 +93,7 @@ fn hsl(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
     };
     parser.expect_exhausted().map_err(|_| "Unexpected hsl component")?;
     if ![hue, alpha].iter().all(|v| v.is_finite()) {
-        return Err("Non-finite colour".into());
+        return Err("Non-finite color".into());
     }
     let hue = hue.rem_euclid(360.0) / 30.0;
     let a = saturation * lightness.min(1.0 - lightness);
@@ -105,7 +105,7 @@ fn hsl(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
     Ok([channel(0.0), channel(8.0), channel(4.0), (alpha.clamp(0.0, 1.0) * 255.0).round() as u8])
 }
 
-/// Colour spaces `color-mix()` interpolates in, premultiplied by alpha as CSS Color 5 says.
+/// Color spaces `color-mix()` interpolates in, premultiplied by alpha as CSS Color 5 says.
 #[derive(Clone, Copy)]
 enum Space {
     Srgb,
@@ -212,7 +212,7 @@ impl Space {
 }
 
 /// Encoded sRGB bytes as HSL: hue in degrees, saturation and lightness in 0..=1.
-/// Achromatic colours have hue zero; a picker can keep its last meaningful hue separately.
+/// Achromatic colors have hue zero; a picker can keep its last meaningful hue separately.
 pub fn srgb_to_hsl(rgb: [u8; 3]) -> [f32; 3] {
     let [h, s, l] = Space::Hsl.to(rgb.map(|v| f32::from(v) / 255.0));
     [if h.is_finite() { h } else { 0.0 }, s, l]
@@ -231,7 +231,7 @@ pub fn hsl_to_srgb(hsl: [f32; 3]) -> Option<[u8; 3]> {
     Some(Space::Hsl.from(hsl).map(|v| (v * 255.0).round().clamp(0.0, 255.0) as u8))
 }
 
-const COLOR_NAMES: &str = include_str!("../data/colour-names.tsv");
+const COLOR_NAMES: &str = include_str!("../data/color-names.tsv");
 
 /// Encoded sRGB bytes as CIELAB (L* 0..100) against the D65 white, as sRGB is defined.
 fn srgb_to_cielab(rgb: [u8; 3]) -> [f64; 3] {
@@ -325,8 +325,8 @@ pub fn nearest_named_color(rgb: [u8; 3]) -> (&'static str, bool) {
         .map_or(("", false), |(_, (name, value, _))| (*name, *value == rgb))
 }
 
-/// `contrast-color(<colour>)`: white or black, whichever has the higher WCAG 2 contrast with the
-/// colour; white on a tie. Alpha is ignored, as a colour behind the text is not known here.
+/// `contrast-color(<color>)`: white or black, whichever has the higher WCAG 2 contrast with the
+/// color; white on a tie. Alpha is ignored, as a color behind the text is not known here.
 fn contrast(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
     let start = parser.position();
     crate::sheet::consume(parser)?;
@@ -340,10 +340,10 @@ fn contrast(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
     Ok(if white >= black { [255, 255, 255, 255] } else { [0, 0, 0, 255] })
 }
 
-/// `color-mix(in <space>, <colour> [<p>%], <colour> [<p>%])` for literal colours.
+/// `color-mix(in <space>, <color> [<p>%], <color> [<p>%])` for literal colors.
 fn mix(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
     parser.expect_ident_matching("in").map_err(|_| "color-mix needs an interpolation space")?;
-    let space = match parser.expect_ident().map_err(|_| "Expected a colour space")?.to_ascii_lowercase().as_str() {
+    let space = match parser.expect_ident().map_err(|_| "Expected a color space")?.to_ascii_lowercase().as_str() {
         "srgb" => Space::Srgb,
         "srgb-linear" => Space::SrgbLinear,
         "oklab" => Space::Oklab,
@@ -379,8 +379,8 @@ fn mix(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
         };
         items.push((color, percent));
     }
-    parser.expect_exhausted().map_err(|_| "color-mix takes two colours")?;
-    let [(a, pa), (b, pb)] = <[_; 2]>::try_from(items).map_err(|_| "color-mix takes two colours")?;
+    parser.expect_exhausted().map_err(|_| "color-mix takes two colors")?;
+    let [(a, pa), (b, pb)] = <[_; 2]>::try_from(items).map_err(|_| "color-mix takes two colors")?;
     let (pa, pb) = match (pa, pb) {
         (None, None) => (0.5, 0.5),
         (Some(p), None) => (p, 1.0 - p),
@@ -433,7 +433,7 @@ fn rgb(parser: &mut Parser<'_>) -> Result<[u8; 4], String> {
             _ => return Err("Expected a numeric rgb component".into()),
         };
         if !value.is_finite() {
-            return Err("Non-finite colour".into());
+            return Err("Non-finite color".into());
         }
         Ok(cssparser::color::clamp_floor_256_f32(value))
     };
@@ -809,8 +809,8 @@ mod picker_color_tests {
             ("Gold", [219, 180, 12]),
             ("Khaki", [170, 166, 98]),
             ("Mustard", [206, 179, 1]),
-            ("Ochre", [191, 144, 5]),
-            ("Amber", [254, 179, 8]),
+            ("Ochre", [204, 119, 34]),
+            ("Amber", [255, 191, 0]),
             ("Saffron", [254, 178, 9]),
         ] {
             assert_eq!(nearest_named_color(rgb), (name, true));
@@ -826,18 +826,18 @@ mod picker_color_tests {
             assert!(!name.is_empty() && name.chars().count() <= 32);
             assert_eq!(nearest_named_color([r, g, b]), (name, true));
         }
-        assert_eq!(names.len(), 860);
+        assert_eq!(names.len(), 1066);
     }
 
     #[test]
     fn grays_are_named_as_grays_not_as_the_brown_nearest_their_lightness() {
         for (rgb, name) in [
-            ([0x26, 0x26, 0x26], "Dark Gray"),
-            ([0x1a, 0x1a, 0x1a], "Almost Black"),
-            ([0x11, 0x11, 0x11], "Almost Black"),
+            ([0x26, 0x26, 0x26], "Eerie Black"),
+            ([0x1a, 0x1a, 0x1a], "Eerie Black"),
+            ([0x11, 0x11, 0x11], "Smoky Black"),
             ([0x40, 0x40, 0x40], "Charcoal Gray"),
-            ([0x80, 0x80, 0x80], "Medium Gray"),
-            ([0xc0, 0xc0, 0xc0], "Silver"),
+            ([0x80, 0x80, 0x80], "Gray"),
+            ([0xc0, 0xc0, 0xc0], "Silver Sand"),
             ([0xf2, 0xf2, 0xf2], "Pale Gray"),
         ] {
             assert_eq!(nearest_named_color(rgb).0, name, "{rgb:02x?}");

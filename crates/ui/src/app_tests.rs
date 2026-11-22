@@ -957,7 +957,7 @@ fn a_panel_the_theme_lays_over_the_view_is_drawn_above_it() {
 }
 
 #[test]
-fn a_bar_draws_its_separator_in_its_own_border_colour() {
+fn a_bar_draws_its_separator_in_its_own_border_color() {
     let ctx = egui::Context::default();
     let mut app = App::new();
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
@@ -1029,7 +1029,7 @@ fn application_bar() -> f32 {
 
 #[test]
 fn a_bar_s_line_is_its_bottom_border_and_without_one_the_bar_is_a_line_shorter() {
-    // The line under the menu bar is its border, in its border colour, inside its box.
+    // The line under the menu bar is its border, in its border color, inside its box.
     let lined = wide_green_rects("menu-bar { border-color: #00FF00; }");
     let line = lined.iter().find(|rect| rect.height() <= 1.0).expect("the line under the bar");
     assert_eq!(line.bottom(), application_bar() + theme::MENU_BAR, "at the bar's bottom edge: {lined:?}");
@@ -1145,7 +1145,7 @@ fn an_arrangement_header_and_name_draw_the_sheet_s_backgrounds() {
 }
 
 #[test]
-fn a_clip_takes_its_radius_opacity_and_name_colour_from_the_sheet() {
+fn a_clip_takes_its_radius_opacity_and_name_color_from_the_sheet() {
     let ctx = egui::Context::default();
     let mut app = App::new();
     app.set_session(Session::new(crate::demo::demo_project()), &[]);
@@ -1205,7 +1205,7 @@ fn a_rename_in_place_covers_the_name_drawn_under_it() {
     harness.state_mut().rename = Some((json!({ "rename_track": track }), "Renamed".into(), false));
     harness.run();
     let field = harness.get_by_label("Track name").rect();
-    // The back is the name's own colour (#916), opaque, so nothing drawn under it shows through.
+    // The back is the name's own color (#916), opaque, so nothing drawn under it shows through.
     assert!(
         harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
             egui::Shape::Rect(rect) if rect.fill.a() == u8::MAX && rect.rect.contains_rect(field))),
@@ -1249,8 +1249,8 @@ fn a_theme_s_grid_moves_the_controls_and_keeps_the_project() {
 }
 
 /// A rename in the launcher view's header reads as the name itself: the name's size, centered in
-/// the header as the name is, and no selection colour of the theme's, which reads as a box of
-/// its own on a coloured header (#916).
+/// the header as the name is, and no selection color of the theme's, which reads as a box of
+/// its own on a colored header (#916).
 #[test]
 fn a_rename_in_a_session_header_reads_as_the_name() {
     use egui_kittest::kittest::Queryable;

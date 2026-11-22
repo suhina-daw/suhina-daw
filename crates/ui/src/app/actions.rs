@@ -558,7 +558,7 @@ impl App {
                 }
                 actions.push(Action::new(id, params));
             }
-            "selection.colour" => {
+            "selection.color" => {
                 self.open_color_window(None);
             }
             "selection.rename" => {
@@ -1237,7 +1237,7 @@ impl App {
     /// stands then. A range tool's gesture ([`crate::arrangement::automation_lanes::RANGE_GESTURE`])
     /// stays open: its next click joins it, and any other edit ends it.
     pub(super) fn end_gesture_on_release(&mut self, ctx: &egui::Context) {
-        // A native colour window has its own pointer state and ends its gesture itself.
+        // A native color window has its own pointer state and ends its gesture itself.
         if self.open_gesture.as_deref() == Some(crate::interaction::color_picker::panel::GESTURE) {
             return;
         }

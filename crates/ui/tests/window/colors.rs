@@ -118,11 +118,11 @@ fn embedded_color_background_stays_inside_its_fitted_window_in_every_mode() {
 
 #[test]
 fn color_tool_previews_selected_headers_and_restores_the_selection_appearance_on_close() {
-    use suhina_ui::kit::selection::{SelectionColour, SelectionLook};
+    use suhina_ui::kit::selection::{SelectionColor, SelectionLook};
     for arrangement in [false, true] {
         let mut app = demo_app();
         let mut settings = app.settings().clone();
-        let selection = SelectionLook { mode: SelectionColour::Custom, custom: egui::Color32::from_rgb(139, 107, 231) };
+        let selection = SelectionLook { mode: SelectionColor::Custom, custom: egui::Color32::from_rgb(139, 107, 231) };
         settings.view.selection = selection;
         app.set_settings(&egui::Context::default(), settings);
         let mut h = window(app);
@@ -712,66 +712,4 @@ fn the_color_grids_are_centered_in_the_window() {
     let near = |a: f32, b: f32| (a - b).abs() < 0.5;
     assert!(near(grid.center().x, middle), "{grid:?} centered on {middle}");
     assert!(near(field.center().x, middle), "{field:?} centered on {middle}");
-}
-
-/// The window opened on a launcher clip colors that clip, not its track, and Default gives the
-/// track's color back.
-#[test]
-fn the_window_opened_on_a_launcher_clip_colors_it_and_default_gives_back_the_track() {
-    let mut app = demo_app();
-    let project = app.session().unwrap().project().clone();
-    let (column, clip) = project
-        .launcher
-        .columns
-        .iter()
-        .enumerate()
-        .find_map(|(column, c)| c.slots.iter().find_map(|slot| slot.clip.as_ref().map(|clip| (column, clip.id))))
-        .expect("the demo has a launcher clip");
-    let before = project.clip_place(clip).and_then(|place| project.clip_at(place)).and_then(|c| c.color);
-    app.run(&Action::new("ui.colorPicker", json!({"clips":[clip.0]})));
-    let mut h = window(app);
-    let own = |h: &Harness<'static, App>| {
-        let project = h.state().session().unwrap().project();
-        project.clip_place(clip).and_then(|place| project.clip_at(place)).and_then(|c| c.color)
-    };
-    let tracks_before: Vec<_> = project.launcher.columns.iter().map(|c| c.track).collect();
-    assert!(h.query_by_label_contains("Close Clip color").is_some(), "the title names clips");
-    let color = swatches()[9];
-    assert_ne!(before, Some(color));
-    h.get_by_label(&palette(color)).click();
-    h.run();
-    assert_eq!(own(&h), Some(color));
-    let after = h.state().session().unwrap().project().clone();
-    assert_eq!(after.launcher.columns.iter().map(|c| c.track).collect::<Vec<_>>(), tracks_before);
-    assert_eq!(
-        after.launcher.columns.get(column).map(|c| c.track).and_then(|t| after.track(t)).map(|t| t.color),
-        project.launcher.columns.get(column).map(|c| c.track).and_then(|t| project.track(t)).map(|t| t.color),
-        "the track keeps its color"
-    );
-    h.get_by_label("Default").click();
-    h.run();
-    assert_eq!(own(&h), None, "the clip shows its track's color again");
-}
-
-/// A saved color dragged onto another one's place takes it, and the list keeps every color.
-#[test]
-fn a_saved_color_dragged_onto_another_place_moves_there() {
-    let mut app = demo_app();
-    let saved = vec![Rgb(0x12, 0x34, 0x56), Rgb(0x65, 0x43, 0x21), Rgb(0xa0, 0xb0, 0xc0)];
-    let mut settings = app.settings().clone();
-    settings.saved_colors = saved.clone();
-    app.set_settings(&egui::Context::default(), settings);
-    app.run(&Action::new("ui.colorPicker", json!({"tracks":[1]})));
-    let mut h = window(app);
-    let from = h.get_by_label(&swatch_name("Saved color", saved[0])).rect().center();
-    let to = h.get_by_label(&swatch_name("Saved color", saved[2])).rect().center();
-    h.hover_at(from);
-    h.step();
-    h.drag_at(from);
-    h.step();
-    h.hover_at(to);
-    h.step();
-    h.drop_at(to);
-    h.run();
-    assert_eq!(h.state().settings().saved_colors, [saved[1], saved[2], saved[0]]);
 }

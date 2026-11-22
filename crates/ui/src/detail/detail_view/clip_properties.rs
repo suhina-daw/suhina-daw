@@ -254,7 +254,7 @@ pub(super) fn clip_properties(
     if title.bottom() > column.bottom() + 0.5 {
         return (boxed, None);
     }
-    // A clip's panel has a title row of its own: colour, name, length, the Clip / Devices switch,
+    // A clip's panel has a title row of its own: color, name, length, the Clip / Devices switch,
     // a line under it.
     if let Some((at, panel)) = &panel {
         let title = Rect::from_min_size(column.min, Vec2::new(column.width(), 26.0));

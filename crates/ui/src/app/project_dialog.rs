@@ -653,8 +653,8 @@ fn draw_agent(ui: &mut Ui, dialog: &crate::kit::element::Entered, area: Rect, cl
     for (n, line) in lines.iter().enumerate() {
         let text =
             Rect::from_min_size(Pos2::new(panel.left(), panel.top() + n as f32 * LINE), Vec2::new(panel.width(), LINE));
-        let colour = if n == 0 { first } else { rest };
-        widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
+        let color = if n == 0 { first } else { rest };
+        widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), color);
     }
     let (deny, allow) = (format!("Deny {client}"), format!("Allow {client}"));
     let clicked = dialog::actions(
@@ -699,8 +699,8 @@ pub fn show_folder_move(ui: &Ui, area: Rect, what: &str, to: &str) -> Option<boo
                     Pos2::new(panel.left(), panel.top() + n as f32 * LINE),
                     Vec2::new(panel.width(), LINE),
                 );
-                let colour = if n == 0 { first } else { rest };
-                widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
+                let color = if n == 0 { first } else { rest };
+                widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), color);
             }
             let move_label = format!("Move your {what}");
             let clicked = dialog::actions(
@@ -759,8 +759,8 @@ pub fn show_theme_import(ui: &Ui, area: Rect, name: &str) -> Option<ImportChoice
                     Pos2::new(panel.left(), panel.top() + n as f32 * LINE),
                     Vec2::new(panel.width(), LINE),
                 );
-                let colour = if n == 0 { first } else { rest };
-                widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), colour);
+                let color = if n == 0 { first } else { rest };
+                widgets::text_in(&painter, text, Align2::LEFT_CENTER, line, theme::ui_font(theme::TEXT), color);
             }
             let (copy, replace) = (format!("Bring in {name} as a copy"), format!("Replace {name}"));
             let clicked = dialog::actions(

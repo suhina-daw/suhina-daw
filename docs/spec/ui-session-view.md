@@ -26,7 +26,7 @@ covers:
 # UI: main window and Launcher view
 
 Functional spec, written from using Live 12.4.6 (Suite, Windows) with a self-authored set. Only
-structure and behaviour; colours, sizes and look come from [`docs/design/brief.md`](../design/brief.md).
+structure and behaviour; colors, sizes and look come from [`docs/design/brief.md`](../design/brief.md).
 Items marked **(to observe)** still need checking in Live.
 
 ## Window regions
@@ -78,11 +78,11 @@ From top to bottom:
       readout; the order stays
 3. **Main area**, left to right:
    - **Browser** (collapsible, resizable width). Observed in Live: a search field; a sidebar of
-     collections (user colour tags), library categories and places (user folders); a results
+     collections (user color tags), library categories and places (user folders); a results
      tree; tags and an item count below it. **Suhina's structure** (see the design brief):
      search with a shortcut; category filters as buttons (all, samples, MIDI, instruments,
      effects, presets, plug-ins); a sidebar of places only (Pinned, Recent, Folders, add folder);
-     a file tree with expandable folders, type icons and length or duration; colour tags as dots
+     a file tree with expandable folders, type icons and length or duration; color tags as dots
      on rows; a preview strip with play, waveform, playhead, duration, BPM and key; tags and the
      selection count at the bottom. **Suhina:** how it behaves (places, search, preview,
      dragging into the project) is in [`browser.md`](browser.md).
@@ -122,14 +122,14 @@ clicked, launched or selected (#920).
 
 ### Track header
 
-**Suhina:** the whole header is the track colour, with the name in a text colour that reads on
+**Suhina:** the whole header is the track color, with the name in a text color that reads on
 it, so tracks are told apart at a glance; the channel strip under the column carries the same
-colour (Mixer › the channel strip), and the Arrangement headers have it as a band down their edge
-(Track colour below). Clicking selects the
+color (Mixer › the channel strip), and the Arrangement headers have it as a band down their edge
+(Track color below). Clicking selects the
 track; dragging a selected header moves the selected roots together in project order. The
 middle half of a group or folder header accepts them inside, whether open or folded, with an
 outline; its outer quarters mean before/after and show an insertion line. Ordinary headers
-use two halves ([arrangement editing](arrangement-editing.md) › Audio group nesting); right-clicking opens its menu (rename, colour, group, ungroup, move into group, move out
+use two halves ([arrangement editing](arrangement-editing.md) › Audio group nesting); right-clicking opens its menu (rename, color, group, ungroup, move into group, move out
 of group, **Insert audio track** and **Insert MIDI track** after it, **Insert return track**,
 delete). The track's channel strip and a return's column, which has no slots, open the same menu
 on a right-click and select the track on a click. A track inside groups has its name stepped in 4 px per level; a group's name
@@ -162,9 +162,9 @@ Each cell is a slot for one clip.
 |---|---|---|
 | Empty, with stop button | stop control | stops the track at the next quantisation point |
 | Empty, without stop button | nothing; **Suhina:** a double-click creates an empty clip of the track's kind (`clip.create`) | nothing (**Suhina:** selects it) |
-| Clip, stopped | a play triangle in the track colour, clip name, launch control | on the launch control: launches the clip (**Suhina:** and selects it); on the name: selects it |
+| Clip, stopped | a play triangle in the track color, clip name, launch control | on the launch control: launches the clip (**Suhina:** and selects it); on the name: selects it |
 | Clip, queued | launch control in a pending (blinking) state until the quantisation point | as stopped |
-| Clip, playing | a stop square in the track colour, progress through the clip | on the launch control: **Suhina:** a trigger clip (one that listens for no release) stops at the next quantisation point; a gate, toggle or repeat clip relaunches, its release keeps its own meaning; on the name: selects it |
+| Clip, playing | a stop square in the track color, progress through the clip | on the launch control: **Suhina:** a trigger clip (one that listens for no release) stops at the next quantisation point; a gate, toggle or repeat clip relaunches, its release keeps its own meaning; on the name: selects it |
 | Clip, recording | recording state | |
 
 **Launching and selecting** (public manual, Launcher view › clips and launch settings). A clip's
@@ -177,9 +177,9 @@ Shift-click and Ctrl-click add clips to the selection **(not built)**.
 
 **Suhina:** the launch control is the slot's mark and the padding around it (the first 18 px);
 the name selects. Selecting a clip selects its track too, and selecting a track by its header ends
-the clip's selection. The selected slot is drawn like a selected arrangement clip: filled with the selection colour,
-its own colour down its leading edge ([arrangement editing](arrangement-editing.md#selection-colour)).
-A selected track's header takes the same colour, and its whole column a light tint of it. The setting is
+the clip's selection. The selected slot is drawn like a selected arrangement clip: filled with the selection color,
+its own color down its leading edge ([arrangement editing](arrangement-editing.md#selection-color)).
+A selected track's header takes the same color, and its whole column a light tint of it. The setting is
 Settings › Launcher and mixer › **Select on launch** (On by default, saved as
 `select_on_launch`). Enter is the action `selection.launch`; the arrows are `selection.up`,
 `selection.down`, `selection.left` and `selection.right` (all rebindable,
@@ -211,9 +211,9 @@ column has **stop all clips** for the whole set.
 **Select on launch** off, a click on an occupied slot's launch control launches without selecting),
 and selecting a slot, empty or not, selects its track too, so the detail area shows that track and
 auto-arm (Settings › MIDI) arms it (#834). A right-click selects it and opens its menu: on a
-clip, first the colour palette, **More colors** and **Track color**, as an arrangement clip's menu
+clip, first the color palette, **More colors** and **Track color**, as an arrangement clip's menu
 has them (`clip.setColorMany` and `clip.setColor` with the clip's id, one undo step;
-[Track colours](colour-picker.md)), then **Copy**, which copies its clip (`clip.copy {track,
+[Track colors](color-picker.md)), then **Copy**, which copies its clip (`clip.copy {track,
 scene}`), **Paste** puts the copied clip in it (`clip.paste {track, scene}`), greyed out while
 nothing has been copied, and **Delete** takes its clip off, MIDI or audio (`clip.delete {track,
 scene}`, one undo step), greyed out on an empty slot (#842). Ctrl+C and Ctrl+V do the same on the selected slot
@@ -400,9 +400,9 @@ vertical channel strip under its slots, and the strip shows more the taller the 
   devices in the detail area, opening the detail area if it was hidden. A single click there
   selects the track alone.
 - The main column shows the main output's meter where a track's meter stands.
-- **The colour band** down the strip's left edge, at every mixer height, is the track colour;
-  its name row is filled with it too. A click on the band opens the colour palette (Track
-  colour).
+- **The color band** down the strip's left edge, at every mixer height, is the track color;
+  its name row is filled with it too. A click on the band opens the color palette (Track
+  color).
 
 The pan and the volume are dragged up or down, and the wheel over either changes it a step at a
 time (1 dB, or 0.02 of pan; Shift is finer) instead of scrolling the view. With Settings ›
@@ -410,27 +410,27 @@ Launcher and mixer › **Mixer controls** on Knob, the volume is drawn as a knob
 knob, and its value stays beside them
 ([arrangement editing](arrangement-editing.md) › Volume, pan, mute and solo).
 
-### Track colour
+### Track color
 
-**Suhina:** a track's colour shows over an area large enough to tell tracks apart: the Launcher
+**Suhina:** a track's color shows over an area large enough to tell tracks apart: the Launcher
 column's header and the strip's name row are filled with it, the strip has a band down its left edge,
 and an Arrangement header a band down its left edge, the header's full height. A muted track's
-colour is dimmed. Text drawn on the colour is the light or the dark text colour of the theme,
+color is dimmed. Text drawn on the color is the light or the dark text color of the theme,
 whichever stands out more from it.
 
-The colour is picked from one palette, Suhina's 24 track colours (the same in every theme,
-which draws a track's colour but never chooses it), wherever a colour is
-offered: a click on a track's colour band (the strip's in the Launcher view, the header's in the
-Arrangement) opens it as a popup, the track's right-click menu has it as before, and a colour
-tag's right-click menu in the browser has it before the free colour choice. Picking a swatch runs
-`track.setColor` with that colour, one undo step, and closes the popup; picking the colour the
-track already has runs nothing. A colour of any value (from an imported project, or set with
+The color is picked from one palette, Suhina's 24 track colors (the same in every theme,
+which draws a track's color but never chooses it), wherever a color is
+offered: a click on a track's color band (the strip's in the Launcher view, the header's in the
+Arrangement) opens it as a popup, the track's right-click menu has it as before, and a color
+tag's right-click menu in the browser has it before the free color choice. Picking a swatch runs
+`track.setColor` with that color, one undo step, and closes the popup; picking the color the
+track already has runs nothing. A color of any value (from an imported project, or set with
 `track.setColor` from the CLI or MCP) shows as it is; the palette marks none of its swatches then.
 
-The palette's **More colors** button and **F2** open the same non-modal colour window,
-with saved colours and precise controls. It stays open while the DAW
+The palette's **More colors** button and **F2** open the same non-modal color window,
+with saved colors and precise controls. It stays open while the DAW
 is used and edits the selected tracks live, one Undo step per drag or choice
-([Track colours](colour-picker.md)).
+([Track colors](color-picker.md)).
 
 ## Detail area: a selected clip
 

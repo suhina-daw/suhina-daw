@@ -167,7 +167,7 @@ impl App {
 
     pub(super) fn show_color_window(&mut self, ctx: &egui::Context, actions: &mut Vec<Action>) {
         // Menus show the user's binding, including an unbound or reassigned F2.
-        let shortcut = self.keymap.label("selection.colour").unwrap_or_default();
+        let shortcut = self.keymap.label("selection.color").unwrap_or_default();
         ctx.data_mut(|d| d.insert_temp(Id::unique("color-picker-shortcut"), shortcut));
         crate::interaction::color_picker::set_menu_saved(ctx, &self.settings.saved_colors);
         if !self.color_window.open {
@@ -366,7 +366,7 @@ impl App {
                         ));
                     }
                     keymap.pressed(i, |id| {
-                        id.starts_with("transport.") || matches!(id, "edit.undo" | "edit.redo" | "selection.colour")
+                        id.starts_with("transport.") || matches!(id, "edit.undo" | "edit.redo" | "selection.color")
                     })
                 });
             }

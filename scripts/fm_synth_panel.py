@@ -3,8 +3,8 @@
 
 """Writes devices/fm-synth/panel.json: the device row and the expanded panel (docs/spec/fm-synth.md).
 
-Colours are only the theme's palette and the --device-* tokens: a theme changes the panel's styles
-and nothing else (ADR 0034), and this script fails when a drawing has any other colour. Algorithm
+Colors are only the theme's palette and the --device-* tokens: a theme changes the panel's styles
+and nothing else (ADR 0034), and this script fails when a drawing has any other color. Algorithm
 pictures come from the engine's table in devices/fm-synth/src/core.rs.
 Run from the repository root: python scripts/fm_synth_panel.py
 """
@@ -20,7 +20,7 @@ from multiband_panel import (ACCENT, BORDER, CONTROL, DISPLAY, HIGHLIGHT, INVISI
 
 MODULATOR = [3, 0, 4, 255]
 CARRIER = [3, 0, 3, 255]
-# Each operator's colour, the same on its row, in the algorithm's picture and where something is sent to it.
+# Each operator's color, the same on its row, in the algorithm's picture and where something is sent to it.
 OP_COLORS = {1: [3, 0, 2, 255], 2: [3, 0, 3, 255], 3: [3, 0, 4, 255], 4: HIGHLIGHT, 5: SPECTRUM_COLOR, 6: ACCENT}
 CAPTION = tint(TEXT, 170)
 QUIET = tint(TEXT, 110)
@@ -611,8 +611,8 @@ def lfo_curve(w, h, amplitude, color, shown, speed):
 
 
 def lfo_picture(x, y, w, h, tag, visible=None):
-    """The second LFO: its wave quietly, and in colour as much of it as reaches the sound. More cycles
-    fit as its rate rises, they run while it is on, and its amount and envelope shape the colour."""
+    """The second LFO: its wave quietly, and in color as much of it as reaches the sound. More cycles
+    fit as its rate rises, they run while it is on, and its amount and envelope shape the color."""
     reach = h / 2.0 - 5.0
     grid = [line([0.0, h * k / 4.0], [w, h * k / 4.0], GRID) for k in (1, 3)] + [line([w * k / 8.0, 0.0], [w * k / 8.0, h], GRID) for k in range(1, 8)]
     ground = [rect(0.0, 0.0, w, h, DISPLAY, 3.0)] + grid + [line([0.0, h / 2.0], [w, h / 2.0], tint(TEXT, 60))]
@@ -709,8 +709,8 @@ def op_tuning(n, coarse_bounds, fine_bounds, tag, visible=None):
 
 
 def op_mark(cid, n, bounds, visible=None):
-    """Operator `n`'s colour along the left of `bounds`."""
-    return graphic(cid, f"Operator {n}'s colour", bounds, [rect(0.0, 2.0, 3.0, bounds[3] - 4.0, OP_COLORS[n], 1.0)], visible)
+    """Operator `n`'s color along the left of `bounds`."""
+    return graphic(cid, f"Operator {n}'s color", bounds, [rect(0.0, 2.0, 3.0, bounds[3] - 4.0, OP_COLORS[n], 1.0)], visible)
 
 
 def op_toggle(n, bounds, tag):
@@ -1454,16 +1454,16 @@ def check_reach(panel):
     assert not missing, missing[:12]
 
 
-def check_colours(value):
-    """Every colour in a drawing is the theme's: palette or token, or nothing at all."""
+def check_colors(value):
+    """Every color in a drawing is the theme's: palette or token, or nothing at all."""
     if isinstance(value, dict):
         for key, item in value.items():
             if key in ("color", "background", "fill") and isinstance(item, list):
                 assert item[0] == 3 or item == INVISIBLE, (key, item)
-            check_colours(item)
+            check_colors(item)
     elif isinstance(value, list):
         for item in value:
-            check_colours(item)
+            check_colors(item)
 
 
 def depth_of(expression):
@@ -1499,7 +1499,7 @@ def main():
     explain(panel["ui"])
     explain(panel["expanded"])
     check_reach(panel)
-    check_colours(panel)
+    check_colors(panel)
     check_depth(panel)
     for canvas in (panel["ui"], panel["expanded"]):
         check_fits(canvas)

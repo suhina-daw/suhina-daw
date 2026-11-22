@@ -1678,8 +1678,8 @@ impl App {
         self.arrangement.returns_hidden = settings.view.returns_hidden;
         self.arrangement.waveform_zoom = settings.view.waveform_zoom as f32 / 100.0;
         self.arrangement.waveform_appearance = settings.view.waveform;
-        self.arrangement.audio_colour_strength = settings.view.audio_colour_strength;
-        self.arrangement.header_colour_strength = settings.view.header_colour_strength;
+        self.arrangement.audio_color_strength = settings.view.audio_color_strength;
+        self.arrangement.header_color_strength = settings.view.header_color_strength;
         if settings.map_window {
             self.sample_map.set_window(true, &mut self.browser);
         }
@@ -2466,7 +2466,7 @@ impl App {
             match place {
                 None => keep = false,
                 Some(spot) => {
-                    // The field takes the name's own place and colours, with no frame of its
+                    // The field takes the name's own place and colors, with no frame of its
                     // own, the whole name selected to type over (#916).
                     let rect = spot.rect;
                     crate::kit::floating::area(
@@ -2477,11 +2477,11 @@ impl App {
                     .order(egui::Order::Foreground)
                     .fixed_pos(rect.min)
                     .show(ui.ctx(), |ui| {
-                        // An opaque back in the name's own colour, so the name the view drew
+                        // An opaque back in the name's own color, so the name the view drew
                         // under the field does not show through it.
                         let back = ui.painter().add(egui::Shape::Noop);
-                        // The selected name is a shade of its own ink on its own colour, not
-                        // the theme's selection colour, which on a coloured header reads as a
+                        // The selected name is a shade of its own ink on its own color, not
+                        // the theme's selection color, which on a colored header reads as a
                         // box of its own.
                         let selection = &mut ui.visuals_mut().selection;
                         selection.bg_fill = motion::mix(spot.fill.to_opaque(), spot.text, 0.28);
@@ -3264,10 +3264,10 @@ impl App {
             crate::kit::skin::configure(&crate::kit::skin::Skin::default());
             crate::kit::native_css::set_colors(&theme::Colors::new());
         }
-        // The selection colour is the window's, as the theme's colours are: a chosen one goes over
+        // The selection color is the window's, as the theme's colors are: a chosen one goes over
         // the theme's `selection.background` before the styles are worked out.
         crate::kit::selection::set(self.settings.view.selection);
-        self.arrangement.automation.colours = self.settings.view.automation;
+        self.arrangement.automation.colors = self.settings.view.automation;
         // The backdrop's opacity before the styles: the frame an image first shows in is faded.
         let backdrop = self.background.prepare(ui, &self.settings);
         let _css_frame = crate::kit::native_css::frame_with_motion(
@@ -3435,7 +3435,7 @@ impl App {
                 self.run_menu_item(&id, ui.ctx(), &mut actions);
             }
         }
-        // The floating colour tool owns Escape while a text draft or drag is active.
+        // The floating color tool owns Escape while a text draft or drag is active.
         self.show_color_window(ui.ctx(), &mut actions);
         self.preview_color_targets(ui.ctx());
         self.shortcuts(ui, &mut actions);
@@ -3536,7 +3536,7 @@ impl App {
                 .show_separator_line(false)
                 .frame(egui::Frame::NONE)
                 .show(ui, |ui| {
-                    // The strip reads as the top of the toolbar under it, in the toolbar's colour.
+                    // The strip reads as the top of the toolbar under it, in the toolbar's color.
                     let _style_class = crate::kit::element::TOOLBAR.enter();
                     let top = egui::CornerRadius { nw: corner, ne: corner, sw: 0, se: 0 };
                     ui.painter().rect_filled(
@@ -3652,7 +3652,7 @@ impl App {
         if system.is_none() {
             self.system_separate = None;
         }
-        // The lines over and under the views, in their `border-color` (the palette's line colour).
+        // The lines over and under the views, in their `border-color` (the palette's line color).
         // A private image is already painted underneath the window: its transparent regions stay
         // visible instead of being covered with separator ink.
         let image = crate::kit::liquid::background_image(ui.ctx()).is_some();
@@ -4453,7 +4453,7 @@ impl App {
     }
 }
 
-/// The label beside the pointer while something is dragged: outlined in the accent colour when
+/// The label beside the pointer while something is dragged: outlined in the accent color when
 /// it can land where the pointer is.
 fn drag_label(ctx: &egui::Context, pointer: Pos2, text: &str, lands: bool) {
     drops::pill(ctx, pointer, text, lands);
@@ -4467,7 +4467,7 @@ pub(crate) const NAME_RECT_SLOT: &str = "slot-name-rect";
 pub(crate) const NAME_RECT_TRACK: &str = "track-name-rect";
 
 /// Where a view drew a name last frame, for a rename in place: its place, the pass it was drawn
-/// in, the colours behind and of the text and the text's size, so the field reads as the name
+/// in, the colors behind and of the text and the text's size, so the field reads as the name
 /// itself (#916).
 #[derive(Debug, Clone, Copy)]
 pub struct NameSpot {

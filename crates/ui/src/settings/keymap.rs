@@ -131,7 +131,7 @@ pub struct Action {
 
 /// Actions the window does itself or on the selection, with their labels.
 const WINDOW_ACTIONS: [(&str, &str, &str); 107] = [
-    ("selection.colour", "Open the selected tracks' colour window", "Tracks"),
+    ("selection.color", "Open the selected tracks' color window", "Tracks"),
     ("file.new", "New project or open one", "File"),
     ("file.open", "Open a project", "File"),
     ("file.save", "Save the project", "File"),
@@ -542,7 +542,7 @@ const PRESET_KEY: &str = "preset";
 const CTRL_B: Shortcut = Shortcut::new(Modifiers::COMMAND, Key::B);
 
 const DEFAULTS: [(&str, &[&str]); 107] = [
-    ("selection.colour", &["F2"]),
+    ("selection.color", &["F2"]),
     ("file.new", &["Ctrl+N"]),
     ("track.addAudio", &["Ctrl+T"]),
     ("track.addMidi", &["Ctrl+Shift+T"]),
@@ -728,17 +728,17 @@ impl Keymap {
             keymap.bindings.insert(id.clone(), parsed);
         }
         // Older keymaps could already use F2. A newly introduced default must not take
-        // that key from an explicit binding; an explicit colour binding remains the user's.
-        if !map.contains_key("selection.colour") {
-            let colour_keys = keymap.keys("selection.colour").to_vec();
+        // that key from an explicit binding; an explicit color binding remains the user's.
+        if !map.contains_key("selection.color") {
+            let color_keys = keymap.keys("selection.color").to_vec();
             let reserved = keymap.bindings.iter().any(|(id, keys)| {
-                id != "selection.colour"
+                id != "selection.color"
                     && !piano_roll_only(id)
                     && map.contains_key(id)
-                    && keys.iter().any(|key| colour_keys.contains(key))
+                    && keys.iter().any(|key| color_keys.contains(key))
             });
             if reserved {
-                keymap.bindings.insert("selection.colour".into(), Vec::new());
+                keymap.bindings.insert("selection.color".into(), Vec::new());
             }
         }
         keymap.workflow.read_json(&map, &mut warnings);

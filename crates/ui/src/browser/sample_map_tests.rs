@@ -41,7 +41,7 @@ fn the_density_waits_for_a_resize_to_settle_but_not_for_a_change_of_content() {
         similar: None,
         spread: 1,
         hint: Color32::GRAY,
-        kind_colours: [Color32::WHITE; Kind::ALL.len()],
+        kind_colors: [Color32::WHITE; Kind::ALL.len()],
     };
     let small = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 300.0));
     let large = Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 300.0));
@@ -53,13 +53,13 @@ fn the_density_waits_for_a_resize_to_settle_but_not_for_a_change_of_content() {
     assert_eq!(density_plan(Some((&key, small)), &zoomed, large, 1.0, 1.0), DensityPlan::Build, "zoomed");
     let filtered = DensityKey { legend: vec![Kind::Kick], ..key.clone() };
     assert_eq!(density_plan(Some((&key, small)), &filtered, small, 0.0, 0.0), DensityPlan::Build);
-    // The gray and the kinds' colours are baked into the raster: a theme change draws it again.
+    // The gray and the kinds' colors are baked into the raster: a theme change draws it again.
     let regray = DensityKey { hint: Color32::RED, ..key.clone() };
     assert_eq!(density_plan(Some((&key, small)), &regray, small, 0.0, 0.0), DensityPlan::Build, "hint");
-    let mut kinds = key.kind_colours;
+    let mut kinds = key.kind_colors;
     kinds[0] = Color32::RED;
-    let recoloured = DensityKey { kind_colours: kinds, ..key.clone() };
-    assert_eq!(density_plan(Some((&key, small)), &recoloured, small, 0.0, 0.0), DensityPlan::Build, "kinds");
+    let recolored = DensityKey { kind_colors: kinds, ..key.clone() };
+    assert_eq!(density_plan(Some((&key, small)), &recolored, small, 0.0, 0.0), DensityPlan::Build, "kinds");
 }
 
 #[test]
@@ -184,9 +184,9 @@ fn the_legend_shows_one_kind_or_several() {
 }
 
 #[test]
-fn every_kind_has_its_own_colour() {
-    let colours: HashSet<Color32> = Kind::ALL.iter().map(|k| kind_colour(*k)).collect();
-    assert_eq!(colours.len(), Kind::ALL.len());
+fn every_kind_has_its_own_color() {
+    let colors: HashSet<Color32> = Kind::ALL.iter().map(|k| kind_color(*k)).collect();
+    assert_eq!(colors.len(), Kind::ALL.len());
 }
 
 /// The Similar list's scroll bar is dragged like a device panel's, beside the map that takes
@@ -486,12 +486,12 @@ fn a_new_layout_rebinds_the_point_states_to_their_items() {
     assert!(view.hover_waveform.is_none(), "the gone point's waveform goes");
 }
 
-/// Without a theme sheet each kind takes the colour the user-agent sheet's own cascade gives it,
+/// Without a theme sheet each kind takes the color the user-agent sheet's own cascade gives it,
 /// whatever form its rules are written in; no kind falls back to gray.
 #[test]
-fn every_kind_has_the_user_agent_sheets_colour() {
-    let colours = user_agent_kind_colours();
-    assert_eq!(colours[kind_index(Kind::Kick)], Color32::from_rgb(0xD0, 0x6E, 0x5E));
-    assert_eq!(colours[kind_index(Kind::Other)], Color32::from_rgb(0x8A, 0x86, 0x80));
-    assert!(colours.iter().all(|colour| *colour != Color32::GRAY), "{colours:?}");
+fn every_kind_has_the_user_agent_sheets_color() {
+    let colors = user_agent_kind_colors();
+    assert_eq!(colors[kind_index(Kind::Kick)], Color32::from_rgb(0xD0, 0x6E, 0x5E));
+    assert_eq!(colors[kind_index(Kind::Other)], Color32::from_rgb(0x8A, 0x86, 0x80));
+    assert!(colors.iter().all(|color| *color != Color32::GRAY), "{colors:?}");
 }

@@ -133,7 +133,7 @@ pub struct GraphParameter {
     pub text: String,
     /// What a double-click puts it back to.
     pub default: f64,
-    /// How it looks: label, size, colours, step, decimals, a choice's labels.
+    /// How it looks: label, size, colors, step, decimals, a choice's labels.
     pub ui: suhina_device_sdk::ParameterUi,
     /// The control that edits it.
     pub control: ParameterControl,
@@ -369,17 +369,17 @@ pub struct ClipInfo {
     /// Every picked MIDI clip, for its row in the column that gives it the piano roll's focus
     /// (#1054): its track and clip, what the row says ("Bass · Riff") and whether it has the focus.
     pub picked: Vec<(TrackId, ClipId, String, bool)>,
-    /// What the clip's panel shows beyond the rows (`docs/spec/clip-panel.md`): its colour, length,
+    /// What the clip's panel shows beyond the rows (`docs/spec/clip-panel.md`): its color, length,
     /// scale and Set buttons for every clip, and an audio clip's own state.
     pub panel: Option<AudioPanel>,
 }
 
-/// What a clip's panel shows beyond the rows: its id, colour, length, scale and where the playhead
+/// What a clip's panel shows beyond the rows: its id, color, length, scale and where the playhead
 /// is in it, and for an audio clip its tempo and envelope.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AudioPanel {
     pub clip: ClipId,
-    /// The colour it shows: its own, or its track's.
+    /// The color it shows: its own, or its track's.
     pub color: Option<suhina_engine::model::Rgb>,
     /// The tempo its audio is warped from, when it is warped, and where that came from.
     pub tempo: Option<f64>,

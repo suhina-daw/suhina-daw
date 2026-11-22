@@ -82,7 +82,7 @@ fn collect_folder_tag_ids(entries: &[suhina_library::TagEntry], out: &mut Vec<u3
     }
 }
 
-/// The colour a row's dot draws with: a tag's own; a folder draws its mark (no colour).
+/// The color a row's dot draws with: a tag's own; a folder draws its mark (no color).
 fn tag_row_color(entry: &suhina_library::TagEntry) -> &str {
     match entry {
         suhina_library::TagEntry::Tag(tag) => &tag.color,
@@ -161,9 +161,9 @@ pub struct Context<'a> {
 
 /// The browser's words, by how much they stand out, each read once where a part of the browser is
 /// drawn: `label[kind="hint"]` (dim words: notes, headings, hints), `label[kind="caption"]`
-/// (secondary words) and `label[kind="value"]` (values), each with the colour the base sheet gives
-/// it in the browser (`browser label[kind="hint"]`), so a colour a theme gives the whole browser
-/// keeps them apart; `label` (names) takes the browser's own text colour.
+/// (secondary words) and `label[kind="value"]` (values), each with the color the base sheet gives
+/// it in the browser (`browser label[kind="hint"]`), so a color a theme gives the whole browser
+/// keeps them apart; `label` (names) takes the browser's own text color.
 #[derive(Clone, Copy)]
 pub(crate) struct Inks {
     pub(crate) hint: Color32,
@@ -187,9 +187,9 @@ pub(crate) fn inks() -> Inks {
     }
 }
 
-/// A row's icon colour: its `browser-icon[kind="…"]` element's `color`, which the user-agent
+/// A row's icon color: its `browser-icon[kind="…"]` element's `color`, which the user-agent
 /// sheet gives the kinds of item that have one and a theme may change; folders, headings and
-/// projects take the row's secondary text colour unless a sheet gives them one.
+/// projects take the row's secondary text color unless a sheet gives them one.
 fn icon_color(kind: ItemKind, secondary: Color32) -> Color32 {
     let id = icon_kind(kind);
     let el = crate::kit::element::BROWSER_ICON.attribute("kind", id).enter();
@@ -215,14 +215,14 @@ fn icon_kind(kind: ItemKind) -> &'static str {
     }
 }
 
-/// The colour the base sheet alone gives the icon of kind `id`, if any, in Suhina Studio's
-/// colours: worked out once.
+/// The color the base sheet alone gives the icon of kind `id`, if any, in Suhina Studio's
+/// colors: worked out once.
 fn icon_default(id: &str) -> Option<Color32> {
-    const COLOURED: [&str; 7] = ["midi", "midi-effect", "sample", "instrument", "preset", "effect", "audio-effect"];
+    const COLORED: [&str; 7] = ["midi", "midi-effect", "sample", "instrument", "preset", "effect", "audio-effect"];
     static DEFAULTS: std::sync::OnceLock<[Option<Color32>; 7]> = std::sync::OnceLock::new();
     let defaults =
-        DEFAULTS.get_or_init(|| COLOURED.map(|id| crate::kit::native_css::base_color("browser-icon", &[("kind", id)])));
-    COLOURED.iter().position(|known| *known == id).and_then(|at| defaults.get(at).copied().flatten())
+        DEFAULTS.get_or_init(|| COLORED.map(|id| crate::kit::native_css::base_color("browser-icon", &[("kind", id)])));
+    COLORED.iter().position(|known| *known == id).and_then(|at| defaults.get(at).copied().flatten())
 }
 
 /// Our own simple stroke icons, 12 px.
@@ -396,7 +396,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             }
             state.scroll = 0.0;
         }
-        // `button[kind="chip"]`, `[checked]` while chosen: its colours are the base sheet's, in fill
+        // `button[kind="chip"]`, `[checked]` while chosen: its colors are the base sheet's, in fill
         // and in image, and only a rule for the lit state lights it.
         let (fill, text) = lit.colors();
         widgets::toggle_surface(&painter, rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
@@ -532,7 +532,7 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
         .hint_text(egui::RichText::new("Search").color(tier.hint))
         .font(theme::ui_font(theme::TEXT))
         .text_color(search_style.color_or(tier.primary));
-    // egui's field takes the colours of `text-input#browser-search` through its style.
+    // egui's field takes the colors of `text-input#browser-search` through its style.
     let response = crate::kit::widgets::text_input_at(&mut search_style.ui(ui), field, edit);
     if std::mem::take(&mut state.focus_search) {
         response.request_focus();
@@ -953,7 +953,7 @@ fn sidebar_view(
                 state.new_folder = None;
                 return;
             }
-            // A `text-input`: egui's field takes its colours through its style.
+            // A `text-input`: egui's field takes its colors through its style.
             let input = crate::kit::element::TEXT_INPUT.id("browser-new-folder").enter();
             let edit = egui::TextEdit::singleline(text)
                 .id(id)
@@ -1198,7 +1198,7 @@ fn results_view(
         for (i, tag_id) in item_tags.iter().enumerate() {
             if let Some(tag) = tags.iter().find(|t| t.id == *tag_id) {
                 let center = tag_dot_center(name_end, i, rect.center().y);
-                // `browser-tag-dot { opacity; border-color }`; its fill stays the tag's colour.
+                // `browser-tag-dot { opacity; border-color }`; its fill stays the tag's color.
                 let dot = crate::kit::element::BROWSER_TAG_DOT.enter();
                 let style = dot.style();
                 let fill = tag_color(&tag.color).gamma_multiply(style.as_ref().map_or(1.0, |s| s.opacity));
@@ -1429,14 +1429,14 @@ fn tag_folder_menu(
     }
     ui.separator();
     // A new tag inside: made from the field, moved under the folder it was made for. Its
-    // colour comes from the palette beside the field — the same pick a tag's menu makes,
+    // color comes from the palette beside the field — the same pick a tag's menu makes,
     // but for a tag the folder is making ([#1254] review › color options in a folder's
-    // menu); a pick is remembered for the menu, a non-pick takes the named colours' next.
+    // menu); a pick is remembered for the menu, a non-pick takes the named colors' next.
     let pick_id = Id::unique(("browser-folder-tag-color", epoch, folder_id));
     let picked_now = {
         let stored: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
         let current = stored.as_deref().and_then(theme::parse_hex).map(crate::interaction::grid::to_rgb);
-        crate::interaction::color_picker::select_color_row(ui, pick_id, current, "Select colour")
+        crate::interaction::color_picker::select_color_row(ui, pick_id, current, "Select color")
             .map(|picked| theme::hex(crate::interaction::color_picker::color32(picked)))
     };
     if let Some(hex) = picked_now.as_ref() {
@@ -1454,7 +1454,7 @@ fn tag_folder_menu(
     let with_button = ui.button("Add tag").clicked();
     if (with_enter || with_button) && !new_name.trim().is_empty() {
         // The name one of the tags has: refused before the command, as the section's menus
-        // do ([#1254] review: `setTag` would recolour and file that tag instead, and say it
+        // do ([#1254] review: `setTag` would recolor and file that tag instead, and say it
         // was added). The name a row of the destination's own level holds is the store's
         // refusal now: the make lands in the folder from its first byte, its name asked of
         // that level ([#1254] review).
@@ -1945,7 +1945,7 @@ fn tags_section(
                 }
             }
         }
-        // Right-click: rename (as it is typed), recolour, add inside, remove — asking first
+        // Right-click: rename (as it is typed), recolor, add inside, remove — asking first
         // while a remove empties a folder ([#1254] › Tag folders).
         let was_open =
             ui.ctx().data(|d| d.get_temp::<bool>(Id::unique(("browser-row-menu-open", epoch, id)))).unwrap_or(false);
@@ -1998,21 +1998,21 @@ fn tags_section(
                     }
                 }
                 let current = theme::parse_hex(tag_row_color(&row.entry)).map(crate::interaction::grid::to_rgb);
-                // Select colour: the palette's swatches and the theme editor's picker, opened in
+                // Select color: the palette's swatches and the theme editor's picker, opened in
                 // the menu (a picker of its own would end the menu as a click outside it does),
-                // the colour one command a pick.
+                // the color one command a pick.
                 if let Some(picked) = crate::interaction::color_picker::select_color_row(
                     ui,
-                    Id::unique(("browser-tag-colour", epoch, row.entry.id())),
+                    Id::unique(("browser-tag-color", epoch, row.entry.id())),
                     current,
-                    "Select colour",
+                    "Select color",
                 ) {
                     let hex = theme::hex(crate::interaction::color_picker::color32(picked));
                     run(projects, "library.setTag", json!({ "id": format!("#{}", row.entry.id()), "color": hex }), out);
                 }
                 ui.separator();
                 // A new tag from here: a typed name, added with Enter or the Add tag button, in
-                // the colour this menu shows outlined, shown dimmed until something carries it
+                // the color this menu shows outlined, shown dimmed until something carries it
                 // (#1196).
                 let new_id = Id::unique(("browser-section-new-tag", epoch, row.entry.id()));
                 let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
@@ -2030,7 +2030,7 @@ fn tags_section(
                     if taken.iter().any(|t| t.name == new_name.trim()) {
                         out.status = Some(Status::Error(format!("there is a tag {:?} already", new_name.trim())));
                     } else {
-                        // The colour this menu shows outlined: a new tag comes out of the colour
+                        // The color this menu shows outlined: a new tag comes out of the color
                         // the tag it was added from shows (#1196/#1254).
                         let color = tag_row_color(&row.entry).to_string();
                         if run(projects, "library.setTag", json!({ "name": new_name.trim(), "color": color }), out) {
@@ -2111,8 +2111,8 @@ fn tags_section(
                 if is_folder {
                     d.remove::<String>(Id::unique(("browser-tag-folder", epoch, id)));
                     d.remove::<String>(Id::unique(("browser-folder-new-tag", epoch, id)));
-                    // The pick held for the tag it was to colour: a menu that closes
-                    // without its add leaves no colour for the next one to inherit
+                    // The pick held for the tag it was to color: a menu that closes
+                    // without its add leaves no color for the next one to inherit
                     // ([#1254] review).
                     d.remove::<String>(Id::unique(("browser-folder-tag-color", epoch, id)));
                     crate::interaction::color_picker::forget_state(
@@ -2122,7 +2122,7 @@ fn tags_section(
                 } else {
                     d.remove::<String>(Id::unique(("browser-rename-tag", epoch, id)));
                     d.remove::<String>(Id::unique(("browser-section-new-tag", epoch, id)));
-                    crate::interaction::color_picker::forget_state(d, Id::unique(("browser-tag-colour", epoch, id)));
+                    crate::interaction::color_picker::forget_state(d, Id::unique(("browser-tag-color", epoch, id)));
                 }
             });
         }
@@ -2342,7 +2342,7 @@ fn section_title(
 ) {
     let tier = inks();
     // The title's menu keys on the library's epoch as the rows' menus do: a replaced library
-    // gets none of the old one's open menu, typed name or picked colour ([#1254] review).
+    // gets none of the old one's open menu, typed name or picked color ([#1254] review).
     let epoch = state.tag_epoch;
     *y += 8.0;
     let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, *y), Vec2::new(area.width() - PAD, 12.0));
@@ -2410,9 +2410,9 @@ fn section_title(
                     ui.close();
                 }
             }
-            // The Tags title makes tags of its own: a pick from the palette colours it, a typo
-            // of a name is refused the rows' menus' way, and no pick takes the named colours'
-            // next ([#1254] review: the top level has no tag to inherit a colour from, so the
+            // The Tags title makes tags of its own: a pick from the palette colors it, a typo
+            // of a name is refused the rows' menus' way, and no pick takes the named colors'
+            // next ([#1254] review: the top level has no tag to inherit a color from, so the
             // store's way is the menu's too). The field and the button are the same the rows'
             // menus carry.
             if kind == SectionKind::Tags {
@@ -2421,7 +2421,7 @@ fn section_title(
                 let picked_now = {
                     let stored: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
                     let current = stored.as_deref().and_then(theme::parse_hex).map(crate::interaction::grid::to_rgb);
-                    crate::interaction::color_picker::select_color_row(ui, pick_id, current, "Select colour")
+                    crate::interaction::color_picker::select_color_row(ui, pick_id, current, "Select color")
                         .map(|picked| theme::hex(crate::interaction::color_picker::color32(picked)))
                 };
                 if let Some(hex) = picked_now.as_ref() {
@@ -2440,7 +2440,7 @@ fn section_title(
                 let with_button = ui.button("Add tag").clicked();
                 if (with_enter || with_button) && !new_name.trim().is_empty() {
                     // The name one of the tags has: refused before the command, as the rows'
-                    // menus do ([#1254] review: `setTag` would recolour that tag instead and say
+                    // menus do ([#1254] review: `setTag` would recolor that tag instead and say
                     // it was added). A folder's name the store refuses itself, and the status
                     // says where it stands.
                     if projects.file_library_mut().tag_flat().iter().any(|t| t.name == new_name.trim()) {
@@ -2482,13 +2482,13 @@ fn section_title(
             }
         });
     // Closed: the drafts go with it, as the rows' menus do ([#1254] review — a stale pick
-    // or name would colour a later add without the menu showing why).
+    // or name would color a later add without the menu showing why).
     let open = popup.is_some();
     if was_open && !open && kind == SectionKind::Tags {
         ui.ctx().data_mut(|d| {
             d.remove::<String>(Id::unique(("browser-title-new-tag", epoch, kind.name())));
-            // The pick held for the tag it was to colour ([#1254] review: a menu that
-            // closes without its add leaves no colour for the next one to inherit).
+            // The pick held for the tag it was to color ([#1254] review: a menu that
+            // closes without its add leaves no color for the next one to inherit).
             d.remove::<String>(Id::unique(("browser-title-tag-color", epoch, kind.name())));
             crate::interaction::color_picker::forget_state(
                 d,
@@ -2601,8 +2601,8 @@ fn row_menu(
         );
         ui.ctx().data_mut(|d| d.insert_temp(id, name.clone()));
         if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !name.trim().is_empty() {
-            // The named colours' next turn colours it ([#1254]: the store hands the default
-            // colour out when the command is asked without one).
+            // The named colors' next turn colors it ([#1254]: the store hands the default
+            // color out when the command is asked without one).
             let name = name.trim().to_string();
             if run(projects, "library.setTag", json!({ "name": name }), out) {
                 for key in &targets {
@@ -2670,7 +2670,7 @@ pub fn copy_files(item: &BrowserItem, selected: &[BrowserItem]) -> Vec<PathBuf> 
 }
 
 /// One entry of an item's Tag menu: a box, ticked while the item carries the tag, a swatch in
-/// the tag's colour and its name. The box and the swatch are painted, not text, so no font
+/// the tag's color and its name. The box and the swatch are painted, not text, so no font
 /// has to hold a check mark (#853). A click anywhere on the row toggles the tag.
 fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response {
     const BOX: f32 = 12.0;
@@ -2910,7 +2910,7 @@ fn preview_strip(
 ) {
     let tier = inks();
     let painter = ui.painter_at(area);
-    // Without an authored surface the strip is the window's colour under the browser's panel; with
+    // Without an authored surface the strip is the window's color under the browser's panel; with
     // one, the surface `show` painted already is its background, and painting it again would
     // stack its alpha.
     if !crate::kit::style_class::has_surface() {
@@ -3061,7 +3061,7 @@ fn preview_strip(
         return;
     }
     if let Some(peaks) = &info.peaks {
-        // The whole file across the width, the part played in the brighter colour.
+        // The whole file across the width, the part played in the brighter color.
         let count = wave.width().max(1.0) as usize;
         let per_point = if count > 0 { total / count as f64 } else { 0.0 };
         let columns = crate::kit::waveform::steady_columns(wave.left(), count, 0.0, per_point, 1.0);
@@ -3152,7 +3152,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 state.tag_filter.push(tag.id);
             }
         }
-        // Right-click: rename (typed in, with Enter or the button), recolour or remove the
+        // Right-click: rename (typed in, with Enter or the button), recolor or remove the
         // tag. Clicks inside do not close it: a tag's new name is typed here (egui's default
         // closes a menu on a click inside it). The drafts key on the tag's id; when the menu
         // closes they go with it, and a refused rename resets the field, so a dead draft
@@ -3216,13 +3216,13 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                         ui.ctx().data_mut(|d| d.insert_temp(id, tag.name.clone()));
                     }
                 }
-                // The palette track colours take, then any colour.
+                // The palette track colors take, then any color.
                 let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
                 if let Some(picked) = crate::interaction::color_picker::select_color_row(
                     ui,
-                    Id::unique(("browser-footer-tag-colour", epoch, tag.id)),
+                    Id::unique(("browser-footer-tag-color", epoch, tag.id)),
                     current,
-                    "Select colour",
+                    "Select color",
                 ) {
                     let hex = theme::hex(crate::interaction::color_picker::color32(picked));
                     run(projects, "library.setTag", json!({ "id": format!("#{0}", tag.id), "color": hex }), out);
@@ -3319,7 +3319,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 d.remove::<String>(Id::unique(("browser-footer-new-tag", epoch, tag.id)));
                 crate::interaction::color_picker::forget_state(
                     d,
-                    Id::unique(("browser-footer-tag-colour", epoch, tag.id)),
+                    Id::unique(("browser-footer-tag-color", epoch, tag.id)),
                 );
             });
             state.tag_remove_confirm = None;
@@ -3378,7 +3378,7 @@ fn footer_overflow(
             d.remove::<String>(Id::unique(("browser-footer-rename-tag", epoch, tag.id)));
             d.remove::<bool>(Id::unique(("browser-footer-menu-open", epoch, tag.id)));
             d.remove::<String>(Id::unique(("browser-footer-new-tag", epoch, tag.id)));
-            crate::interaction::color_picker::forget_state(d, Id::unique(("browser-footer-tag-colour", epoch, tag.id)));
+            crate::interaction::color_picker::forget_state(d, Id::unique(("browser-footer-tag-color", epoch, tag.id)));
         }
     });
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");
@@ -3456,7 +3456,7 @@ pub fn resize_handle(
         return (Some(default), true);
     }
     // `#browser-splitter` takes the element's `background-color`; without one, that of
-    // `browser-fill[kind="splitter"]`: the border colour, stronger under the pointer.
+    // `browser-fill[kind="splitter"]`: the border color, stronger under the pointer.
     let fill =
         divider.style.look().themed(crate::kit::element::Paint::Background).unwrap_or_else(|| {
             BROWSER_FILL.attribute("kind", "splitter").response(&divider.response).look().background()
@@ -3502,18 +3502,18 @@ pub(crate) fn row_id(node: &str, index: usize) -> Id {
 mod tests {
     use super::*;
 
-    /// The kinds' icon colours come from the user-agent sheet's `browser-icon[kind]` rules, not
+    /// The kinds' icon colors come from the user-agent sheet's `browser-icon[kind]` rules, not
     /// the theme's palette; folders, headings and projects have none and take the row's text.
     #[test]
-    fn icon_colours_are_the_user_agent_sheet_s_by_kind() {
-        let colour = |kind| icon_default(icon_kind(kind));
-        assert_eq!(colour(ItemKind::Midi), Some(Color32::from_rgb(0xF2, 0xD5, 0x41)));
-        assert_eq!(colour(ItemKind::MidiEffect), colour(ItemKind::Midi));
-        assert_eq!(colour(ItemKind::Sample), Some(Color32::from_rgb(0x4F, 0xC3, 0xF7)));
-        assert_eq!(colour(ItemKind::Preset), Some(Color32::from_rgb(0xB3, 0x8B, 0xFF)));
-        assert_eq!(colour(ItemKind::AudioEffect), Some(Color32::from_rgb(0xFF, 0x9A, 0x3C)));
+    fn icon_colors_are_the_user_agent_sheet_s_by_kind() {
+        let color = |kind| icon_default(icon_kind(kind));
+        assert_eq!(color(ItemKind::Midi), Some(Color32::from_rgb(0xF2, 0xD5, 0x41)));
+        assert_eq!(color(ItemKind::MidiEffect), color(ItemKind::Midi));
+        assert_eq!(color(ItemKind::Sample), Some(Color32::from_rgb(0x4F, 0xC3, 0xF7)));
+        assert_eq!(color(ItemKind::Preset), Some(Color32::from_rgb(0xB3, 0x8B, 0xFF)));
+        assert_eq!(color(ItemKind::AudioEffect), Some(Color32::from_rgb(0xFF, 0x9A, 0x3C)));
         for plain in [ItemKind::Folder, ItemKind::Heading, ItemKind::Project] {
-            assert_eq!(colour(plain), None);
+            assert_eq!(color(plain), None);
         }
     }
 

@@ -18,8 +18,8 @@ use crate::settings::keymap::shown;
 pub struct TrackMenu<'a> {
     pub track: TrackId,
     pub name: &'a str,
-    /// The colour the track shows, outlined among the swatches.
-    pub colour: Rgb,
+    /// The color the track shows, outlined among the swatches.
+    pub color: Rgb,
     pub is_group: bool,
     /// A return track: new tracks from its menu go after the regular tracks.
     pub is_return: bool,
@@ -383,7 +383,7 @@ pub fn midi_input_choices(ui: &mut Ui, track: TrackId, input: &MidiInput, ports:
     midi_monitor_choices(ui, track, input.monitor, actions);
 }
 
-/// The menu of a track header or column: name, colour, group, ungroup, move into or out of a
+/// The menu of a track header or column: name, color, group, ungroup, move into or out of a
 /// group, delete.
 pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) {
     let track = menu.track.0;
@@ -411,16 +411,16 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     }
     ui.data_mut(|d| d.insert_temp(id, text));
 
-    // Colour: the palette every colour choice offers.
-    // A colour picked with several tracks selected colours them all.
+    // Color: the palette every color choice offers.
+    // A color picked with several tracks selected colors them all.
     let single = [menu.track];
     let selected = if menu.selection.contains(&menu.track) { menu.selection } else { &single };
-    color_picker::track_row(ui, menu.colour, selected, actions);
-    // A group's tracks, at any depth, and their clips: its colour, so the group reads as one in
+    color_picker::track_row(ui, menu.color, selected, actions);
+    // A group's tracks, at any depth, and their clips: its color, so the group reads as one in
     // every view.
     if menu.is_group && ui.button("Recolor group").clicked() {
-        // The colour the group shows: one it was never given is worked out from its place.
-        let params = json!({ "track": track, "color": color_picker::hex(menu.colour), "clips": true });
+        // The color the group shows: one it was never given is worked out from its place.
+        let params = json!({ "track": track, "color": color_picker::hex(menu.color), "clips": true });
         actions.push(Action::new("track.colorGroup", params));
         ui.close();
     }
@@ -1184,7 +1184,7 @@ mod tests {
         assert_eq!(action("signature", " "), Some(("scene.setTimeSignature", json!({ "scene": 2 }))));
         // Not a number: sent as text, so the command's error says what is wrong.
         assert_eq!(action("tempo", "fast"), Some(("scene.setTempo", json!({ "scene": 2, "bpm": "fast" }))));
-        assert_eq!(action("colour", "red"), None);
+        assert_eq!(action("color", "red"), None);
     }
 
     /// A time signature from a menu: the start signature at bar 1, a change at a later bar

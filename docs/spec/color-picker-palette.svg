@@ -1,10 +1,10 @@
 <!-- Copyright (C) 2026 The Suhina contributors; SPDX-License-Identifier: GPL-3.0-or-later -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="1100" viewBox="0 0 1040 1100">
-<title>Suhina colour palette: original, simulated CVD and greyscale</title>
+<title>Suhina color palette: original, simulated CVD and greyscale</title>
 <desc>Thirty-six numbered swatches on light and dark surfaces. Simulations are an approximation, not a guarantee of distinguishability.</desc>
 <rect width="1040" height="1100" fill="#f6f5f2"/>
-<text x="24" y="44" font-family="Arial, sans-serif" font-size="24" fill="#222222">Suhina / 36 colours</text>
-<text x="24" y="71" font-family="Arial, sans-serif" font-size="16" fill="#222222">Design check: colour is an aid; names, order and selection outlines must remain usable.</text>
+<text x="24" y="44" font-family="Arial, sans-serif" font-size="24" fill="#222222">Suhina / 36 colors</text>
+<text x="24" y="71" font-family="Arial, sans-serif" font-size="16" fill="#222222">Design check: color is an aid; names, order and selection outlines must remain usable.</text>
 <text x="24" y="111" font-family="Arial, sans-serif" font-size="16" fill="#222222">Original sRGB</text>
 <rect x="24" y="124" width="490" height="137" fill="#23221f"/>
 <rect x="34" y="134" width="34" height="33" fill="#ff9939"/>
@@ -740,5 +740,5 @@
 <text x="930" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">35</text>
 <rect x="965" y="972" width="34" height="33" fill="#4e4e4e"/>
 <text x="969" y="991" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">36</text>
-<text x="24" y="1062" font-family="Arial, sans-serif" font-size="14" fill="#222222">sRGB transfer + published Machado matrices; gamut-clamped. Scientific sources: colour-picker.md.</text>
+<text x="24" y="1062" font-family="Arial, sans-serif" font-size="14" fill="#222222">sRGB transfer + published Machado matrices; gamut-clamped. Scientific sources: color-picker.md.</text>
 </svg>

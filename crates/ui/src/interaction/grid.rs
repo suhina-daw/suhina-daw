@@ -10,15 +10,15 @@ use suhina_engine::model::{
 };
 use suhina_engine::{LauncherMonitor, PlayingMeter, Queued};
 
-/// The colour a track at `index` among the tracks shows: its own, or for a track saved without
-/// one, Suhina's fixed colour for its place.
-pub fn track_colour(track: &Track, index: usize) -> Rgb {
+/// The color a track at `index` among the tracks shows: its own, or for a track saved without
+/// one, Suhina's fixed color for its place.
+pub fn track_color(track: &Track, index: usize) -> Rgb {
     suhina_session::colors::track_color(track.color, index)
 }
 
-/// A theme colour as a project's track colour.
-pub fn to_rgb(colour: egui::Color32) -> Rgb {
-    let [r, g, b, _] = colour.to_srgba_unmultiplied();
+/// A theme color as a project's track color.
+pub fn to_rgb(color: egui::Color32) -> Rgb {
+    let [r, g, b, _] = color.to_srgba_unmultiplied();
     Rgb(r, g, b)
 }
 
@@ -55,7 +55,7 @@ pub struct Slot {
     pub length: f64,
     /// The clip's launch settings; `None` for an empty slot.
     pub launch: Option<LaunchSettings>,
-    /// The clip's own colour; `None` takes its track's.
+    /// The clip's own color; `None` takes its track's.
     pub color: Option<Rgb>,
     /// The clip's id; `None` for an empty slot.
     pub clip: Option<suhina_engine::model::ClipId>,
@@ -336,7 +336,7 @@ impl TrackGrid {
                 } else {
                     suhina_engine::model::names::shown_with_number(&track.name, number)
                 },
-                color: track_colour(track, index),
+                color: track_color(track, index),
                 kind,
                 notes: kind == ColumnKind::Track && track.content.notes,
                 launcher,

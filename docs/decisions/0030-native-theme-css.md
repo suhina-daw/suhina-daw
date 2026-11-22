@@ -94,7 +94,7 @@ outside interactive frame work, with stale-result rejection and explicit budgets
 | Group | Target |
 |---|---|
 | Selectors and cascade | Class, id, descendant/child selectors, state pseudo-classes, specificity, inheritance, `!important`, `:is()`/`:not()`, nesting and cascade layers |
-| Variables and values | Custom properties, scoped `var()` with fallbacks/cycle handling, CSS colours, lengths/percentages, `calc()`, `min()`, `max()`, `clamp()` |
+| Variables and values | Custom properties, scoped `var()` with fallbacks/cycle handling, CSS colors, lengths/percentages, `calc()`, `min()`, `max()`, `clamp()` |
 | Visuals | Background images, SVG assets and control states, linear/radial gradients, borders/radii, opacity, shadows, font roles and text styling |
 | Responsiveness | Viewport media conditions, reduced motion, light/dark preference, and container-size queries with real container geometry |
 | Layout | Flex/Grid for host-managed panel/module containers, spacing, alignment, constraints, visibility and overflow |
@@ -113,20 +113,20 @@ animations would be lost. The durable JSON model must retain the authored rule s
 expressions, source order and resource references. Computed values are a projection for a
 particular viewport, state and time. They must not replace authored expressions when saved.
 
-Changing a simple colour in CSS updates the corresponding JSON representation and the
+Changing a simple color in CSS updates the corresponding JSON representation and the
 editor. Changing it in the editor updates the appropriate authored declaration. Where
 several conditional declarations can supply a value, the editor must identify the target
 rule rather than silently destroying the other rules. Independently edited files merge
 by stable authored rule/declaration identities; conflicting edits preserve both inputs and
 produce a diagnostic. Round-trip tests cover variables, queries, states and animations,
-not just literal colours.
+not just literal colors.
 
 ## Current implementation and gate
 
 The branch supplies SVG resources, configurable meters, toolbar rearrangement, portable
 ZIP resources and a bounded native CSS subset with live CSS/JSON mirroring. It supplies
-an initial class registry and tests for literal-colour synchronization and conflicts.
-The initial Stylo adapter computes colour, typography and radii for active class
+an initial class registry and tests for literal-color synchronization and conflicts.
+The initial Stylo adapter computes color, typography and radii for active class
 ancestries and caches bounded contexts until CSS, palette or viewport changes. The
 Taffy adapter lays out the actual ordered toolbar module tree; native drawing and
 hit targets use those same rectangles. Advanced authored CSS is stored verbatim in
@@ -139,13 +139,13 @@ named Launcher track roles (`data-object`) and state from connected egui respons
 Child/sibling matching uses this actual tree. A changed tree is styled as one snapshot;
 results are applied on the next repaint, preserving native command ids and targets.
 Identity remains stable for named track scopes when tracks move. Clip, slot and scene
-roles expose native project identities too. Connected panels pass authored colour,
+roles expose native project identities too. Connected panels pass authored color,
 font size and radius to ordinary egui widgets without creating new UI identities;
 unrelated CSS leaves native defaults intact. Some raw controls and complete
 geometry/container-query integration are still missing.
 
 Connected surfaces paint linear, radial and conic gradients, including repeating forms,
-with bounded cached colour ramps/spatial textures and Stylo's colour interpolation.
+with bounded cached color ramps/spatial textures and Stylo's color interpolation.
 Native surface dimensions resolve the gradient's centre, extent and radii. Token-level input budgets bound nesting and
 source size. Source-line notices identify known unsupported effect/font declarations
 without deleting authored source. Connected surfaces also paint bounded inset/outset

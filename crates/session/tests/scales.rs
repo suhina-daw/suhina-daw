@@ -199,7 +199,7 @@ fn bad_input_is_refused_and_changes_nothing() {
         (json!({ "track": 1, "scene": 1, "root": "C" }), "empty"),
         (json!({ "track": 1, "index": 0, "scene": 0, "root": "C" }), "not both"),
         (json!({ "track": 7, "index": 0, "root": "C" }), "track"),
-        (json!({ "track": 1, "index": 0, "root": "C", "colour": "red" }), "unknown parameter"),
+        (json!({ "track": 1, "index": 0, "root": "C", "color": "red" }), "unknown parameter"),
     ] {
         match run(&mut session, "clip.setScale", params.clone()) {
             Err(e) => assert!(e.contains(says), "{params}: {e}"),

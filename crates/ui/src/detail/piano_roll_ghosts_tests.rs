@@ -221,8 +221,8 @@ fn drums_beat_b(project: &suhina_engine::model::Project) -> ClipRef {
     ClipRef::Arrangement(TrackId(1), lane.clips[1].id)
 }
 
-/// The colours of the ghost notes from the track named `from`.
-fn colours(ghosts: &Ghosts, from: &str) -> Vec<Color32> {
+/// The colors of the ghost notes from the track named `from`.
+fn colors(ghosts: &Ghosts, from: &str) -> Vec<Color32> {
     let source = ghosts.sources.iter().position(|s| s == from).unwrap();
     ghosts.notes.iter().filter(|n| n.source == source).map(|n| n.color).collect()
 }
@@ -233,17 +233,17 @@ fn the_ghost_notes_of_a_muted_clip_or_track_are_the_muted_gray() {
     let mut project = demo_project();
     let edited = drums_beat_b(&project);
     let shown = ghosts(&project, edited, GhostSource::Together);
-    assert!(colours(&shown, "Bass").iter().all(|c| *c != gray), "a clip that plays keeps its track's colour");
+    assert!(colors(&shown, "Bass").iter().all(|c| *c != gray), "a clip that plays keeps its track's color");
 
     // Bass muted: Walk still plays with Beat B, and its notes are gray.
     let bass = project.tracks.iter().find(|t| project.shown_track_name(t.id) == "Bass").unwrap().clone();
     project.channel_mut(bass.channel.unwrap()).unwrap().mute = true;
     let shown = ghosts(&project, edited, GhostSource::Together);
-    let bass_notes = colours(&shown, "Bass");
+    let bass_notes = colors(&shown, "Bass");
     assert!(!bass_notes.is_empty() && bass_notes.iter().all(|c| *c == gray), "a muted track's notes are gray");
-    assert!(colours(&shown, "Keys").iter().all(|c| *c != gray), "Keys is not muted");
+    assert!(colors(&shown, "Keys").iter().all(|c| *c != gray), "Keys is not muted");
 
-    // A clip of Drums turned off: shown with This track, in gray; the others keep the colour.
+    // A clip of Drums turned off: shown with This track, in gray; the others keep the color.
     let lane = project.arrangement.lanes.iter_mut().find(|l| l.track == Some(TrackId(1))).unwrap();
     lane.clips[0].enabled = false;
     let off = ClipRef::Arrangement(TrackId(1), lane.clips[0].id);
@@ -269,7 +269,7 @@ fn the_ghost_notes_of_a_muted_track_take_the_theme_s_muted_background() {
     for _ in 0..3 {
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = crate::kit::native_css::frame_with_motion(ui, false);
-            bass_notes = colours(&ghosts(&project, edited, GhostSource::Together), "Bass");
+            bass_notes = colors(&ghosts(&project, edited, GhostSource::Together), "Bass");
         })
         .textures_delta
         .clear();
@@ -294,7 +294,7 @@ fn the_ghost_notes_of_a_muted_track_take_the_muted_gray_variable() {
     for _ in 0..3 {
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let _frame = crate::kit::native_css::frame_with_motion(ui, false);
-            bass_notes = colours(&ghosts(&project, edited, GhostSource::Together), "Bass");
+            bass_notes = colors(&ghosts(&project, edited, GhostSource::Together), "Bass");
         })
         .textures_delta
         .clear();

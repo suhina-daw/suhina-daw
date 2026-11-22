@@ -207,7 +207,7 @@ fn a_menu_item_s_menu_lies_in_its_content_box() {
 }
 
 /// Where the painted text inside the node labelled like `label` starts, from the node's left edge,
-/// under `css`; and the rectangles painted in `colour`.
+/// under `css`; and the rectangles painted in `color`.
 fn text_offset(css: &str, label: &str, word: &str) -> Option<f32> {
     let h = with_clip(css);
     let node = h.query_all_by_label_contains(label).next().map(|node| node.rect())?;
@@ -221,7 +221,7 @@ fn text_offset(css: &str, label: &str, word: &str) -> Option<f32> {
     found
 }
 
-/// Whether a filled rectangle of `colour` is painted under `css`, at a window `width` wide.
+/// Whether a filled rectangle of `color` is painted under `css`, at a window `width` wide.
 fn paints_red(css: &str, width: f32, label: &str) -> (bool, bool) {
     let mut h = with_clip(css);
     h.set_size(egui::vec2(width, 900.0));
