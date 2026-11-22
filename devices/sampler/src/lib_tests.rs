@@ -857,10 +857,10 @@ fn fractional_ping_pong_never_reads_past_the_region_boundary() {
     assert!(render(&mut s, 1000, 17).iter().all(|v| *v == 1.));
 }
 
-/// Sustain playback holds a note past its source in a loop of the loop region: the level and the
-/// pitch stay, the seams join without clicks, and a block split renders the same.
+/// Sustain playback holds a note past its source, on through the loop region: the level and the
+/// pitch stay, the grains join without clicks, and a block split renders the same.
 #[test]
-fn sustain_holds_a_note_in_a_loop_of_the_loop_region() {
+fn sustain_holds_a_note_on_through_the_loop_region() {
     let make = || {
         let mut sampler = loaded();
         sampler.prepare(48000.).unwrap();
