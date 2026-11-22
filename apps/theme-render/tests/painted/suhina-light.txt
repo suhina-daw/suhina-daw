@@ -7,7 +7,7 @@ arrangement-scrolled suhina-light 5ec9681992218135
 browser suhina-light b75675b8bce6a16c
 browser-plug-ins suhina-light 9b6dd08a53064879
 browser-search suhina-light 0004abc537f0a31d
-clip-audio suhina-light 973f5f2a359882de
+clip-audio suhina-light 36fc2c8d37381099
 clip-midi suhina-light b579079ec09a1e0a
 colour-picker suhina-light a7671eaaa5a1937e
 colour-picker-field suhina-light a0163b996213fbb8
@@ -52,7 +52,7 @@ settings-appearance suhina-light db6ff5a53cfce5d2
 settings-audio suhina-light c0c4ff99399b240e
 settings-browser suhina-light 3d981c1bc375cde5
 settings-devices suhina-light 73ab4e4cf084b62c
-settings-keys suhina-light 1b59785f6df7b73d
+settings-keys suhina-light 971446422d4cddff
 settings-launcher suhina-light 35ffa2e3feff77ea
 settings-menu suhina-light 576417ee1a90f434
 settings-midi suhina-light 1eb7944944740894

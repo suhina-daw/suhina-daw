@@ -7,7 +7,7 @@ arrangement-scrolled catppuccin-latte 25642a1a974af11c
 browser catppuccin-latte cd2782ef141d4a6b
 browser-plug-ins catppuccin-latte 5bdfa437cb62cc87
 browser-search catppuccin-latte fd504796e8714ba6
-clip-audio catppuccin-latte 4537d5fe42ec4059
+clip-audio catppuccin-latte d1dba6418a6ceed7
 clip-midi catppuccin-latte 5b42fdca6dbfbd62
 colour-picker catppuccin-latte 78339ca2ce6304b1
 colour-picker-field catppuccin-latte 5a69387027994f48
@@ -52,7 +52,7 @@ settings-appearance catppuccin-latte 3a1f6e1741c769c4
 settings-audio catppuccin-latte ac89d1665246570d
 settings-browser catppuccin-latte 2ec6493b467c8acb
 settings-devices catppuccin-latte 8f16ea088c80991e
-settings-keys catppuccin-latte 0cd1d5298f1c1451
+settings-keys catppuccin-latte f91579fe84bfe5bb
 settings-launcher catppuccin-latte c6c16ede7ceab770
 settings-menu catppuccin-latte eeca11296071c83c
 settings-midi catppuccin-latte f1e95473b635b33c

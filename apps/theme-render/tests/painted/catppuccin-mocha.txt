@@ -7,7 +7,7 @@ arrangement-scrolled catppuccin-mocha 90ccf5c906cbcfc4
 browser catppuccin-mocha 169674621923525c
 browser-plug-ins catppuccin-mocha 25ad6b0c1f0806f0
 browser-search catppuccin-mocha 10125533ef9c9e1f
-clip-audio catppuccin-mocha 56a1f40a3a804967
+clip-audio catppuccin-mocha 0f51beb71e4b1f2d
 clip-midi catppuccin-mocha fa7f189506a5c45b
 colour-picker catppuccin-mocha db7d8bf374565b97
 colour-picker-field catppuccin-mocha e65224f37b65a35e
@@ -52,7 +52,7 @@ settings-appearance catppuccin-mocha b71228a8491ca772
 settings-audio catppuccin-mocha 2d940ef26d84bab1
 settings-browser catppuccin-mocha 8b0542c01f7e039d
 settings-devices catppuccin-mocha a927565070269d7d
-settings-keys catppuccin-mocha 0e3ddd37e624705d
+settings-keys catppuccin-mocha 7be42f13a9dc7727
 settings-launcher catppuccin-mocha 090937645bb6e2e1
 settings-menu catppuccin-mocha 77a90749e01da924
 settings-midi catppuccin-mocha 3d4cdb563cd33cb2

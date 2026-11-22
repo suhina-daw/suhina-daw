@@ -7,7 +7,7 @@ arrangement-scrolled suhina-studio e3736c59aa507851
 browser suhina-studio 68241441d5b820bf
 browser-plug-ins suhina-studio f5d7ec24f85cbdf7
 browser-search suhina-studio d752e73dea45619e
-clip-audio suhina-studio f6be880c6860cd18
+clip-audio suhina-studio ab15877df8915a47
 clip-midi suhina-studio d98470851f7c78e2
 colour-picker suhina-studio b3052ee33d2ec50f
 colour-picker-field suhina-studio 53595c075e1ef4fe
@@ -52,7 +52,7 @@ settings-appearance suhina-studio a9d896415abe3931
 settings-audio suhina-studio 580ca07f103c8ffa
 settings-browser suhina-studio 350ee0bc49481b3d
 settings-devices suhina-studio ed253356e406aa33
-settings-keys suhina-studio 12ab928e75db22b5
+settings-keys suhina-studio 4ad0ac09a83ea55b
 settings-launcher suhina-studio e0279225466aee33
 settings-menu suhina-studio 44ec90ca7025654b
 settings-midi suhina-studio b8a1fdb4ed620878

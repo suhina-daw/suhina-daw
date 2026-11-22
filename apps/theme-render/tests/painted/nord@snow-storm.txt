@@ -7,7 +7,7 @@ arrangement-scrolled nord@snow-storm 5b94f993acdc2217
 browser nord@snow-storm 3fcc099d44f0330c
 browser-plug-ins nord@snow-storm e71610ff1f4ca830
 browser-search nord@snow-storm 9bbe957498b88a15
-clip-audio nord@snow-storm 2e8892d732801d5a
+clip-audio nord@snow-storm deb394497cb12d07
 clip-midi nord@snow-storm b204f3050c3a2bdc
 colour-picker nord@snow-storm 57f84a267f7d38a2
 colour-picker-field nord@snow-storm 61a079dd75f4e149
@@ -52,7 +52,7 @@ settings-appearance nord@snow-storm d5773be389d1ab10
 settings-audio nord@snow-storm 89f1b1f0b8e481d4
 settings-browser nord@snow-storm f3bbdd2b65ef2852
 settings-devices nord@snow-storm c201f148718b6ae9
-settings-keys nord@snow-storm 76cecf9ce650f050
+settings-keys nord@snow-storm 5e92babc95b3c6c6
 settings-launcher nord@snow-storm 6f24dc813d317900
 settings-menu nord@snow-storm df11b089255a1b96
 settings-midi nord@snow-storm 98c99aa0453ff371

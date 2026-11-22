@@ -7,7 +7,7 @@ arrangement-scrolled suhina-blocks 16fc28e5f1560f80
 browser suhina-blocks 7be58f3975d4dc95
 browser-plug-ins suhina-blocks 81d85bcdcd880270
 browser-search suhina-blocks 46b71b99449856de
-clip-audio suhina-blocks a9e144291d1ef6f6
+clip-audio suhina-blocks 187ec1d54d6e3a70
 clip-midi suhina-blocks 443a1a340df7e040
 colour-picker suhina-blocks a3871fb7cf24a6d8
 colour-picker-field suhina-blocks cae0c7875ccfcf01
@@ -52,7 +52,7 @@ settings-appearance suhina-blocks 69fc95fb1a4118a3
 settings-audio suhina-blocks 19a9a846df35e2db
 settings-browser suhina-blocks dfd91e0d23be3690
 settings-devices suhina-blocks d2fb82f4522d4a11
-settings-keys suhina-blocks b8d2a11118d321bf
+settings-keys suhina-blocks e2d6cc15879bb835
 settings-launcher suhina-blocks b646a51e51ea98bb
 settings-menu suhina-blocks f895209ba085118c
 settings-midi suhina-blocks fe9b99d7c89645b8
