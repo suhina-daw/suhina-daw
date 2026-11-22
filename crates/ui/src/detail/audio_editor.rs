@@ -454,6 +454,57 @@ impl Default for AudioEditorState {
     }
 }
 
+/// The time an editor frame spends in each of its parts, written to the trace when the frame takes
+/// [`Parts::SLOW`] or longer (with tracing on only; otherwise it does nothing). Written when it is
+/// dropped, so a frame that returns early is counted too.
+struct Parts {
+    started: Option<std::time::Instant>,
+    last: Option<std::time::Instant>,
+    parts: Vec<(&'static str, f64)>,
+    note: String,
+}
+
+impl Parts {
+    const SLOW: f64 = 12.0;
+
+    fn new() -> Self {
+        let now = suhina_plugins::trace::on().then(std::time::Instant::now);
+        Self { started: now, last: now, parts: Vec::new(), note: String::new() }
+    }
+
+    fn mark(&mut self, part: &'static str) {
+        let Some(last) = self.last else { return };
+        let now = std::time::Instant::now();
+        self.parts.push((part, now.duration_since(last).as_secs_f64() * 1000.0));
+        self.last = Some(now);
+    }
+
+    fn note(&mut self, note: impl FnOnce() -> String) {
+        if self.started.is_some() {
+            self.note = note();
+        }
+    }
+}
+
+impl Drop for Parts {
+    fn drop(&mut self) {
+        let (Some(started), Some(last)) = (self.started, self.last) else { return };
+        let total = started.elapsed().as_secs_f64() * 1000.0;
+        if total < Self::SLOW {
+            return;
+        }
+        let rest = last.elapsed().as_secs_f64() * 1000.0;
+        let parts: Vec<String> = self
+            .parts
+            .iter()
+            .chain(std::iter::once(&("rest", rest)))
+            .filter(|(_, ms)| *ms >= 0.5)
+            .map(|(part, ms)| format!("{part} {ms:.1}"))
+            .collect();
+        suhina_plugins::trace!("slow audio editor {total:.1} ms: {}; {}", parts.join(", "), self.note);
+    }
+}
+
 /// How many presses in a row `response`'s click is: 1, 2 for a double-click, 3 for a triple one.
 fn presses(response: &egui::Response) -> u32 {
     if response.triple_clicked() {
@@ -1302,6 +1353,8 @@ fn show_one(
     env: Env<'_>,
     actions: &mut Vec<Action>,
 ) {
+    // With tracing on, a frame of the editor that takes long names its parts (`docs/debugging.md`).
+    let mut parts = Parts::new();
     // A frame round the editor, inset from the detail area's right edge, so the file's end (and
     // its last marker) reads as the end of the editor, not as running on past the window.
     let frame = area;
@@ -1446,12 +1499,14 @@ fn show_one(
     let chosen = editor_step(state.grid, beat_width, clip.bar_beats);
     let step = TimelineGrid::new(chosen, beat_width, clip.bar_beats, GRID_LEAST).step;
     let free = ui.input(|i| i.modifiers.alt) || !state.grid.snap;
+    parts.mark("setup");
     let found = transients(ui.ctx(), &clip.view.file, peaks);
     // Zoomed out so far that the transients on show would be closer than
     // [`TRANSIENT_LEAST`] points on average, each is a thin line on the lane instead of a mark, and
     // they take no double-click: a marker put down there could not be told from the next.
     let on_show = found.iter().filter(|s| (area.left()..=area.right()).contains(&x_of(beat_at(&inverse, **s)))).count();
     let crowded = on_show > 1 && area.width() / (on_show as f32) < TRANSIENT_LEAST;
+    parts.mark("transients");
     let marks = std::sync::Arc::clone(&found);
     let found = if crowded { std::sync::Arc::new(Vec::new()) } else { found };
     // Where the editor's own gestures (painting the time selection, a click, a double-click) take
@@ -1709,6 +1764,7 @@ fn show_one(
         state.drag = None;
     }
 
+    parts.mark("markers");
     // The waveform with the marker being dragged (or just let go) where it is now, so the sound
     // moves under it.
     let moving = state.drag.clone().or_else(|| state.landing.as_ref().map(|(drag, _)| drag.clone()));
@@ -1741,6 +1797,8 @@ fn show_one(
         })
         .collect();
     let shape = waveform::geometry(peaks, wave.shrink2(Vec2::new(0.0, 2.0)), &columns, waveform::scale(ui.ctx()));
+    parts.mark("waveform shape");
+    parts.note(|| format!("{count} columns, {beat_width} points a beat"));
     // The grid down the waveform where the file is (past its ends there is nothing to put on a
     // beat): under it in a light ink, and over it as a faint shade, so it reads across a loud, full
     // waveform too, as over a clip's envelope in the Arrangement.
@@ -2003,6 +2061,7 @@ fn show_one(
         }
     }
 
+    parts.mark("grid and waveform");
     // The marker lane: the transients as small marks where a marker could go (those without one),
     // then the warp markers' flags, each with its line down the waveform (the one the pointer is
     // on, picked or dragged, brighter).
@@ -2109,6 +2168,7 @@ fn show_one(
         );
     }
 
+    parts.mark("marker lane");
     // Where playback starts next (a click on the waveform moves it), then the playhead while the
     // transport runs: each a line down the waveform with its mark on the marker lane, as in the
     // piano roll, in the clip's content through its start, rate and loop.
