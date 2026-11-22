@@ -235,10 +235,9 @@ work copied from a product, and its licence (rule 10 of AGENTS.md) decides wheth
 - Notes, data (tables, constants), patches, write-ups or tools that come from someone else's
   debugging, disassembly or decompilation of a proprietary program, for example the notes and
   binary patches of projects that make a commercial DAW run on another operating system. An
-  unmodified, licensed copy of
-  the program may still be run on such a platform to observe it; the project's findings about
-  the program's internals, and its patched copies, may not be read or used. The one exception is
-  the VeSTige header above.
+  unmodified, licensed copy of the program may still be run on such a platform to observe it; the
+  project's findings about the program's internals, and its patched copies, may not be read or
+  used. The one exception is the VeSTige header above.
 - Copying samples, presets, Packs, Core Library content, impulse responses, wavetables or demo
   projects from proprietary products, or committing them as test data.
 - Copying the visual design of a proprietary product: icons, artwork, interface text, colours,
