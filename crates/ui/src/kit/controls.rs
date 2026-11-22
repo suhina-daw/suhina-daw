@@ -223,7 +223,10 @@ fn slide(
     let (_, row) = ui.allocate_space(Vec2::new(ui.available_width(), HEIGHT));
     let names = Rect::from_min_size(row.min, Vec2::new(SLIDER_NAME, row.height()));
     let values = Rect::from_min_max(Pos2::new(row.right() - SLIDER_VALUE, row.top()), row.max);
-    let rail = Rect::from_min_max(Pos2::new(names.right(), row.top()), Pos2::new(values.left() - 6.0, row.bottom()));
+    // The rail sits centered in the row: the same margin on both sides, the wider of the two.
+    let margin = SLIDER_NAME.max(SLIDER_VALUE + 6.0);
+    let rail =
+        Rect::from_min_max(Pos2::new(row.left() + margin, row.top()), Pos2::new(row.right() - margin, row.bottom()));
     let mut response = ui
         .interact(rail, ui.scope_id().with(("kit-slider", name)), Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
