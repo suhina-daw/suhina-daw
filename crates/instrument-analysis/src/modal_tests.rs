@@ -388,6 +388,14 @@ fn a_held_tone_chooses_the_recording_engine() {
     assert!(hold.start as f64 >= 0.25 * f64::from(RATE) - 1.0, "{hold:?}");
     assert!((hold.end - hold.start) as f64 >= 0.2 * f64::from(RATE) && hold.end <= pcm.len(), "{hold:?}");
     assert_eq!(report.start, 0, "a note from its own start plays from there");
+    // Swelling 6 dB from 0.25 s to 0.45 s, then held: the held part starts where the swell has
+    // come within 1.5 dB of the held level (0.4 s), so a loop of it does not swell again.
+    let swell = |t: f64| 10.0_f64.powf((6.0 * ((t - 0.25) / 0.2).clamp(0.0, 1.0) - 6.0) / 20.0);
+    let pcm = voices(1.8, &[(&|_| 60.0, &swell)]);
+    let report = fit(&pcm, RATE, 1, 0..pcm.len(), 60, |_, _| true).unwrap();
+    assert_eq!(report.engine, Engine::Recording, "{report:?}");
+    let hold = report.hold.clone().unwrap();
+    assert!(hold.start as f64 >= 0.37 * f64::from(RATE), "{hold:?}");
     // Gliding from A2 up to C3 in 0.3 s, then held: the note plays from where it reaches its
     // pitch, and the held part starts at least 0.1 s after that, none of the glide in it.
     let slide = |t: f64| if t < 0.3 { 45.0 + 3.0 * t / 0.3 } else { 48.0 };
