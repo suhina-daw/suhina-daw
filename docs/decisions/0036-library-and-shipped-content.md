@@ -41,6 +41,7 @@ and store absolute paths in projects.
    ├── Projects/
    ├── Templates/
    ├── Presets/<device>/            ← presets the user saves, one folder per device
+   ├── Scripts/                     ← surface-program scripts
    └── Sounds/
        └── NAM/
            ├── Amp models/          ← .nam models
@@ -55,7 +56,10 @@ and store absolute paths in projects.
    it covers every device. Sounds holds every sound; NAM sits under it as the device family's
    own folder, other sounds under it later (`Sounds/Samples/` …). Each subfolder is a pack, as
    the device panels list them today; the factory pack is named **Suhina** and is listed first
-   with the user's own packs beside it.
+   with the user's own packs beside it. Scripts holds surface programs' scripts: a shipped one
+   and the user's own beside it.
+
+   *Amended 2026-11-21, see Amendment: the library carries Scripts/.*
 
 3. **A small starter pack rides inside the executable and unpacks beside the user's own
    files.** A few handfuls of files — our own trained models, our own synthetic cabinet IRs,
@@ -113,6 +117,18 @@ and store absolute paths in projects.
    fit and size inside the ADR's ceiling, and the unpack to write-when-missing only. The
    library-relative path resolution is round-tripped: a project saves to a library-relative
    name, opens on a machine without the file on disk and still renders from the pack.
+
+## Amendment: the library carries Scripts/ (2026-11-21)
+
+[#1676](https://github.com/suhina-daw/suhina-daw/issues/1676). Decision 2's layout gains
+`Scripts/`: a surface program's script ([shipped scripts](../spec/shipped-scripts.md)) is content
+the user reads and edits, so a shipped one lands in the library beside their own the way the
+pack's files do — written once and never overwritten, a write failure said and the next start
+trying again (decision 3's rule). What runs is still the extensions store's copy
+([ADR 0019](0019-midi-controllers-and-mapping.md) › 10, [extensions](../spec/extensions.md) ›
+Running one); the folder is the readable source. The shipped script is Suhina's own content:
+written from the controller's public documentation alone, CC0-1.0, its provenance README and
+licence text riding beside it (decisions 1 and 6).
 
 ## Consequences
 

@@ -149,4 +149,5 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
 - Commands of an extension's own outside the namespace its manifest declares.
 - Extensions that Suhina ships itself: what ships stays built from this tree and GPL-compatible.
   No extension is shipped yet: the runner a surface script names is a shipped program, not an
-  extension (see *Running one*).
+  extension (see *Running one*). A surface program's script is the first kind that will ride
+  this way ([shipped scripts](shipped-scripts.md)).
