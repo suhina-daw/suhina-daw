@@ -55,8 +55,9 @@ one; ADR 0019 › 10).
 - What runs is the **store's copy**, as for any surface program: the app installs the script into
   the extensions store the way `extensions.add` does, and the store's port scan starts it for the
   device the manifest names ([extensions](extensions.md) › Running one). The folder in
-  `Scripts/` is the user's to read and edit; editing it does not change the running program until
-  a refresh installs it (extensions › Adding, listing, removing).
+  `Scripts/` is the user's to read and edit; what runs is the store's copy, so editing the folder
+  does not change the running program. To run an edited script, remove the extension and add the
+  folder back (extensions › Adding, listing, removing).
 - **A removal is remembered.** `extensions.remove` on a shipped script stops it and forgets it,
   and later starts do not install it again; adding it back from the folder is the way to want it
   again.
