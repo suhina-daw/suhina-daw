@@ -340,11 +340,14 @@ fn run(
     let mut crashes: Vec<Instant> = Vec::new();
     let mut ports: (Vec<String>, Vec<String>) = initial_ports;
     let mut pending = Pending::default();
+    let mut first_crash = String::new();
     loop {
         // Too many crashes too close together: the restarts stop and the user decides.
         crashes.retain(|at| at.elapsed() < CRASH_WINDOW);
         if crashes.len() >= CRASHES_ALLOWED {
             let reason = format!("{id} crashed {CRASHES_ALLOWED} times in a minute; restart it by hand");
+            let reason =
+                if first_crash.is_empty() { reason } else { format!("{reason}; the first one was: {first_crash}") };
             report(events, Event::Crashed(reason.clone()));
             give_up(events, &reason);
             return;
@@ -357,6 +360,9 @@ fn run(
             }
             Err(reason) => {
                 suhina_plugins::trace!("surface {id} crashed: {reason}");
+                if first_crash.is_empty() {
+                    first_crash = reason.clone();
+                }
                 crashes.push(Instant::now());
                 report(events, Event::Crashed(reason.clone()));
             }
