@@ -3,7 +3,7 @@ description: Guide for people and AI assistants writing or editing a Suhina them
 read_when: write a theme, edit a theme, theme author guide, theme.css, theme package, theme folder files, color tokens, quick controls, variants, AI theme edits
 type: howto
 status: current
-last_verified: 2026-11-21
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/kit/theme.rs
 ---

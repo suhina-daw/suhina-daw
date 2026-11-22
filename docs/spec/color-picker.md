@@ -3,7 +3,7 @@ description: Track and clip color selection, the color menus' palette and saved 
 read_when: track color, clip color, color picker, saved colors, palette, Steps grid, F2, color field, hue band
 type: spec
 status: planned
-last_verified: 2026-11-20
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/interaction/color_picker.rs
   - crates/session/src/colors.rs
