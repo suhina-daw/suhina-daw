@@ -138,6 +138,9 @@ pub struct BrowserOut {
     /// Copy to folder… in a row's menu: these files, into a folder the system's dialog picks
     /// (`library.copyTo`, #865).
     pub copy_to: Vec<PathBuf>,
+    /// Show in Explorer (Finder, the file manager) in a row's menu: this file or folder, shown in
+    /// the system's file manager.
+    pub reveal: Option<PathBuf>,
 }
 
 /// Draws the results area another way: the area, the browser's state and the projects.
@@ -2614,10 +2617,18 @@ fn row_menu(
     if let Some(Item::File(path)) = item.item()
         && let Some(parent) = path.parent()
         && item.kind != ItemKind::Folder
-        && ui.button("Show in folder").clicked()
+        && ui.button("Go to folder").clicked()
     {
         state.search.clear();
         state.place = Some(Place::Folder(parent.to_path_buf()));
+        ui.close();
+    }
+    // The file or folder in the system's file manager (Explorer, Finder, the desktop's own),
+    // selected there where the system can do that.
+    if let Some(Item::File(path) | Item::Voice(path, _)) = item.item()
+        && crate::kit::menu::item(ui, crate::kit::platform::current().show_in_folder_label(), false).clicked()
+    {
+        out.reveal = Some(path.to_path_buf());
         ui.close();
     }
     // The row's file, or every selected file when the row is one of them, copied into a

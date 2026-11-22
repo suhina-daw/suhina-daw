@@ -32,9 +32,15 @@ impl App {
         // A click anywhere on a track that is not a clip shows its devices too, the selection
         // as the click left it (#950). A hidden detail area stays hidden: opening it under the
         // pointer would move what a double-click's second click lands on.
-        if std::mem::take(&mut self.arrangement.devices_clicked) | std::mem::take(&mut self.view.devices_clicked)
-            && self.detail_open
-        {
+        let clicked =
+            std::mem::take(&mut self.arrangement.devices_clicked) | std::mem::take(&mut self.view.devices_clicked);
+        // A header's click gives the edit keys to its tracks: a device picked before lets go, so
+        // Delete removes the tracks, not that device.
+        if clicked && self.track_keys_on() {
+            self.selected_device = None;
+            self.device_picks.clear();
+        }
+        if clicked && self.detail_open {
             self.detail_showing = detail_view::Showing::Devices;
         }
     }
@@ -55,7 +61,10 @@ impl App {
     /// The Clip / Devices switch's key and menu entry, for a clip with an editor: the other part,
     /// or the devices when the detail area is hidden, which opens it.
     pub(super) fn toggle_devices(&mut self) {
-        if self.piano_clip(self.shown_clip()).is_none() && self.ara_clip().is_none() {
+        if self.piano_clip(self.shown_clip()).is_none()
+            && self.ara_clip().is_none()
+            && self.audio_clip(self.shown_clip()).is_none()
+        {
             return;
         }
         self.detail_showing = match self.detail_showing {
@@ -257,6 +266,9 @@ impl App {
             }
             _ => None,
         };
+        // An audio clip with no plug-in editor shows its waveform, large, in the piano roll's
+        // place (`docs/spec/ui-audio-editor.md`).
+        let audio = if piano.is_none() && ara.is_none() { self.audio_clip(clip) } else { None };
         let told = ara.map(|(t, c, _, _)| (t, Some(c)));
         if told != self.ara_told {
             if let Ok(session) = self.projects.session_mut(None) {
@@ -314,7 +326,8 @@ impl App {
         // own beside the view, shown with Devices while the editor stays open (› Stacked in
         // `docs/spec/ui-clip-editor.md`).
         // Settings › Devices › Devices beside piano roll does the same in a row.
-        let split = (stacked || self.settings.view.stack_in_piano_roll) && (piano.is_some() || ara.is_some());
+        let split = (stacked || self.settings.view.stack_in_piano_roll)
+            && (piano.is_some() || ara.is_some() || audio.is_some());
         let side_devices = split && self.detail_showing == detail_view::Showing::Devices;
         let stacked = stacked && !split;
         // The piano roll, or an ARA plug-in's editor in the clip's place, can be pulled to the
@@ -325,17 +338,27 @@ impl App {
         let base = follows && !stacked && self.shown == View::Arrangement;
         // Escape twice in a row pulls the editor (or the track's devices) to the top and lets it
         // go again.
-        if std::mem::take(&mut self.escape_twice) && base && (piano.is_some() || ara.is_some() || track_devices) {
+        if std::mem::take(&mut self.escape_twice)
+            && base
+            && (piano.is_some() || ara.is_some() || audio.is_some() || track_devices)
+        {
             self.detail_max = !self.detail_max;
         }
-        let pullable = base && (piano.is_some() || ara.is_some() || (track_devices && self.detail_max));
+        let pullable =
+            base && (piano.is_some() || ara.is_some() || audio.is_some() || (track_devices && self.detail_max));
         let pulled = pullable && self.detail_max;
         // With the switch on Devices the track's devices take the editor's place, pulled up as it
         // was (› Where it opens in `docs/spec/ui-clip-editor.md`).
-        let switch = (piano.is_some() || ara.is_some()).then_some(self.detail_showing);
+        let switch = (piano.is_some() || ara.is_some() || audio.is_some()).then_some(self.detail_showing);
         let ara = ara.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
         let piano = piano.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
-        let edits = piano.is_some() || ara.is_some();
+        let audio = audio.filter(|_| split || self.detail_showing == detail_view::Showing::Clip);
+        // An audio editor not on show (the switch on Devices, a MIDI clip, no clip) gives up the
+        // keyboard, so the view's own keys work again after a click there.
+        if audio.is_none() {
+            self.audio_editor.set_focused(false);
+        }
+        let edits = piano.is_some() || ara.is_some() || audio.is_some();
         // What the boxes add around what they hold (#1336). The area keeps the height of what it
         // shows when a theme pads it: the height the user set grows by what the padding adds.
         let boxes = detail_view::box_insets();
@@ -345,6 +368,8 @@ impl App {
             Edits::PianoRoll
         } else if ara.is_some() {
             Edits::Plugin
+        } else if audio.is_some() {
+            Edits::Audio
         } else {
             Edits::None
         };
@@ -744,6 +769,25 @@ impl App {
                     .filter(|(_, id)| Some(*id) != this)
                     .map(|(_, id)| id.0)
                     .collect();
+                // The picked audio clips, as the MIDI ones below: a list in the title that picks the
+                // one the panel and the audio editor show; the panel's audio settings set them all.
+                if info.audio
+                    && let Some(session) = self.session()
+                {
+                    let p = session.project();
+                    let rows: Vec<(TrackId, ClipId, String, bool)> = self
+                        .arrangement
+                        .selected_clips()
+                        .iter()
+                        .filter_map(|&(track, id)| {
+                            let shown = crate::detail::audio_editor::arrangement_clip(p, track, id)?;
+                            let name = format!("{} - {}", p.shown_track_name(track), shown.name);
+                            Some((track, id, name, Some(id) == this))
+                        })
+                        .collect();
+                    info.audio_others = rows.iter().filter(|row| !row.3).map(|row| row.1.0).collect();
+                    info.picked = rows;
+                }
                 // The picked MIDI clips, each a row that gives it the piano roll's focus (#1054).
                 if !info.audio
                     && let Some(session) = self.session()
@@ -822,6 +866,12 @@ impl App {
         detail_view::set_list_project(ui.ctx(), self.projects.active().map_or(0, |project| project.0));
         let picks = self.device_picks();
         let piano_roll = &mut self.piano_roll;
+        let audio_editor = &mut self.audio_editor;
+        let waveform_look = self.settings.view.audio_editor_theme_waveform;
+        let waveforms = std::sync::Arc::clone(&self.waveforms);
+        // Whether the audio editor drew its reset dialog this frame: the keys and the actions wait
+        // for it as for the window's other dialogs (`App::dialog_holds_actions`).
+        let mut reset_shown = false;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
                 // The clip editor holds the clip's column, its note tools and the piano roll.
@@ -862,6 +912,30 @@ impl App {
                     piano_roll.focused = true;
                 }
                 picked
+            } else if let (Some(audio), detail_view::Detail::Clip(info, _)) = (&audio, &shown) {
+                let editor = crate::kit::element::CLIP_EDITOR.enter();
+                let mut styled_ui = editor.ui(ui);
+                let ui = &mut *styled_ui;
+                let (rest, picked) = detail_view::show_clip_column(ui, &editor, info, stacked, None, actions);
+                let env = crate::detail::audio_editor::Env {
+                    waveforms: &waveforms,
+                    theme_waveform: waveform_look,
+                    line_drag: self.settings.view.audio_editor_line_drag,
+                    playhead,
+                    start_marker,
+                    keymap: &keymap,
+                };
+                crate::detail::audio_editor::show(ui, rest, audio, audio_editor, env, actions);
+                reset_shown = audio_editor.reset_open();
+                // A press anywhere in the clip's detail area, its panel too, keeps the edit keys
+                // (Delete, Ctrl+1 to Ctrl+4) with the audio editor, as the piano roll keeps its
+                // keys; a press anywhere else takes them away. Here, not only in the editor: one
+                // whose waveform cannot be drawn (its audio not loaded) returns before it looks at
+                // the press.
+                if ui.input(|i| i.pointer.any_pressed()) {
+                    audio_editor.set_focused(crate::kit::widgets::pointer_over(ui, detail).is_some());
+                }
+                picked
             } else if let (Some((_, _, device, _)), detail_view::Detail::Clip(info, chain)) = (ara, &shown) {
                 let editor = crate::kit::element::CLIP_EDITOR.enter();
                 let mut styled_ui = editor.ui(ui);
@@ -878,6 +952,7 @@ impl App {
         // The stacked devices' column, beside the editor: above the panel, in the view's place, so
         // the panel's box is closed first and its `overflow` does not cut the column (#1336).
         panel_style.close_box();
+        self.audio_reset_shown = reset_shown;
         let side_clicked = match (side, &shown) {
             (Some(side), detail_view::Detail::Clip(_, chain)) => {
                 let devices = detail_view::Detail::Devices(chain.clone());
@@ -942,11 +1017,13 @@ impl App {
     }
 
     /// Whether the detail area lies along the bottom: in a row, or with the devices stacked
-    /// while the shown clip has an editor (the piano roll, an ARA plug-in's), which stays there.
+    /// while the shown clip has an editor (the piano roll, an ARA plug-in's, the audio editor),
+    /// which stays there, as the area lays it out.
     pub(super) fn editor_along_bottom(&self) -> bool {
         self.settings.device_layout != DeviceLayout::Stack
             || self.piano_clip(self.shown_clip()).is_some()
             || matches!(self.shown_clip(), Some(ClipRef::Arrangement(t, c)) if self.clip_uses_ara(t, c))
+            || self.audio_clip(self.shown_clip()).is_some()
     }
 
     /// The splitter of the closed detail area, in the gap the grid keeps between the `main` view
@@ -1024,7 +1101,14 @@ impl App {
         let rows = if picked > 1 { picked.min(crate::detail::piano_roll_ghosts::MAX_STRIP_ROWS) } else { 0 };
         let strip = piano_roll::CLIP_STRIP * rows as f32;
         let compact = self.device_row_height();
-        if piano { (piano_roll::LEAST_HEIGHT + strip + self.detail_insets.piano).max(compact) } else { compact }
+        let audio = self.audio_clip(self.shown_clip()).is_some() && self.piano_roll_on_show();
+        if piano {
+            (piano_roll::LEAST_HEIGHT + strip + self.detail_insets.piano).max(compact)
+        } else if audio {
+            (crate::detail::audio_editor::LEAST_HEIGHT + self.detail_insets.piano).max(compact)
+        } else {
+            compact
+        }
     }
 
     /// The height a track's devices open at: a row of devices, and the boxes around it.
@@ -1086,6 +1170,34 @@ impl App {
         Some(piano)
     }
 
+    /// The audio editor's clip: an arrangement clip or the Launcher view's selected slot's clip,
+    /// when it is an audio clip.
+    pub(super) fn audio_clip(
+        &self,
+        clip: Option<detail_view::ClipRef>,
+    ) -> Option<crate::detail::audio_editor::AudioClip> {
+        use crate::detail::audio_editor as editor;
+        match clip? {
+            detail_view::ClipRef::Arrangement(track, clip) => {
+                let project = self.session()?.project();
+                let mut shown = editor::arrangement_clip(project, track, clip)?;
+                // The other audio clips picked with it, in the Arrangement: their warp markers move
+                // with its (`AudioClip::others`).
+                if self.shown == View::Arrangement && self.arrangement.selected_clips().len() > 1 {
+                    shown.others = self
+                        .arrangement
+                        .selected_clips()
+                        .iter()
+                        .filter(|(_, id)| *id != clip)
+                        .filter_map(|&(t, id)| editor::arrangement_clip(project, t, id))
+                        .collect();
+                }
+                Some(shown)
+            }
+            detail_view::ClipRef::Slot(track, scene) => editor::launcher_clip(self.session()?.project(), track, scene),
+        }
+    }
+
     /// Whether a MIDI clip's piano roll is on show: with the switch on Clip, or with the devices
     /// stacked, where Devices opens them beside it and it stays open.
     pub(super) fn piano_roll_on_show(&self) -> bool {
@@ -1121,6 +1233,35 @@ impl App {
     /// behind; only a press in another view takes the keyboard from it.
     pub(super) fn piano_has_keyboard(&self) -> bool {
         self.piano_roll.focused && self.detail_open && self.piano_roll_on_show() && self.piano_shows_the_selection()
+    }
+
+    /// Whether the keyboard is the audio editor's: it, or its clip's panel, was pressed last and it
+    /// is on show. Then an edit key acts on its warp markers or on nothing, never on the clip
+    /// behind it, as for the piano roll.
+    pub(super) fn audio_editor_has_keyboard(&self) -> bool {
+        self.audio_editor.focused()
+            && self.detail_open
+            && self.piano_roll_on_show()
+            && self.audio_clip(self.shown_clip()).is_some()
+    }
+
+    /// Whether the audio editor keeps the edit key `action` (it has the keyboard, and the key is
+    /// not one it lets through). Copy, cut and paste go on to the Arrangement while the editor
+    /// has no time selection of its own: a click in the editor to set the play start, then
+    /// Ctrl+V, pastes the time selection copied from the tracks there, and Ctrl+C or Ctrl+X acts
+    /// on the Arrangement's time selection. The other edit keys never act behind the editor.
+    pub(super) fn audio_editor_keeps(&self, action: &str) -> bool {
+        let passes = matches!(action, "selection.copy" | "selection.cut" | "selection.paste")
+            && self.audio_editor.span().is_none();
+        self.audio_editor_has_keyboard() && !passes
+    }
+
+    /// What Delete does while the audio editor has the keyboard: removes its picked or hovered
+    /// warp marker, or nothing.
+    pub(super) fn audio_editor_delete(&self) -> Vec<Action> {
+        let Some(clip) = self.audio_clip(self.shown_clip()) else { return Vec::new() };
+        let action = self.audio_editor.delete_key(&clip);
+        action.map(|action| crate::detail::audio_editor::for_joined(&clip, action)).unwrap_or_default()
     }
 
     /// Whether the piano roll shows the one clip selected: the Launcher's slot, or the only clip
@@ -1164,9 +1305,150 @@ impl App {
             && self.piano_clip(self.shown_clip()).is_some()
     }
 
+    /// What the loop key (Ctrl+L) does in an audio clip's editor: loops the clip over the editor's
+    /// time selection and starts it there, or turns its loop on or off (`AudioEditorState::loop_key`).
+    pub(super) fn audio_editor_loop(&self) -> Vec<Action> {
+        self.audio_clip(self.shown_clip()).map(|audio| self.audio_editor.loop_key(&audio)).unwrap_or_default()
+    }
+
+    /// `actions` with the transients the window found in the background given to the commands
+    /// that look for them in a clip's file (`clip.addWarpMarkersAtTransients`,
+    /// `clip.quantizeWarpMarkers`, as `transients`), so the analysis never runs on the window's
+    /// thread. One whose file's transients are still being found waits, with the commands that
+    /// waited before, and goes once they are (the analysis draws the window again then), in the
+    /// project it was made in only. One that waits names its clip by id rather than by its slot,
+    /// so another clip moved into the slot meanwhile is not the one it edits; a confirmed reset of
+    /// a clip's warp (`clip.resetWarp`) drops those waiting for that clip, which would otherwise
+    /// put markers back after the reset. One for a file the window holds no samples of goes as it
+    /// is. Each frame runs it on the actions the views made, unless a dialog holds them (the
+    /// waiting ones then stay); public for tests.
+    pub fn with_transients(&mut self, ctx: &egui::Context, actions: Vec<Action>) -> Vec<Action> {
+        const LOOKS: [&str; 2] = ["clip.addWarpMarkersAtTransients", "clip.quantizeWarpMarkers"];
+        use crate::detail::audio_editor::Transients;
+        let project = self.projects.active();
+        let reset: Vec<ClipId> = actions
+            .iter()
+            .filter(|action| action.id == "clip.resetWarp")
+            .filter_map(|action| self.addressed_clip(&action.params))
+            .collect();
+        let waited: Vec<Action> = std::mem::take(&mut self.transients_waiting)
+            .into_iter()
+            .filter(|(made_in, _)| *made_in == project)
+            .map(|(_, action)| action)
+            .filter(|action| self.addressed_clip(&action.params).is_none_or(|clip| !reset.contains(&clip)))
+            .collect();
+        let mut out = Vec::with_capacity(actions.len());
+        for mut action in waited.into_iter().chain(actions) {
+            if !LOOKS.contains(&action.id) || action.params.get("transients").is_some() {
+                out.push(action);
+                continue;
+            }
+            match self.clip_transients(ctx, &action.params) {
+                Transients::Ready(seconds) => {
+                    if let Some(params) = action.params.as_object_mut() {
+                        params.insert("transients".into(), json!(seconds.as_slice()));
+                    }
+                    out.push(action);
+                }
+                Transients::Waiting => {
+                    self.bind_to_clip(&mut action.params);
+                    self.transients_waiting.push((project, action));
+                }
+                Transients::Unavailable => out.push(action),
+            }
+        }
+        if !self.transients_waiting.is_empty() {
+            self.status = Status::Hint("Finding where the notes start…".into());
+        }
+        out
+    }
+
+    /// The id of the clip a `clip.*` command's `params` name in the active project: its `clip`, or
+    /// the clip in the slot its `track` and `scene` give.
+    pub(super) fn addressed_clip(&self, params: &Value) -> Option<ClipId> {
+        let number = |key: &str| params.get(key).and_then(Value::as_u64);
+        if let Some(id) = number("clip") {
+            return u32::try_from(id).ok().map(ClipId);
+        }
+        let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId)?;
+        let scene = number("scene").and_then(|s| usize::try_from(s).ok())?;
+        let project = self.session()?.project();
+        let column = project.launcher.columns.iter().find(|c| c.track == track)?;
+        column.slots.get(scene)?.clip.as_ref().map(|clip| clip.id)
+    }
+
+    /// `params` naming its clip by id (`clip`) in place of the slot (`track` and `scene`) it is in
+    /// now, so a command held for later edits that clip wherever it is then, and never another
+    /// moved into the slot (ADR 0025). Params that name the clip already, or a slot with no clip,
+    /// stay.
+    pub(super) fn bind_to_clip(&self, params: &mut Value) {
+        if params.get("clip").is_some() || params.get("scene").is_none() {
+            return;
+        }
+        let Some(id) = self.addressed_clip(params) else { return };
+        if let Some(map) = params.as_object_mut() {
+            map.remove("scene");
+            map.remove("track");
+            map.insert("clip".into(), json!(id.0));
+        }
+    }
+
+    /// Where the transients of the file of the clip `params` names (`clip`, or `track` and
+    /// `scene`) stand in the window's background analysis.
+    fn clip_transients(&self, ctx: &egui::Context, params: &Value) -> crate::detail::audio_editor::Transients {
+        use crate::detail::audio_editor::{self as editor, Transients};
+        let Some(session) = self.session() else { return Transients::Unavailable };
+        let project = session.project();
+        let number = |key: &str| params.get(key).and_then(Value::as_u64);
+        let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId);
+        let clip = match (number("clip"), track, number("scene")) {
+            // By id, wherever the clip is: on the arrangement or, for a command that waited, in a
+            // slot (`bind_to_clip`).
+            (Some(id), _, _) => u32::try_from(id).ok().and_then(|id| editor_clip_by_id(project, ClipId(id))),
+            (None, Some(track), Some(scene)) => {
+                usize::try_from(scene).ok().and_then(|scene| editor::launcher_clip(project, track, scene))
+            }
+            _ => None,
+        };
+        let Some(file) = clip.map(|clip| clip.view.file) else { return Transients::Unavailable };
+        match self.waveforms.get(&file) {
+            Some(peaks) => editor::file_transients(ctx, &file, peaks),
+            None => Transients::Unavailable,
+        }
+    }
+
+    /// What Quantize (Ctrl+U) does while an audio clip's editor is on show: quantizes its
+    /// transients in the time selection, or the whole clip (`AudioEditorState::quantize_key`).
+    /// `None` when no audio clip is on show.
+    pub(super) fn audio_editor_quantize(&self) -> Option<Option<Action>> {
+        if !(self.detail_open && self.piano_roll_on_show()) {
+            return None;
+        }
+        let audio = self.audio_clip(self.shown_clip())?;
+        Some(self.audio_editor.quantize_key(&audio))
+    }
+
     /// What a key does in the piano roll, when it shows a clip and has the keyboard.
     pub(super) fn piano_key(&mut self, action: &str) -> Option<Action> {
         if !self.piano_roll_on_show() {
+            return None;
+        }
+        // An audio clip's editor takes the grid keys (Ctrl+1 to Ctrl+4) for its own grid, and the
+        // loop key (Ctrl+L) loops the clip over its time selection.
+        if let Some(audio) = self.audio_clip(self.shown_clip()) {
+            // The loop key is the editor's own (`audio_editor_loop`), as it sends two commands.
+            if action == "pianoRoll.loop" {
+                return None;
+            }
+            // Select all (Ctrl+A) selects the whole file, its warp markers picked with it.
+            if action == "pianoRoll.selectAll" {
+                self.audio_editor.select_all(&audio);
+                return None;
+            }
+            if let Some(grid) = crate::detail::audio_editor::grid_key(action, self.audio_editor.grid()) {
+                self.audio_editor.set_grid(grid);
+                self.status = Status::Hint(format!("Audio editor grid: {}", grid.label()));
+            }
             return None;
         }
         let clip = match self.shown {
@@ -1206,6 +1488,11 @@ impl App {
     }
 
     /// The piano roll's state: its zoom, scroll and selected notes.
+    /// The audio editor's state: its grid, zoom and whether it has the keyboard.
+    pub fn audio_editor(&self) -> &crate::detail::audio_editor::AudioEditorState {
+        &self.audio_editor
+    }
+
     pub fn piano_roll(&self) -> &PianoRollState {
         &self.piano_roll
     }
@@ -1215,6 +1502,26 @@ impl App {
     #[doc(hidden)]
     pub fn piano_roll_mut(&mut self) -> &mut PianoRollState {
         &mut self.piano_roll
+    }
+}
+
+/// The audio editor's view of the clip `id`, wherever it is in `project`: on an arrangement lane
+/// or in a launcher slot.
+fn editor_clip_by_id(
+    project: &suhina_engine::model::Project,
+    id: ClipId,
+) -> Option<crate::detail::audio_editor::AudioClip> {
+    use crate::detail::audio_editor as editor;
+    use suhina_engine::model::ClipPlace;
+    match project.clip_place(id)? {
+        ClipPlace::Lane { lane, .. } => {
+            let track = project.arrangement.lanes.get(lane)?.track?;
+            editor::arrangement_clip(project, track, id)
+        }
+        ClipPlace::Slot { column, slot } => {
+            let track = project.launcher.columns.get(column)?.track;
+            editor::launcher_clip(project, track, slot)
+        }
     }
 }
 
@@ -1252,6 +1559,8 @@ pub(super) enum Edits {
     PianoRoll,
     /// A plug-in's editor that edits clips (ARA), in the clip editor with no piano roll round it.
     Plugin,
+    /// The audio editor, in the clip editor with no piano roll round it.
+    Audio,
 }
 
 /// What the detail area's boxes add above and below what they hold: their borders and padding.
@@ -1276,7 +1585,7 @@ impl DetailInsets {
         let area = match edits {
             Edits::None => devices,
             Edits::PianoRoll => piano,
-            Edits::Plugin => panel + boxes.editor,
+            Edits::Plugin | Edits::Audio => panel + boxes.editor,
         };
         Self { area, devices, piano }
     }

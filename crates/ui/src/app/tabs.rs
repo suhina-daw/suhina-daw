@@ -66,6 +66,9 @@ impl App {
         self.device_carry = None;
         ctx.data_mut(|d| d.remove::<(TrackId, usize)>(egui::Id::unique(crate::interaction::drop::DEVICE_CARRY)));
         self.arrangement.cancel_gesture();
+        // The audio editor's marker drag and its zoom belong to a clip of the project being left;
+        // a clip of the same address in the next one must not take the drag's release.
+        self.audio_editor.forget_clip();
         self.stash_shown();
         for gone in self.stashes.keys().copied().filter(|id| self.projects.get(*id).is_none()).collect::<Vec<_>>() {
             self.stashes.remove(&gone);

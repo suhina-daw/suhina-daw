@@ -724,6 +724,10 @@ pub struct App {
     /// Samples a drag carried out of every Suhina window, for the desktop app to hand the
     /// system as a drag of files the file manager copies (#865).
     drag_out: Option<Vec<PathBuf>>,
+    /// Whether files dragged in from the system go onto one track each, as the label beside the
+    /// pointer said in the last frame they hovered: the drop does what the label said, though the
+    /// window, given the focus by the drop, reads the keys afresh (`App::system_drag`).
+    system_separate: Option<bool>,
     pending_drop: Option<PendingDrop>,
     /// Where the detail area is this frame and the track it shows, for drops on its devices.
     detail_drop: Option<(Rect, TrackId)>,
@@ -733,6 +737,15 @@ pub struct App {
     sample_drops: Vec<crate::detail::device_canvas::SampleTarget>,
     /// The piano roll a selected MIDI clip shows in the detail area.
     piano_roll: PianoRollState,
+    /// The audio editor's zoom and scroll, for the audio clip it shows.
+    audio_editor: crate::detail::audio_editor::AudioEditorState,
+    /// Whether the audio editor drew its reset dialog in the last frame: it holds the keys and the
+    /// actions as the window's dialogs do (`App::dialog_holds_actions`). Not the editor's own
+    /// `reset_open`, which an editor no longer drawn (the detail area closed, the clip gone) keeps.
+    audio_reset_shown: bool,
+    /// Commands that look for transients in a clip's file, held until the window's background
+    /// analysis has found them, with the project they were made in (`App::with_transients`).
+    transients_waiting: Vec<(Option<ProjectId>, Action)>,
     /// Backups a crash left, offered one at a time (`docs/spec/backups.md` › The offer on
     /// start); the one chosen to open, and a backup to show in the file manager, for the app.
     recovery: Vec<suhina_session::backup::Leftover>,
@@ -928,11 +941,15 @@ impl App {
             map_window: MapWindow::default(),
             copy_to: Vec::new(),
             drag_out: None,
+            system_separate: None,
             pending_drop: None,
             detail_drop: None,
             expanded_panel: None,
             sample_drops: Vec::new(),
             piano_roll: PianoRollState::default(),
+            audio_editor: crate::detail::audio_editor::AudioEditorState::default(),
+            audio_reset_shown: false,
+            transients_waiting: Vec::new(),
             recovery: Vec::new(),
             recovery_open: None,
             reveal: None,
@@ -1520,7 +1537,8 @@ impl App {
         self.recovery_open.take()
     }
 
-    /// A backup to show in the file manager.
+    /// A file or folder to show in the system's file manager, selected there where it can be: a
+    /// backup, a plug-in's file, a missing file's folder, or a browser row.
     pub fn take_reveal_request(&mut self) -> Option<PathBuf> {
         self.reveal.take()
     }
@@ -3363,7 +3381,7 @@ impl App {
         if !self.arrangement.toolbar {
             self.arrangement.tool = arrangement_view::ArrangementTool::Select;
         }
-        self.arrangement.has_focus = !self.piano_roll.focused;
+        self.arrangement.has_focus = !self.piano_roll.focused && !self.audio_editor.focused();
         self.arrangement.take_solo = self.session().and_then(Session::take_solo);
         // The default grid from the settings: at start, and again when the setting changes.
         if self.applied_grid != Some(self.settings.view.default_grid) {
@@ -3630,6 +3648,10 @@ impl App {
             (false, false) => Some((dropped, true)),
             (false, true) => Some((self.hovered_files(ui), false)).filter(|(items, _)| !items.is_empty()),
         };
+        // No files from the system over the window: the next drag starts with the keys as they are.
+        if system.is_none() {
+            self.system_separate = None;
+        }
         // The lines over and under the views, in their `border-color` (the palette's line color).
         // A private image is already painted underneath the window: its transparent regions stay
         // visible instead of being covered with separator ink.
@@ -3710,6 +3732,9 @@ impl App {
                 }
             });
             let detail_rect = layout.rect(Region::Detail);
+            // The audio editor's reset dialog holds the actions only while it is drawn; the
+            // detail area says so again as it draws it.
+            self.audio_reset_shown = false;
             let inner = match detail_rect.filter(|_| grid.is_some()) {
                 Some(detail) if self.detail_open => {
                     let geometry = (main, detail, layout.detail_follows);
@@ -3720,6 +3745,7 @@ impl App {
                     // A hidden piano roll does not keep the keyboard, nor the view to one track, and
                     // a note its audition sounds goes off.
                     self.piano_roll.focused = false;
+                    self.audio_editor.set_focused(false);
                     actions.extend(self.piano_roll.stop_audition());
                     actions.extend(self.piano_roll.settle_on_hide());
                     self.arrangement.focus = None;
@@ -4127,6 +4153,11 @@ impl App {
         self.update_title(ui.ctx());
         self.frame_trace.mark("dialogs");
         let actions: Vec<Action> = actions.into_iter().map(|action| self.remove_every_pick(action)).collect();
+        // Those that look for transients take the ones found in the background, or wait for them.
+        // While a dialog holds the actions, those that waited stay waiting rather than being
+        // dropped with the actions made behind the dialog: they go once it closes.
+        let actions =
+            if actions_held || self.dialog_holds_actions() { actions } else { self.with_transients(ui.ctx(), actions) };
         let ran = actions.len();
         for action in &actions {
             if actions_held || self.dialog_holds_actions() {
@@ -4457,6 +4488,7 @@ pub(crate) fn clipboard_line(command: &str) -> Option<String> {
         "automation.copy" => "automation",
         "device.copy" => "devices",
         "track.copy" | "track.cut" => "tracks",
+        "range.copy" | "range.cut" => "a range",
         _ => return None,
     };
     Some(format!("Suhina: {what} copied"))

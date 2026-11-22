@@ -384,7 +384,7 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["color", "selected", "muted", "playing", "queued", "recording"])
         .settings(&["track-artwork"]),
     element("clip-name", Part, "An arrangement clip's name bar."),
-    element("clip-waveform", Part, "An arrangement clip's waveform."),
+    element("clip-waveform", Part, "An arrangement clip's waveform, and the audio editor's in the detail area: its `color` draws the editor's waveform where Settings › Clip editor › Audio editor waveform color is on Theme; without a rule the editor then draws it in a neutral ink that reads on its panel."),
     element("clip-notes", Part, "An arrangement clip's notes."),
     element("clip-envelope", Drawn, "An audio clip's gain envelope while it is edited: its points and line, in its `color`."),
     element("clip-gain", Control, "An arrangement clip's gain field.").settings(VALUE_SETTINGS),
@@ -641,7 +641,7 @@ pub const ELEMENTS: &[Element] = &[
     // Pages and dialogs.
     element("settings", Region, "The Settings page; docked over the views, `backdrop-filter: blur(<length>)` blurs them behind it.").parts(&["settings-nav"]).settings(FLOATING),
     element("settings-nav", Control, "An entry of the Settings page's list, `[checked]` for the page shown.").attributes(&["checked"]),
-    element("dialog", Region, "A dialog, named by its `name`: `about`, `agent`, `ara-edits` (Another track), `backup`, `closing`, `color-picker` (the track color window), `export`, `folder-drop`, `group-removal`, `loading`, `missing-files`, `move-folder`, `name-clash`, `project` (New or open), `save`, `splash`, `theme-exists`, `unsaved` and `updates`. Its `padding` is the room between its edge and what it holds; its title row runs along its top inside its border, outside the padding.")
+    element("dialog", Region, "A dialog, named by its `name`: `about`, `agent`, `ara-edits` (Another track), `backup`, `closing`, `color-picker` (the track color window), `export`, `folder-drop`, `group-removal`, `loading`, `missing-files`, `move-folder`, `name-clash`, `project` (New or open), `reset-warp` (the audio editor's Reset warp), `save`, `splash`, `theme-exists`, `unsaved` and `updates`. Its `padding` is the room between its edge and what it holds; its title row runs along its top inside its border, outside the padding.")
         .parts(&["dialog-title", "dialog-actions", "list-row"])
         .attributes(&["name"])
         .settings(FLOATING),

@@ -641,6 +641,36 @@ fn a_sample_dropped_from_the_system_onto_the_empty_space_makes_an_audio_track() 
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// Two samples dragged in from the system with Ctrl held, the label saying they go on a track
+/// each: on Windows the drop gives the window the focus and Ctrl reads as up, yet they still go
+/// on two new tracks, as the label said.
+#[test]
+fn files_dropped_from_the_system_go_on_a_track_each_as_the_label_said() {
+    let (settings, folder) = (temp("system-separate-settings"), temp("system-separate"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let tracks = |app: &App| app.session().map_or(0, |s| s.project().tracks.len());
+    let before = tracks(harness.state());
+    let to = harness.get_by_label("+ Audio track").rect().center() + egui::vec2(0.0, 40.0);
+    let files = [folder.join("Loop 120bpm.wav"), folder.join("Drums").join("Snare.wav")];
+    harness.hover_at(to);
+    harness.run();
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    for file in &files {
+        harness.input_mut().hovered_files.push(egui::HoveredFile { path: Some(file.clone()), ..Default::default() });
+    }
+    harness.step();
+    harness.input_mut().hovered_files.clear();
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    for file in &files {
+        harness.input_mut().dropped_files.push(std::sync::Arc::new(TestFile(file.clone())));
+    }
+    harness.step();
+    assert!(until(&mut harness, |app| tracks(app) == before + 2), "a new track each");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 /// The repository's Stems test file (a master and four stems: Drums, Bass, Other, Vox in one
 /// MP4, `crates/media/tests/data`), copied into `folder` under a name of its own.
 fn stems(folder: &Path) -> PathBuf {
@@ -1502,6 +1532,29 @@ fn an_items_tag_menu_ticks_its_tags_with_painted_boxes_and_toggles_them() {
         .filter_map(|id| flat.iter().find(|t| t.id == *id).map(|t| t.name.as_str()))
         .collect();
     assert!(!tags.contains(&"Red") && tags.contains(&"Orange"), "{tags:?}");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A row's Show in Explorer (Finder, folder) asks the app to show the file in the system's file
+/// manager; Go to folder lists its folder in the browser.
+#[test]
+fn a_rows_menu_shows_the_file_in_the_file_manager() {
+    let (settings, folder) = (temp("reveal-settings"), temp("reveal"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    let name = folder.file_name().unwrap().to_string_lossy().to_string();
+    double_click(&mut harness, &row(&name));
+    harness.run();
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
+    harness.run();
+    let label = suhina_ui::kit::platform::current().show_in_folder_label();
+    harness.get_by_label(label).click();
+    harness.run();
+    assert_eq!(harness.state_mut().take_reveal_request(), Some(folder.join("Loop 120bpm.wav")));
+    harness.get_by_label(&row("Loop 120bpm.wav")).click_secondary();
+    harness.run();
+    assert!(harness.query_by_label("Go to folder").is_some());
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

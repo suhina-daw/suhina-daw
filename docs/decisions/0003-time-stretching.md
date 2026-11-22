@@ -8,6 +8,9 @@ last_verified: 2026-11-19
 covers:
   - crates/engine/src/stretch.rs
   - crates/stretch/src/lib.rs
+  - crates/stretch/src/grains.rs
+  - crates/stretch/src/slices.rs
+  - crates/stretch/src/transients.rs
   - crates/media/src/lib.rs
   - crates/engine/src/ahead.rs
   - crates/engine/src/launcher/prepare.rs
@@ -155,6 +158,62 @@ GPL-compatible stretchers usable from Rust (checked 2026-10-11):
      launches it, so offline renders stay the oracle; a golden render
      (`tests/golden/launched-stretched.f32`) and a test that the worker gives the same samples
      check it.
+
+## Amendment (2026-11-16): a sound of each mode, at any speed
+
+Decision 4 kept the modes in the model while they all played through one backend, so picking one
+changed nothing heard. Now each has its own stretcher, behind the same voice (`Engine` in
+`crates/engine/src/stretch.rs`), with settings of the clip's own ([clip panel](../spec/clip-panel.md)
+› Warp mode settings, saved as `warp_settings`, [format](../spec/suhina-format.md) version 16).
+The descriptions of what each kind of mode is for come from public documentation of how DAWs
+describe their warp modes; the designs and the code are Suhina's own, in `crates/stretch`.
+
+| Mode | Stretcher | Settings |
+|---|---|---|
+| `Repitch` | none (unchanged) | none |
+| `Rhythmic` | **Slices** (`suhina_stretch::Slices`): the file cut at its transients (`suhina_stretch::transients`: 5 ms hops, a rise of 3.5 dB and twice the rises around it, 40 ms apart, placed on the attack), at the warp markers and on a beat where no transient is near, or on every note value; each slice starts when the clip's time reaches it and plays at the file's speed, so attacks land on their beats and keep their length; cut by the next with a 4 ms crossfade, faded in over 0.25 ms; a gap after it is filled by its tail | Slice at, Tail, Envelope |
+| `Tonal` | **Grains** (`suhina_stretch::Grains`): Hann-windowed grains half a grain apart, each read at the file's speed (times the transpose) from where the clip's time is, its start moved within a quarter grain to best match how the grain before goes on (a coarse search, then every frame around the best), so a held note carries on without beating | Grain |
+| `Texture` | **Grains** without the lining up; each start moved at random by up to *scatter* grains, the randomness a function of the grain's number so a render repeats exactly | Grain, Scatter |
+| `Smooth` | the Signalsmith port, 120 ms blocks 30 ms apart (unchanged) | none |
+| `HighQuality` | the Signalsmith port, 200 ms blocks 20 ms apart: more detail for low notes and full mixes, about four times Smooth's work | none |
+
+Grains and slices need no input buffer and add no latency, so a voice of theirs seeks by starting
+afresh where the clip's time is. Slices read the file at the clip's time; grains read the playlist's
+input stream at the same place (its loop passes one after another), so a grain that runs on past a
+loop's end goes on with the next pass from the loop's start instead of playing what lies past the
+loop in the file. The first grain plays its first half whole, where no grain before it overlaps,
+so a voice does not fade in from silence. A Tonal voice's search was first a full one (every
+second offset over a quarter grain): a new voice could not render ahead in time after an edit while
+playing, and its first 15 ms were silent; the two-stage search reads about thirty times less.
+Rhythmic and Texture change a sound even at its own speed, so playing at unity speed does not by
+itself let their clips skip the stretcher: they always play through their slices or grains.
+
+**Speeds.** Decision 2 re-pitched a whole clip in a stretching mode when one of its segments ran
+slower than 0.25x or faster than 4x, so a warp marker dragged close to its neighbour (a 166 BPM loop
+taken past 664 BPM) changed the clip's pitch. Every stretcher now takes 1/64x to 32x; only past that
+is a clip re-pitched. The spectral stretcher's input buffer grows with the fastest speed: about
+1 MB for a stereo voice at 32x and 48 kHz.
+
+## Amendment (2026-11-22): the stretch voices on several threads
+
+Decision 6 ran every arrangement voice on one worker thread, and its cost grows with the number
+of warped clips playing at once. Eight songs of a multitrack, about three and a half minutes each,
+warped together in Smooth mode fell behind on it: the trace's *stretched frames late* grew by
+50 000 to 350 000 frames a second and playback broke up, with no device underrun (measured under
+the Relax JIT; a native build is not measured). So the voices are now shared among a few threads
+(`StretchThread`, `crates/engine/src/ahead.rs`): the cores but two (the audio thread and the
+window's), from one to four. Each graph's worker is split into one shard per thread
+(`StretchWorker::split`) by the voices' clip ids, which run on from one clip to the next, so a
+multitrack is shared out evenly (by the voices' keys, a hash, eight clips went seven to one on two
+threads) and a clip stays on its thread through its edits: its voice in the next graph falls to the
+same shard, and the thread that renders it takes it over as before
+(`StretchWorker::adopt_from`, ADR 0005). A rewind waits until every shard has said it stopped
+pushing (one *paused* slot per shard), then the audio side empties the rings as before; jumps and
+handovers stay per voice, so nothing else changes on the audio side. The launcher's preparers
+(decision 7) run on the first thread. Offline rendering keeps one unsplit worker, filled by the
+reader (rule 4), and a test checks that voices rendered on several threads give the same samples
+as on one. Tests that run the threads wait on every thread's acknowledgement
+(`StretchThread::sync`).
 
 ## Measurements (2026-10-11, the warped-vocal project: 80 s, 58 warped clips, 25 files)
 

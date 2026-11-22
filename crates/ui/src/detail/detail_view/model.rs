@@ -340,6 +340,9 @@ pub struct ClipInfo {
     pub warped: bool,
     pub stretch: StretchMode,
     pub transpose: f64,
+    /// The settings of the warp modes that have them (`clip.setAudio`'s slice, tail, envelope,
+    /// grain and scatter).
+    pub warp: suhina_engine::model::WarpSettings,
     /// The clip the column's controls edit; none where nothing can be edited.
     pub at: Option<ClipRef>,
     /// Fade-in and fade-out in beats (`clip.setFades`).
@@ -359,6 +362,10 @@ pub struct ClipInfo {
     /// The other arrangement clips selected with it, by id: the title says how many are
     /// selected, and a switch (Loop) turns all of them as it turns this one.
     pub others: Vec<u32>,
+    /// Of them, the audio clips, by id, while this one is an audio clip: the panel's audio
+    /// settings (Warp, its mode and settings, tempo, gain, pitch) set all of them at once, one undo
+    /// step (`docs/spec/clip-panel.md` › Several clips).
+    pub audio_others: Vec<u32>,
     /// Every picked MIDI clip, for its row in the column that gives it the piano roll's focus
     /// (#1054): its track and clip, what the row says ("Bass · Riff") and whether it has the focus.
     pub picked: Vec<(TrackId, ClipId, String, bool)>,
@@ -788,6 +795,7 @@ pub fn build_with(
                 warped: audio.is_some() && placed.audio.warped,
                 stretch: if audio.is_some() { placed.audio.stretch } else { Default::default() },
                 transpose: if audio.is_some() { placed.audio.transpose } else { 0.0 },
+                warp: placed.audio.warp,
                 at: Some(match scene {
                     Some(scene) => ClipRef::Slot(id, scene),
                     None => ClipRef::Arrangement(id, placed.id),
@@ -799,6 +807,7 @@ pub fn build_with(
                 switch: None,
                 switch_both: false,
                 others: Vec::new(),
+                audio_others: Vec::new(),
                 picked: Vec::new(),
                 panel: Some(AudioPanel {
                     clip: placed.id,

@@ -424,13 +424,25 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         actions.push(Action::new("track.colorGroup", params));
         ui.close();
     }
-    // The track's clips: back to the track's color, or named after it.
+    // The track's clips, or with several tracks selected every one's: back to their track's
+    // color, or named after it; one undo step for them all (one gesture).
+    let now = ui.input(|i| i.time);
+    let each = |id: &'static str, params: &dyn Fn(u32) -> serde_json::Value, actions: &mut Vec<Action>| {
+        let gesture = (selected.len() > 1).then(|| crate::interaction::commands::gesture(format_args!("{id} {now}")));
+        for t in selected {
+            let mut own = params(t.0);
+            if let Some(gesture) = &gesture {
+                own["gesture"] = gesture.clone();
+            }
+            actions.push(Action::new(id, own));
+        }
+    };
     if ui.button("Assign track color to all clips").clicked() {
-        actions.push(Action::new("clip.setColor", json!({ "track": track, "color": "none" })));
+        each("clip.setColor", &|t| json!({ "track": t, "color": "none" }), actions);
         ui.close();
     }
     if ui.button("Assign track name to clips").clicked() {
-        actions.push(Action::new("track.renameClips", json!({ "track": track })));
+        each("track.renameClips", &|t| json!({ "track": t }), actions);
         ui.close();
     }
     if let Some((input, channels)) = menu.audio {

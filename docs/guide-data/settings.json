@@ -2005,6 +2005,47 @@
       "workInProgress": false
     },
     {
+      "id": "ClipEditor/Audio editor/audio_editor_waveform_color",
+      "page": "ClipEditor",
+      "section": "Audio editor",
+      "name": "Audio editor waveform color",
+      "note": "Choose the color of the waveform in the audio editor.",
+      "keys": [
+        "audio_editor_waveform_color"
+      ],
+      "sourceFingerprint": "d761d9fe6f0d1f24d07edf8614167172b659eb9666c473dcd8b0f2bdd045623c",
+      "helpStatus": "reviewed",
+      "description": "The audio editor is the detail area's view of an audio clip, where its warp markers are placed. This preference decides the color its large waveform is drawn in. The sound and the project do not change.",
+      "options": [
+        {
+          "name": "Track color",
+          "description": "Draw the waveform in the clip's color: its own when it has one, otherwise its track's, as the Arrangement colors the clip. This is the default."
+        },
+        {
+          "name": "Theme",
+          "description": "Draw the waveform in the color the active theme gives waveforms (its .clip-waveform color), and in a neutral ink that reads on the editor when the theme gives none."
+        }
+      ],
+      "whenToChange": "Keep Track color to tell clips apart by color while editing; choose Theme to see the waveform as the theme designed it.",
+      "workInProgress": false
+    },
+    {
+      "id": "ClipEditor/Audio editor/audio_editor_marker_line_drag",
+      "page": "ClipEditor",
+      "section": "Audio editor",
+      "name": "Drag markers by line",
+      "note": "Choose whether a warp marker can be dragged by its line in the audio editor.",
+      "keys": [
+        "audio_editor_marker_line_drag"
+      ],
+      "sourceFingerprint": "565e9788deef2d32affaa7fa2237bb6f2419fe937a46f85b3d1b7c13f7d235a6",
+      "helpStatus": "reviewed",
+      "description": "Each warp marker in the audio editor has a flag on the marker lane under the ruler and a line down the waveform. Off, only the flag takes hold of the marker, and a drag anywhere on the waveform paints a time selection, beside a marker's line too. On, the line can be dragged as the flag can.",
+      "options": [],
+      "whenToChange": "Turn it on if you would rather grab warp markers anywhere along their line; leave it off to paint time selections freely across the waveform.",
+      "workInProgress": false
+    },
+    {
       "id": "ClipEditor/Piano roll/piano_roll_top",
       "page": "ClipEditor",
       "section": "Piano roll",

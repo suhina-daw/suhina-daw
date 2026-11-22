@@ -5938,6 +5938,7 @@ dependencies = [
  "suhina-plugins",
  "suhina-project-file",
  "suhina-soundmap",
+ "suhina-stretch",
  "suhina-test-support",
  "zip",
 ]

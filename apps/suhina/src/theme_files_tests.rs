@@ -602,3 +602,28 @@ fn a_deleted_variant_or_theme_goes_to_the_trash() {
     assert!(!themes.join("ink").exists());
     let _clean = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_file_uri_writes_spaces_and_other_letters_as_bytes() {
+    assert_eq!(file_uri(Path::new("/home/me/My Samples/kick #1.wav")), "file:///home/me/My%20Samples/kick%20%231.wav");
+    assert_eq!(file_uri(Path::new("/äö,x")), "file:///%C3%A4%C3%B6%2Cx");
+}
+
+/// A Unix name that is not UTF-8 keeps its own bytes in the URI, not the replacement character
+/// a lossy conversion puts in their place.
+#[cfg(unix)]
+#[test]
+fn a_file_uri_keeps_the_bytes_of_a_name_that_is_not_utf8() {
+    use std::os::unix::ffi::OsStrExt;
+    let name = std::ffi::OsStr::from_bytes(b"/tmp/caf\xE9 x.wav");
+    assert_eq!(file_uri(Path::new(name)), "file:///tmp/caf%E9%20x.wav");
+}
+
+/// A file manager the reveal thread could not start is told to the window once, on its next
+/// frame, not lost with the thread.
+#[test]
+fn a_reveal_the_thread_could_not_do_is_reported_once() {
+    report_reveal_error("could not show /x: no xdg-open".into());
+    assert_eq!(take_reveal_error().as_deref(), Some("could not show /x: no xdg-open"));
+    assert_eq!(take_reveal_error(), None);
+}

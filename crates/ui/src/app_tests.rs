@@ -1288,7 +1288,16 @@ fn a_rename_in_a_session_header_reads_as_the_name() {
 /// so Ctrl+V reaches the keymap after it even when the clipboard held no text (#916).
 #[test]
 fn copies_put_a_line_on_the_system_clipboard() {
-    for command in ["automation.copy", "device.copy", "track.copy", "track.cut", "clip.copy", "note.cut"] {
+    for command in [
+        "automation.copy",
+        "device.copy",
+        "track.copy",
+        "track.cut",
+        "clip.copy",
+        "note.cut",
+        "range.copy",
+        "range.cut",
+    ] {
         assert!(clipboard_line(command).is_some_and(|line| line.starts_with("Suhina: ")), "{command}");
     }
     assert_eq!(clipboard_line("automation.paste"), None);
@@ -1856,4 +1865,116 @@ fn a_checked_close_and_a_click_on_its_tab_close_it_once() {
     harness.step();
     assert!(harness.state().projects.get(closing).is_none(), "closed");
     assert!(!matches!(harness.state().status, Status::Error(_)), "{:?}", harness.state().status);
+}
+
+/// Two warped audio clips, A in track 1's first slot and B in its second, each playing a file of
+/// its own (two seconds over four beats, a marker at each end), in an app; and A's and B's ids.
+#[allow(clippy::unwrap_used)]
+fn app_with_two_audio_slots() -> (App, ClipId, ClipId) {
+    use suhina_engine::model::{AudioRegion, Clip, ContentId, WarpMarker};
+    let region = |file: &str| AudioRegion {
+        file: file.into(),
+        absolute_file: None,
+        sample_rate: Some(8000),
+        channels: Some(1),
+        duration_seconds: Some(2.0),
+        stream: None,
+    };
+    let clip = |content: u32| {
+        let mut clip = Clip::new(ContentId(content), 0.0, 4.0);
+        clip.audio.warped = true;
+        clip.audio.warp_markers =
+            vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 4.0, audio_time: 2.0 }];
+        clip
+    };
+    let project = suhina_test_support::ProjectBuilder::new()
+        .audio_track(1, "Loops")
+        .audio(1, "A", 4.0, region("a.wav"))
+        .audio(2, "B", 4.0, region("b.wav"))
+        .slot(1, 0, clip(1))
+        .slot(1, 1, clip(2))
+        .build();
+    let mut app = App::new();
+    app.set_session(Session::new(project), &[]);
+    let (a, b) = (slot_clip(&app, 0).unwrap(), slot_clip(&app, 1).unwrap());
+    (app, a, b)
+}
+
+/// The id of the clip in track 1's slot of `scene`.
+fn slot_clip(app: &App, scene: usize) -> Option<ClipId> {
+    let column = app.session()?.project().launcher.columns.first()?;
+    column.slots.get(scene)?.clip.as_ref().map(|clip| clip.id)
+}
+
+/// How many warp markers the launcher clip `id` has.
+fn slot_markers(app: &App, id: ClipId) -> usize {
+    let Some(session) = app.session() else { return 0 };
+    let mut clips =
+        session.project().launcher.columns.iter().flat_map(|c| c.slots.iter()).filter_map(|s| s.clip.as_ref());
+    clips.find(|clip| clip.id == id).map_or(0, |clip| clip.audio.warp_markers.len())
+}
+
+/// A Launcher command that waits for the background analysis names its clip by id, not by the
+/// slot it was in: another clip moved into that slot meanwhile is not the one it edits.
+#[test]
+fn a_launcher_edit_waiting_for_transients_edits_its_clip_after_another_takes_the_slot() {
+    let (mut app, a, b) = app_with_two_audio_slots();
+    let mut params = json!({ "track": 1, "scene": 0 });
+    app.bind_to_clip(&mut params);
+    assert_eq!(params, json!({ "clip": a.0 }), "named by the clip, not the slot");
+    // Params that name a clip already, and a slot with no clip, stay as they are.
+    let mut named = json!({ "track": 1, "clip": b.0 });
+    app.bind_to_clip(&mut named);
+    assert_eq!(named, json!({ "track": 1, "clip": b.0 }));
+    let mut empty = json!({ "track": 1, "scene": 7 });
+    app.bind_to_clip(&mut empty);
+    assert_eq!(empty, json!({ "track": 1, "scene": 7 }));
+    // B moves into A's slot (the two swap) before the held command goes: it edits A.
+    app.run(&Action::new("clip.moveSlot", json!({ "track": 1, "scene": 1, "toScene": 0 })));
+    assert_eq!(slot_clip(&app, 0), Some(b), "B is in the slot A was in");
+    let mut held = params.clone();
+    held["transients"] = json!([0.5, 1.0]);
+    app.run(&Action::new("clip.addWarpMarkersAtTransients", held));
+    assert_eq!(slot_markers(&app, a), 4, "A, in the other slot now, took the markers");
+    assert_eq!(slot_markers(&app, b), 2, "B did not");
+}
+
+/// A confirmed reset of a clip's warp drops the transient placements still waiting for that clip,
+/// which would put markers back after the reset; those for another clip still go.
+#[test]
+fn a_confirmed_warp_reset_drops_the_placements_waiting_for_that_clip() {
+    let (mut app, a, b) = app_with_two_audio_slots();
+    let project = app.projects.active();
+    let place = |id: ClipId| Action::new("clip.addWarpMarkersAtTransients", json!({ "clip": id.0 }));
+    app.transients_waiting = vec![(project, place(a)), (project, place(b))];
+    // The reset names A by its slot, as the editor sends it.
+    let reset = Action::new("clip.resetWarp", json!({ "track": 1, "scene": 0 }));
+    let sent = app.with_transients(&egui::Context::default(), vec![reset.clone()]);
+    // B's goes as it is (the window holds no samples of its file); A's is gone.
+    assert_eq!(sent, [place(b), reset]);
+    assert!(app.transients_waiting.is_empty());
+}
+
+/// A command that waited for the background analysis and becomes ready while a dialog holds the
+/// actions (About) waits on until the dialog closes, rather than being dropped with what was done
+/// behind the dialog.
+#[test]
+fn a_waiting_transient_edit_waits_for_a_dialog_to_close() {
+    let (mut app, a, _) = app_with_two_audio_slots();
+    let project = app.projects.active();
+    // With its note starts already: ready as soon as it may go.
+    let waiting = Action::new("clip.addWarpMarkersAtTransients", json!({ "clip": a.0, "transients": [0.5, 1.0] }));
+    app.transients_waiting = vec![(project, waiting)];
+    app.about_open = true;
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run_steps(2);
+    assert_eq!(harness.state().transients_waiting.len(), 1, "it waits behind About");
+    assert_eq!(slot_markers(harness.state(), a), 2);
+    harness.state_mut().about_open = false;
+    harness.run_steps(2);
+    assert!(harness.state().transients_waiting.is_empty());
+    assert_eq!(slot_markers(harness.state(), a), 4, "and goes once About is closed");
 }

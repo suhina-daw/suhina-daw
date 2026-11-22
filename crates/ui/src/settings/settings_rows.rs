@@ -833,6 +833,22 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::ClipEditor,
+        "Audio editor",
+        "Audio editor waveform color",
+        "Whether the audio editor draws the waveform in the clip's color or the theme's",
+        &["audio_editor_waveform_color"],
+        |cx, r| cx.choose(r, &[("Track color", false), ("Theme", true)], |s| &mut s.view.audio_editor_theme_waveform),
+    ),
+    row(
+        Page::ClipEditor,
+        "Audio editor",
+        "Drag markers by line",
+        "Whether a warp marker's line down the waveform can be dragged as well as its flag",
+        &["audio_editor_marker_line_drag"],
+        |cx, r| cx.on_off(r, |s| &mut s.view.audio_editor_line_drag),
+    ),
+    row(
+        Page::ClipEditor,
         "Piano roll",
         "Full-height piano roll covers",
         "What the piano roll covers when you drag its divider all the way up",

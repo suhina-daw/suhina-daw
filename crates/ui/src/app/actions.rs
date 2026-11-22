@@ -188,6 +188,8 @@ impl App {
                 let running = self.session().and_then(|s| s.player()).is_some_and(|p| p.monitor().running());
                 actions.push(if running { self.stop_action() } else { self.play_action() });
             }
+            // Quantize in an audio clip's editor, while it shows one: its transients onto the grid.
+            "pianoRoll.quantize" if let Some(quantize) = self.audio_editor_quantize() => actions.extend(quantize),
             // Quantise in the piano roll, while it shows a clip.
             "pianoRoll.quantize" => {
                 let clip = match self.shown {
@@ -203,6 +205,21 @@ impl App {
                     actions.push(quantize);
                 }
             }
+            // While the audio editor has the keyboard, Delete removes its picked (or hovered) warp
+            // marker and the other edit keys do nothing: never act on the clip behind it
+            // (`docs/spec/ui-audio-editor.md` › Warp markers).
+            "selection.delete" if self.audio_editor_has_keyboard() => actions.extend(self.audio_editor_delete()),
+            "selection.copy"
+            | "selection.cut"
+            | "selection.paste"
+            | "selection.duplicate"
+            | "selection.mute"
+            | "selection.rename"
+            | "selection.split"
+            | "selection.consolidate"
+            | "selection.takeUp"
+            | "selection.takeDown"
+                if self.audio_editor_keeps(action) => {}
             // While the piano roll has the keyboard, the edit keys act on its notes, or on nothing
             // when it has none to act on: never on the clip or the view behind it.
             "selection.delete" if self.piano_has_keyboard() || self.piano_edits_focused_clip() => {
@@ -230,6 +247,7 @@ impl App {
             | "selection.takeUp"
             | "selection.takeDown"
                 if self.piano_has_keyboard() => {}
+            "pianoRoll.loop" if self.audio_editor_has_keyboard() => actions.extend(self.audio_editor_loop()),
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
             // Lane headers or group headings picked: Delete takes them out of the track's layout,
             // one undo step (#1322).
@@ -378,7 +396,9 @@ impl App {
                 }
             }
             // A time selection in the Arrangement: the keys act on what plays inside it, as in
-            // clips picked by a click act whole (the arm below).
+            // clips picked by a click act whole (the arm below). A header clicked after it keeps
+            // the span on the picked tracks, but Delete then removes the tracks, as Ctrl+C, X and
+            // D act on them in the arm above (`docs/spec/arrangement-editing.md`).
             "selection.copy"
             | "selection.cut"
             | "selection.duplicate"
@@ -387,6 +407,7 @@ impl App {
             | "selection.consolidate"
                 if self.shown == View::Arrangement
                     && !self.device_focus
+                    && !(action == "selection.delete" && self.arrangement.track_focus)
                     && self.arrangement.automation.selected_points().is_none()
                     && self.arrangement.time_selection().is_some() =>
             {

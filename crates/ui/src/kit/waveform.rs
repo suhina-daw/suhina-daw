@@ -154,6 +154,12 @@ pub enum Lane {
 }
 
 impl Peaks {
+    /// The decoded samples the peaks were made from, shared with the audio pool; `None` for peaks
+    /// made without them.
+    pub fn data(&self) -> Option<&Arc<AudioData>> {
+        self.data.as_ref()
+    }
+
     /// The bucket covering frames `from` … `to` of `lane`, from the coarsest level with at
     /// least one bucket in that stretch, or the samples when it is shorter than the finest;
     /// `None` outside the file.

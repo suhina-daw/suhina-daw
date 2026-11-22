@@ -595,6 +595,10 @@ impl Window {
         {
             self.app.set_status(Status::Error(e));
         }
+        // A file manager that could not be started on the thread that showed a file (Linux).
+        if let Some(e) = theme_files::take_reveal_error() {
+            self.app.set_status(Status::Error(e));
+        }
         if let Some(path) = self.app.take_saved_path() {
             self.remember(&path);
         }

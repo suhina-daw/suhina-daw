@@ -731,6 +731,13 @@ pub(super) fn clip_box<'a>(
             }
             let id = Id::unique(("clip-edge", clip.id.0, grab as u8));
             let response = ui.interact(hit, id, Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            // An audio clip's edge says what Shift does to it, as the pointer rests on it: the drag
+            // stretches the audio to the new length instead of trimming it (#1185).
+            let response = if clip.audio && state.stretch_alt && state.gesture.edge().is_none() {
+                response.on_hover_text("Drag to trim the clip. Shift-drag stretches its audio with the edge")
+            } else {
+                response
+            };
             let what = match grab {
                 EdgeGrab::Left => "Left edge",
                 EdgeGrab::Right => "Right edge",
@@ -1123,6 +1130,7 @@ pub(super) fn clip_box<'a>(
                 origin: x_of(start),
                 beat_width: state.beat_width,
                 ink: envelope_ink,
+                site: "arrangement",
             });
             // An audio clip's edge dragged with Ctrl and Alt stretches its audio: drawn stretched
             // as it goes, about the edge that stays, not only once it is let go.
@@ -1148,6 +1156,7 @@ pub(super) fn clip_box<'a>(
                         origin: stretched(start),
                         beat_width: state.beat_width * factor as f32,
                         ink: envelope_ink,
+                        site: "arrangement",
                     });
                     paint_clip(
                         &painter.with_clip_rect(clip_area),
@@ -1214,6 +1223,7 @@ pub(super) fn clip_box<'a>(
             origin: rect.left(),
             beat_width: state.beat_width,
             ink: envelope_ink,
+            site: "arrangement",
         });
         // The envelope's own grid (1/16 until another is picked in the clip's menu), not the
         // Arrangement's.
