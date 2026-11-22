@@ -444,13 +444,17 @@ fn enqueue_send_back(events: &Shared, port: String, bytes: Vec<u8>, dropped: &mu
 
 /// One send-back drop — the queue's caps' or the parked lines' ([`Link::wait_for_room`]) —
 /// counted and said the caps' way: the first and every 64th. The count rides the `Dropped`
-/// event the store turns into the program's last error.
+/// event the store turns into the program's last error. The signal wakes a waiter like
+/// [`enqueue_send_back`]'s does: a parked drop is a drop all the same, and on Windows'
+/// small pipes it is the one the storm takes.
 fn note_dropped(events: &Shared, dropped: &mut usize) {
     *dropped += 1;
     if *dropped == 1 || dropped.is_multiple_of(64) {
         let mut queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         queue.push_back(Event::Dropped(*dropped));
     }
+    events.signal.notify_one();
+    suhina_plugins::wake();
 }
 
 /// The requests the process now running has made, per kind: each token with the command it

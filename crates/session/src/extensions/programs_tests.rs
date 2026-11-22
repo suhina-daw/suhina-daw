@@ -222,3 +222,34 @@ fn parked_lines_hold_the_send_backs_caps_and_the_excess_is_counted() {
     drop(link); // Its end is the peer's EOF: the write that did not complete left no line.
     peer.join().expect("the peer ends");
 }
+
+/// A drop noted outside the send-back queue — the parked lines' — wakes a waiter like the
+/// queue's own does: the event is pushed and the signal notified. Windows' small pipes make
+/// the parked path the one a storm takes, and a drop with no wake hung the end-to-end test
+/// there (#1670). The wait's bound is a liveness check, not a timing one: a notify arrives
+/// at once, and only its absence reaches the bound.
+#[test]
+fn a_parked_drop_wakes_a_waiter() {
+    let events: Shared = Arc::new(Queue::default());
+    let waiter = {
+        let events = Arc::clone(&events);
+        std::thread::spawn(move || {
+            let queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let (queue, waited) = events
+                .signal
+                .wait_timeout_while(queue, Duration::from_secs(10), |queue| {
+                    !queue.iter().any(|event| matches!(event, Event::Dropped(_)))
+                })
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let found = queue.iter().any(|event| matches!(event, Event::Dropped(_)));
+            drop(queue);
+            (found, waited)
+        })
+    };
+    let mut dropped = 0;
+    note_dropped(&events, &mut dropped);
+    let (found, waited) = waiter.join().expect("the waiter ends");
+    assert!(found, "the drop's event is in the queue");
+    assert!(!waited.timed_out(), "the drop woke the waiter");
+    assert_eq!(dropped, 1);
+}
