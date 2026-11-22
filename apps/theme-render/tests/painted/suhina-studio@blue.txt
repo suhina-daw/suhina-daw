@@ -9,10 +9,10 @@ browser-plug-ins suhina-studio@blue 78602dff86bd24de
 browser-search suhina-studio@blue f10e43ffdd912ef7
 clip-audio suhina-studio@blue eedad65fd229667c
 clip-midi suhina-studio@blue af27da14a880a3eb
-colour-picker suhina-studio@blue 3b13c11a16f4cf28
-colour-picker-field suhina-studio@blue d48bc6ee0e1a64e5
-colour-picker-wheel suhina-studio@blue 81684e241f5a4f8e
-context-menu suhina-studio@blue 28acb954588673b3
+color-menu-saved suhina-studio@blue 54cde16190b8a11b
+color-picker suhina-studio@blue e9f560f21f5ef396
+color-picker-field suhina-studio@blue 6109238732d8d28f
+context-menu suhina-studio@blue 95667f70ac9d19bf
 control-bar-toggles suhina-studio@blue 1b8a31f7b7a284d8
 count-in-menu suhina-studio@blue 9eccc5cfe16bdb59
 cpu suhina-studio@blue 4eeabcaa270f8485

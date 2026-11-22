@@ -299,7 +299,7 @@ pub struct TakeRow {
 /// The colour of a track's take `number` (from 1) while it has none of its own: the palette's
 /// colours in turn, three apart so neighbouring takes differ (#953).
 pub fn take_colour(number: usize) -> Rgb {
-    let swatches = crate::interaction::colour_picker::swatches();
+    let swatches = crate::interaction::color_picker::swatches();
     swatches[number.saturating_mul(3) % swatches.len()]
 }
 

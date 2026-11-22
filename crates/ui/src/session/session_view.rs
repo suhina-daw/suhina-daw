@@ -11,7 +11,7 @@ use egui::{Align2, Color32, Id, Pos2, Rect, Response, Sense, StrokeKind, Ui, Vec
 use serde_json::json;
 use suhina_engine::model::{MappingTarget, TrackId};
 
-use crate::interaction::colour_picker;
+use crate::interaction::color_picker;
 use crate::interaction::drop::{DropProbe, DropTarget};
 use crate::interaction::empty_space::empty_space;
 use crate::interaction::grid::{Column, ColumnKind, SlotState, TrackGrid};
@@ -837,7 +837,7 @@ fn draw_column(
         if let Some(tint) = selected_column_tint(column) {
             painter.with_clip_rect(clip).rect_filled(outline, 0.0, tint);
         }
-        let colour = colour_picker::fill(column.color, false);
+        let colour = color_picker::fill(column.color, false);
         painter.with_clip_rect(clip).rect_stroke(outline, 0.0, egui::Stroke::new(1.5, colour), StrokeKind::Inside);
     }
 }
@@ -933,11 +933,14 @@ fn column_header(
 ) {
     let track_id = format!("track-{}", column.track.0);
     let selected = column_selected(state, column.track);
+    // While the color tool edits the track, its header is styled as neither selected nor muted,
+    // so a sheet's selected or muted background never hides the color being chosen.
+    let preview = crate::kit::selection::previews_track(ui.ctx(), column.track);
     let own = crate::kit::element::TRACK_HEADER
         .id(&track_id)
         .color(rgb(column.color))
-        .attr(Selected, selected)
-        .attr(Muted, column.mute)
+        .attr(Selected, selected && !preview)
+        .attr(Muted, column.mute && !preview)
         .enter();
     if rect.width() <= 0.0 {
         return;
@@ -974,9 +977,8 @@ fn column_header(
     // track's header is the selection colour every selected header and clip shares (Settings ›
     // Appearance › Selection colour; its own colour with Clip's own colour), with its own colour
     // in a band along its top; its column is outlined as a whole (below), not its header again.
-    let preview = crate::kit::selection::previews_track(ui.ctx(), column.track);
     let selection_fill = (selected && !column.mute && !preview).then(|| crate::kit::selection::fill(&own)).flatten();
-    let fill = selection_fill.unwrap_or_else(|| colour_picker::fill(column.color, column.mute && !preview));
+    let fill = selection_fill.unwrap_or_else(|| color_picker::fill(column.color, column.mute && !preview));
     if preview
         || !crate::kit::skin::paint_in_view(
             painter,
@@ -991,11 +993,9 @@ fn column_header(
     }
     if selection_fill.is_some() {
         let band = Rect::from_min_size(rect.min, Vec2::new(rect.width(), SELECTED_BAND.min(rect.height())));
-        painter.rect_filled(band, 0.0, colour_picker::fill(column.color, false));
+        painter.rect_filled(band, 0.0, color_picker::fill(column.color, false));
     }
-    if !preview {
-        crate::kit::liquid::paint(painter, rect, &own, fill, crate::kit::liquid::Surface::Track);
-    }
+    crate::kit::liquid::paint(painter, rect, &own, fill, crate::kit::liquid::Surface::Track);
     // The sheet's own background for the header (`track-header[selected]`) over the native one;
     // the name's ink reads on whichever is shown.
     let shown = if preview { fill } else { own.background_or(fill) };
@@ -1310,7 +1310,8 @@ fn column_body(
                 // The menu stays open on a click inside: the rename's field and button live here.
                 egui::Popup::context_menu(response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(
                     |ui| {
-                        menus::slot_menu(ui, column.track, scene, &slot.name, has_clip, can_paste, actions);
+                        let clip = slot.clip.filter(|_| has_clip).map(|id| (id, slot.color));
+                        menus::slot_menu(ui, column.track, scene, &slot.name, clip, can_paste, actions);
                         if let Some(launch) = slot.launch {
                             ui.separator();
                             crate::session::slot_launch::launch_menu(ui, column.track, scene, launch, actions);
@@ -1331,8 +1332,8 @@ fn column_body(
                 crate::app::NameSpot {
                     rect,
                     pass,
-                    fill: colour_picker::fill(slot.color.unwrap_or(column.color), false),
-                    text: theme::text_on(colour_picker::fill(slot.color.unwrap_or(column.color), false)),
+                    fill: color_picker::fill(slot.color.unwrap_or(column.color), false),
+                    text: theme::text_on(color_picker::fill(slot.color.unwrap_or(column.color), false)),
                     size: theme::TEXT,
                 },
             );

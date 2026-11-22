@@ -25,7 +25,7 @@ impl App {
             && !dialog
             && !(self.settings_open && !self.page.window)
             && !ui.ctx().text_edit_focused()
-            && !self.colour_window_owns_keyboard(ui.ctx());
+            && !self.color_window_owns_keyboard(ui.ctx());
         let lost = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false))));
         let Some(project) = self.projects.active().and_then(|id| self.projects.get(id)).map(Session::project) else {
             return;
@@ -120,7 +120,7 @@ impl App {
         // A prompt waiting on a stored edit (the ARA one) included: a key that changed the
         // project meanwhile would leave that edit naming what is gone.
         if ui.ctx().egui_wants_keyboard_input()
-            || self.colour_window_owns_keyboard(ui.ctx())
+            || self.color_window_owns_keyboard(ui.ctx())
             || self.dialog_holds_actions()
             || (self.settings_open && self.page.capture.is_some())
             || widgets::value_active(ui.ctx())

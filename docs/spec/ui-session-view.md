@@ -3,14 +3,14 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-11-20
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
   - crates/ui/src/settings/view_settings.rs
   - crates/ui/tests/mixer_strip.rs
-  - crates/ui/src/interaction/colour_picker.rs
-  - crates/ui/tests/track_colour.rs
+  - crates/ui/src/interaction/color_picker.rs
+  - crates/ui/tests/track_color.rs
   - crates/ui/src/interaction/grid.rs
   - crates/ui/src/session/slot_launch.rs
   - crates/ui/src/session/launch_keys.rs
@@ -210,7 +210,10 @@ column has **stop all clips** for the whole set.
 **Suhina:** a click on a track's slot also selects it (a group's slots only launch; with
 **Select on launch** off, a click on an occupied slot's launch control launches without selecting),
 and selecting a slot, empty or not, selects its track too, so the detail area shows that track and
-auto-arm (Settings › MIDI) arms it (#834). A right-click selects it and opens its menu: **Copy** copies its clip (`clip.copy {track,
+auto-arm (Settings › MIDI) arms it (#834). A right-click selects it and opens its menu: on a
+clip, first the colour palette, **More colors** and **Track color**, as an arrangement clip's menu
+has them (`clip.setColorMany` and `clip.setColor` with the clip's id, one undo step;
+[Track colours](colour-picker.md)), then **Copy**, which copies its clip (`clip.copy {track,
 scene}`), **Paste** puts the copied clip in it (`clip.paste {track, scene}`), greyed out while
 nothing has been copied, and **Delete** takes its clip off, MIDI or audio (`clip.delete {track,
 scene}`, one undo step), greyed out on an empty slot (#842). Ctrl+C and Ctrl+V do the same on the selected slot
@@ -424,8 +427,8 @@ tag's right-click menu in the browser has it before the free colour choice. Pick
 track already has runs nothing. A colour of any value (from an imported project, or set with
 `track.setColor` from the CLI or MCP) shows as it is; the palette marks none of its swatches then.
 
-The palette's **+ More colours** entry and **F2** open the same non-modal colour window,
-with related shades, recent track colours and precise controls. It stays open while the DAW
+The palette's **More colors** button and **F2** open the same non-modal colour window,
+with saved colours and precise controls. It stays open while the DAW
 is used and edits the selected tracks live, one Undo step per drag or choice
 ([Track colours](colour-picker.md)).
 

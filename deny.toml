@@ -101,10 +101,6 @@ ignore = [
     # It also comes with resvg's text support (usvg > fontdb), which draws `<text>` in theme
     # artwork with the bundled fonts. Remove this when winit and resvg move off it.
     { id = "RUSTSEC-2026-0192", reason = "unmaintained, no replacement upstream; winit's Wayland title bar and resvg's SVG text use it" },
-    # rustybuzz is unmaintained in favour of harfrust. It is not a vulnerability: resvg's text
-    # support (usvg) shapes `<text>` in theme artwork with it, on the bundled fonts only, never on
-    # fonts from the system or a package. Remove this when resvg moves to harfrust.
-    { id = "RUSTSEC-2026-0206", reason = "rustybuzz: unmaintained, shapes SVG text in theme artwork with the bundled fonts; waits for resvg on harfrust" },
     # chrono is unmaintained in favour of jiff. It is not a vulnerability, and Suhina's own code
     # uses jiff: only rmcp, the MCP server's SDK, still depends on chrono, and turns on schemars'
     # chrono04 with it (modelcontextprotocol/rust-sdk#1469). Remove this when rmcp drops chrono.

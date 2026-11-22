@@ -9,10 +9,10 @@ browser-plug-ins suhina-glass@midnight 2bef25c3bad004d8
 browser-search suhina-glass@midnight 0d9f49c7aaa9937f
 clip-audio suhina-glass@midnight bd09cc4cd0296928
 clip-midi suhina-glass@midnight 666d75e0f6e21f63
-colour-picker suhina-glass@midnight d341392bad23ce8c
-colour-picker-field suhina-glass@midnight d5546b66b977dd01
-colour-picker-wheel suhina-glass@midnight 1f9ea70c4e70170a
-context-menu suhina-glass@midnight 1b0a39a11fdb4c4c
+color-menu-saved suhina-glass@midnight 1acf3859387b57e3
+color-picker suhina-glass@midnight 7b1b8691605e285a
+color-picker-field suhina-glass@midnight d6ce2d012a596a79
+context-menu suhina-glass@midnight 52a0a28c47adab51
 control-bar-toggles suhina-glass@midnight 273248b9400c5e9d
 count-in-menu suhina-glass@midnight 577fa13fd8f16cbb
 cpu suhina-glass@midnight 01579f57e92bbc50

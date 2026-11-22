@@ -37,7 +37,7 @@ const EPSILON: f64 = 1e-9;
 
 /// Where a clip is: an arrangement lane and the clip's index in it, or a launcher column and
 /// the slot's index in it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClipAt {
     Arrangement(usize, usize),
     Slot(usize, usize),

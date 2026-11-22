@@ -9,10 +9,10 @@ browser-plug-ins suhina-glass 29afa734da33b169
 browser-search suhina-glass abccb9030fba41bf
 clip-audio suhina-glass c912c539abae3c58
 clip-midi suhina-glass 101b6af199981845
-colour-picker suhina-glass 01615f35e78a0901
-colour-picker-field suhina-glass 365754f6b94f3896
-colour-picker-wheel suhina-glass 0324130fced26160
-context-menu suhina-glass a8494d13636598b5
+color-menu-saved suhina-glass 056974e35eaefe28
+color-picker suhina-glass 1681b8a7c168f66a
+color-picker-field suhina-glass 84c1137221144c5a
+context-menu suhina-glass f6a131cb9be562fe
 control-bar-toggles suhina-glass 68d2d6fc0c3e6ee5
 count-in-menu suhina-glass b966eb5b827aed01
 cpu suhina-glass dd8290c2ee1f2340

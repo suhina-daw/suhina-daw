@@ -9,7 +9,7 @@ use suhina_engine::model::{
     AudioInput, ClipId, InputChannels, MidiInput, MidiPort, Monitor, Rgb, TimeSignature, TrackId,
 };
 
-use crate::interaction::colour_picker;
+use crate::interaction::color_picker;
 use crate::kit::theme;
 use crate::kit::widgets::Action;
 use crate::settings::keymap::shown;
@@ -415,12 +415,12 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     // A colour picked with several tracks selected colours them all.
     let single = [menu.track];
     let selected = if menu.selection.contains(&menu.track) { menu.selection } else { &single };
-    colour_picker::track_row(ui, menu.colour, selected, actions);
+    color_picker::track_row(ui, menu.colour, selected, actions);
     // A group's tracks, at any depth, and their clips: its colour, so the group reads as one in
     // every view.
     if menu.is_group && ui.button("Recolor group").clicked() {
         // The colour the group shows: one it was never given is worked out from its place.
-        let params = json!({ "track": track, "color": colour_picker::hex(menu.colour), "clips": true });
+        let params = json!({ "track": track, "color": color_picker::hex(menu.colour), "clips": true });
         actions.push(Action::new("track.colorGroup", params));
         ui.close();
     }
@@ -655,16 +655,11 @@ pub fn clip_menu(
     }
     let list: Vec<serde_json::Value> = clips.iter().map(|(_, clip)| json!({ "clip": clip.0 })).collect();
     ui.set_min_width(140.0);
-    // The clips' colour: a swatch or any colour, or back to their tracks' colour.
-    // One command for them all: one undo step, and a large selection takes it at once.
-    if let Some(pick) = colour_picker::swatch_row(ui, None) {
-        actions.push(Action::new(
-            "clip.setColorMany",
-            json!({ "clips": list.clone(), "color": colour_picker::hex(pick.colour) }),
-        ));
-        pick.close_menu(ui);
-    }
-    if ui.button("Track colour").clicked() {
+    // The clips' color: the track menu's palette and More colors, or back to their tracks'
+    // color. One command for them all: one undo step, and a large selection takes it at once.
+    let ids: Vec<_> = clips.iter().map(|(_, clip)| *clip).collect();
+    color_picker::clip_row(ui, None, &ids, actions);
+    if ui.button("Track color").clicked() {
         actions.push(Action::new("clip.setColorMany", json!({ "clips": list.clone(), "color": "none" })));
         ui.close();
     }
@@ -1066,16 +1061,29 @@ pub fn device_menu(
     }
 }
 
+/// A clip slot's menu. `clip` is the slot's clip and its own color, if it has one: the palette
+/// and More colors color it as the arrangement clip's menu does, and Track color hands it back to
+/// its track's.
+#[allow(clippy::too_many_arguments)]
 pub fn slot_menu(
     ui: &mut Ui,
     track: TrackId,
     scene: usize,
     name: &str,
-    has_clip: bool,
+    clip: Option<(ClipId, Option<Rgb>)>,
     can_paste: bool,
     actions: &mut Vec<Action>,
 ) {
+    let has_clip = clip.is_some();
     ui.set_min_width(140.0);
+    if let Some((clip, color)) = clip {
+        color_picker::clip_row(ui, color, &[clip], actions);
+        if ui.button("Track color").clicked() {
+            actions.push(Action::new("clip.setColor", json!({ "clip": clip.0, "color": "none" })));
+            ui.close();
+        }
+        ui.separator();
+    }
     // Rename, or with the setting on the clip's name typed to rename: applied with Enter or
     // Rename, as a marker's is.
     if has_clip && !name_field_on(ui) {

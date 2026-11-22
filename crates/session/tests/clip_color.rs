@@ -19,7 +19,7 @@ fn copied_and_consolidated_clips_do_not_take_creation_defaults() {
 
 use serde_json::json;
 use suhina_model::*;
-use suhina_session::{Session, blank_project, colours};
+use suhina_session::{Session, blank_project, colors};
 use suhina_test_support::ProjectBuilder;
 
 use crate::support::run;
@@ -138,7 +138,7 @@ fn new_tracks_take_suhina_s_colour_for_their_kind_and_keep_it() {
     run(&mut session, "track.add", json!({ "kind": "midi" })).unwrap();
     for track in session.project().tracks.iter().filter(|track| !existing.contains(&track.id)) {
         let audio = track.content.audio && !track.content.notes;
-        assert_eq!(track.color, Some(if audio { colours::AUDIO } else { colours::MIDI }));
+        assert_eq!(track.color, Some(if audio { colors::AUDIO } else { colors::MIDI }));
     }
     let before = session.project().tracks.iter().map(|t| (t.id, t.color)).collect::<Vec<_>>();
     run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
@@ -155,11 +155,11 @@ fn a_session_without_a_window_colours_what_it_creates() {
     let mut session = Session::new(project());
     session.set_new_clips_take_track_colour(false);
     run(&mut session, "clip.create", json!({"track":1,"start":16.0,"length":4.0})).unwrap();
-    assert_eq!(clips(&session, 1)[2].color, Some(colours::MIDI));
+    assert_eq!(clips(&session, 1)[2].color, Some(colors::MIDI));
     let tracks = session.project().tracks.clone();
     run(&mut session, "track.add", json!({"kind":"audio"})).unwrap();
     let added = session.project().tracks.iter().find(|track| !tracks.iter().any(|old| old.id == track.id));
-    assert_eq!(added.unwrap().color, Some(colours::AUDIO));
+    assert_eq!(added.unwrap().color, Some(colors::AUDIO));
     run(&mut session, "edit.undo", json!({})).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(clips(&session, 1).len(), 2);
@@ -183,7 +183,7 @@ fn tracks_keep_the_colour_they_show_when_tracks_come_and_go() {
             .tracks
             .iter()
             .enumerate()
-            .map(|(place, t)| (t.id, colours::track_colour(t.color, place)))
+            .map(|(place, t)| (t.id, colors::track_color(t.color, place)))
             .collect::<Vec<_>>()
     };
     let before = shown(&session);
@@ -212,7 +212,7 @@ fn with_one_colour_new_tracks_all_take_the_midi_colour() {
     run(&mut session, "track.add", json!({ "kind": "midi" })).unwrap();
     let p = session.project();
     let new: Vec<_> = p.tracks.iter().filter(|t| !before.contains(&t.id)).map(|t| t.color).collect();
-    assert_eq!(new, [Some(colours::MIDI), Some(colours::MIDI)]);
+    assert_eq!(new, [Some(colors::MIDI), Some(colors::MIDI)]);
 }
 
 #[test]
@@ -227,7 +227,7 @@ fn a_new_clip_can_take_its_track_s_colour() {
     assert_eq!(clips(&session, 1).last().unwrap().color, track);
     session.set_new_clips_take_track_colour(false);
     run(&mut session, "clip.create", json!({"track":1,"start":24.0,"length":4.0})).unwrap();
-    assert_eq!(clips(&session, 1).last().unwrap().color, Some(colours::MIDI));
+    assert_eq!(clips(&session, 1).last().unwrap().color, Some(colors::MIDI));
 }
 
 #[test]
@@ -241,11 +241,44 @@ fn a_track_saved_without_a_colour_keeps_the_one_it_shows_and_its_copy_takes_it()
     assert!(!session.has_unsaved_changes(), "giving the colour is not an edit");
     let first = session.project().tracks[0].clone();
     let second = session.project().tracks[1].color;
-    assert_eq!(first.color, Some(colours::LEGACY[0]));
-    assert_eq!(second, Some(colours::LEGACY[1]));
+    assert_eq!(first.color, Some(colors::LEGACY[0]));
+    assert_eq!(second, Some(colors::LEGACY[1]));
     // Its copy shows the colour it shows, not the default for its kind.
     run(&mut session, "track.duplicate", json!({ "tracks": [first.id.0] })).unwrap();
     let copy = session.project().tracks.iter().find(|t| t.id != first.id && t.name.starts_with(&first.name));
     assert_eq!(copy.and_then(|t| t.color), first.color);
-    assert_ne!(first.color, Some(colours::MIDI), "the test tells the two apart");
+    assert_ne!(first.color, Some(colors::MIDI), "the test tells the two apart");
+}
+
+/// A launcher clip takes a color by id, from `clip.setColor` and with arrangement clips from
+/// `clip.setColorMany` as one undo step, and goes back to its track's with `"none"`.
+#[test]
+fn a_launcher_clip_takes_a_color_by_id_alone_or_with_arrangement_clips() {
+    let project = ProjectBuilder::from(blank_project())
+        .notes(1, "Clip 1", 4.0, Vec::new())
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .slot(1, 0, Clip::new(ContentId(1), 0.0, 4.0))
+        .build();
+    let mut session = Session::new(project);
+    let slot_clip = |session: &Session| {
+        let column = session.project().launcher.columns.iter().find(|c| c.track == TrackId(1)).unwrap();
+        column.slots[0].clip.clone().unwrap()
+    };
+    let slot = slot_clip(&session).id;
+    let arranged = clips(&session, 1)[0].id;
+    run(&mut session, "clip.setColor", json!({"clip":slot.0,"color":"#112233"})).unwrap();
+    assert_eq!(slot_clip(&session).color, Some(Rgb(0x11, 0x22, 0x33)));
+    let many = json!({"clips":[{"clip":slot.0},{"clip":arranged.0}],"color":"#445566"});
+    assert_eq!(run(&mut session, "clip.setColorMany", many).unwrap()["clips"], 2);
+    assert_eq!(slot_clip(&session).color, Some(Rgb(0x44, 0x55, 0x66)));
+    assert_eq!(clips(&session, 1)[0].color, Some(Rgb(0x44, 0x55, 0x66)));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(slot_clip(&session).color, Some(Rgb(0x11, 0x22, 0x33)));
+    assert_eq!(clips(&session, 1)[0].color, None);
+    run(&mut session, "clip.setColorMany", json!({"clips":[{"clip":slot.0}],"color":"none"})).unwrap();
+    assert_eq!(slot_clip(&session).color, None);
+    // Nothing changes when one clip of the list is missing.
+    let missing = json!({"clips":[{"clip":arranged.0},{"clip":9999}],"color":"#778899"});
+    assert!(run(&mut session, "clip.setColorMany", missing).is_err());
+    assert_eq!(clips(&session, 1)[0].color, None);
 }

@@ -13,7 +13,7 @@ use suhina_engine::{LauncherMonitor, PlayingMeter, Queued};
 /// The colour a track at `index` among the tracks shows: its own, or for a track saved without
 /// one, Suhina's fixed colour for its place.
 pub fn track_colour(track: &Track, index: usize) -> Rgb {
-    suhina_session::colours::track_colour(track.color, index)
+    suhina_session::colors::track_color(track.color, index)
 }
 
 /// A theme colour as a project's track colour.
@@ -57,6 +57,8 @@ pub struct Slot {
     pub launch: Option<LaunchSettings>,
     /// The clip's own colour; `None` takes its track's.
     pub color: Option<Rgb>,
+    /// The clip's id; `None` for an empty slot.
+    pub clip: Option<suhina_engine::model::ClipId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -293,7 +295,8 @@ impl TrackGrid {
                             enabled: true,
                             length: 0.0,
                             launch: None,
-                            color: None
+                            color: None,
+                            clip: None,
                         };
                         scene_count
                     ]
@@ -319,6 +322,7 @@ impl TrackGrid {
                             length: clip.map_or(0.0, |c| c.loop_range.map_or(c.length, |r| r.end - r.start)),
                             launch: clip.map(|c| c.launch),
                             color: clip.and_then(|c| c.color),
+                            clip: clip.map(|c| c.id),
                         }
                     })
                     .collect(),

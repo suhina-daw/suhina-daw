@@ -526,10 +526,13 @@ list-row[kind="plugin"]:hover { background-color: var(--panel-hoverBackground); 
 list-row[kind="missing-file"][selected] { background-color: var(--control-activeBackground); }
 list-row[kind="missing-file"]:hover { background-color: var(--panel-hoverBackground); }
 list-row[kind="picker"] { background-color: var(--panel-hoverBackground); color: var(--text-secondary); }
-colour-swatch { border-color: var(--text-primary); }
-colour-field { border-color: var(--border-strong); border-width: 1px; }
-colour-field:focus { border-color: var(--accent); border-width: 2px; }
-colour-swatch[kind="square"] { border-color: var(--border); }
+color-swatch { border-color: var(--text-primary); }
+color-swatch[kind="square"] { border-color: var(--border); }
+color-swatch[kind="add"] { color: var(--text-secondary); }
+color-swatch[kind="add"]:hover { color: var(--text-primary); }
+color-swatch[kind="add"]:disabled { color: var(--text-hint); }
+color-field { border-color: var(--border-strong); border-width: 1px; }
+color-field:focus { border-color: var(--accent); border-width: 2px; }
 theme-card { border-color: var(--border); }
 theme-card:hover { border-color: var(--border-strong); }
 theme-card[selected] { border-color: var(--accent); accent-color: var(--accent); }

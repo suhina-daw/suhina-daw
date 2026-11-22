@@ -1436,8 +1436,8 @@ fn tag_folder_menu(
     let picked_now = {
         let stored: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
         let current = stored.as_deref().and_then(theme::parse_hex).map(crate::interaction::grid::to_rgb);
-        crate::interaction::colour_picker::select_colour_row(ui, pick_id, current, "Select colour")
-            .map(|picked| theme::hex(crate::interaction::colour_picker::color32(picked)))
+        crate::interaction::color_picker::select_color_row(ui, pick_id, current, "Select colour")
+            .map(|picked| theme::hex(crate::interaction::color_picker::color32(picked)))
     };
     if let Some(hex) = picked_now.as_ref() {
         ui.ctx().data_mut(|d| d.insert_temp(pick_id, hex.clone()));
@@ -2001,13 +2001,13 @@ fn tags_section(
                 // Select colour: the palette's swatches and the theme editor's picker, opened in
                 // the menu (a picker of its own would end the menu as a click outside it does),
                 // the colour one command a pick.
-                if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
+                if let Some(picked) = crate::interaction::color_picker::select_color_row(
                     ui,
                     Id::unique(("browser-tag-colour", epoch, row.entry.id())),
                     current,
                     "Select colour",
                 ) {
-                    let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
+                    let hex = theme::hex(crate::interaction::color_picker::color32(picked));
                     run(projects, "library.setTag", json!({ "id": format!("#{}", row.entry.id()), "color": hex }), out);
                 }
                 ui.separator();
@@ -2115,14 +2115,14 @@ fn tags_section(
                     // without its add leaves no colour for the next one to inherit
                     // ([#1254] review).
                     d.remove::<String>(Id::unique(("browser-folder-tag-color", epoch, id)));
-                    crate::interaction::colour_picker::forget_state(
+                    crate::interaction::color_picker::forget_state(
                         d,
                         Id::unique(("browser-folder-tag-color", epoch, id)),
                     );
                 } else {
                     d.remove::<String>(Id::unique(("browser-rename-tag", epoch, id)));
                     d.remove::<String>(Id::unique(("browser-section-new-tag", epoch, id)));
-                    crate::interaction::colour_picker::forget_state(d, Id::unique(("browser-tag-colour", epoch, id)));
+                    crate::interaction::color_picker::forget_state(d, Id::unique(("browser-tag-colour", epoch, id)));
                 }
             });
         }
@@ -2421,8 +2421,8 @@ fn section_title(
                 let picked_now = {
                     let stored: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
                     let current = stored.as_deref().and_then(theme::parse_hex).map(crate::interaction::grid::to_rgb);
-                    crate::interaction::colour_picker::select_colour_row(ui, pick_id, current, "Select colour")
-                        .map(|picked| theme::hex(crate::interaction::colour_picker::color32(picked)))
+                    crate::interaction::color_picker::select_color_row(ui, pick_id, current, "Select colour")
+                        .map(|picked| theme::hex(crate::interaction::color_picker::color32(picked)))
                 };
                 if let Some(hex) = picked_now.as_ref() {
                     ui.ctx().data_mut(|d| d.insert_temp(pick_id, hex.clone()));
@@ -2490,7 +2490,7 @@ fn section_title(
             // The pick held for the tag it was to colour ([#1254] review: a menu that
             // closes without its add leaves no colour for the next one to inherit).
             d.remove::<String>(Id::unique(("browser-title-tag-color", epoch, kind.name())));
-            crate::interaction::colour_picker::forget_state(
+            crate::interaction::color_picker::forget_state(
                 d,
                 Id::unique(("browser-title-tag-color", epoch, kind.name())),
             );
@@ -3218,13 +3218,13 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 }
                 // The palette track colours take, then any colour.
                 let current = theme::parse_hex(&tag.color).map(crate::interaction::grid::to_rgb);
-                if let Some(picked) = crate::interaction::colour_picker::select_colour_row(
+                if let Some(picked) = crate::interaction::color_picker::select_color_row(
                     ui,
                     Id::unique(("browser-footer-tag-colour", epoch, tag.id)),
                     current,
                     "Select colour",
                 ) {
-                    let hex = theme::hex(crate::interaction::colour_picker::color32(picked));
+                    let hex = theme::hex(crate::interaction::color_picker::color32(picked));
                     run(projects, "library.setTag", json!({ "id": format!("#{0}", tag.id), "color": hex }), out);
                 }
                 ui.separator();
@@ -3317,7 +3317,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
             ui.ctx().data_mut(|d| {
                 d.remove::<String>(Id::unique(("browser-footer-rename-tag", epoch, tag.id)));
                 d.remove::<String>(Id::unique(("browser-footer-new-tag", epoch, tag.id)));
-                crate::interaction::colour_picker::forget_state(
+                crate::interaction::color_picker::forget_state(
                     d,
                     Id::unique(("browser-footer-tag-colour", epoch, tag.id)),
                 );
@@ -3378,10 +3378,7 @@ fn footer_overflow(
             d.remove::<String>(Id::unique(("browser-footer-rename-tag", epoch, tag.id)));
             d.remove::<bool>(Id::unique(("browser-footer-menu-open", epoch, tag.id)));
             d.remove::<String>(Id::unique(("browser-footer-new-tag", epoch, tag.id)));
-            crate::interaction::colour_picker::forget_state(
-                d,
-                Id::unique(("browser-footer-tag-colour", epoch, tag.id)),
-            );
+            crate::interaction::color_picker::forget_state(d, Id::unique(("browser-footer-tag-colour", epoch, tag.id)));
         }
     });
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");

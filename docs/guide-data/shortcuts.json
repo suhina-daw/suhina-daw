@@ -60,13 +60,13 @@
         }
       },
       "sourceFingerprint": "da867bf0d071da4c548d08d9eab631e8dba2df33b88191e84d7dbaf6a9682670",
-      "description": "Opens or focuses the selected tracks' floating colour window. Choose a palette colour, related shade, recent colour or exact value; changes apply immediately and the window stays open while you use the DAW.",
-      "context": "Select one or more track headers first. Text fields and the piano roll keep their own keyboard focus. If an older keymap already assigns F2 to another window action, that binding is preserved and the colour window starts unbound; use + More colours in the track menu or assign a shortcut in Settings.",
+      "description": "Opens or focuses the selected tracks' floating colour window. Choose a palette colour, a saved colour, a swatch of the Steps grid, a point of the Field or an exact value; changes apply immediately and the window stays open while you use the DAW.",
+      "context": "Select one or more track headers first. Text fields and the piano roll keep their own keyboard focus. If an older keymap already assigns F2 to another window action, that binding is preserved and the colour window starts unbound; use More colors in the track menu or assign a shortcut in Settings.",
       "whenToUse": "Colour related tracks together or reuse a colour while arranging the project.",
       "platformNotes": "F2 is the default on Windows, Linux and macOS. Some keyboards require Fn with F2 to send the function key.",
       "references": [
         "crates/ui/src/settings/keymap.rs",
-        "crates/ui/src/app/colour_window.rs",
+        "crates/ui/src/app/color_window.rs",
         "docs/spec/colour-picker.md"
       ],
       "helpStatus": "reviewed"

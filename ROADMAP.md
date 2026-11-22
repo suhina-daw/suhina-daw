@@ -1310,10 +1310,13 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   Automation colour can draw every automation line and point in one colour of the theme's or
   picked ones, instead of the track's colour.
 
-- Track colour menus offer 36 colours; + or F2 opens a persistent floating colour window
-  with perceptual related shades, eight recent colours, exact hex/RGB/HSL, field and wheel,
-  optional stepped/soft selection, random colours and default restoration. Live adjustments
-  and multi-track choices form one Undo step each; the DAW stays usable while it is open.
+- Track and clip colour menus (arrangement and launcher clips) offer 36 colours in a grid, with
+  arrows to the user's saved colours; More colours or F2 opens a persistent floating colour window with saved colours that are
+  kept in order, moved and removed, exact hex/RGB/HSL, a stepped 7 × 7 grid for each of 36
+  perceptually even hues (or any hue) that holds every palette colour, and a saturation/value
+  field with optional soft selection, random colours and default restoration. Live adjustments
+  and multi-track or multi-clip choices form one Undo step each; the DAW stays usable while it
+  is open.
 
 - Selected track headers move together in project order into open or folded groups and folders, with separate inside and before/after drop feedback in the Arrangement and Launcher. Disclosure buttons reveal their clickable gutter on hover and keyboard focus; in Arrangement the gutter spans the header's full height and follows the timeline-facing edge on either side. The colour strip remains separate, and header double-clicks also open and close containers (#1569).
 - Source folders and groups disappear when their last members leave, in the same undo step. Removing a group's processing asks first, with a remembered desktop preference; command clients confirm the affected groups explicitly (#1569).

@@ -33,8 +33,8 @@ fn live(variable: &str) -> egui::Color32 {
 mod arrangement;
 mod audio_editor_keys;
 mod bars;
-mod colours;
-mod colours_native;
+mod colors;
+mod colors_native;
 mod control_bar;
 mod detail;
 mod elements;
