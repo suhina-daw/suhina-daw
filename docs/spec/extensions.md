@@ -148,6 +148,8 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
   rather than through commands.
 - Commands of an extension's own outside the namespace its manifest declares.
 - Extensions that Suhina ships itself: what ships stays built from this tree and GPL-compatible.
-  No extension is shipped yet: the runner a surface script names is a shipped program, not an
-  extension (see *Running one*). A surface program's script is the first kind that will ride
-  this way ([shipped scripts](shipped-scripts.md)).
+  A surface program's script is the first kind that rides this way: the Akai APC40 MkII's is
+  unpacked into the library's `Scripts/` folder and installed into the extensions store at
+  start, so the port scan runs it for the device without the user adding anything
+  ([shipped scripts](shipped-scripts.md)). The runner a surface script names is a shipped
+  program, not an extension (see *Running one*).

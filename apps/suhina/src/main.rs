@@ -730,6 +730,11 @@ impl Window {
         // SUHINA_EXTENSIONS named another root at start-up.
         if let Some(settings) = data_dir() {
             self.app.projects_mut().set_extensions_root(&settings.join("extensions"));
+            // The shipped surface programs install into the store when it does not hold them,
+            // so the port scan runs them without the user adding anything
+            // (docs/spec/shipped-scripts.md, issue 1676); a failure joins the start-up
+            // warnings.
+            warnings.extend(self.app.projects_mut().install_shipped_scripts());
         }
         // The sample map analyses the library's samples in the background (ADR 0013).
         self.app.projects_mut().start_sound_map();

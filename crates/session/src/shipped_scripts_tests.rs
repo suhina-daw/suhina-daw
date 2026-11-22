@@ -119,3 +119,188 @@ fn every_file_in_a_pack_folder_is_embedded() {
         assert_eq!(on_disk, embedded, "packs/{} and the embed hold different files", script.id);
     }
 }
+
+/// A fresh store receives every shipped script whole — the way `extensions.add` puts one
+/// there — the store lists it as usable, and a second start installs nothing.
+#[test]
+fn a_fresh_store_receives_every_shipped_script_once() {
+    let dir = temp("store");
+    let mut projects = crate::Projects::default().with_extensions_root(&dir);
+    let (installed, warnings) = install(&mut projects.extensions);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(installed, scripts().len());
+    for script in scripts() {
+        for (name, bytes) in script.files {
+            let target = dir.join(script.id).join(name);
+            assert!(target.is_file(), "{target:?} is not there after the install");
+            assert_eq!(std::fs::read(&target).unwrap(), *bytes, "{name}'s copy is not the shipped bytes");
+        }
+    }
+    // The store reads it, validated and usable.
+    let listed = projects.execute("extensions.list", &serde_json::json!({})).unwrap();
+    let entry = listed["extensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == "apc40-mkii")
+        .expect("the shipped script is listed");
+    assert!(entry["reason"].is_null(), "{entry}");
+    let (again, warnings) = install(&mut projects.extensions);
+    assert_eq!(again, 0, "a second start installed again");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A store copy the user edited is theirs: a later start never overwrites it, and a copy the
+/// record does not recognize is not an install of ours at all.
+#[test]
+fn an_edited_store_copy_is_left_alone() {
+    let dir = temp("store-edited");
+    let mut extensions = Extensions::new();
+    extensions.force_root(&dir);
+    install(&mut extensions);
+    std::fs::write(dir.join("apc40-mkii/script.lua"), b"-- my own\n").unwrap();
+    let (installed, warnings) = install(&mut extensions);
+    assert_eq!(installed, 0);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(std::fs::read(dir.join("apc40-mkii/script.lua")).unwrap(), b"-- my own\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A store as an earlier Suhina left it — the record names the older script and the copy is
+/// that, untouched — is replaced whole when the app carries a newer version, and the record
+/// follows it.
+#[test]
+fn a_newer_shipped_version_replaces_an_untouched_copy() {
+    let dir = temp("store-update");
+    let shipped = &scripts()[0];
+    let old_script = b"-- the older shipped script\n";
+    let mut files: BTreeMap<String, String> =
+        shipped.files.iter().map(|(name, bytes)| ((*name).to_string(), digest(bytes))).collect();
+    files.insert("script.lua".into(), digest(old_script));
+    let mut record = Record::default();
+    record.scripts.insert(shipped.id.into(), RecordEntry { files, removed: false });
+    std::fs::create_dir_all(dir.join(shipped.id)).unwrap();
+    for &(name, bytes) in shipped.files {
+        let bytes = if name == "script.lua" { old_script.as_slice() } else { bytes };
+        std::fs::write(dir.join(shipped.id).join(name), bytes).unwrap();
+    }
+    record.write(&dir).unwrap();
+
+    let mut extensions = Extensions::new();
+    extensions.force_root(&dir);
+    let (installed, warnings) = install(&mut extensions);
+    assert_eq!(installed, 1, "the newer version did not replace the old copy");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let new_script = shipped.files.iter().find(|(name, _)| *name == "script.lua").unwrap().1;
+    assert_eq!(std::fs::read(dir.join(shipped.id).join("script.lua")).unwrap(), new_script);
+    let record = Record::read(&dir);
+    assert_eq!(record.scripts[shipped.id].files["script.lua"], digest(new_script));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A copy the user changed is left alone even when the app carries a newer version: the
+/// store's copy is replaced only while it still carries exactly the recorded content.
+#[test]
+fn a_newer_shipped_version_leaves_an_edited_copy_alone() {
+    let dir = temp("store-update-edited");
+    let shipped = &scripts()[0];
+    let mut files: BTreeMap<String, String> =
+        shipped.files.iter().map(|(name, bytes)| ((*name).to_string(), digest(bytes))).collect();
+    files.insert("script.lua".into(), digest(b"-- the older shipped script\n"));
+    let mut record = Record::default();
+    record.scripts.insert(shipped.id.into(), RecordEntry { files, removed: false });
+    std::fs::create_dir_all(dir.join(shipped.id)).unwrap();
+    std::fs::write(dir.join(shipped.id).join("script.lua"), b"-- my own\n").unwrap();
+    record.write(&dir).unwrap();
+
+    let mut extensions = Extensions::new();
+    extensions.force_root(&dir);
+    let (installed, warnings) = install(&mut extensions);
+    assert_eq!(installed, 0, "the user's copy was replaced");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(std::fs::read(dir.join(shipped.id).join("script.lua")).unwrap(), b"-- my own\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `extensions.remove` on a shipped script stops it and forgets it: later starts do not
+/// install it again, and adding the library's folder back is the way to want it again.
+#[test]
+fn a_removed_shipped_script_stays_removed() {
+    let dir = temp("store-removed");
+    let source = temp("store-removed-src");
+    let mut projects = crate::Projects::default().with_extensions_root(&dir);
+    install(&mut projects.extensions);
+    projects.execute("extensions.remove", &serde_json::json!({ "id": "apc40-mkii" })).unwrap();
+    assert!(!dir.join("apc40-mkii").exists(), "removed means the store's copy goes");
+    let (installed, warnings) = install(&mut projects.extensions);
+    assert_eq!(installed, 0, "a removed shipped script came back");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(!dir.join("apc40-mkii").exists());
+    // Adding it back from the library's folder — the unpacked copy — is the way to want it
+    // again, and the app's own install leaves that copy alone from there.
+    let (_, warnings) = unpack(&source);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    projects
+        .execute("extensions.add", &serde_json::json!({ "folder": source.join("apc40-mkii").display().to_string() }))
+        .unwrap();
+    assert!(dir.join("apc40-mkii").exists(), "the added folder is in the store");
+    let (installed, warnings) = install(&mut projects.extensions);
+    assert_eq!(installed, 0, "the added copy was replaced");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&source);
+}
+
+/// A store that already holds the id — the user's own extension, added before Suhina shipped
+/// one — is theirs: the install never replaces it.
+#[test]
+fn a_store_that_already_holds_the_id_is_left_alone() {
+    let dir = temp("store-theirs");
+    std::fs::create_dir_all(dir.join("apc40-mkii")).unwrap();
+    std::fs::write(dir.join("apc40-mkii/script.lua"), b"-- mine\n").unwrap();
+    let mut extensions = Extensions::new();
+    extensions.force_root(&dir);
+    let (installed, warnings) = install(&mut extensions);
+    assert_eq!(installed, 0);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(std::fs::read(dir.join("apc40-mkii/script.lua")).unwrap(), b"-- mine\n");
+    for &(name, _) in scripts()[0].files {
+        if name != "script.lua" {
+            assert!(!dir.join("apc40-mkii").join(name).exists(), "{name} was installed over the user's");
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A store folder that cannot be written is said, one line per script, and the start goes on:
+/// nothing panics, and the next start tries again.
+#[test]
+fn a_blocked_store_is_said_and_harmless() {
+    let dir = temp("store-blocked");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("extensions"), b"a file where the store should go").unwrap();
+    let mut extensions = Extensions::new();
+    extensions.force_root(&dir.join("extensions"));
+    let (installed, warnings) = install(&mut extensions);
+    assert_eq!(installed, 0);
+    assert_eq!(warnings.len(), scripts().len(), "{warnings:?}");
+    assert!(warnings.iter().all(|line| line.contains("tries again")), "{warnings:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A corrupted record reads as empty — it is Suhina's own state — and a fresh install heals
+/// it: the script lands and the record is written valid.
+#[test]
+fn a_corrupted_record_is_read_as_empty() {
+    let dir = temp("store-record");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(".shipped-scripts.json"), b"not a record").unwrap();
+    let mut extensions = Extensions::new();
+    extensions.force_root(&dir);
+    let (installed, warnings) = install(&mut extensions);
+    assert_eq!(installed, scripts().len());
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(Record::read(&dir).scripts.contains_key("apc40-mkii"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

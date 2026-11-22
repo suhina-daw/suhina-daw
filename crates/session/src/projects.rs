@@ -978,6 +978,14 @@ impl Projects {
         self.extensions.set_root(root);
     }
 
+    /// Installs every shipped surface program into the extensions store when it is not there,
+    /// and updates the copies Suhina installed ([`crate::shipped_scripts`],
+    /// docs/spec/shipped-scripts.md); the store's port scan runs what it finds. The start
+    /// calls it once the store's root is set. Returns the lines a start-up failure should say.
+    pub fn install_shipped_scripts(&mut self) -> Vec<String> {
+        crate::shipped_scripts::install(&mut self.extensions).1
+    }
+
     /// The one program running, for the tests: this slice's store starts none by itself, so
     /// the tests start exactly one and know which one it is. Not `cfg(test)`: the integration
     /// tests in `tests/extension_programs.rs` reach these through the compiled lib. The MIDI

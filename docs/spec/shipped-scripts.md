@@ -19,9 +19,11 @@ covers:
   [surface programs](surface-programs.md)), the pack that rides inside the executable and unpacks
   into the library (ADR 0036 › 2 and 3), and the command registry ([ADR 0002](../decisions/0002-commands.md)).
 - **Status:** planned ([#1676](https://github.com/suhina-daw/suhina-daw/issues/1676)). Built so
-  far: the clean-room script in `packs/apc40-mkii/` (#1677), and the unpack into the library's
-  `Scripts/` folder at every start — each file only when it is missing, with its tests. The
-  store install and the run-from-store tests follow.
+  far: the clean-room script in `packs/apc40-mkii/` (#1677), the unpack into the library's
+  `Scripts/` folder at every start — each file only when it is missing — and the store
+  install, with its tests: the shipped content installs when the store does not hold it, a
+  removal is remembered, and only a copy still carrying exactly the recorded content is
+  updated. The script's end-to-end run through the supervisor follows.
 
 ## What ships
 
@@ -69,6 +71,11 @@ one; ADR 0019 › 10).
 - The unpack, like the pack's (`shipped_scripts_tests`): a fresh library gets every file, an
   existing file is not touched, a deleted file comes back, the manifest's pin holds against
   the store's own validation, and a failure is not fatal.
+- The store install (`shipped_scripts_tests`): a fresh store gets every script whole and the
+  store lists it as usable, a second start installs nothing, a removed script stays removed
+  while adding the library's folder back is what brings it in, an edited copy — or the user's
+  own extension under the id — is left alone, an untouched copy is replaced when the app
+  carries a newer version, and a failure is not fatal.
 - The shipped script: the end-to-end tests every surface program gets
   (`crates/lua-runner/tests/programs.rs`), run against the pack's files — it starts, the mode
   message goes out when the ports open, a press of each strip button sends its command, and the

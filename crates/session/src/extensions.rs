@@ -1060,6 +1060,11 @@ fn remove(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
         projects.poll_plugins();
         return Err(format!("the extension's folder cannot be removed: {e}").into());
     }
+    // A shipped script's removal is remembered: later starts do not install it again
+    // (docs/spec/shipped-scripts.md › Where it lands, and what runs).
+    if let Some(root) = &projects.extensions.root {
+        crate::shipped_scripts::note_removed(root, id);
+    }
     projects.extensions.reload();
     // The program's ports go back to the usual path at once: this look syncs the claims.
     projects.poll_plugins();
@@ -1214,8 +1219,9 @@ const MAX_LICENCE: usize = 256 * 1024;
 
 /// The SHA-256 of a file, hashed as it is read in chunks, no further than `limit`: a file the
 /// manifest names is read by the store's scan, so the read is bounded — the error says the
-/// file is missing, or it is bigger than the cap.
-fn file_digest(file: &Path, limit: usize) -> Result<String, String> {
+/// file is missing, or it is bigger than the cap. The shipped scripts' record compares its
+/// store copies with the same hash ([`crate::shipped_scripts`]).
+pub(crate) fn file_digest(file: &Path, limit: usize) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     use std::io::Read;
     let file = std::fs::File::open(file).map_err(|_| "is missing".to_string())?;
