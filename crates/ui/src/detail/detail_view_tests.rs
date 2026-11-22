@@ -2349,12 +2349,15 @@ fn sidechain_to_searches_the_keyed_devices() {
                 tracks_copied: false,
                 key_readers: &readers,
             };
-            track_menu(ui, &menu, actions);
+            // Inside a right-click menu, as the views open it.
+            ui.button("Kick").context_menu(|ui| track_menu(ui, &menu, actions));
         },
         Vec::new(),
     );
     harness.run();
-    harness.get_by_label("Sidechain to").click();
+    harness.get_by_label("Kick").click_secondary();
+    harness.run();
+    harness.get_by_label("Sidechain to").hover();
     harness.run();
     harness.run();
     assert!(harness.query_by_label("Pad 3 › Compressor").is_some(), "every device is listed");

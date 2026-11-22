@@ -10,6 +10,7 @@ use egui::{Response, Ui};
 use serde_json::json;
 use suhina_engine::model::{LaunchMode, LaunchQuantization, LaunchSettings, TrackId};
 
+use crate::kit::menu;
 use crate::kit::widgets::Action;
 
 /// Turns the pointer going down and up on a slot's launch button into `clip.launch` and
@@ -90,25 +91,25 @@ pub fn launch_menu(ui: &mut Ui, track: TrackId, scene: usize, launch: LaunchSett
         }
         params
     };
-    ui.menu_button(format!("Launch mode: {}", mode_label(launch.mode)), |ui| {
+    menu::submenu(ui, &format!("Launch mode: {}", mode_label(launch.mode)), false, |ui| {
         for mode in LaunchMode::ALL {
-            if ui.radio(launch.mode == mode, mode_label(mode)).clicked() {
+            if menu::item(ui, mode_label(mode), launch.mode == mode).clicked() {
                 actions.push(Action::new("clip.setLaunchMode", slot(json!({ "mode": mode.name() }))));
                 ui.close();
             }
         }
     });
-    ui.menu_button(format!("Launch quantisation: {}", quantization_label(launch.quantization)), |ui| {
+    menu::submenu(ui, &format!("Launch quantisation: {}", quantization_label(launch.quantization)), false, |ui| {
         for quantization in LaunchQuantization::ALL {
-            if ui.radio(launch.quantization == quantization, quantization_label(quantization)).clicked() {
+            if menu::item(ui, quantization_label(quantization), launch.quantization == quantization).clicked() {
                 actions.push(Action::new("clip.setQuantization", slot(json!({ "value": quantization.name() }))));
                 ui.close();
             }
         }
     });
-    let mut legato = launch.legato;
-    if ui.checkbox(&mut legato, "Legato").clicked() {
-        actions.push(Action::new("clip.setLegato", slot(json!({ "on": legato }))));
+    // Checked while on; a click turns it the other way.
+    if menu::item(ui, "Legato", launch.legato).clicked() {
+        actions.push(Action::new("clip.setLegato", slot(json!({ "on": !launch.legato }))));
         ui.close();
     }
 }
