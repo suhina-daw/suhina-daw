@@ -84,12 +84,14 @@ pub fn transients(samples: &[f32], channels: usize, rate: f32) -> Vec<usize> {
 }
 
 /// The first frame of the hop from `start` (`hop` frames) whose level reaches a quarter of the
-/// hop's peak: where the attack begins.
+/// hop's peak: where the attack begins. A sample the energy counts as silence (not finite, or its
+/// square not) counts as silence here too: `f32::MAX` in a click's hop set a peak no other sample
+/// reached, and the attack was put on it.
 fn attack(samples: &[f32], channels: usize, start: usize, hop: usize) -> usize {
     let level = |f: usize| {
         samples
             .get(f * channels..(f + 1) * channels)
-            .map_or(0.0, |s| s.iter().map(|v| v.abs()).filter(|v| v.is_finite()).fold(0.0, f32::max))
+            .map_or(0.0, |s| s.iter().filter(|v| (*v * *v).is_finite()).map(|v| v.abs()).fold(0.0, f32::max))
     };
     let peak = (start..start + hop).map(level).fold(0.0, f32::max);
     (start..start + hop).find(|f| level(*f) >= peak * 0.25).unwrap_or(start)
@@ -132,6 +134,24 @@ mod tests {
         for invalid in [f32::INFINITY, f32::NAN, f32::MAX] {
             let mut samples = clicks(0.25, 2.0);
             samples[1_000] = invalid;
+            let found = transients(&samples, 1, RATE);
+            let want: Vec<usize> = (1..8).map(|k| k * 12_000).collect();
+            assert_eq!(found.len(), want.len(), "{invalid}: {found:?}");
+            for (f, w) in found.iter().zip(&want) {
+                assert!(f.abs_diff(*w) <= 48, "{invalid}: {f} for {w}");
+            }
+        }
+    }
+
+    /// A sample whose square is not finite, inside a click's hop, leaves the attack where the
+    /// click starts: the peak it is measured from skips that sample, as the energy does.
+    #[test]
+    fn an_invalid_sample_in_a_click_hop_leaves_its_attack_in_place() {
+        // The click at frame 24 000 starts hop 100 (240 frames a hop at 48 kHz); the invalid
+        // sample sits 150 frames into it, past where the attack begins.
+        for invalid in [f32::MAX, -f32::MAX, f32::INFINITY, f32::NAN] {
+            let mut samples = clicks(0.25, 2.0);
+            samples[24_150] = invalid;
             let found = transients(&samples, 1, RATE);
             let want: Vec<usize> = (1..8).map(|k| k * 12_000).collect();
             assert_eq!(found.len(), want.len(), "{invalid}: {found:?}");

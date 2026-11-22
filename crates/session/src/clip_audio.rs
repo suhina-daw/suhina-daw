@@ -755,9 +755,9 @@ fn played(clip: &Clip) -> (f64, f64) {
 
 /// The markers `all` (in beat order, each with whether the clip had it) moved to the beats `to`
 /// gives them, and how many moved. Two that land on one line: a new marker is left out; one the
-/// clip had stays where it was, the marker before it going back to its own place if it moved
-/// over it. Fails, rather than saving markers the next read would merge, when two end up no
-/// further apart than [`SAME_MARKER`] or out of order in seconds.
+/// clip had stays where it was, and every marker before it that moved onto or over it goes back
+/// to its own place ([`make_room`]). Fails, rather than saving markers the next read would merge,
+/// when two end up no further apart than [`SAME_MARKER`] or out of order in seconds.
 fn quantized(
     all: &[(suhina_model::WarpMarker, bool)],
     to: impl Fn(f64) -> f64,
@@ -780,20 +780,8 @@ fn quantized(
         if !was_there {
             continue;
         }
-        if !after(&kept, marker.time)
-            && let Some(last) = kept.last_mut()
-        {
-            last.0.time = last.1;
-        }
-        if after(&kept, marker.time) {
-            kept.push((marker, marker.time, true));
-        } else if let Some(last) = kept.pop() {
-            // The one before could not go back past it: it was new, and goes.
-            if last.2 {
-                kept.push(last);
-            }
-            kept.push((marker, marker.time, true));
-        }
+        kept.push((marker, marker.time, true));
+        make_room(&mut kept);
     }
     let moved = kept.iter().filter(|(m, from, _)| (m.time - from).abs() > SAME_MARKER).count();
     let kept: Vec<suhina_model::WarpMarker> = kept.into_iter().map(|(m, _, _)| m).collect();
@@ -802,6 +790,49 @@ fn quantized(
         return Err("the markers could not be quantized without passing or meeting each other".into());
     }
     Ok((kept, moved))
+}
+
+/// Makes room before the last of `kept` (each a marker, the beat it had before the move and
+/// whether the clip had it), a marker that stays at its own beat: walking back from it, each moved
+/// marker it or a marker put back would meet or pass goes back to its own beat, however many of
+/// them crowd there, and a new marker that still meets its neighbour at its own beat is left out.
+/// Moves that still fit are kept. Where no order is left to find (two the clip had, unmoved and
+/// meeting), it stops and [`quantized`] refuses.
+fn make_room(kept: &mut Vec<(suhina_model::WarpMarker, f64, bool)>) {
+    let before = |a: &suhina_model::WarpMarker, b: &suhina_model::WarpMarker| {
+        b.time > a.time + SAME_MARKER && b.audio_time > a.audio_time
+    };
+    let mut i = kept.len().saturating_sub(1);
+    // Whether `kept[i - 1]` went back to its own beat since it was checked against the one
+    // before it.
+    let mut put_back = false;
+    while i > 0 {
+        let (Some(&(a, a_from, a_had)), Some(&(b, _, b_had))) = (kept.get(i - 1), kept.get(i)) else {
+            break;
+        };
+        if before(&a, &b) {
+            if put_back {
+                put_back = false;
+                i -= 1;
+                continue;
+            }
+            break;
+        }
+        if a.time.total_cmp(&a_from).is_ne() {
+            if let Some(entry) = kept.get_mut(i - 1) {
+                entry.0.time = a_from;
+            }
+            put_back = true;
+        } else if !a_had {
+            kept.remove(i - 1);
+            put_back = false;
+            i -= 1;
+        } else if !b_had {
+            kept.remove(i);
+        } else {
+            break;
+        }
+    }
 }
 
 /// `clip.removeWarpMarker`: takes away the marker at content beat `beat`. A warped clip keeps two.
@@ -821,9 +852,9 @@ pub(crate) fn remove_warp_marker(session: &mut Session, params: &Value) -> Resul
 }
 
 /// `clip.resetWarp`: puts the clip's warp back to two markers, one at each end of the audio, so
-/// the audio runs evenly. By default at the tempo the clip has (or the project's, for a clip that
-/// is not warped); with `detect` at the tempo found in the file's metadata, its name or its sound,
-/// as `clip.findTempo` reads them. The clip's start, length and loop stay where they are. The
+/// the audio runs evenly. By default at the tempo the clip has, keeping where it came from (or the
+/// project's, for a clip that is not warped, then a manual tempo); with `detect` at the tempo
+/// found in the file's metadata, its name or its sound, as `clip.findTempo` reads them. The clip's start, length and loop stay where they are. The
 /// list it replaces is never copied, so it also clears a list too long for the other warp marker
 /// commands.
 pub(crate) fn reset_warp(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
@@ -848,7 +879,11 @@ pub(crate) fn reset_warp(session: &mut Session, params: &Value) -> Result<Value,
             .find_map(|(bpm, source)| bpm.map(|b| (b, source)))
             .ok_or("no tempo was found in the file's metadata, its name or its sound")?
     } else {
-        (own.unwrap_or(session.project.transport.tempo_bpm), own_source.unwrap_or(TempoSource::Manual))
+        match own {
+            Some(bpm) => (bpm, own_source.unwrap_or(TempoSource::Manual)),
+            // The project's tempo is no tempo of the file's: it is the user's, as a typed one.
+            None => (session.project.transport.tempo_bpm, TempoSource::Manual),
+        }
     };
     if !(bpm.is_finite() && CLIP_TEMPO_RANGE.contains(&bpm)) {
         return Err(format!("the tempo {bpm} is outside {CLIP_TEMPO_RANGE:?}").into());

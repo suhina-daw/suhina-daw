@@ -739,6 +739,10 @@ pub struct App {
     piano_roll: PianoRollState,
     /// The audio editor's zoom and scroll, for the audio clip it shows.
     audio_editor: crate::detail::audio_editor::AudioEditorState,
+    /// Whether the audio editor drew its reset dialog in the last frame: it holds the keys and the
+    /// actions as the window's dialogs do (`App::dialog_holds_actions`). Not the editor's own
+    /// `reset_open`, which an editor no longer drawn (the detail area closed, the clip gone) keeps.
+    audio_reset_shown: bool,
     /// Commands that look for transients in a clip's file, held until the window's background
     /// analysis has found them, with the project they were made in (`App::with_transients`).
     transients_waiting: Vec<(Option<ProjectId>, Action)>,
@@ -944,6 +948,7 @@ impl App {
             sample_drops: Vec::new(),
             piano_roll: PianoRollState::default(),
             audio_editor: crate::detail::audio_editor::AudioEditorState::default(),
+            audio_reset_shown: false,
             transients_waiting: Vec::new(),
             recovery: Vec::new(),
             recovery_open: None,
@@ -3731,6 +3736,9 @@ impl App {
                 }
             });
             let detail_rect = layout.rect(Region::Detail);
+            // The audio editor's reset dialog holds the actions only while it is drawn; the
+            // detail area says so again as it draws it.
+            self.audio_reset_shown = false;
             let inner = match detail_rect.filter(|_| grid.is_some()) {
                 Some(detail) if self.detail_open => {
                     let geometry = (main, detail, layout.detail_follows);
@@ -4150,7 +4158,10 @@ impl App {
         self.frame_trace.mark("dialogs");
         let actions: Vec<Action> = actions.into_iter().map(|action| self.remove_every_pick(action)).collect();
         // Those that look for transients take the ones found in the background, or wait for them.
-        let actions = self.with_transients(ui.ctx(), actions);
+        // While a dialog holds the actions, those that waited stay waiting rather than being
+        // dropped with the actions made behind the dialog: they go once it closes.
+        let actions =
+            if actions_held || self.dialog_holds_actions() { actions } else { self.with_transients(ui.ctx(), actions) };
         let ran = actions.len();
         for action in &actions {
             if actions_held || self.dialog_holds_actions() {

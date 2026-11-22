@@ -138,6 +138,35 @@ fn the_editor_starts_again_when_a_slot_gets_another_clip() {
     assert_eq!(state.shown_id, None);
 }
 
+/// A click waiting out the double-click time (a ruler click's jump) belongs to the clip it was
+/// made on: the same clip shown again keeps it, another clip or letting go of the clip drops it,
+/// so the jump never lands while another clip is shown.
+#[test]
+fn a_waiting_click_goes_with_the_clip_it_was_made_on() {
+    let jump = Action::new("transport.jump", json!({ "beats": 4.0 }));
+    let wait = |state: &mut AudioEditorState| {
+        let mut out = Vec::new();
+        state.waiting.click(1.0, 1, Some(jump.clone()), &mut out);
+        assert!(out.is_empty());
+    };
+    let sent = |state: &mut AudioEditorState| {
+        let mut out = Vec::new();
+        state.waiting.tick(2.0, 0.3, &mut out);
+        out.iter().map(|a| a.id).collect::<Vec<_>>()
+    };
+    let mut state = AudioEditorState::default();
+    state.show_clip(&clip_with(1, 8.0, &[(0.0, 0.0), (8.0, 4.0)]), 8.0, 400.0);
+    wait(&mut state);
+    state.show_clip(&clip_with(1, 8.0, &[(0.0, 0.0), (8.0, 4.0)]), 8.0, 400.0);
+    assert_eq!(sent(&mut state), ["transport.jump"], "the same clip: the single click completes");
+    wait(&mut state);
+    state.show_clip(&clip_with(2, 8.0, &[(0.0, 0.0), (8.0, 4.0)]), 8.0, 400.0);
+    assert!(sent(&mut state).is_empty(), "another clip shown: the jump is dropped");
+    wait(&mut state);
+    state.forget_clip();
+    assert!(sent(&mut state).is_empty(), "the clip let go: the jump is dropped");
+}
+
 #[test]
 fn markers_that_stand_still_in_the_file_still_give_the_file_a_length() {
     // Every marker on one second: the way back reads a steady rate, not one beat for the file.
@@ -457,4 +486,36 @@ fn a_new_single_click_sends_the_one_waiting_before_it() {
     assert_eq!(out, std::slice::from_ref(&first));
     waiting.tick(2.0, 0.3, &mut out);
     assert_eq!(out, [first, second]);
+}
+
+/// A content whose audio lanes are meant for different tracks: the editor draws, and finds note
+/// starts in, the file of the lane meant for the clip's track, as the engine plays it, and the
+/// first audio lane only when none is meant for it.
+#[test]
+fn the_editor_reads_the_lane_meant_for_the_clips_track() {
+    use suhina_engine::model::{AudioRegion, ClipContent, ContentId, ContentLane, Extensions, LaneData};
+    let region = |file: &str| AudioRegion {
+        file: file.into(),
+        absolute_file: None,
+        sample_rate: Some(48_000),
+        channels: Some(1),
+        duration_seconds: Some(2.0),
+        stream: None,
+    };
+    let lane =
+        |target: u32, file: &str| ContentLane { target: Some(TrackId(target)), data: LaneData::Audio(region(file)) };
+    let content = ClipContent {
+        id: ContentId(1),
+        name: "Shared".into(),
+        length: 4.0,
+        lanes: vec![lane(1, "a.wav"), lane(2, "b.wav")].into(),
+        extensions: Extensions::default(),
+        scale: None,
+        linked: false,
+    };
+    let clip = Clip::new(ContentId(1), 0.0, 4.0);
+    let file = |track: u32| audio_view(&content, TrackId(track), &clip, 120.0).map(|v| v.file);
+    assert_eq!(file(2).as_deref(), Some("b.wav"));
+    assert_eq!(file(1).as_deref(), Some("a.wav"));
+    assert_eq!(file(3).as_deref(), Some("a.wav"), "no lane is meant for track 3: the first audio lane");
 }

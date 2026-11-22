@@ -345,6 +345,28 @@ fn a_device_selects_and_deletes_even_beside_a_shown_clip() {
     assert_eq!(devices(&harness), 1, "the device is back");
 }
 
+/// In the Launcher view too, a header clicked after a device was picked gives Delete to its
+/// track: the track goes, the device picked before stays (`docs/spec/arrangement-editing.md` ›
+/// the track headers).
+#[test]
+fn a_launcher_header_click_after_a_device_pick_gives_delete_to_the_track() {
+    let devices =
+        |h: &Harness<'static, App>| h.state().session().map(|s| s.project().channels[0].devices.len()).unwrap_or(0);
+    let mut app = App::new();
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Device Utility").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert!(!names(&harness).iter().any(|n| n == "Bass"), "Delete removed the track: {:?}", names(&harness));
+    assert_eq!(devices(&harness), 1, "the device picked before the header click stays");
+}
+
 #[test]
 fn removing_a_device_below_the_selected_one_moves_the_selection_with_it() {
     use suhina_engine::model::{Device, DeviceKind, DeviceParam, Extensions};
@@ -705,10 +727,11 @@ fn delete_in_the_audio_editor_removes_the_marker_not_the_clip() {
     harness.run();
     assert_eq!(loop_markers(&harness), [(0.0, 0.0), (4.0, 2.0)], "the picked marker is gone");
     assert_eq!(loop_clips(&harness), 1, "the clip is still there");
-    // Two markers left: Delete does nothing, and still not to the clip.
-    let wave = harness.get_by_label("Audio editor").rect();
+    // Two markers left: the end one picked on its flag, Delete does nothing, and still not to
+    // the clip.
     let on_last = harness.get_by_label("Warp marker 2").rect().center();
-    click_once_at(&mut harness, egui::pos2(on_last.x - 2.0, wave.center().y + 20.0));
+    click_once_at(&mut harness, on_last);
+    assert_eq!(harness.state().audio_editor().picked(), [4.0], "the end marker is picked");
     harness.key_press(Key::Delete);
     harness.run();
     assert_eq!(loop_markers(&harness).len(), 2);

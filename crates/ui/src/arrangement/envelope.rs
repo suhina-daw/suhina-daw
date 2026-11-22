@@ -286,10 +286,45 @@ struct Draft {
     site: &'static str,
     index: usize,
     points: Vec<GainPoint>,
+    /// The pass its site last drew it in (`Context::cumulative_pass_nr`). A drawing that stops
+    /// (the audio editor closed or switched away, the clip scrolled out of the Arrangement)
+    /// ends the drag where its frames left it: a pass later the draft is gone for every drawing,
+    /// so none shows, sends or sets its points ([`live`]).
+    seen: u64,
 }
 
 fn draft_key() -> Id {
     Id::unique("clip-envelope-draft")
+}
+
+/// Whether a draft its site drew in pass `seen` still stands in pass `now`: drawn in this pass or
+/// the one before, as a drawing that comes first in a pass reads it before its own site draws.
+fn live(seen: u64, now: u64) -> bool {
+    seen.saturating_add(1) >= now
+}
+
+/// Ends `clip`'s drag when the drawing it started in stopped drawing it: the draft, and the curve
+/// or lift it carried, go. What its frames sent stays, one undo step; what was not sent yet goes
+/// with it, as the merge on release is judged on the screen that is gone. A later drag of the line
+/// starts clean, not as the lift of a stale one.
+fn end_stale_draft(ctx: &egui::Context, clip: ClipId) {
+    let now = ctx.cumulative_pass_nr();
+    let stale = ctx.data(|d| d.get_temp::<Draft>(draft_key())).is_some_and(|d| d.clip == clip && !live(d.seen, now));
+    if stale {
+        ctx.data_mut(|d| {
+            d.remove::<Draft>(draft_key());
+            d.remove::<CurveEdit>(curve_key());
+            d.remove::<Lift>(lift_key());
+        });
+    }
+}
+
+/// Marks `clip`'s draft as drawn by `site` in this pass, when the drag started there.
+fn keep_draft(ctx: &egui::Context, clip: ClipId, site: &'static str) {
+    if let Some(mut kept) = draft(ctx, clip).filter(|d| d.site == site) {
+        kept.seen = ctx.cumulative_pass_nr();
+        ctx.data_mut(|d| d.insert_temp(draft_key(), kept));
+    }
 }
 
 /// A part of the envelope being moved up or down as one (Shift and a drag of the line: all of it;
@@ -346,8 +381,10 @@ fn curve_key() -> Id {
     Id::unique("clip-envelope-curve")
 }
 
+/// `clip`'s draft while its site still draws it ([`live`]).
 fn draft(ctx: &egui::Context, clip: ClipId) -> Option<Draft> {
-    ctx.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip)
+    let now = ctx.cumulative_pass_nr();
+    ctx.data(|d| d.get_temp::<Draft>(draft_key())).filter(|d| d.clip == clip && live(d.seen, now))
 }
 
 /// `clip`'s envelope as it is drawn now: a point being dragged where it is, else `committed`.
@@ -476,6 +513,7 @@ pub fn show(
         return;
     }
     let settings = settings(ui.ctx());
+    end_stale_draft(ui.ctx(), clip);
     let points = points_now(ui.ctx(), clip, &view.envelope);
     if !edit && (!settings.show || points.is_empty()) {
         return;
@@ -521,6 +559,10 @@ pub fn show(
     if !edit {
         return;
     }
+    // This drawing goes on: a drag started here stands another pass.
+    keep_draft(ui.ctx(), clip, site);
+    // The pass a draft made here is drawn in; read before `data_mut`, which holds the context.
+    let drawn_in = ui.ctx().cumulative_pass_nr();
 
     // The body only names the envelope; clicks and drags away from the line go to the clip as
     // ever (select, move). On the line: a click adds a point on it, a drag adds one and moves it;
@@ -600,11 +642,11 @@ pub fn show(
             let start = envelope_db_at(&from, beat);
             ui.data_mut(|d| {
                 d.insert_temp(lift_key(), Lift { clip, from: from.clone(), moved, start });
-                d.insert_temp(draft_key(), Draft { clip, site, index: usize::MAX, points: from });
+                d.insert_temp(draft_key(), Draft { clip, site, index: usize::MAX, points: from, seen: drawn_in });
             });
         } else if !alt && !taken(pointer.x) {
             let (more, index) = add_at(pointer);
-            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: more }));
+            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: more, seen: drawn_in }));
         }
     }
     let mut dragging = None;
@@ -618,7 +660,9 @@ pub fn show(
             let loose = alt || free_move(ui.ctx()) || settings.step <= 0.0;
             let delta = if loose { (raw * 10.0).round() / 10.0 } else { (raw / settings.step).round() * settings.step };
             let moved = lifted(&lift.from, lift.moved.as_deref(), delta, settings.ceiling);
-            ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index: usize::MAX, points: moved }));
+            ui.data_mut(|d| {
+                d.insert_temp(draft_key(), Draft { clip, site, index: usize::MAX, points: moved, seen: drawn_in })
+            });
             egui::Tooltip::always_open(
                 ui.ctx().clone(),
                 ui.layer_id(),
@@ -721,7 +765,9 @@ pub fn show(
                 continue;
             }
             if response.drag_started_by(egui::PointerButton::Primary) {
-                ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: points.clone() }));
+                ui.data_mut(|d| {
+                    d.insert_temp(draft_key(), Draft { clip, site, index, points: points.clone(), seen: drawn_in })
+                });
             }
             // The point the drag holds, by where it is now: passing another changes its index.
             if response.dragged_by(egui::PointerButton::Primary) {
@@ -740,7 +786,7 @@ pub fn show(
         let beat = if fine { before.beat + (target - before.beat) * 0.1 } else { target };
         let db = dragged_db(ui, rect, pointer, before.db, top);
         let index = passed(&mut moved, index, beat.max(0.0), db);
-        ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: moved }));
+        ui.data_mut(|d| d.insert_temp(draft_key(), Draft { clip, site, index, points: moved, seen: drawn_in }));
         // Its value beside the pointer while the button is down.
         egui::Tooltip::always_open(
             ui.ctx().clone(),
@@ -858,9 +904,10 @@ fn start_curve(ui: &Ui, clip: ClipId, site: &'static str, index: usize, points: 
     if let Some(p) = drafted.get_mut(index) {
         p.curve = paths.dragged(0);
     }
+    let drawn_in = ui.ctx().cumulative_pass_nr();
     ui.data_mut(|d| {
         d.insert_temp(curve_key(), CurveEdit { clip, index, paths, moved: 0.0 });
-        d.insert_temp(draft_key(), Draft { clip, site, index, points: drafted });
+        d.insert_temp(draft_key(), Draft { clip, site, index, points: drafted, seen: drawn_in });
     });
 }
 
@@ -1200,6 +1247,56 @@ mod tests {
         };
         assert!(lands_on_another(&points, 2, reached), "reached from before the loop, the left point is drawn");
         assert!(!lands_on_another(&points, 9, reached));
+    }
+
+    /// A drag started in the audio editor ends when the editor stops drawing the clip before the
+    /// button comes up: a pass later no drawing shows its points, a lift it carried goes, and the
+    /// editor drawing the clip again does not bring it back (#1657).
+    #[test]
+    fn a_drag_ends_when_the_drawing_it_started_in_stops() {
+        let ctx = egui::Context::default();
+        let clip = ClipId(3);
+        let committed = vec![GainPoint::new(0.0, 0.0)];
+        let moved = vec![GainPoint::new(0.0, -6.0)];
+        let mut shown = Vec::new();
+        let mut left = Vec::new();
+        // The editor starts a drag of the whole line.
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let seen = ui.ctx().cumulative_pass_nr();
+            let draft = Draft { clip, site: "audio-editor", index: usize::MAX, points: moved.clone(), seen };
+            let lift = Lift { clip, from: committed.clone(), moved: None, start: 0.0 };
+            ui.data_mut(|d| {
+                d.insert_temp(draft_key(), draft);
+                d.insert_temp(lift_key(), lift);
+            });
+        });
+        // The editor draws it again: the drag stands.
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            keep_draft(ui.ctx(), clip, "audio-editor");
+            shown.push(points_now(ui.ctx(), clip, &committed));
+        });
+        // The editor is gone; the Arrangement, drawing first in a pass, still reads it once, and
+        // its own drawing does not keep a drag that started elsewhere.
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            end_stale_draft(ui.ctx(), clip);
+            shown.push(points_now(ui.ctx(), clip, &committed));
+            keep_draft(ui.ctx(), clip, "arrangement");
+        });
+        // A pass on, the drag is over for every drawing.
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            end_stale_draft(ui.ctx(), clip);
+            shown.push(points_now(ui.ctx(), clip, &committed));
+            left.push(
+                ui.data(|d| (d.get_temp::<Draft>(draft_key()).is_some(), d.get_temp::<Lift>(lift_key()).is_some())),
+            );
+        });
+        // The editor drawing the clip again starts from the envelope as set.
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            keep_draft(ui.ctx(), clip, "audio-editor");
+            shown.push(points_now(ui.ctx(), clip, &committed));
+        });
+        assert_eq!(shown, vec![moved.clone(), moved, committed.clone(), committed.clone(), committed]);
+        assert_eq!(left, vec![(false, false)], "the draft and its lift went");
     }
 
     #[test]

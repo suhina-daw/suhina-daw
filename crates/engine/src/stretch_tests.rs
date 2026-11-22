@@ -595,3 +595,21 @@ fn a_looped_texture_clip_reads_nothing_past_the_loop_on_its_last_pass() {
     let tail = plain.get(plain.len() - 2 * 480..).unwrap_or_default();
     assert!(peak(tail) > 0.05, "{}", peak(tail));
 }
+
+/// Grain at its longest (400 ms) is played whole at the highest file rate a voice takes, as at a
+/// lower one: at 192 kHz a cap of 65 536 frames cut it to about 341 ms, so every value above that
+/// sounded the same.
+#[test]
+fn the_longest_grain_is_whole_at_the_highest_file_rate() {
+    for (rate, want) in [(48_000u32, 19_200usize), (*STRETCH_SAMPLE_RATES.end(), 76_800)] {
+        let mut audio = region(&[(0.0, 0.0), (2.0, 1.0)], StretchMode::Tonal);
+        audio.warp.grain = *GRAIN_RANGE.end();
+        let Some(voice) =
+            StretchVoice::new(&with(&clip(2.0, 0.0, None), &audio), sine(440.0, 1.0, rate), 120.0, 48_000)
+        else {
+            panic!("no voice at {rate} Hz")
+        };
+        let Engine::Grains(grains) = voice.spec().build().stretch else { panic!("Tonal plays grains") };
+        assert_eq!(grains.grain_frames(), want, "{rate} Hz");
+    }
+}

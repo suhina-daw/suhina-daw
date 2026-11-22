@@ -31,6 +31,7 @@ fn live(variable: &str) -> egui::Color32 {
 }
 
 mod arrangement;
+mod audio_editor_keys;
 mod bars;
 mod colours;
 mod colours_native;

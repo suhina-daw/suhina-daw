@@ -217,7 +217,9 @@ Delete removes a marker as above, the loop key (**Ctrl+L**, the piano roll's) lo
 editor has a time selection of its own; without one they go on to the Arrangement, so a click in
 the editor to set the play start and then Ctrl+V pastes a time selection copied from the tracks
 there, each part on its own track, and Ctrl+C or Ctrl+X acts on the Arrangement's time selection. A press in
-another view, or the Clip / Devices switch on Devices, gives the keyboard back to that view.
+another view, or the Clip / Devices switch on Devices, gives the keyboard back to that view, also
+while the editor shows no waveform (its audio not loaded). While the Reset warp dialog is open the
+keys do nothing, as behind the window's other dialogs (› Reset warp).
 
 **The end of the audio.** Moving a marker moves where the audio ends in beats (dragging the last
 one later stretches the whole file longer). The clip keeps its start and length, and the end its
@@ -235,7 +237,11 @@ gives them to the commands that place markers on them (`clip.addWarpMarkersAtTra
 again while the window waits. Transients, Ctrl+U or the menu's items, used while the note starts
 are still being found, wait for them, the status bar saying *Finding where the notes start…*, and
 are sent once they are there, in the project they were made in (one switched away from drops
-them); the window never analyses the file on its own thread. Left out, the command analyses the
+them); the window never analyses the file on its own thread. One that waits names its clip by id,
+not by its slot, so it edits that clip wherever it is then, and never another clip moved into the
+slot meanwhile. A reset of the clip's warp (› Reset warp) drops those still waiting for that clip, so
+they do not put markers back after it; and while a dialog holds the window's actions, they wait on
+and are sent once it closes. Left out, the command analyses the
 file itself (the CLI and agents).
 A list given is checked: at most 100 000 numbers, each 0 or more; it is sorted, each second kept
 once, and seconds past the end of the audio are left out. `clip.resetWarp` takes the same list and
@@ -272,7 +278,7 @@ own sound.
 | A drag on the waveform or the marker lane (not on a marker) | Paints the time selection, on the grid (Alt: free) |
 | Shift and a click | Carries the time selection's nearer end to the point |
 | **Ctrl+A** | Select all, the piano roll's key: the time selection becomes the whole file, every warp marker picked with it |
-| **Ctrl+U** | Quantise, the piano roll's key: each transient in the time selection (none: the part of the file the clip plays, from its start marker to its end or loop end) gets a warp marker where it plays, then every marker there moves towards the nearest line of the quantise grid by the quantise amount, its sound with it (`clip.quantizeWarpMarkers`, one undo step). Two that would land on one line: a new one is left out, one the clip had stays. The grid (the piano roll's quantise grids, 1/16 to start) and the amount (100 % to start; 75, 50 and 25 %) are set in the right-click menu's *Quantize settings* |
+| **Ctrl+U** | Quantise, the piano roll's key: each transient in the time selection (none: the part of the file the clip plays, from its start marker to its end or loop end) gets a warp marker where it plays, then every marker there moves towards the nearest line of the quantise grid by the quantise amount, its sound with it (`clip.quantizeWarpMarkers`, one undo step). Two that would land on one line: a new one is left out, one the clip had stays, and every marker that would move onto or past one that stays (outside the selection, or kept) goes back to its own beat, while the moves that still fit are made. The grid (the piano roll's quantise grids, 1/16 to start) and the amount (100 % to start; 75, 50 and 25 %) are set in the right-click menu's *Quantize settings* |
 | **Ctrl+L** | Loops the clip over the time selection and starts it there, so the clip plays that stretch round and round over its whole length (`clip.setLoop` with `start` and `end`, then `clip.setStart` at the loop's start: two undo steps); a selection that begins before the clip's first beat (a warp marker can put the file's start there) loops from beat 0. Pressed again over the same loop, turns it off. With no time selection it turns the clip's loop on or off (`clip.setLoop`); a selection too short to be a loop (under a thousandth of a beat, or wholly before beat 0) leaves the loop as it is, and *Loop selection* in the right-click menu is grayed for it |
 
 ### Reset warp
@@ -282,7 +288,8 @@ asks:
 
 - **Keep warp markers**: closes it and changes nothing (so do Escape and its Close button);
 - **Reset to clip tempo**: replaces the markers with two, one at each end of the audio, at the
-  tempo the clip has (the project's for a clip that was not warped), so the audio runs evenly again
+  tempo the clip has (the project's for a clip that was not warped, which then counts as a tempo set
+  by hand), so the audio runs evenly again
   (`clip.resetWarp`);
 - **Find tempo again**: the same, at the tempo found in the file's metadata, then its name, then
   its sound (`clip.resetWarp` with `detect`); with none found it changes nothing and says so.

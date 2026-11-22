@@ -234,6 +234,37 @@ fn a_voice_still_behind_after_a_jump_jumps_further_and_a_whole_read_brings_it_ba
 }
 
 #[test]
+fn a_jump_completed_before_the_read_counts_its_landing_too() {
+    // The engine services the reader before each block's reads, and a worker that has already
+    // paused for the jump is completed there, not in the read: that landing ahead of the playhead
+    // counts as much as one the read completes, or the lead never grew and a slow voice chased
+    // the playhead with the shortest jump for ever.
+    let mut reader = reader();
+    let _ = reader.take_worker_unfilled();
+    let mut out = vec![0.0; 512];
+    let wanted = 256u64;
+    let mut leads = Vec::new();
+    let mut from = 10_000u64;
+    for _ in 0..4 {
+        reader.read(0, from, &mut out[..wanted as usize * 2]);
+        let to = reader.shared.jumps[0].to.load(Ordering::Acquire);
+        leads.push((to - from - wanted) / BLOCK_FRAMES as u64);
+        let requested = reader.shared.jumps[0].requested.load(Ordering::Acquire);
+        reader.shared.jumps[0].paused.store(requested, Ordering::Release);
+        // The next block: `service` completes the jump, then the read finds the voice ahead.
+        reader.service();
+        assert_eq!(reader.readers[0].jumping, None, "the jump is completed before the read");
+        from += wanted;
+        reader.read(0, from, &mut out[..wanted as usize * 2]);
+        assert!(reader.readers[0].landed_ahead, "it landed ahead of {from}: {leads:?}");
+        // The voice rendered nothing by the time the playhead is past where it jumped to.
+        from = to + 2 * BLOCK_FRAMES as u64;
+    }
+    assert_eq!(leads[0], JUMP_BLOCKS, "the first jump goes the usual way");
+    assert!(leads.windows(2).all(|w| w[1] > w[0]), "each jump after a landing ahead goes further: {leads:?}");
+}
+
+#[test]
 fn new_samples_under_the_same_pool_key_are_another_voice() {
     let region = AudioRegion::new("sine.wav");
     let clip = Clip::new(ContentId(1), 0.0, 4.0);

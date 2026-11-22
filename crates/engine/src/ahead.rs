@@ -187,6 +187,10 @@ struct Reader {
     /// completed after the playhead had already passed its target (the worker stalled) says
     /// nothing about the lead, and doubling on it pushed the voice's return late.
     landed_ahead: bool,
+    /// A jump completed and no read has judged yet where it landed: [`AheadReader::service`]
+    /// completes most of them, before the block's read, so the read that follows sets
+    /// `landed_ahead` from its own playhead, whichever of the two finished the jump.
+    landed: bool,
     /// Its track is heard (not muted, not left out by a solo): a start waits for it.
     heard: bool,
     /// The clip the voice plays, by its id: a new graph's voice for the same clip takes over
@@ -698,6 +702,7 @@ impl AheadReader {
                 jumping: None,
                 jump_blocks: JUMP_BLOCKS,
                 landed_ahead: false,
+                landed: false,
                 heard: true,
                 clip,
                 fade,
@@ -798,6 +803,7 @@ impl AheadReader {
             // after a jump keeps its longer lead instead of starting over from the shortest.
             reader.jump_blocks = old.jump_blocks;
             reader.landed_ahead = old.landed_ahead;
+            reader.landed = old.landed;
             reader.rewound = old.rewound;
             reader.on_twin = old.on_twin;
             reader.jumping = None;
@@ -1050,6 +1056,7 @@ impl AheadReader {
             // A rewind starts the voice afresh: its jumps go the usual way again.
             reader.jump_blocks = JUMP_BLOCKS;
             reader.landed_ahead = false;
+            reader.landed = false;
             // A jump under way is void: the rewind moves the voice.
             if reader.jumping.take().is_some() {
                 let requested = jump.requested.load(Ordering::Acquire);
@@ -1103,12 +1110,12 @@ impl AheadReader {
         let Some(jump) = self.shared.jumps.get(index) else { return 0 };
         // A jump under way: once the worker has stopped pushing, the ring is emptied and the voice
         // goes on from where it jumped to.
-        let was_jumping = reader.jumping.is_some();
         if !complete_jump(reader, jump) {
             self.shared.underruns.fetch_add(wanted, Ordering::Relaxed);
             return 0;
         }
-        if was_jumping {
+        // The first read after a jump completed, here or in `service`, judges where it landed.
+        if std::mem::take(&mut reader.landed) {
             reader.landed_ahead = reader.next >= from;
         }
         if reader.rewound {
@@ -1261,6 +1268,7 @@ fn complete_jump(reader: &mut Reader, jump: &Jump) -> bool {
     }
     reader.next = jump.to.load(Ordering::Acquire).min(reader.length);
     reader.jumping = None;
+    reader.landed = true;
     reader.rewound = false;
     jump.drained.store(requested, Ordering::Release);
     true

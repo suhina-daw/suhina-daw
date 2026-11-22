@@ -441,7 +441,7 @@ impl Timeline {
                         .iter()
                         .enumerate()
                         .map(|(index, clip)| {
-                            let mut shown = clip_box(project, clip, index, track_color);
+                            let mut shown = clip_box(project, track.id, clip, index, track_color);
                             // A part of a comp: named and coloured after its take (#989).
                             if let Some((number, name, color)) =
                                 project.comp_piece(track.id, clip).and_then(|(i, piece)| take_of(project, i, piece))
@@ -808,7 +808,7 @@ fn take_rows(project: &Project) -> Vec<TakeRow> {
                     .enumerate()
                     .map(|(piece, clip)| {
                         let own = take.color.unwrap_or_else(|| take_colour(i + 1));
-                        let shown = clip_box(project, clip, piece, clip.color.unwrap_or(own));
+                        let shown = clip_box(project, track.id, clip, piece, clip.color.unwrap_or(own));
                         // A MIDI pass ends where its content does, as an audio pass's recording does:
                         // its edges stop there (`take.trimPiece`).
                         let content = project.content(clip.content).map_or(f64::INFINITY, |c| c.length);
@@ -839,8 +839,8 @@ fn material_key(content: &ClipContent) -> u64 {
     hasher.finish()
 }
 
-/// How the view draws `clip`, the `index`th of its lane, on a track coloured `track_color`.
-fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> ClipBox {
+/// How the view draws `clip`, the `index`th of its lane, on `track`, coloured `track_color`.
+fn clip_box(project: &Project, track: TrackId, clip: &Clip, index: usize, track_color: Rgb) -> ClipBox {
     let content = project.content(clip.content);
     let looped = clip.loop_range.is_some();
     let audio = content.is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_))));
@@ -862,7 +862,7 @@ fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> C
         fade_in_curve: clip.fade_in_curve,
         fade_out_curve: clip.fade_out_curve,
         audio: content.is_some_and(|c| c.lanes.iter().any(|l| matches!(l.data, LaneData::Audio(_)))),
-        audio_view: content.and_then(|c| audio_view(c, clip, project.transport.tempo_bpm)),
+        audio_view: content.and_then(|c| audio_view(c, track, clip, project.transport.tempo_bpm)),
         notes: content.map(|c| note_marks(c, clip)).unwrap_or_default(),
         seams: loop_seams(clip),
         loop_range: clip.loop_range,
@@ -875,12 +875,21 @@ fn clip_box(project: &Project, clip: &Clip, index: usize, track_color: Rgb) -> C
     }
 }
 
-/// What an audio clip needs to draw its waveform: the engine's mapping from beats to the file.
-pub(crate) fn audio_view(content: &ClipContent, clip: &Clip, tempo_bpm: f64) -> Option<AudioView> {
-    let region = content.lanes.iter().find_map(|l| match &l.data {
+/// What an audio clip on `track` needs to draw its waveform: the engine's mapping from beats to
+/// the file. The audio is the lane meant for `track` first, any audio lane otherwise, as the
+/// engine and the session's commands choose it, so the waveform and the note starts found in it
+/// are the file the clip plays.
+pub(crate) fn audio_view(content: &ClipContent, track: TrackId, clip: &Clip, tempo_bpm: f64) -> Option<AudioView> {
+    let audio = |l: &suhina_engine::model::ContentLane| match &l.data {
         LaneData::Audio(region) => Some(region),
         LaneData::Notes(_) => None,
-    })?;
+    };
+    let region = content
+        .lanes
+        .iter()
+        .filter(|l| l.target.is_none_or(|t| t == track))
+        .find_map(audio)
+        .or_else(|| content.lanes.iter().find_map(audio))?;
     let audio = &clip.audio;
     let mut markers: Vec<(f64, f64)> = audio
         .warp_markers

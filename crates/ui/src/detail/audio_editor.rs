@@ -115,7 +115,7 @@ pub fn launcher_clip(project: &Project, track: TrackId, scene: usize) -> Option<
 
 fn audio_clip_from(project: &Project, track: TrackId, clip: &Clip) -> Option<AudioClip> {
     let content = project.content(clip.content)?;
-    let view = audio_view(content, clip, project.transport.tempo_bpm)?;
+    let view = audio_view(content, track, clip, project.transport.tempo_bpm)?;
     let position = project.tracks.iter().position(|t| t.id == track)?;
     // The clip's own color when it has one; its track's otherwise (`Clip::color`).
     let color = clip.color.unwrap_or_else(|| {
@@ -811,7 +811,8 @@ impl AudioEditorState {
     }
 
     /// Lets go of the clip shown: a marker drag ends without a move, the reset dialog closes, the
-    /// editor gives up the keyboard, and the next clip shown starts fitted. The grid stays.
+    /// editor gives up the keyboard, a click waiting out the double-click time is dropped, and the
+    /// next clip shown starts fitted. The grid stays.
     pub fn forget_clip(&mut self) {
         self.shown = None;
         self.shown_id = None;
@@ -825,6 +826,7 @@ impl AudioEditorState {
         self.loop_drag = None;
         self.file_span = None;
         self.focused = false;
+        self.waiting = WaitingClick::default();
     }
 
     /// What the loop key (Ctrl+L, the piano roll's) does while the editor has the keyboard: loops
@@ -944,7 +946,7 @@ impl AudioEditorState {
     /// Starts on `clip` when it is not the one shown (another address, or another clip in the same
     /// launcher slot) or nothing is fitted yet: its file of `beats` fitted to `width` points, and
     /// nothing of the clip before kept (a drag, the picked markers, the time selection, the reset
-    /// dialog).
+    /// dialog, a click waiting out the double-click time, whose seek was a place in that clip).
     fn show_clip(&mut self, clip: &AudioClip, beats: f64, width: f32) {
         if self.shown.as_ref() == Some(&clip.address) && self.shown_id == Some(clip.id) && self.beat_width > 0.0 {
             return;
@@ -960,6 +962,7 @@ impl AudioEditorState {
         self.painting = None;
         self.loop_drag = None;
         self.menu_at = None;
+        self.waiting = WaitingClick::default();
     }
 
     /// Zooms and scrolls so that the file fills `width` points.

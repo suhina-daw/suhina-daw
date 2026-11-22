@@ -32,9 +32,15 @@ impl App {
         // A click anywhere on a track that is not a clip shows its devices too, the selection
         // as the click left it (#950). A hidden detail area stays hidden: opening it under the
         // pointer would move what a double-click's second click lands on.
-        if std::mem::take(&mut self.arrangement.devices_clicked) | std::mem::take(&mut self.view.devices_clicked)
-            && self.detail_open
-        {
+        let clicked =
+            std::mem::take(&mut self.arrangement.devices_clicked) | std::mem::take(&mut self.view.devices_clicked);
+        // A header's click gives the edit keys to its tracks: a device picked before lets go, so
+        // Delete removes the tracks, not that device.
+        if clicked && self.track_keys_on() {
+            self.selected_device = None;
+            self.device_picks.clear();
+        }
+        if clicked && self.detail_open {
             self.detail_showing = detail_view::Showing::Devices;
         }
     }
@@ -863,6 +869,9 @@ impl App {
         let audio_editor = &mut self.audio_editor;
         let waveform_look = self.settings.view.audio_editor_theme_waveform;
         let waveforms = std::sync::Arc::clone(&self.waveforms);
+        // Whether the audio editor drew its reset dialog this frame: the keys and the actions wait
+        // for it as for the window's other dialogs (`App::dialog_holds_actions`).
+        let mut reset_shown = false;
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
                 // The clip editor holds the clip's column, its note tools and the piano roll.
@@ -917,10 +926,14 @@ impl App {
                     keymap: &keymap,
                 };
                 crate::detail::audio_editor::show(ui, rest, audio, audio_editor, env, actions);
-                // A press anywhere in the clip's detail area, its panel too, keeps the grid keys
-                // (Ctrl+1 to Ctrl+4) with the audio editor, as the piano roll keeps its keys.
-                if ui.input(|i| i.pointer.any_pressed()) && crate::kit::widgets::pointer_over(ui, detail).is_some() {
-                    audio_editor.set_focused(true);
+                reset_shown = audio_editor.reset_open();
+                // A press anywhere in the clip's detail area, its panel too, keeps the edit keys
+                // (Delete, Ctrl+1 to Ctrl+4) with the audio editor, as the piano roll keeps its
+                // keys; a press anywhere else takes them away. Here, not only in the editor: one
+                // whose waveform cannot be drawn (its audio not loaded) returns before it looks at
+                // the press.
+                if ui.input(|i| i.pointer.any_pressed()) {
+                    audio_editor.set_focused(crate::kit::widgets::pointer_over(ui, detail).is_some());
                 }
                 picked
             } else if let (Some((_, _, device, _)), detail_view::Detail::Clip(info, chain)) = (ara, &shown) {
@@ -939,6 +952,7 @@ impl App {
         // The stacked devices' column, beside the editor: above the panel, in the view's place, so
         // the panel's box is closed first and its `overflow` does not cut the column (#1336).
         panel_style.close_box();
+        self.audio_reset_shown = reset_shown;
         let side_clicked = match (side, &shown) {
             (Some(side), detail_view::Detail::Clip(_, chain)) => {
                 let devices = detail_view::Detail::Devices(chain.clone());
@@ -1302,16 +1316,26 @@ impl App {
     /// `clip.quantizeWarpMarkers`, as `transients`), so the analysis never runs on the window's
     /// thread. One whose file's transients are still being found waits, with the commands that
     /// waited before, and goes once they are (the analysis draws the window again then), in the
-    /// project it was made in only. One for a file the window holds no samples of goes as it is.
-    /// Each frame runs it on the actions the views made; public for tests.
+    /// project it was made in only. One that waits names its clip by id rather than by its slot,
+    /// so another clip moved into the slot meanwhile is not the one it edits; a confirmed reset of
+    /// a clip's warp (`clip.resetWarp`) drops those waiting for that clip, which would otherwise
+    /// put markers back after the reset. One for a file the window holds no samples of goes as it
+    /// is. Each frame runs it on the actions the views made, unless a dialog holds them (the
+    /// waiting ones then stay); public for tests.
     pub fn with_transients(&mut self, ctx: &egui::Context, actions: Vec<Action>) -> Vec<Action> {
         const LOOKS: [&str; 2] = ["clip.addWarpMarkersAtTransients", "clip.quantizeWarpMarkers"];
         use crate::detail::audio_editor::Transients;
         let project = self.projects.active();
+        let reset: Vec<ClipId> = actions
+            .iter()
+            .filter(|action| action.id == "clip.resetWarp")
+            .filter_map(|action| self.addressed_clip(&action.params))
+            .collect();
         let waited: Vec<Action> = std::mem::take(&mut self.transients_waiting)
             .into_iter()
             .filter(|(made_in, _)| *made_in == project)
             .map(|(_, action)| action)
+            .filter(|action| self.addressed_clip(&action.params).is_none_or(|clip| !reset.contains(&clip)))
             .collect();
         let mut out = Vec::with_capacity(actions.len());
         for mut action in waited.into_iter().chain(actions) {
@@ -1326,7 +1350,10 @@ impl App {
                     }
                     out.push(action);
                 }
-                Transients::Waiting => self.transients_waiting.push((project, action)),
+                Transients::Waiting => {
+                    self.bind_to_clip(&mut action.params);
+                    self.transients_waiting.push((project, action));
+                }
                 Transients::Unavailable => out.push(action),
             }
         }
@@ -1336,19 +1363,49 @@ impl App {
         out
     }
 
-    /// Where the transients of the file of the clip `params` names (`track` and `clip`, or `track`
-    /// and `scene`) stand in the window's background analysis.
+    /// The id of the clip a `clip.*` command's `params` name in the active project: its `clip`, or
+    /// the clip in the slot its `track` and `scene` give.
+    pub(super) fn addressed_clip(&self, params: &Value) -> Option<ClipId> {
+        let number = |key: &str| params.get(key).and_then(Value::as_u64);
+        if let Some(id) = number("clip") {
+            return u32::try_from(id).ok().map(ClipId);
+        }
+        let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId)?;
+        let scene = number("scene").and_then(|s| usize::try_from(s).ok())?;
+        let project = self.session()?.project();
+        let column = project.launcher.columns.iter().find(|c| c.track == track)?;
+        column.slots.get(scene)?.clip.as_ref().map(|clip| clip.id)
+    }
+
+    /// `params` naming its clip by id (`clip`) in place of the slot (`track` and `scene`) it is in
+    /// now, so a command held for later edits that clip wherever it is then, and never another
+    /// moved into the slot (ADR 0025). Params that name the clip already, or a slot with no clip,
+    /// stay.
+    pub(super) fn bind_to_clip(&self, params: &mut Value) {
+        if params.get("clip").is_some() || params.get("scene").is_none() {
+            return;
+        }
+        let Some(id) = self.addressed_clip(params) else { return };
+        if let Some(map) = params.as_object_mut() {
+            map.remove("scene");
+            map.remove("track");
+            map.insert("clip".into(), json!(id.0));
+        }
+    }
+
+    /// Where the transients of the file of the clip `params` names (`clip`, or `track` and
+    /// `scene`) stand in the window's background analysis.
     fn clip_transients(&self, ctx: &egui::Context, params: &Value) -> crate::detail::audio_editor::Transients {
         use crate::detail::audio_editor::{self as editor, Transients};
         let Some(session) = self.session() else { return Transients::Unavailable };
         let project = session.project();
         let number = |key: &str| params.get(key).and_then(Value::as_u64);
         let track = number("track").and_then(|t| u32::try_from(t).ok()).map(TrackId);
-        let clip = match (track, number("clip"), number("scene")) {
-            (Some(track), Some(id), _) => {
-                u32::try_from(id).ok().and_then(|id| editor::arrangement_clip(project, track, ClipId(id)))
-            }
-            (Some(track), None, Some(scene)) => {
+        let clip = match (number("clip"), track, number("scene")) {
+            // By id, wherever the clip is: on the arrangement or, for a command that waited, in a
+            // slot (`bind_to_clip`).
+            (Some(id), _, _) => u32::try_from(id).ok().and_then(|id| editor_clip_by_id(project, ClipId(id))),
+            (None, Some(track), Some(scene)) => {
                 usize::try_from(scene).ok().and_then(|scene| editor::launcher_clip(project, track, scene))
             }
             _ => None,
@@ -1445,6 +1502,26 @@ impl App {
     #[doc(hidden)]
     pub fn piano_roll_mut(&mut self) -> &mut PianoRollState {
         &mut self.piano_roll
+    }
+}
+
+/// The audio editor's view of the clip `id`, wherever it is in `project`: on an arrangement lane
+/// or in a launcher slot.
+fn editor_clip_by_id(
+    project: &suhina_engine::model::Project,
+    id: ClipId,
+) -> Option<crate::detail::audio_editor::AudioClip> {
+    use crate::detail::audio_editor as editor;
+    use suhina_engine::model::ClipPlace;
+    match project.clip_place(id)? {
+        ClipPlace::Lane { lane, .. } => {
+            let track = project.arrangement.lanes.get(lane)?.track?;
+            editor::arrangement_clip(project, track, id)
+        }
+        ClipPlace::Slot { column, slot } => {
+            let track = project.launcher.columns.get(column)?.track;
+            editor::launcher_clip(project, track, slot)
+        }
     }
 }
 

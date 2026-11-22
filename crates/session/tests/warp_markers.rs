@@ -227,6 +227,36 @@ fn quantising_moves_the_transients_onto_the_grid() {
     fails(&mut session, json!({ "clip": 9999, "grid": "1/4" }));
 }
 
+/// Markers at beats 0.51 and 0.55 quantized half way onto beat 1 would land at 0.755 and 0.775,
+/// past the marker at 0.60 left out of the range: both go back to their own beats, not only the
+/// one next to it, and the command keeps the moves that still fit instead of refusing them all.
+#[test]
+fn every_marker_quantized_past_one_that_stays_goes_back() {
+    let dir = TempDir::new("warp-quantize-crowded");
+    let (mut session, id) = tone(&dir);
+    for beat in [0.51, 0.55, 0.60] {
+        run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": beat })).unwrap();
+    }
+    let before = markers_of(&session);
+    let quantize =
+        |start: f64| json!({ "clip": id, "grid": "1/4", "amount": 50, "start": start, "end": 0.55, "transients": [] });
+    let done = run(&mut session, "clip.quantizeWarpMarkers", quantize(0.50)).unwrap();
+    assert_eq!(done["moved"], json!(0), "{done}");
+    assert_eq!(markers_of(&session), before);
+
+    // A marker at 0.30 in the range moves half way to beat 0 (0.15), which still fits.
+    run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": 0.30 })).unwrap();
+    let before = markers_of(&session);
+    let done = run(&mut session, "clip.quantizeWarpMarkers", quantize(0.25)).unwrap();
+    assert_eq!(done["moved"], json!(1), "{done}");
+    let got = markers_of(&session);
+    assert_eq!(got.len(), before.len(), "{got:?}");
+    for (g, b) in got.iter().zip(&before) {
+        let want = if (b.0 - 0.30).abs() < 1e-9 { 0.15 } else { b.0 };
+        assert!((g.0 - want).abs() < 1e-9 && g.1 == b.1, "{got:?}");
+    }
+}
+
 #[test]
 fn a_marker_on_a_beat_that_has_one_changes_nothing() {
     let dir = TempDir::new("warp-markers-twice");
@@ -319,6 +349,28 @@ fn resetting_with_detection_needs_a_tempo_to_find_and_takes_a_named_one() {
     let markers = markers_of(&session);
     assert!((markers[1].0 - 3.2).abs() < 1e-9 && markers[1].1 == 2.0, "{markers:?}");
     assert!(run(&mut session, "clip.resetWarp", json!({ "clip": id, "detect": "yes" })).is_err());
+}
+
+/// A reset keeps where the clip's tempo came from only while it keeps that tempo: a clip whose
+/// warp is off is reset at the project's tempo, which is no tempo of the file's but a manual one.
+#[test]
+fn a_reset_at_the_projects_tempo_is_a_manual_tempo() {
+    let dir = TempDir::new("warp-reset-source");
+    let (mut session, id) = warped(&wav(&dir, "loop_96bpm.wav", &vec![0.5; 2 * SR as usize]));
+    let found = run(&mut session, "clip.resetWarp", json!({ "clip": id, "detect": true })).unwrap();
+    assert_eq!(found["source"], json!("name"));
+    // Warped, a reset keeps the clip's 96 BPM and that it came from the file's name.
+    let kept = run(&mut session, "clip.resetWarp", json!({ "clip": id })).unwrap();
+    assert!((kept["bpm"].as_f64().unwrap() - 96.0).abs() < 1e-9, "{kept}");
+    assert_eq!(kept["source"], json!("name"));
+    assert_eq!(clips(&session)[0].audio.tempo_source, Some(TempoSource::Name));
+    // Warp off: the reset takes the project's 120 BPM, set by hand rather than read from the name.
+    run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
+    assert_eq!(clips(&session)[0].audio.tempo_source, Some(TempoSource::Name), "turning warp off keeps it");
+    let reset = run(&mut session, "clip.resetWarp", json!({ "clip": id })).unwrap();
+    assert_eq!(reset["bpm"], json!(120.0));
+    assert_eq!(reset["source"], json!("manual"));
+    assert_eq!(clips(&session)[0].audio.tempo_source, Some(TempoSource::Manual));
 }
 
 /// The warp modes' settings are the clip's own: set with `clip.setAudio`, one undo step, kept

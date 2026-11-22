@@ -204,8 +204,9 @@ brace's, say) moves from track to track with clicks on their headers. The edit k
 the header click, the newer act: Delete, like the keys below, acts on the tracks, not on what plays
 in the span, until a time selection is painted again.
 After a header click Delete removes the selected tracks, not a clip (a clip on the track stays
-selected for the detail area until another is picked); a click on a clip or a lane gives Delete
-back to the clips. In the Launcher view a header click does the same for its track (#690). After a
+selected for the detail area until another is picked) and not a device picked before it: the
+header click lets go of that pick, and a device picked after it takes Delete again. A click on a
+clip or a lane gives Delete back to the clips. In the Launcher view a header click does the same for its track (#690). After a
 header click **Ctrl+C**, **Ctrl+X**, **Ctrl+V** and **Ctrl+D** copy, cut, paste and duplicate the
 selected tracks, in their order, one undo step each (Tracks, #919). A time selection painted
 afterwards, in the lanes or on the ruler, or a click in a lane takes these keys back from the

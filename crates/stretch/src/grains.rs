@@ -19,6 +19,12 @@
 /// The most grains a frame of output overlaps: two, with a little room.
 const RECENT: usize = 4;
 
+/// The most frames a grain lasts: the longest grain the modes offer (400 ms) at the highest file
+/// rate a voice takes (192 kHz) is 76 800 frames, which a cap of 65 536 cut short. The window is
+/// built off the audio thread and holds at most 512 KiB; a render's work per frame does not grow
+/// with the grain.
+const MAX_GRAIN_FRAMES: usize = 1 << 17;
+
 /// Grains of a file, as the Tonal or Texture mode plays them.
 #[derive(Debug, Clone)]
 pub struct Grains {
@@ -40,7 +46,7 @@ impl Grains {
     /// Grains of `grain_seconds` at `rate` frames a second, for `channels` channels. Allocates
     /// the window: build it off the audio thread.
     pub fn new(channels: usize, rate: f32, grain_seconds: f32, scatter: f32, align: bool) -> Self {
-        let grain = ((grain_seconds * rate) as usize).clamp(32, 1 << 16) & !1;
+        let grain = ((grain_seconds * rate) as usize).clamp(32, MAX_GRAIN_FRAMES) & !1;
         let window = (0..grain).map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / grain as f32).cos()).collect();
         Self {
             channels: channels.max(1),
@@ -299,12 +305,19 @@ mod tests {
         assert!(out[hop..].iter().all(|s| (s - 1.0).abs() < 1e-5), "steady state");
     }
 
+    /// The longest grain at the highest file rate a voice takes is whole, as it is at a lower one.
+    #[test]
+    fn a_grain_of_400_ms_is_whole_at_192_khz() {
+        assert_eq!(Grains::new(1, 192_000.0, 0.4, 0.0, true).grain_frames(), 76_800);
+        assert_eq!(Grains::new(1, RATE, 0.4, 0.0, true).grain_frames(), 19_200);
+    }
+
     #[test]
     fn odd_settings_stay_in_range() {
         let grains = Grains::new(0, RATE, -1.0, f32::NAN, false);
         assert!(grains.grain_frames() >= 32);
         let grains = Grains::new(1, RATE, 1e9, 9.0, false);
-        assert!(grains.grain_frames() <= 1 << 16);
+        assert!(grains.grain_frames() <= MAX_GRAIN_FRAMES);
         let mut silent = Grains::new(1, RATE, 0.05, 0.5, false);
         let mut out = vec![1.0; 100];
         silent.render(u64::MAX - 1_000, &mut out, &|_| f64::NAN, &|_, _| 0.0);

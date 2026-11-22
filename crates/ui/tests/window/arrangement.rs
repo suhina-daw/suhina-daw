@@ -290,6 +290,32 @@ fn after_a_brace_click_a_header_click_gives_delete_to_the_tracks() {
     assert_eq!(names(&harness), before, "one undo brings it back");
 }
 
+/// A device picked in the detail area, then another track's header clicked: Delete removes that
+/// track, not the device picked before the click, which stays on its track
+/// (`docs/spec/arrangement-editing.md` › the track headers).
+#[test]
+fn a_header_click_after_a_device_pick_gives_delete_to_the_tracks() {
+    let devices = |h: &Harness<'static, App>| {
+        let drums = track_id(h, "Drums")?;
+        h.state().session().and_then(|s| s.project().channel_of_track(drums).map(|c| c.devices.len()))
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Device Utility").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert!(!names(&harness).iter().any(|n| n == "Bass"), "Delete removed the track: {:?}", names(&harness));
+    assert_eq!(devices(&harness), Some(1), "the device picked before the header click stays");
+}
+
 /// The loop brace row under the ruler: a drag draws a region on the bar grid and turns looping
 /// on, Ctrl+L turns it off and on, a click on the brace selects its span without switching
 /// looping, its end and its middle are dragged, and undo takes an edit back
