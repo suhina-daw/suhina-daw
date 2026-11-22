@@ -180,7 +180,7 @@ enum Page {
     Saved,
 }
 
-/// Where the context keeps the saved colors for the menus (set by the app every frame) and
+/// Where the context keeps the saved colors for the menus (set by the app, copied when they change) and
 /// which page the menus last showed.
 fn saved_id() -> Id {
     Id::unique("color-menu-saved")
@@ -189,9 +189,16 @@ fn page_id() -> Id {
     Id::unique("color-menu-page")
 }
 
-/// Hands the menus the user's saved colors, in the order the color window shows them.
+/// Hands the menus the user's saved colors, in the order the color window shows them. The list is
+/// copied only when it differs from the one the context holds, so a frame with no change copies
+/// nothing.
 pub fn set_menu_saved(ctx: &egui::Context, saved: &[Rgb]) {
-    ctx.data_mut(|d| d.insert_temp(saved_id(), std::sync::Arc::new(saved.to_vec())));
+    ctx.data_mut(|d| {
+        let same = d.get_temp::<std::sync::Arc<Vec<Rgb>>>(saved_id()).is_some_and(|held| held.as_slice() == saved);
+        if !same {
+            d.insert_temp(saved_id(), std::sync::Arc::new(saved.to_vec()));
+        }
+    });
 }
 
 /// How many saved colors a menu's page shows: the palette's cells, the last one "..." when there
