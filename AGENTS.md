@@ -157,7 +157,8 @@ Keep the tree building at every step. Report each check as passed, failed (with 
 run (and why). A pull request also carries what [`docs/workflow.md`](docs/workflow.md) › What a
 pull request carries lists: *How to check it*, settings help, a rebuilt app for a device,
 and the documents that describe what changed. A branch never edits what `next` generates:
-`docs/INDEX.md` and `docs/commands.md`. A new *What works now* bullet is a file of its own in `docs/works-now/`, not a line in `ROADMAP.md`.
+`docs/INDEX.md`, `docs/commands.md` and the theme recordings in `apps/theme-render/tests/painted/`
+and `cut/` (CI flags a change to how a theme looks; it is recorded after the merge). A new *What works now* bullet is a file of its own in `docs/works-now/`, not a line in `ROADMAP.md`.
 
 ## Code Review Rules
 

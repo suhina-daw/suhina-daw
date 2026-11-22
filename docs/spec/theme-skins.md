@@ -1355,17 +1355,22 @@ and the outline does not draw it. Rules are numbered by the line their selectors
 sheet as Suhina reads it: in a `theme.css` the file's own lines; in an older JSON theme, whose
 rules Suhina writes into a sheet, that sheet's.
 
-**Every built-in theme keeps its look unless a change means to change it.** The painted tests of
-`suhina-theme-render` draw each scene in every built-in theme and variant without a GPU, and list
+**The built-in themes keep their look unless a change means to change it.** The painted tests of
+`suhina-theme-render` draw each scene in seven built-in themes, one for each way a theme is made (Suhina Studio, its light variant, Nord, Suhina Glass, Suhina Blocks, Suhina Meadow and Suhina Sheet) without a GPU, and list
 what the last frame paints: each shape's place and size to a quarter point, its colors, its text
 and its texture by name. Each listing's digest is held in `apps/theme-render/tests/painted/`,
 one file per theme or variant, shared by every system: the scenes
 are drawn with the window looking like Linux wherever they run (`crate::kit::platform`), so the
 text that differs between systems (shortcuts as `Ctrl+C` or `⌘C`, the plug-in formats Settings
 names, the title bar Suhina draws on Windows) is the same in every run. Each drawing runs on a thread of its own, so none
-depends on the one before. A change that differs fails the test, naming the scenes and
-themes; one that means to change a look records the new digests with `SUHINA_BLESS=1` and says why,
-and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare before and after. The About
+depends on the one before. A change that differs is flagged rather than failed: CI lists the
+scenes and themes in the job summary with a warning on the pull request, with the difference
+between each flagged scene's listing on the base commit and in the pull request, and the reviewer
+checks that the change means them. A pull request never records the digests, since nearly every change to
+the views moves them in every theme and two pull requests that recorded them conflicted; the
+default branch records them with `SUHINA_BLESS=1` after every merge (`docs-generated.yml`). A drawing
+that fails still fails the test, and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare
+before and after. The About
 dialog, which shows the build's commit, is left out.
 
 **The texts a theme cuts off are held too** (#1548). The same drawings are read for every text
@@ -1373,10 +1378,10 @@ shortened with "…" to fit, wrapped onto another line where it has no line brea
 outside its clip; a text painted twice at one place, each copy clipped to one side (a value over
 a fill, in two colors), counts as one with its clips joined where they touch, and the scrolled scenes' clipped
 texts are left out, since a view scrolled along cuts at its edge on purpose. Some cuts are meant
-and some are bugs not yet fixed, so `apps/theme-render/tests/cut/` holds one file per theme or
-variant with its cut texts, each once under the first scene by name that shows it: a change that cuts a new text, or
-stops cutting one, fails until the list is recorded with `SUHINA_BLESS=1`, and the pull request
-says why. A text wholly outside its clip shows nothing and is not listed, so a label pushed out
+and some are bugs not yet fixed, so `apps/theme-render/tests/cut/` holds one file per theme drawn
+with its cut texts, each once under the first scene by name that shows it: a change that cuts a new
+text, or stops cutting one, is flagged with the painted digests, the pull request says why, and the
+default branch records the new list after the merge. A text wholly outside its clip shows nothing and is not listed, so a label pushed out
 of sight entirely is not found this way. A paragraph that wraps on purpose (help text in Settings or
 a dialog) is listed as wrapped too.
 

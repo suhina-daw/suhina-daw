@@ -33,13 +33,17 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   Studio's values, and the base sheet (`crates/theme-package/src/base.css`) gives them to the
   elements; a view reads its colors from its element (`crate::kit::element`), so a theme's
   variable or its own rule reaches what it paints.
-- **A change to what the views paint is checked in every built-in theme.** `suhina-theme-render`'s
-  `painted` test digests what each scene paints in each built-in theme and variant
-  (`apps/theme-render/tests/painted/`, one file per theme or variant, shared by every system:
-  the scenes are drawn as on Linux wherever they run). Moving a view onto elements must leave every
-  digest as it is; a change meant to alter a look records them with
-  `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` and says why. Compare
-  listings with `SUHINA_PAINTED_DUMP=<folder>` before and after. Text that differs between
+- **A change to what the views paint is checked in the built-in themes.** `suhina-theme-render`'s
+  `painted` test digests what each scene paints in seven built-in themes, one for each way a theme
+  is made (`theme_tests!` lists them; `apps/theme-render/tests/painted/`, one file per theme, shared by every system:
+  the scenes are drawn as on Linux wherever they run). A drawing that differs is flagged, not
+  failed: the test prints it, and CI lists it in the job summary with a warning and a diff of
+  each flagged scene's paint listing against the base commit. Moving a view onto
+  elements must flag nothing; a change meant to alter a look says why in its pull request. **Never
+  record the digests in a branch** (`SUHINA_BLESS=1`, or committing `tests/painted/` or
+  `tests/cut/`): the default branch records them after the merge, and CI fails a pull request that
+  edits them, since two that did conflicted. Compare listings with `SUHINA_PAINTED_DUMP=<folder>`
+  before and after. Text that differs between
   systems reads the window's system from `crate::kit::platform::current()`, never `cfg!(target_os)`,
   or the recording holds on one system only.
 - **What a theme styles is an element** of the registry (`suhina_theme_package::elements`):
