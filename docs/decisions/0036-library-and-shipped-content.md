@@ -123,8 +123,9 @@ and store absolute paths in projects.
 [#1676](https://github.com/suhina-daw/suhina-daw/issues/1676). Decision 2's layout gains
 `Scripts/`: a surface program's script ([shipped scripts](../spec/shipped-scripts.md)) is content
 the user reads and edits, so a shipped one lands in the library beside their own the way the
-pack's files do — written once and never overwritten, a write failure said and the next start
-trying again (decision 3's rule). What runs is still the extensions store's copy
+pack's files do — each file written when it is not there and never overwritten, a write failure
+said and the next start trying again (decision 3's rule). What runs is still the extensions
+store's copy
 ([ADR 0019](0019-midi-controllers-and-mapping.md) › 10, [extensions](../spec/extensions.md) ›
 Running one); the folder is the readable source. The shipped script is Suhina's own content:
 written from the controller's public documentation alone, CC0-1.0, its provenance README and

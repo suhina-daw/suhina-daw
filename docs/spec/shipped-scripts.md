@@ -7,6 +7,7 @@ last_verified: 2026-11-21
 covers:
   - apps/suhina/src/pack_materialize.rs
   - crates/session/src/extensions.rs
+  - crates/session/src/shipped_scripts.rs
 ---
 
 # Shipped scripts
@@ -18,9 +19,9 @@ covers:
   [surface programs](surface-programs.md)), the pack that rides inside the executable and unpacks
   into the library (ADR 0036 › 2 and 3), and the command registry ([ADR 0002](../decisions/0002-commands.md)).
 - **Status:** planned ([#1676](https://github.com/suhina-daw/suhina-daw/issues/1676)). Built so
-  far: the first script itself — a clean-room rewrite of the Akai APC40 MkII's surface program,
-  written from Akai's public protocol document and chart, in `packs/apc40-mkii/` (#1677). The
-  unpack, the store install and the tests follow.
+  far: the clean-room script in `packs/apc40-mkii/` (#1677), and the unpack into the library's
+  `Scripts/` folder at every start — each file only when it is missing, with its tests. The
+  store install and the run-from-store tests follow.
 
 ## What ships
 
@@ -45,9 +46,10 @@ one; ADR 0019 › 10).
 ## Where it lands, and what runs
 
 - At start, each shipped script unpacks into the library's `Scripts/` folder
-  (`Documents/Suhina/Scripts/<id>/`), **only when the folder is missing**: a file the user
-  carries is theirs, never overwritten, never moved (ADR 0036 › 3). A write failure is said, and
-  the next start tries again.
+  (`Documents/Suhina/Scripts/<id>/`), **each file only when it is missing**: a file the user
+  carries is theirs, never overwritten, never moved (ADR 0036 › 3, the pack's own rule). A
+  write failure is said in the start-up warnings, one line per script, and the next start
+  tries again.
 - What runs is the **store's copy**, as for any surface program: the app installs the script into
   the extensions store the way `extensions.add` does, and the store's port scan starts it for the
   device the manifest names ([extensions](extensions.md) › Running one). The folder in
@@ -60,12 +62,13 @@ one; ADR 0019 › 10).
   installed for each shipped script. When the app carries a newer version, the store's copy is
   replaced only while it still carries exactly the recorded content; a copy whose files the user
   has changed is left alone, and the `Scripts/` folder copy is never overwritten either —
-  deleting it unpacks the shipped version again.
+  deleting a file unpacks the shipped version again.
 
 ## Testing
 
-- The unpack, like the pack's (`pack_materialize_tests`): a fresh library gets every file, an
-  existing file is not touched, the licence record lands, a failure is not fatal.
+- The unpack, like the pack's (`shipped_scripts_tests`): a fresh library gets every file, an
+  existing file is not touched, a deleted file comes back, the manifest's pin holds against
+  the store's own validation, and a failure is not fatal.
 - The shipped script: the end-to-end tests every surface program gets
   (`crates/lua-runner/tests/programs.rs`), run against the pack's files — it starts, the mode
   message goes out when the ports open, a press of each strip button sends its command, and the

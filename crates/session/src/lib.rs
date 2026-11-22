@@ -79,6 +79,7 @@ mod recording;
 mod relink;
 mod scales;
 mod sends;
+pub mod shipped_scripts;
 mod soundmap;
 mod swing;
 mod take_carry;
