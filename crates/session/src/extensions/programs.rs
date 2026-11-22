@@ -412,10 +412,9 @@ impl Child {
 const SEND_BACKS_BYTES: usize = 8 * 1024 * 1024;
 
 /// One send-back's enqueue, whatever the phase — the startup's and the running loop's alike:
-/// the count cap and the bytes cap, and what did not fit counted (the first and every 64th
-/// said, as the runner's own queue does). A waiter of the store's blocking drain sleeps on
-/// the queue's signal; a push without the notify would leave it there however many
-/// send-backs come.
+/// the count cap and the bytes cap, and what did not fit counted ([`note_dropped`], as the
+/// runner's own queue does). A waiter of the store's blocking drain sleeps on the queue's
+/// signal; a push without the notify would leave it there however many send-backs come.
 fn enqueue_send_back(events: &Shared, port: String, bytes: Vec<u8>, dropped: &mut usize) {
     let mut queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let count = queue.iter().filter(|e| matches!(e, Event::SendBack { .. })).count();
@@ -429,13 +428,11 @@ fn enqueue_send_back(events: &Shared, port: String, bytes: Vec<u8>, dropped: &mu
     if count < SEND_BACKS_MAX && held + bytes.len() <= SEND_BACKS_BYTES {
         queue.push_back(Event::SendBack { port, bytes });
         *dropped = 0;
+        drop(queue);
     } else {
-        *dropped += 1;
-        if *dropped == 1 || dropped.is_multiple_of(64) {
-            queue.push_back(Event::Dropped(*dropped));
-        }
+        drop(queue);
+        note_dropped(events, dropped);
     }
-    drop(queue);
     // The queue's signal is for the store's blocking drain: a push without it leaves a waiter
     // hanging however many send-backs come. The window is woken too, not at its next frame:
     // while nothing plays, its meters ask for no frames, and a controller's lights (a tick or
@@ -443,6 +440,17 @@ fn enqueue_send_back(events: &Shared, port: String, bytes: Vec<u8>, dropped: &mu
     // plug-in host gives its unasked news (#714).
     events.signal.notify_one();
     suhina_plugins::wake();
+}
+
+/// One send-back drop — the queue's caps' or the parked lines' ([`Link::wait_for_room`]) —
+/// counted and said the caps' way: the first and every 64th. The count rides the `Dropped`
+/// event the store turns into the program's last error.
+fn note_dropped(events: &Shared, dropped: &mut usize) {
+    *dropped += 1;
+    if *dropped == 1 || dropped.is_multiple_of(64) {
+        let mut queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        queue.push_back(Event::Dropped(*dropped));
+    }
 }
 
 /// The requests the process now running has made, per kind: each token with the command it
@@ -652,6 +660,11 @@ fn watch(
     let mut script_errored = false;
     let mut startup_dropped = 0usize;
     loop {
+        // A waiting write's lines that did not fit the parked caps are counted the queue's
+        // way.
+        for _ in 0..link.take_parked_dropped() {
+            note_dropped(events, &mut startup_dropped);
+        }
         match link.read().map_err(|reason| child.end(reason))? {
             Some(line) => match Message::decode(&line) {
                 // A request from the chunk, forwarded to the session: the answer reaches it
@@ -747,6 +760,11 @@ fn watch(
     let mut ping = 0u64;
     let mut dropped = 0usize;
     loop {
+        // A waiting write's lines that did not fit the parked caps are counted the queue's
+        // way.
+        for _ in 0..link.take_parked_dropped() {
+            note_dropped(events, &mut dropped);
+        }
         // Everything the session asked for, or the end of it — drained, so a burst of orders
         // (the answers of a fader's commands among them) is not paid one loop breath each.
         loop {
@@ -871,6 +889,22 @@ struct Link {
     reader: BufReader<Stream>,
     writer: Stream,
     partial: Vec<u8>,
+    /// Lines read while a write waited for room (see [`Link::send`]): the main loop takes
+    /// them before the socket, so nothing read to unjam the peer is lost or reordered. They
+    /// hold the send-backs' own caps (`parked_max`, `parked_bytes_max`): a peer streaming
+    /// while it never reads cannot grow this queue past what the session's own would take
+    /// anyway, and a line past the caps goes, counted in [`Link::parked_dropped`].
+    parked: VecDeque<String>,
+    /// How many bytes `parked` holds.
+    parked_bytes: usize,
+    parked_max: usize,
+    parked_bytes_max: usize,
+    /// Lines read to unjam a waiting write that did not fit the parked caps, for the watch
+    /// loops to say the caps' way (the first and every 64th, [`note_dropped`]).
+    parked_dropped: usize,
+    /// How long a write that must wait gives the runner before the wait is over: production's
+    /// [`WRITE_TIMEOUT`]; a test may let the dance take the scheduling it gets.
+    write_timeout: Duration,
     /// A write that did not complete: the line is on the wire unfinished, and anything
     /// appended to it would be read as part of it. No further writes go out; the caller
     /// ends the process and the restart takes over.
@@ -880,7 +914,22 @@ struct Link {
 impl Link {
     fn new(stream: Stream) -> Result<Self, String> {
         let writer = TryClone::try_clone(&stream).map_err(|e| format!("the socket's halves cannot split: {e}"))?;
-        Ok(Self { reader: BufReader::new(stream), writer, partial: Vec::new(), dead: false })
+        Ok(Self {
+            // 64 KiB a fill: a one-MiB line the runner streams is assembled in sixteenths,
+            // and every fill that finds nothing breathes `POLL` — an 8 KiB reader paid that
+            // breath sixteen times over and let the write timeout end healthy runners under
+            // load (#1670).
+            reader: BufReader::with_capacity(64 * 1024, stream),
+            writer,
+            partial: Vec::new(),
+            parked: VecDeque::new(),
+            parked_bytes: 0,
+            parked_max: SEND_BACKS_MAX,
+            parked_bytes_max: SEND_BACKS_BYTES,
+            parked_dropped: 0,
+            write_timeout: WRITE_TIMEOUT,
+            dead: false,
+        })
     }
 
     /// Sends one message, the whole line or nothing less than the process's end: the
@@ -888,37 +937,58 @@ impl Link {
     /// `WouldBlock` and the line waits in the drabs the runner's reads make room for,
     /// continuing from where it stopped. Discarding such a write silently dropped a
     /// `state` or a port message whole (a controller dark, a test's marker never sent)
-    /// wherever the pipe's buffer ran small. Past [`WRITE_TIMEOUT`] the runner has
-    /// stopped reading: the error ends the process, so no wait of the script's outlives
-    /// the answer it waits on, and the link is marked dead — a line left unfinished on
-    /// the wire must not have the next one appended to it.
+    /// wherever the pipe's buffer ran small. While it waits, readable lines are read and
+    /// parked ([`Link::wait_for_room`]): a full duplex pair whose buffers both run small
+    /// jams — the peer blocked on a write that needs our reads, our write blocked on its
+    /// reads — and retrying without reading wedged both for the whole deadline and killed
+    /// a healthy runner (#1670; Windows' pipes are a few KiB). Past the write timeout
+    /// ([`WRITE_TIMEOUT`] in production) the runner has stopped reading: the error ends the
+    /// process, so no wait of the script's outlives the answer it waits on, and the link is
+    /// marked dead — a line left unfinished on the wire must not have the next one appended
+    /// to it.
     fn send(&mut self, message: &Message) -> Result<(), String> {
         if self.dead {
             return Err("the link is dead: a write did not complete".into());
         }
         let line = format!("{}\n", message.encode());
-        let deadline = Instant::now() + WRITE_TIMEOUT;
+        let deadline = Instant::now() + self.write_timeout;
         let mut written = 0;
+        let started = Instant::now();
+        let mut waited = false;
         while written < line.len() {
             match self.writer.write(&line.as_bytes()[written..]) {
                 Ok(0) => {
                     // A write that took no bytes is no room yet, not a refusal: Windows'
                     // nonblocking pipes answer a full buffer with a zero-byte success rather
                     // than WouldBlock, and a peer that is gone errors instead. The deadline
-                    // below is the judge, as it is for WouldBlock.
-                    if Instant::now() >= deadline {
-                        self.dead = true;
-                        return Err("the runner stopped reading: the write did not complete in time".into());
+                    // is the judge, as it is for WouldBlock.
+                    waited = true;
+                    match self.wait_for_room(deadline) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            self.dead = true;
+                            return Err("the runner stopped reading: the write did not complete in time".into());
+                        }
+                        Err(reason) => {
+                            self.dead = true;
+                            return Err(reason);
+                        }
                     }
-                    std::thread::sleep(POLL);
                 }
                 Ok(n) => written += n,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    if Instant::now() >= deadline {
-                        self.dead = true;
-                        return Err("the runner stopped reading: the write did not complete in time".into());
+                    waited = true;
+                    match self.wait_for_room(deadline) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            self.dead = true;
+                            return Err("the runner stopped reading: the write did not complete in time".into());
+                        }
+                        Err(reason) => {
+                            self.dead = true;
+                            return Err(reason);
+                        }
                     }
-                    std::thread::sleep(POLL);
                 }
                 Err(e) => {
                     self.dead = true;
@@ -926,13 +996,52 @@ impl Link {
                 }
             }
         }
+        let spent = started.elapsed();
+        if waited && spent.as_millis() >= 50 {
+            // A write that had to wait names itself: it is the picture of a jammed pair,
+            // and after its wait the queue's order is what keeps the protocol whole.
+            suhina_plugins::trace!("surface write done: waited {} ms for {} bytes", spent.as_millis(), line.len());
+        }
         Ok(())
     }
 
+    /// One wait for room to write: a readable line goes to `parked` — that read is what
+    /// lets a peer blocked on its own write finish — and with nothing to read the poll
+    /// breathes. A line past the parked caps is still read (the peer must be unjammed) and
+    /// let go, counted in [`Link::parked_dropped`] for the watch loops to say. `Ok(false)`
+    /// when the deadline passed before waiting again: the runner has stopped reading. A read
+    /// that fails fails the write too, the way the main loop's own read would.
+    fn wait_for_room(&mut self, deadline: Instant) -> Result<bool, String> {
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        match self.read_socket() {
+            Ok(Some(line)) => {
+                if self.parked.len() < self.parked_max && self.parked_bytes + line.len() <= self.parked_bytes_max {
+                    self.parked_bytes += line.len();
+                    self.parked.push_back(line);
+                } else {
+                    self.parked_dropped += 1;
+                }
+            }
+            Ok(None) => std::thread::sleep(POLL),
+            Err(reason) => return Err(reason),
+        }
+        Ok(true)
+    }
+
+    /// The lines a waiting write let go, taken: the watch loops count them the queue's way
+    /// ([`note_dropped`]), so a peer streaming past the parked caps is said, not silent.
+    fn take_parked_dropped(&mut self) -> usize {
+        std::mem::take(&mut self.parked_dropped)
+    }
+
     /// One complete line already readable, without waiting: `None` when nothing whole is there
-    /// yet. A partial line stays put until its end arrives — and what is already readable is
-    /// taken whole in one call, so a big line (a one-MiB send-back's) is not paid one poll
-    /// breath per bufferful, which a healthy runner could not outpace.
+    /// yet. Lines parked while a write waited ([`Link::send`]) come first, in their order — they
+    /// were read earlier, and the main loop's order is the protocol's. A partial line stays put
+    /// until its end arrives — and what is already readable is taken whole in one call, so a big
+    /// line (a one-MiB send-back's) is not paid one poll breath per bufferful, which a healthy
+    /// runner could not outpace.
     ///
     /// An empty read is "nothing now", never a close: the two cannot be told apart on every
     /// platform. On Windows a named pipe in nonblocking mode — which the host's socket is —
@@ -941,6 +1050,18 @@ impl Link {
     /// connection gives. What ends the watch is the process's own end (the loops' `try_wait`)
     /// or a write that fails, so silence is never taken for a goodbye.
     fn read(&mut self) -> Result<Option<String>, String> {
+        if let Some(line) = self.parked.pop_front() {
+            self.parked_bytes -= line.len();
+            return Ok(Some(line));
+        }
+        self.read_socket()
+    }
+
+    /// One complete line from the socket itself, parked lines aside: the loop
+    /// [`Link::wait_for_room`] drains with — going through [`Link::read`] there would serve a
+    /// line it just parked back to itself and never touch the socket, which is exactly the jam
+    /// it exists to break.
+    fn read_socket(&mut self) -> Result<Option<String>, String> {
         loop {
             match self.reader.fill_buf() {
                 Ok(available) => {
@@ -973,134 +1094,5 @@ impl Link {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A stop that arrives before the process exists starts nothing: the watch is over
-    /// cleanly, no child was spawned, and no crash is reported.
-    #[test]
-    fn a_stop_before_the_process_exists_starts_nothing() {
-        let (to, from) = channel();
-        to.send(ToProgram::Stop).expect("the stop is sent");
-        let events: Shared = Arc::new(Queue::default());
-        let pid = std::sync::atomic::AtomicU32::new(0);
-        let mut ports = (Vec::new(), Vec::new());
-        let watch_result = watch(
-            Path::new("/nonexistent/runner"),
-            Path::new("script.lua"),
-            &from,
-            &events,
-            &pid,
-            &mut ports,
-            &mut Pending::default(),
-        );
-        assert_eq!(watch_result, Ok(()));
-        assert_eq!(pid.load(std::sync::atomic::Ordering::Relaxed), 0, "no process was started");
-        let queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert!(!queue.iter().any(|event| matches!(event, Event::Crashed(_))), "{queue:?}");
-    }
-
-    /// A stop while the runner is alive but has not connected ends the start without a
-    /// crash: the caller's join is not held through the connection's timeout, the process is
-    /// ended and reaped, and the watch is over the `Ok` way.
-    #[cfg(unix)]
-    #[test]
-    fn a_stop_while_the_runner_connects_ends_the_start_without_a_crash() {
-        let dir = std::env::temp_dir().join(format!(
-            "suhina-watch-stop-{}-{}",
-            std::process::id(),
-            std::time::Instant::now().elapsed().as_nanos()
-        ));
-        std::fs::create_dir_all(&dir).expect("the folder is made");
-        // The fake runner says it is alive by opening the fifo — the test's blocking open is
-        // the explicit signal that the child is past its spawn — then sleeps, never
-        // connecting to the control socket.
-        let fifo = dir.join("started.fifo");
-        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().map(|s| s.success()).unwrap_or(false));
-        let runner = dir.join("sleeper.sh");
-        std::fs::write(&runner, format!("#!/bin/sh\necho started > '{}'\nsleep 5\n", fifo.display()))
-            .expect("the runner is written");
-        let mut permissions = std::fs::metadata(&runner).expect("the runner is there").permissions();
-        use std::os::unix::fs::PermissionsExt;
-        permissions.set_mode(0o755);
-        std::fs::set_permissions(&runner, permissions).expect("the runner is executable");
-        let script = dir.join("script.lua");
-        std::fs::write(&script, "-- unused\n").expect("the script is written");
-
-        let (to, from) = channel();
-        let events: Shared = Arc::new(Queue::default());
-        let pid = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        let result: std::sync::mpsc::Receiver<Result<(), String>> = {
-            let (done, done_rx) = channel();
-            let thread_events = Arc::clone(&events);
-            let thread_pid = Arc::clone(&pid);
-            let runner = runner.clone();
-            let script = script.clone();
-            std::thread::spawn(move || {
-                let mut ports = (Vec::new(), Vec::new());
-                let _ = done.send(watch(
-                    &runner,
-                    &script,
-                    &from,
-                    &thread_events,
-                    &thread_pid,
-                    &mut ports,
-                    &mut Pending::default(),
-                ));
-            });
-            done_rx
-        };
-        // The child announced itself: it is alive in the accept loop's window, not connected.
-        let announced = std::fs::File::open(&fifo).expect("the runner announced itself");
-        let mut announced = announced;
-        use std::io::Read;
-        let mut line = String::new();
-        announced.read_to_string(&mut line).expect("the announcement is read");
-        assert!(pid.load(std::sync::atomic::Ordering::Relaxed) != 0, "the child was spawned");
-
-        to.send(ToProgram::Stop).expect("the stop is sent");
-        let watch_result = result.recv().expect("the watch thread ended");
-        assert_eq!(watch_result, Ok(()), "the stop is not a crash");
-        let queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert!(!queue.iter().any(|event| matches!(event, Event::Crashed(_))), "{queue:?}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// An empty read is "nothing now", never a close: an idle connection and one whose peer
-    /// has gone answer `None` alike — on Windows they cannot be told apart, a nonblocking
-    /// pipe with no data answering with the same zero-byte read a close gives — and what
-    /// ends a program whose process is over is the watch's `try_wait`, not the read. What a
-    /// live peer sends still comes back whole.
-    #[test]
-    fn an_empty_read_is_nothing_now_and_never_a_close() {
-        let (address, name) = control_name().expect("the socket's name");
-        let listener = ListenerOptions::new().name(name).create_sync().expect("the listener");
-        // The peer holds the connection open until the test lets it go; its line is written
-        // before any read, so what waits is only the line's travel.
-        let (may_close, close_ok) = channel::<()>();
-        let peer = std::thread::spawn(move || {
-            let mut stream = suhina_plugins::connect(&address).expect("the peer connects");
-            stream.write_all(b"hello\n").expect("the line goes");
-            stream.flush().expect("the writer flushes");
-            close_ok.recv().expect("the test allows the close");
-        });
-        let stream = listener.accept().expect("the peer connects");
-        let mut link = Link::new(stream).expect("the link is made");
-        // The line that is there comes back whole.
-        assert_eq!(link.read().expect("a read").as_deref(), Some("hello"));
-        // Idle: nothing whole is there, and that answers `None`, not an error.
-        link.reader.get_mut().set_nonblocking(true).expect("the socket is nonblocking");
-        for _ in 0..10 {
-            assert_eq!(link.read().expect("an idle read"), None);
-            std::thread::sleep(POLL);
-        }
-        // The peer goes: the reads answer the same, never a "closed" error — the process's
-        // own end is the signal the watch runs on.
-        may_close.send(()).expect("the close is allowed");
-        peer.join().expect("the peer ends");
-        for _ in 0..10 {
-            assert_eq!(link.read().expect("a closed read"), None);
-            std::thread::sleep(POLL);
-        }
-    }
-}
+#[path = "programs_tests.rs"]
+mod tests;

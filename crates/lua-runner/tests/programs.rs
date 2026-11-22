@@ -102,11 +102,14 @@ suhina.on_state(function(token, value)
 end)
 suhina.subscribe("track.setVolume", { tracks = { 1 } })
 "#;
-/// One MiB of payload on every press: the send-back queue's byte budget is what a storm of
-/// them is judged by, not the count alone.
+/// One MiB of payload on every press, queued for certain: the runner's own send queue may be
+/// full while its writer drains to the host, and a plain send would take the drop silently
+/// (it says false). Waiting makes every press arrive, so the host queue's cap is what the
+/// storm is judged by — the same on every platform's pipes.
 const SCRIPT_BIG_SEND: &str = r#"
+local payload = string.rep("a", 1024 * 1024)
 suhina.on_port_message(function(bytes, port)
-    suhina.send("APC out", string.rep("a", 1024 * 1024))
+    while not suhina.send("APC out", payload) do end
 end)
 "#;
 /// Two commands keyed by the press: one that fails (the stale answer's), one that works (the
