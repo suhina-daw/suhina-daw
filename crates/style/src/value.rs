@@ -832,12 +832,12 @@ mod picker_color_tests {
     #[test]
     fn grays_are_named_as_grays_not_as_the_brown_nearest_their_lightness() {
         for (rgb, name) in [
-            ([0x26, 0x26, 0x26], "Dark Gray"),
-            ([0x1a, 0x1a, 0x1a], "Almost Black"),
-            ([0x11, 0x11, 0x11], "Almost Black"),
+            ([0x26, 0x26, 0x26], "Eerie Black"),
+            ([0x1a, 0x1a, 0x1a], "Eerie Black"),
+            ([0x11, 0x11, 0x11], "Smoky Black"),
             ([0x40, 0x40, 0x40], "Charcoal Gray"),
-            ([0x80, 0x80, 0x80], "Medium Gray"),
-            ([0xc0, 0xc0, 0xc0], "Silver"),
+            ([0x80, 0x80, 0x80], "Gray"),
+            ([0xc0, 0xc0, 0xc0], "Silver Sand"),
             ([0xf2, 0xf2, 0xf2], "Pale Gray"),
         ] {
             assert_eq!(nearest_named_color(rgb).0, name, "{rgb:02x?}");

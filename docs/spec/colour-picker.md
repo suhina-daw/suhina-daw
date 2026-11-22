@@ -62,7 +62,7 @@ and brand-like names are omitted, spelling and spacing are normalised (US "gray"
 has one value, and related names (Dark, Light, Pale and Bright forms of a base) are checked
 to be consistent with it.
 For an arbitrary RGB value, show the nearest named colour by CIEDE2000 colour difference,
-which weighs a tint on a near grey heavily (so #262626 is Dark Gray, not the Dark Brown nearest
+which weighs a tint on a near grey heavily (so #262626 is Eerie Black, not the Dark Brown nearest
 its lightness), with no mark for an approximate match. The values describe common usage; they are not the CSS named-colour standard.
 This is a descriptive aid, not quantisation: displaying a name never changes the selected
 RGB or the value copied to the clipboard. The bounded table ships with the app and requires
