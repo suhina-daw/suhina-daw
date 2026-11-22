@@ -8,7 +8,9 @@
 //! A drawing that differs from the recording is flagged, not failed: the test prints it and, with
 //! `SUHINA_PAINTED_REPORT=<folder>`, writes it to `<folder>/<theme>.md`, which CI puts in the job
 //! summary with a warning on the pull request (`.github/workflows/ci.yml`), and the reviewer
-//! decides whether the change meant it. A drawing that fails still fails the test.
+//! decides whether the change meant it. The listings that differ go to `<folder>/after/`; on a pull
+//! request CI draws the flagged themes again on the base commit and shows the difference between
+//! each scene's two listings. A drawing that fails still fails the test.
 //!
 //! A pull request never records the digests: nearly every change to the views moves digests in
 //! every theme, so two pull requests that both recorded them always conflicted on these files.
@@ -51,8 +53,17 @@ fn recorded(text: &str) -> BTreeMap<(String, String), String> {
 /// One theme per test lets nextest spread the drawings across CI partitions. Each scene still
 /// gets a fresh thread for its window state in `painted::scene`; there is no worker pool here
 /// competing with the test runner. The same drawings are compared with both recordings.
+///
+/// `SUHINA_PAINTED_ONLY=<theme>,<theme>` draws only those themes and leaves the other tests
+/// passing at once: CI draws the flagged themes again on the base commit to show what they paint
+/// differently.
 #[allow(clippy::unwrap_used)] // test helper
 fn paint_and_check(theme: &str) {
+    if let Some(only) = std::env::var_os("SUHINA_PAINTED_ONLY")
+        && !only.to_string_lossy().split(',').any(|id| id.trim() == theme)
+    {
+        return;
+    }
     let subject = Subject::built_in(theme).unwrap();
     let all: Drawings = scenes::scenes()
         .into_iter()
@@ -220,6 +231,17 @@ fn painted_differences(theme: &str, all: &Drawings) -> Option<String> {
         return None;
     }
     println!("{shown}");
+    // The listings that differ, named as `SUHINA_PAINTED_DUMP` names them, for CI to compare with
+    // the same scenes drawn on the base commit.
+    if let Some(folder) = std::env::var_os("SUHINA_PAINTED_REPORT") {
+        let folder = PathBuf::from(folder).join("after");
+        std::fs::create_dir_all(&folder).unwrap();
+        for key in now.iter().filter(|(key, digest)| recorded.get(*key) != Some(digest)).map(|(key, _)| key) {
+            if let Some(Ok(listing)) = listings.get(key) {
+                std::fs::write(folder.join(format!("{}.{}.txt", key.0, key.1)), listing).unwrap();
+            }
+        }
+    }
     Some(format!(
         "{} of {} drawings differ from tests/painted/{theme}.txt\n{}\n",
         differ.len(),

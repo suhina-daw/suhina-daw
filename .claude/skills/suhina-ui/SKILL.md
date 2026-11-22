@@ -37,7 +37,8 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   `painted` test digests what each scene paints in each built-in theme and variant
   (`apps/theme-render/tests/painted/`, one file per theme or variant, shared by every system:
   the scenes are drawn as on Linux wherever they run). A drawing that differs is flagged, not
-  failed: the test prints it, and CI lists it in the job summary with a warning. Moving a view onto
+  failed: the test prints it, and CI lists it in the job summary with a warning and a diff of
+  each flagged scene's paint listing against the base commit. Moving a view onto
   elements must flag nothing; a change meant to alter a look says why in its pull request. **Never
   record the digests in a branch** (`SUHINA_BLESS=1`, or committing `tests/painted/` or
   `tests/cut/`): the default branch records them after the merge, and CI fails a pull request that

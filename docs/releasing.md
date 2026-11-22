@@ -447,8 +447,11 @@ check fails if a theme or variant has no test or is listed twice. The recordings
 theme or variant in `apps/theme-render/tests/painted/` and `apps/theme-render/tests/cut/`, so
 `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` can update them in parallel
 without tests writing the same file. A drawing that differs from them is flagged, not failed: the
-tests write it to `SUHINA_PAINTED_REPORT`, and on Linux a step after the tests puts the list in the
-job summary with a warning. The recordings are written on the default branch after every merge by
+tests write it to `SUHINA_PAINTED_REPORT`, and on Linux the job's last step puts the list in the
+job summary with a warning. On a pull request that step also checks out the base commit, draws the
+flagged themes again (`SUHINA_PAINTED_ONLY`, `SUHINA_PAINTED_DUMP`) and shows a `diff -u` of each
+flagged scene's paint listing, cut short in the summary and whole in the `theme-look-diffs-<n>`
+artifact. The recordings are written on the default branch after every merge by
 `docs-generated.yml` (job `looks`), and a pull request that edits them fails the docs job.
 
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test

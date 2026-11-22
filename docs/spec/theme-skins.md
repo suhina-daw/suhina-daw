@@ -1364,8 +1364,9 @@ are drawn with the window looking like Linux wherever they run (`crate::kit::pla
 text that differs between systems (shortcuts as `Ctrl+C` or `⌘C`, the plug-in formats Settings
 names, the title bar Suhina draws on Windows) is the same in every run. Each drawing runs on a thread of its own, so none
 depends on the one before. A change that differs is flagged rather than failed: CI lists the
-scenes and themes in the job summary with a warning on the pull request, and the reviewer checks
-that the change means them. A pull request never records the digests, since nearly every change to
+scenes and themes in the job summary with a warning on the pull request, with the difference
+between each flagged scene's listing on the base commit and in the pull request, and the reviewer
+checks that the change means them. A pull request never records the digests, since nearly every change to
 the views moves them in every theme and two pull requests that recorded them conflicted; the
 default branch records them with `SUHINA_BLESS=1` after every merge (`docs-generated.yml`). A drawing
 that fails still fails the test, and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare
