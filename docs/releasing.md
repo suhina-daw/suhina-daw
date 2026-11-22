@@ -456,7 +456,8 @@ artifact. The recordings are written on the default branch after every merge by
 
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
 is reported rather than the run stopping at the first (locally, `cargo test --workspace
---no-fail-fast` does the same), a test that runs a minute or more is named while it runs, and one
+--no-fail-fast` does the same), a test that runs a minute or more is named while it runs and
+listed with its time after the run's summary, and one
 that runs ten minutes is stopped and fails: it has hung, and would otherwise hold its runner until
 the job's six-hour limit, as `crates/engine`'s `an_offline_pools_workers_never_join_real_time_priority`
 did once on Linux (it takes milliseconds).
