@@ -15,7 +15,7 @@
 //! runs; when the program stops, the port goes back to the usual path.
 
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use serde_json::{Value, json};
 use suhina_engine::{LiveEvent, LiveSender, LiveSource};
@@ -75,40 +75,99 @@ pub trait MidiSystem: Send + Sync {
     }
 }
 
-/// How many writes one output port's worker holds: the driver's queue is the controller's,
-/// and the session never waits on it, so a wedged one's LED stream is droppable past this —
-/// the newest beats the oldest either way, and the order of what is sent is kept.
-const OUTPUT_QUEUE: usize = 64;
+/// How many writes one output port's worker holds, and the bytes they may take: the same caps
+/// as the programs' send-back queue that feeds it, so one look's whole drain fits and a burst
+/// is not lost to a worker thread that has not been scheduled yet. Past them the oldest goes —
+/// the newest beats the oldest — and the order of what is sent is kept.
+const OUTPUT_QUEUE: usize = 4096;
+const OUTPUT_QUEUE_BYTES: usize = 8 * 1024 * 1024;
 
 /// The writes one output port takes, in order: the session's thread enqueues and never waits
 /// for the driver — a slow or stalled output held the session's look otherwise (a system
 /// exclusive's transmission, a device that is not ready retried without a timeout). A worker
-/// of the port's own does the waiting; it ends when the port goes, after the write it is in.
+/// of the port's own does the waiting; it ends when the port goes, after the writes it holds.
 struct OutputWorker {
-    to: std::sync::mpsc::SyncSender<Vec<u8>>,
+    queue: Arc<OutputQueue>,
 }
 
 impl OutputWorker {
     fn start(out: Box<dyn MidiOut>, port: String) -> Self {
-        let (to, from): (std::sync::mpsc::SyncSender<Vec<u8>>, std::sync::mpsc::Receiver<Vec<u8>>) =
-            std::sync::mpsc::sync_channel(OUTPUT_QUEUE);
+        let queue = Arc::new(OutputQueue::default());
+        let worker = Arc::clone(&queue);
         let _ = std::thread::Builder::new().name("suhina-midi-out".into()).spawn(move || {
-            // The channel's writes drain in order; its end (the port was closed or the
-            // program stopped) is the worker's end, after the write it is in — nothing
-            // joins it, so a wedged driver holds no one.
-            while let Ok(bytes) = from.recv() {
+            // The writes drain in order; the queue's end (the port was closed or the program
+            // stopped) is the worker's end, after the write it is in — nothing joins it, so a
+            // wedged driver holds no one.
+            while let Some(bytes) = worker.take() {
                 if let Err(e) = out.send(&bytes) {
                     suhina_plugins::trace!("midi out {port}: {e}");
                 }
             }
         });
-        Self { to }
+        Self { queue }
     }
 
-    /// Enqueues the write; the worker's queue full is the driver's wedged state, and the
-    /// write is dropped rather than waited on.
+    /// Enqueues the write; a queue at its caps is a driver that cannot keep up, and the oldest
+    /// write goes to make room — never a wait on the session's look.
     fn write(&self, bytes: &[u8]) {
-        let _ = self.to.try_send(bytes.to_vec());
+        self.queue.push(bytes.to_vec());
+    }
+}
+
+impl Drop for OutputWorker {
+    fn drop(&mut self) {
+        self.queue.close();
+    }
+}
+
+/// The writes waiting for one output port, with the count and byte caps.
+#[derive(Default)]
+struct OutputQueue {
+    state: Mutex<OutputQueueState>,
+    ready: Condvar,
+}
+
+#[derive(Default)]
+struct OutputQueueState {
+    writes: std::collections::VecDeque<Vec<u8>>,
+    bytes: usize,
+    closed: bool,
+}
+
+impl OutputQueue {
+    /// Queues one write, making room by dropping the oldest when the caps are reached.
+    fn push(&self, bytes: Vec<u8>) {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        while state.writes.len() >= OUTPUT_QUEUE || state.bytes.saturating_add(bytes.len()) > OUTPUT_QUEUE_BYTES {
+            let Some(oldest) = state.writes.pop_front() else { break };
+            state.bytes = state.bytes.saturating_sub(oldest.len());
+        }
+        state.bytes = state.bytes.saturating_add(bytes.len());
+        state.writes.push_back(bytes);
+        self.ready.notify_one();
+    }
+
+    /// The oldest write, waiting for one when the queue is empty; `None` when the queue is
+    /// closed and drained.
+    fn take(&self) -> Option<Vec<u8>> {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if let Some(bytes) = state.writes.pop_front() {
+                state.bytes = state.bytes.saturating_sub(bytes.len());
+                return Some(bytes);
+            }
+            if state.closed {
+                return None;
+            }
+            state = self.ready.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+    }
+
+    fn close(&self) {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.closed = true;
+        drop(state);
+        self.ready.notify_all();
     }
 }
 
@@ -523,3 +582,7 @@ fn set_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandEr
     }
     inputs(projects, &Value::Null)
 }
+
+#[cfg(test)]
+#[path = "midi_tests.rs"]
+mod tests;
