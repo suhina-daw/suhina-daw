@@ -119,7 +119,7 @@ fn audio_clip_from(project: &Project, track: TrackId, clip: &Clip) -> Option<Aud
     let position = project.tracks.iter().position(|t| t.id == track)?;
     // The clip's own color when it has one; its track's otherwise (`Clip::color`).
     let color = clip.color.unwrap_or_else(|| {
-        project.tracks.get(position).map(|track| track_colour(track, position)).unwrap_or(suhina_session::colours::MIDI)
+        project.tracks.get(position).map(|track| track_colour(track, position)).unwrap_or(suhina_session::colors::MIDI)
     });
     let ts = project.transport.time_signature;
     let bar_beats =
