@@ -1363,9 +1363,13 @@ one file per theme or variant, shared by every system: the scenes
 are drawn with the window looking like Linux wherever they run (`crate::kit::platform`), so the
 text that differs between systems (shortcuts as `Ctrl+C` or `⌘C`, the plug-in formats Settings
 names, the title bar Suhina draws on Windows) is the same in every run. Each drawing runs on a thread of its own, so none
-depends on the one before. A change that differs fails the test, naming the scenes and
-themes; one that means to change a look records the new digests with `SUHINA_BLESS=1` and says why,
-and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare before and after. The About
+depends on the one before. A change that differs is flagged rather than failed: CI lists the
+scenes and themes in the job summary with a warning on the pull request, and the reviewer checks
+that the change means them. A pull request never records the digests, since nearly every change to
+the views moves them in every theme and two pull requests that recorded them conflicted; the
+default branch records them with `SUHINA_BLESS=1` after every merge (`docs-generated.yml`). A drawing
+that fails still fails the test, and `SUHINA_PAINTED_DUMP=<folder>` writes the listings to compare
+before and after. The About
 dialog, which shows the build's commit, is left out.
 
 **The texts a theme cuts off are held too** (#1548). The same drawings are read for every text

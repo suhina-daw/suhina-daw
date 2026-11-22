@@ -446,7 +446,10 @@ There is no extra worker pool inside the tests; nextest controls their concurren
 check fails if a theme or variant has no test or is listed twice. The recordings are one file per
 theme or variant in `apps/theme-render/tests/painted/` and `apps/theme-render/tests/cut/`, so
 `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` can update them in parallel
-without tests writing the same file.
+without tests writing the same file. A drawing that differs from them is flagged, not failed: the
+tests write it to `SUHINA_PAINTED_REPORT`, and on Linux a step after the tests puts the list in the
+job summary with a warning. The recordings are written on the default branch after every merge by
+`docs-generated.yml` (job `looks`), and a pull request that edits them fails the docs job.
 
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
 is reported rather than the run stopping at the first (locally, `cargo test --workspace
