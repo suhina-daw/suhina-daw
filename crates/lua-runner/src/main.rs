@@ -116,6 +116,10 @@ struct Link {
 impl Link {
     fn connect(address: &str) -> Result<Self, String> {
         let stream = connect(address).map_err(|e| format!("cannot connect to {address}: {e}"))?;
+        // The runner's reads and writes block: on Windows a client of a nonblocking server
+        // inherits that mode at connect time, and a read that answers at once with nothing
+        // would be taken for the peer's goodbye.
+        stream.set_nonblocking(false).map_err(|e| format!("cannot make the connection blocking: {e}"))?;
         let writer = stream.try_clone().map_err(|e| format!("cannot hold the socket's write half: {e}"))?;
         Ok(Self { reader: BufReader::new(stream), writer: BufWriter::with_capacity(64 * 1024, writer) })
     }
