@@ -7,7 +7,7 @@ arrangement-scrolled suhina-glass 53363d02d45e0db5
 browser suhina-glass 65406df4221e5918
 browser-plug-ins suhina-glass 29afa734da33b169
 browser-search suhina-glass abccb9030fba41bf
-clip-audio suhina-glass c912c539abae3c58
+clip-audio suhina-glass ded8ae5addeb5e2c
 clip-midi suhina-glass 101b6af199981845
 color-menu-saved suhina-glass 056974e35eaefe28
 color-picker suhina-glass 1681b8a7c168f66a
@@ -52,7 +52,7 @@ settings-appearance suhina-glass 4029c924d4bb2e39
 settings-audio suhina-glass 5b2b30ccd72e3aa5
 settings-browser suhina-glass 4ad5c0442a4b6b71
 settings-devices suhina-glass bf104ddd5ded4efe
-settings-keys suhina-glass 5a2cb3b0a6fe003f
+settings-keys suhina-glass 1adf11fa6d959231
 settings-launcher suhina-glass 0c5d5c345830afcd
 settings-menu suhina-glass 917153e5a5003cae
 settings-midi suhina-glass aba26a1c5ab12d36

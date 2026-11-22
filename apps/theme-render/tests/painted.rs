@@ -1,14 +1,23 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Every built-in theme and variant paints each scene as recorded in `painted/<theme>.txt` (#1023): what
-//! moves the views onto elements, or the colours into the sheet, changes no theme's look unless
-//! it means to. Headless: the digest of [`painted::scene`]'s listing, no GPU.
+//! What the built-in themes in `theme_tests!` paint in each scene, against what `painted/<theme>.txt`
+//! records (#1023): what moves the views onto elements, or the colours into the sheet, shows which
+//! themes' looks it changes. Headless: the digest of [`painted::scene`]'s listing, no GPU.
 //!
-//! A change that means to change a look records the new digests:
-//! `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`, and says why in its pull
-//! request. To see what changed, write the listings before and after the change with
-//! `SUHINA_PAINTED_DUMP=<folder>` and compare the two folders.
+//! A drawing that differs from the recording is flagged, not failed: the test prints it and, with
+//! `SUHINA_PAINTED_REPORT=<folder>`, writes it to `<folder>/<theme>.md`, which CI puts in the job
+//! summary with a warning on the pull request (`.github/workflows/ci.yml`), and the reviewer
+//! decides whether the change meant it. The listings that differ go to `<folder>/after/`; on a pull
+//! request CI draws the flagged themes again on the base commit and shows the difference between
+//! each scene's two listings. A drawing that fails still fails the test.
+//!
+//! A pull request never records the digests: nearly every change to the views moves digests in
+//! every theme, so two pull requests that both recorded them always conflicted on these files.
+//! `.github/workflows/docs-generated.yml` records them on the default branch after every merge with
+//! `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`, and CI fails a pull
+//! request that edits them. To see what changed, write the listings before and after the change
+//! with `SUHINA_PAINTED_DUMP=<folder>` and compare the two folders.
 //!
 //! The same recordings on every system: the scenes are drawn with the window looking like Linux
 //! ([`suhina_ui::kit::platform`]), so shortcuts say Ctrl and Settings names Linux's plug-in formats
@@ -43,20 +52,53 @@ fn recorded(text: &str) -> BTreeMap<(String, String), String> {
 
 /// One theme per test lets nextest spread the drawings across CI partitions. Each scene still
 /// gets a fresh thread for its window state in `painted::scene`; there is no worker pool here
-/// competing with the test runner. The same drawings check both recordings, even if one differs.
+/// competing with the test runner. The same drawings are compared with both recordings.
+///
+/// `SUHINA_PAINTED_ONLY=<theme>,<theme>` draws only those themes and leaves the other tests
+/// passing at once: CI draws the flagged themes again on the base commit to show what they paint
+/// differently.
 #[allow(clippy::unwrap_used)] // test helper
 fn paint_and_check(theme: &str) {
+    if let Some(only) = std::env::var_os("SUHINA_PAINTED_ONLY")
+        && !only.to_string_lossy().split(',').any(|id| id.trim() == theme)
+    {
+        return;
+    }
     let subject = Subject::built_in(theme).unwrap();
     let all: Drawings = scenes::scenes()
         .into_iter()
         .filter(|scene| !LEFT_OUT.contains(&scene.name.as_str()))
         .map(|scene| ((scene.name.clone(), theme.to_owned()), painted::scene(&subject, &scene)))
         .collect();
-    let painted = std::panic::catch_unwind(|| paints_each_scene_as_recorded(theme, &all));
-    super::cut::cuts_off_only_the_texts_recorded(theme, &all);
-    if let Err(panic) = painted {
-        std::panic::resume_unwind(panic);
+    let failed: Vec<String> = all
+        .iter()
+        .filter_map(|((scene, theme), drawing)| drawing.as_ref().err().map(|e| format!("{scene} in {theme}: {e}")))
+        .collect();
+    // A drawing that failed is never flagged as a look change, nor recorded as what it should draw.
+    assert!(failed.is_empty(), "these drawings failed:\n{}", failed.join("\n"));
+    let painted = painted_differences(theme, &all);
+    let cut = super::cut::cut_differences(theme, &all);
+    let flagged: Vec<String> = [painted, cut].into_iter().flatten().collect();
+    if flagged.is_empty() {
+        return;
     }
+    let (summaries, details): (Vec<String>, Vec<String>) = flagged
+        .iter()
+        .map(|text| text.split_once('\n').map_or((text.clone(), String::new()), |(a, b)| (a.to_owned(), b.to_owned())))
+        .unzip();
+    let report = report(theme, &summaries.join("; "), &details.concat());
+    println!("{report}");
+    if let Some(folder) = std::env::var_os("SUHINA_PAINTED_REPORT") {
+        let folder = PathBuf::from(folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(format!("{theme}.md")), report).unwrap();
+    }
+}
+
+/// A theme's flagged differences as Markdown for the job summary: one line that says what differs,
+/// the lines themselves folded under it.
+fn report(theme: &str, summary: &str, details: &str) -> String {
+    format!("<details><summary><b>{theme}</b>: {summary}</summary>\n\n```text\n{details}```\n\n</details>\n")
 }
 
 // The table declares both the tests and the IDs the coverage test checks, so a theme cannot be
@@ -76,44 +118,51 @@ macro_rules! theme_tests {
     };
 }
 
+// One theme for each way a theme is made, not every built-in one: most built-in themes are the same
+// sheet with other colour values (catppuccin, high contrast, Suhina Light), and a variant is a set
+// of colours over its theme, so drawing them all repeated the same shapes in other colours and
+// flagged one change twenty times. Kept: a dark and a second palette on the plain sheet, a variant
+// (light), the glass material, and the three themes drawn from their own artwork.
 theme_tests! {
-    catppuccin_latte => "catppuccin-latte",
-    catppuccin_mocha => "catppuccin-mocha",
-    catppuccin_macchiato => "catppuccin-mocha@macchiato",
-    high_contrast => "high-contrast",
-    high_contrast_light => "high-contrast@light",
     nord => "nord",
-    nord_snow_storm => "nord@snow-storm",
     suhina_blocks => "suhina-blocks",
     suhina_glass => "suhina-glass",
-    suhina_glass_frost => "suhina-glass@frost",
-    suhina_glass_midnight => "suhina-glass@midnight",
-    suhina_light => "suhina-light",
     suhina_meadow => "suhina-meadow",
     suhina_sheet => "suhina-sheet",
     suhina_studio => "suhina-studio",
-    suhina_studio_blue => "suhina-studio@blue",
-    suhina_studio_darker => "suhina-studio@darker",
-    suhina_studio_darkest => "suhina-studio@darkest",
-    suhina_studio_forest => "suhina-studio@forest",
     suhina_studio_light => "suhina-studio@light",
 }
 
+/// Each theme drawn is a built-in theme or variant, listed once, and the recordings hold the themes
+/// drawn and no others (a theme taken out of the list takes its files with it).
 #[test]
-fn every_built_in_theme_and_variant_has_one_painted_test() {
-    let mut available: Vec<String> = Subject::built_ins()
+fn the_themes_drawn_are_built_in_and_alone_recorded() {
+    let available: Vec<String> = Subject::built_ins()
         .into_iter()
         .map(|subject| subject.id)
         .chain(suhina_ui::kit::theme::built_in_variants().into_iter().map(|(id, _)| id))
         .collect();
-    let mut tested: Vec<String> = TESTED_THEMES.iter().map(|id| (*id).to_owned()).collect();
-    available.sort();
-    tested.sort();
-    assert_eq!(tested, available, "every built-in theme and variant has exactly one test in theme_tests!");
+    let missing: Vec<&&str> = TESTED_THEMES.iter().filter(|id| !available.iter().any(|a| a == **id)).collect();
+    assert!(missing.is_empty(), "not a built-in theme or variant: {missing:?}");
+    let mut tested: Vec<&str> = TESTED_THEMES.to_vec();
+    tested.sort_unstable();
+    tested.dedup();
+    assert_eq!(tested.len(), TESTED_THEMES.len(), "a theme is listed twice in theme_tests!");
+    for folder in ["painted", "cut"] {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(folder);
+        let stale: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .filter(|name| name.strip_suffix(".txt").is_none_or(|theme| !TESTED_THEMES.contains(&theme)))
+            .collect();
+        assert!(stale.is_empty(), "tests/{folder}/ holds files of themes not drawn: {stale:?}");
+    }
 }
 
+/// The drawings that differ from `painted/<theme>.txt`: a first line that counts them, then a line
+/// each; `None` when every drawing is as recorded. Records them instead when blessing.
 #[allow(clippy::unwrap_used)] // test helper
-fn paints_each_scene_as_recorded(theme: &str, all: &Drawings) {
+fn painted_differences(theme: &str, all: &Drawings) -> Option<String> {
     let file = file(theme);
     let listings: BTreeMap<&(String, String), Result<&str, &str>> = all
         .iter()
@@ -153,9 +202,10 @@ fn paints_each_scene_as_recorded(theme: &str, all: &Drawings) {
         // A drawing that failed is never recorded as what it should draw.
         assert!(failed.is_empty(), "not recorded, these drawings failed:\n{}", failed.join("\n"));
         std::fs::write(&file, text).unwrap();
-        return;
+        return None;
     }
-    let recorded = recorded(&std::fs::read_to_string(&file).unwrap());
+    // A theme added in this change has no recording yet: every drawing of it differs.
+    let recorded = recorded(&std::fs::read_to_string(&file).unwrap_or_default());
     let differ: Vec<String> = now
         .iter()
         .filter(|(key, digest)| recorded.get(*key) != Some(digest))
@@ -180,17 +230,41 @@ fn paints_each_scene_as_recorded(theme: &str, all: &Drawings) {
         .filter_map(|(key, _)| Some((key, listings.get(key)?.as_ref().ok()?)))
         .min_by_key(|(_, listing)| listing.len())
         .map_or_else(String::new, |((scene, theme), listing)| {
-            format!("\n\n{scene} in {theme} as this run draws it, between the lines:\n----- listing -----\n{listing}----- end -----")
+            format!("{scene} in {theme} as this run draws it, between the lines:\n----- listing -----\n{listing}----- end -----")
         });
-    assert!(
-        differ.is_empty(),
-        "{} of {} drawings differ from {} (see tests/painted.rs for how to compare or record):\n{}{shown}\n\n\
-         The file as this run draws it, between the lines:\n----- {} -----\n{text}----- end -----",
+    if differ.is_empty() {
+        return None;
+    }
+    println!("{shown}");
+    // The listings that differ, named as `SUHINA_PAINTED_DUMP` names them, for CI to compare with
+    // the same scenes drawn on the base commit; a scene recorded but no longer drawn is an empty file.
+    if let Some(folder) = std::env::var_os("SUHINA_PAINTED_REPORT") {
+        let folder = PathBuf::from(folder).join("after");
+        std::fs::create_dir_all(&folder).unwrap();
+        for key in now.iter().filter(|(key, digest)| recorded.get(*key) != Some(digest)).map(|(key, _)| key) {
+            if let Some(Ok(listing)) = listings.get(key) {
+                std::fs::write(folder.join(format!("{}.{}.txt", key.0, key.1)), listing).unwrap();
+            }
+        }
+        for (scene, theme) in recorded.keys().filter(|key| !now.contains_key(*key)) {
+            std::fs::write(folder.join(format!("{scene}.{theme}.txt")), "").unwrap();
+        }
+    }
+    Some(format!(
+        "{} of {} drawings differ from tests/painted/{theme}.txt\n{}\n",
         differ.len(),
         now.len(),
-        file.display(),
-        differ.join("\n"),
-        file.display()
+        differ.join("\n")
+    ))
+}
+
+#[test]
+fn a_report_folds_the_lines_under_what_differs() {
+    let report = report("nord", "2 of 60 drawings differ", "menu in nord: 01, recorded 02\n");
+    assert_eq!(
+        report,
+        "<details><summary><b>nord</b>: 2 of 60 drawings differ</summary>\n\n\
+         ```text\nmenu in nord: 01, recorded 02\n```\n\n</details>\n"
     );
 }
 
