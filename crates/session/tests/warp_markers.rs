@@ -85,6 +85,40 @@ fn a_marker_is_added_where_the_sound_is_then_moved_and_removed_one_undo_step_eac
     assert_eq!(markers_of(&session), [(0.0, 0.0), (2.5, 1.0), (4.0, 2.0)]);
 }
 
+#[test]
+fn several_markers_move_and_are_removed_together_in_one_undo_step_each() {
+    let dir = TempDir::new("warp-markers-many");
+    let (mut session, id) = tone(&dir);
+    for beat in [1.0, 2.0, 3.0] {
+        run(&mut session, "clip.addWarpMarker", json!({ "clip": id, "beat": beat })).unwrap();
+    }
+    // 1 and 2 half a beat later, each with its sound; 3 stays.
+    run(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": [2.0, 1.0], "by": 0.5 })).unwrap();
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (1.5, 0.5), (2.5, 1.0), (3.0, 1.5), (4.0, 2.0)]);
+    run(&mut session, "clip.removeWarpMarkers", json!({ "clip": id, "beats": [1.5, 3.0, 1.5] })).unwrap();
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (2.5, 1.0), (4.0, 2.0)]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (1.5, 0.5), (2.5, 1.0), (3.0, 1.5), (4.0, 2.0)]);
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(markers_of(&session), [(0.0, 0.0), (1.0, 0.5), (2.0, 1.0), (3.0, 1.5), (4.0, 2.0)]);
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!(markers_of(&session).get(1), Some(&(1.5, 0.5)));
+
+    let fails = |session: &mut Session, command: &str, params: Value| run(session, command, params).unwrap_err();
+    // A moved marker stays between the ones not moved: 2.5 cannot pass 3.
+    fails(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": [1.5, 2.5], "by": 0.5 }));
+    // No marker there, nothing named, not a list of numbers, no `by`.
+    fails(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": [1.7], "by": 0.1 }));
+    fails(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": [], "by": 0.1 }));
+    fails(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": ["1.5"], "by": 0.1 }));
+    fails(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": [1.5] }));
+    fails(&mut session, "clip.moveWarpMarkers", json!({ "clip": id, "beats": [1.5], "by": 1e300 }));
+    fails(&mut session, "clip.removeWarpMarkers", json!({ "clip": id, "beats": 1.5 }));
+    // Two markers stay.
+    fails(&mut session, "clip.removeWarpMarkers", json!({ "clip": id, "beats": [0.0, 1.5, 2.5, 3.0] }));
+    assert_eq!(markers_of(&session).len(), 5, "none of them changed anything");
+}
+
 /// Two seconds with a decaying click every half second (at 0.5, 1 and 1.5 s), a little hiss under
 /// them.
 fn clicks() -> Vec<f32> {
@@ -124,6 +158,45 @@ fn warp_markers_are_placed_on_the_transients_where_the_sound_is() {
     // Warp off: no markers to place.
     run(&mut session, "clip.setAudio", json!({ "clip": id, "warp": false })).unwrap();
     assert!(run(&mut session, "clip.addWarpMarkersAtTransients", json!({ "clip": id })).is_err());
+}
+
+/// At 110 BPM the clicks (every half second) play off the beat grid; quantising puts a marker on
+/// each and moves it onto the nearest beat, the sound with it, in one undo step.
+#[test]
+fn quantising_moves_the_transients_onto_the_grid() {
+    let dir = TempDir::new("warp-quantise");
+    let (mut session, id) = warped(&wav(&dir, "clicks.wav", &clicks()));
+    run(&mut session, "clip.setTempo", json!({ "clip": id, "bpm": 110.0 })).unwrap();
+    let before = markers_of(&session);
+    let near = |got: &[(f64, f64)], want: &[(f64, f64)]| {
+        got.len() == want.len()
+            && got.iter().zip(want).all(|(g, w)| (g.0 - w.0).abs() < 1e-6 && (g.1 - w.1).abs() < 0.002)
+    };
+    let done = run(&mut session, "clip.quantizeWarpMarkers", json!({ "clip": id, "grid": "1/4" })).unwrap();
+    let all = [(0.0, 0.0), (1.0, 0.5), (2.0, 1.0), (3.0, 1.5), (4.0, 2.0)];
+    assert!(near(&markers_of(&session), &all), "{:?}", markers_of(&session));
+    assert_eq!(done["moved"], json!(4), "{done}");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_eq!(markers_of(&session), before);
+
+    // Only the range from beat 1.5 to 3, and half way.
+    run(
+        &mut session,
+        "clip.quantizeWarpMarkers",
+        json!({ "clip": id, "grid": "1/4", "start": 1.5, "end": 3.0, "amount": 50 }),
+    )
+    .unwrap();
+    let beat = |seconds: f64| seconds * 110.0 / 60.0;
+    let half = |b: f64| b + (b.round() - b) * 0.5;
+    let want = [(0.0, 0.0), (half(beat(1.0)), 1.0), (half(beat(1.5)), 1.5), (before[1].0, before[1].1)];
+    assert!(near(&markers_of(&session), &want), "{:?}", markers_of(&session));
+
+    let fails = |session: &mut Session, params: Value| run(session, "clip.quantizeWarpMarkers", params).unwrap_err();
+    fails(&mut session, json!({ "clip": id }));
+    fails(&mut session, json!({ "clip": id, "grid": "none" }));
+    fails(&mut session, json!({ "clip": id, "grid": "1/4", "amount": 150 }));
+    fails(&mut session, json!({ "clip": id, "grid": "1/4", "start": 3.0, "end": 1.0 }));
+    fails(&mut session, json!({ "clip": 9999, "grid": "1/4" }));
 }
 
 #[test]

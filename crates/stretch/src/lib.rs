@@ -20,11 +20,13 @@
 //! the [`transients()`] they are cut at.
 
 mod grains;
+mod onsets;
 mod slices;
 mod stft;
 mod transients;
 
 pub use grains::Grains;
+pub use onsets::{MAX_ONSETS, note_onsets};
 pub use slices::{Slices, Tail};
 pub use transients::{MAX_TRANSIENTS, transients};
 

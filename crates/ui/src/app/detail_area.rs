@@ -760,6 +760,25 @@ impl App {
                     .filter(|(_, id)| Some(*id) != this)
                     .map(|(_, id)| id.0)
                     .collect();
+                // The picked audio clips, as the MIDI ones below: a list in the title that picks the
+                // one the panel and the audio editor show; the panel's audio settings set them all.
+                if info.audio
+                    && let Some(session) = self.session()
+                {
+                    let p = session.project();
+                    let rows: Vec<(TrackId, ClipId, String, bool)> = self
+                        .arrangement
+                        .selected_clips()
+                        .iter()
+                        .filter_map(|&(track, id)| {
+                            let shown = crate::detail::audio_editor::arrangement_clip(p, track, id)?;
+                            let name = format!("{} - {}", p.shown_track_name(track), shown.name);
+                            Some((track, id, name, Some(id) == this))
+                        })
+                        .collect();
+                    info.audio_others = rows.iter().filter(|row| !row.3).map(|row| row.1.0).collect();
+                    info.picked = rows;
+                }
                 // The picked MIDI clips, each a row that gives it the piano roll's focus (#1054).
                 if !info.audio
                     && let Some(session) = self.session()
@@ -839,7 +858,7 @@ impl App {
         let picks = self.device_picks();
         let piano_roll = &mut self.piano_roll;
         let audio_editor = &mut self.audio_editor;
-        let waveform_look = self.settings.view.waveform;
+        let waveform_look = self.settings.view.audio_editor_theme_waveform;
         let waveforms = std::sync::Arc::clone(&self.waveforms);
         let picked = ui.scope_builder(egui::UiBuilder::new().max_rect(detail), |ui| {
             if let (Some(piano), detail_view::Detail::Clip(info, _)) = (&piano, &shown) {
@@ -886,7 +905,14 @@ impl App {
                 let mut styled_ui = editor.ui(ui);
                 let ui = &mut *styled_ui;
                 let (rest, picked) = detail_view::show_clip_column(ui, &editor, info, stacked, None, actions);
-                let env = crate::detail::audio_editor::Env { waveforms: &waveforms, appearance: waveform_look };
+                let env = crate::detail::audio_editor::Env {
+                    waveforms: &waveforms,
+                    theme_waveform: waveform_look,
+                    line_drag: self.settings.view.audio_editor_line_drag,
+                    playhead,
+                    start_marker,
+                    keymap: &keymap,
+                };
                 crate::detail::audio_editor::show(ui, rest, audio, audio_editor, env, actions);
                 // A press anywhere in the clip's detail area, its panel too, keeps the grid keys
                 // (Ctrl+1 to Ctrl+4) with the audio editor, as the piano roll keeps its keys.
@@ -1134,7 +1160,20 @@ impl App {
         use crate::detail::audio_editor as editor;
         match clip? {
             detail_view::ClipRef::Arrangement(track, clip) => {
-                editor::arrangement_clip(self.session()?.project(), track, clip)
+                let project = self.session()?.project();
+                let mut shown = editor::arrangement_clip(project, track, clip)?;
+                // The other audio clips picked with it, in the Arrangement: their warp markers move
+                // with its (`AudioClip::others`).
+                if self.shown == View::Arrangement && self.arrangement.selected_clips().len() > 1 {
+                    shown.others = self
+                        .arrangement
+                        .selected_clips()
+                        .iter()
+                        .filter(|(_, id)| *id != clip)
+                        .filter_map(|&(t, id)| editor::arrangement_clip(project, t, id))
+                        .collect();
+                }
+                Some(shown)
             }
             detail_view::ClipRef::Slot(track, scene) => editor::launcher_clip(self.session()?.project(), track, scene),
         }
@@ -1187,11 +1226,23 @@ impl App {
             && self.audio_clip(self.shown_clip()).is_some()
     }
 
+    /// Whether the audio editor keeps the edit key `action` (it has the keyboard, and the key is
+    /// not one it lets through). Copy, cut and paste go on to the Arrangement while the editor
+    /// has no time selection of its own: a click in the editor to set the play start, then
+    /// Ctrl+V, pastes the time selection copied from the tracks there, and Ctrl+C or Ctrl+X acts
+    /// on the Arrangement's time selection. The other edit keys never act behind the editor.
+    pub(super) fn audio_editor_keeps(&self, action: &str) -> bool {
+        let passes = matches!(action, "selection.copy" | "selection.cut" | "selection.paste")
+            && self.audio_editor.span().is_none();
+        self.audio_editor_has_keyboard() && !passes
+    }
+
     /// What Delete does while the audio editor has the keyboard: removes its picked or hovered
     /// warp marker, or nothing.
-    pub(super) fn audio_editor_delete(&self) -> Option<Action> {
-        let clip = self.audio_clip(self.shown_clip())?;
-        self.audio_editor.delete_key(&clip)
+    pub(super) fn audio_editor_delete(&self) -> Vec<Action> {
+        let Some(clip) = self.audio_clip(self.shown_clip()) else { return Vec::new() };
+        let action = self.audio_editor.delete_key(&clip);
+        action.map(|action| crate::detail::audio_editor::for_joined(&clip, action)).unwrap_or_default()
     }
 
     /// Whether the piano roll shows the one clip selected: the Launcher's slot, or the only clip
@@ -1235,13 +1286,40 @@ impl App {
             && self.piano_clip(self.shown_clip()).is_some()
     }
 
+    /// What the loop key (Ctrl+L) does in an audio clip's editor: loops the clip over the editor's
+    /// time selection and starts it there, or turns its loop on or off (`AudioEditorState::loop_key`).
+    pub(super) fn audio_editor_loop(&self) -> Vec<Action> {
+        self.audio_clip(self.shown_clip()).map(|audio| self.audio_editor.loop_key(&audio)).unwrap_or_default()
+    }
+
+    /// What Quantize (Ctrl+U) does while an audio clip's editor is on show: quantises its
+    /// transients in the time selection, or the whole clip (`AudioEditorState::quantize_key`).
+    /// `None` when no audio clip is on show.
+    pub(super) fn audio_editor_quantize(&self) -> Option<Option<Action>> {
+        if !(self.detail_open && self.piano_roll_on_show()) {
+            return None;
+        }
+        let audio = self.audio_clip(self.shown_clip())?;
+        Some(self.audio_editor.quantize_key(&audio))
+    }
+
     /// What a key does in the piano roll, when it shows a clip and has the keyboard.
     pub(super) fn piano_key(&mut self, action: &str) -> Option<Action> {
         if !self.piano_roll_on_show() {
             return None;
         }
-        // An audio clip's editor takes the grid keys (Ctrl+1 to Ctrl+4) for its own grid.
-        if self.audio_clip(self.shown_clip()).is_some() {
+        // An audio clip's editor takes the grid keys (Ctrl+1 to Ctrl+4) for its own grid, and the
+        // loop key (Ctrl+L) loops the clip over its time selection.
+        if let Some(audio) = self.audio_clip(self.shown_clip()) {
+            // The loop key is the editor's own (`audio_editor_loop`), as it sends two commands.
+            if action == "pianoRoll.loop" {
+                return None;
+            }
+            // Select all (Ctrl+A) selects the whole file, its warp markers picked with it.
+            if action == "pianoRoll.selectAll" {
+                self.audio_editor.select_all(&audio);
+                return None;
+            }
             if let Some(grid) = crate::detail::audio_editor::grid_key(action, self.audio_editor.grid()) {
                 self.audio_editor.set_grid(grid);
                 self.status = Status::Hint(format!("Audio editor grid: {}", grid.label()));

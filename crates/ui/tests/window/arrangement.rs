@@ -268,7 +268,8 @@ fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
     drag(&mut harness, at_beat(4.0) + egui::vec2(3.0, 0.0), 8.0 * 8.0 - 5.0);
     assert_eq!(looped(&harness), (Some((4.0, 12.0)), true));
 
-    // Ctrl+L turns it off, a click on the brace on again.
+    // Ctrl+L turns it off; a click on the brace selects its span and leaves looping off, and
+    // Ctrl+L then loops that span again.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
     harness.run();
     assert_eq!(looped(&harness), (Some((4.0, 12.0)), false));
@@ -276,6 +277,9 @@ fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
     harness.run();
     harness.drag_at(at_beat(8.0));
     harness.drop_at(at_beat(8.0));
+    harness.run();
+    assert_eq!(looped(&harness), (Some((4.0, 12.0)), false), "a click never switches looping");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
     harness.run();
     assert_eq!(looped(&harness), (Some((4.0, 12.0)), true));
 
@@ -562,6 +566,49 @@ fn shift_clicking_a_header_takes_the_run_of_tracks_between() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::G);
     harness.run();
     assert_eq!(names(&harness)[..4], ["Group", "Drums", "Bass", "Keys"]);
+}
+
+/// With several tracks selected, the track menu's Assign track color to all clips gives every
+/// selected track's clips their track's colour back, not only the clicked one's, in one undo step.
+#[test]
+fn assign_track_color_to_all_clips_acts_on_every_selected_track() {
+    let mut harness = arrangement_app();
+    let own_colours = |h: &Harness<'static, App>| -> Vec<bool> {
+        h.state()
+            .session()
+            .map(|s| {
+                let p = s.project();
+                ["Drums", "Bass"]
+                    .iter()
+                    .map(|name| {
+                        let track = p.tracks.iter().find(|t| t.name == *name).map(|t| t.id);
+                        p.arrangement
+                            .lanes
+                            .iter()
+                            .find(|l| l.track == track)
+                            .is_some_and(|l| l.clips.iter().any(|c| c.color.is_some()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    for name in ["Drums", "Bass"] {
+        harness.state_mut().run(&Action::new("clip.setColor", json!({ "track": name, "color": "#123456" })));
+    }
+    harness.run();
+    assert_eq!(own_colours(&harness), [true, true]);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::SHIFT);
+    harness.run();
+    harness.get_by_label("Track Bass").click_secondary();
+    harness.run();
+    harness.get_by_label("Assign track color to all clips").click();
+    harness.run();
+    assert_eq!(own_colours(&harness), [false, false], "both tracks' clips");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(own_colours(&harness), [true, true], "one undo step");
 }
 
 /// How many arrangement clips each of the first four tracks has.

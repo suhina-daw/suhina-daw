@@ -252,6 +252,27 @@ impl Mapping {
         }
         out
     }
+
+    /// Where point `index` of `points` is drawn in a clip `length` beats long: as [`Mapping::places`],
+    /// except that the left point of a step at the loop's start (another point at the same beat
+    /// after it) is left off the passes that come round to the loop's start from its end. Those
+    /// passes start at the step's right point, and the left one, drawn over the line at every
+    /// wrap, stood off it as a stray dot; it stays where the clip reaches the loop from before it.
+    pub fn point_places(&self, points: &[GainPoint], index: usize, length: f64) -> Vec<f64> {
+        let Some(point) = points.get(index) else { return Vec::new() };
+        let mut out = self.places(point.beat, length);
+        let step_left = points.get(index + 1).is_some_and(|next| (next.beat - point.beat).abs() < 1e-9);
+        if let (true, Some((start, end))) = (step_left, self.loop_range)
+            && (point.beat - start).abs() < 1e-9
+        {
+            // The first place, reached from the start marker, is kept only when the clip plays up
+            // to the loop's start from before it; the passes' places go.
+            let from_before = self.offset < start - 1e-9;
+            let first_pass = (end - self.offset) / self.rate;
+            out.retain(|at| from_before && *at < first_pass - 1e-9);
+        }
+        out
+    }
 }
 
 /// The draft of a point being dragged: the clip, the point's index and its envelope as it is now.
@@ -421,6 +442,10 @@ pub struct Place {
     /// The ink that reads on the clip's colour, as its name has: white on most, black on a
     /// light one. The line and the points are drawn in it.
     pub ink: egui::Color32,
+    /// Where the envelope is drawn (the Arrangement, the audio editor), told apart in its widgets'
+    /// ids: one clip's envelope edited in both at once drew the same widgets twice. Its points
+    /// and the edit under way are the clip's, shared by both.
+    pub site: &'static str,
 }
 
 /// Draws `view`'s envelope over the clip at `place`. While `edit` is on, the dB grid shows, the
@@ -440,7 +465,7 @@ pub fn show(
     snap: &dyn Fn(f64) -> f64,
     actions: &mut Vec<Action>,
 ) {
-    let Place { rect, origin, beat_width, ink: line_ink } = place;
+    let Place { rect, origin, beat_width, ink: line_ink, site } = place;
     let length = f64::from((rect.right() - origin) / beat_width.max(1e-3));
     if rect.width() <= 1.0 || rect.height() <= 4.0 || length <= 0.0 {
         return;
@@ -495,7 +520,7 @@ pub fn show(
     // The body only names the envelope; clicks and drags away from the line go to the clip as
     // ever (select, move). On the line: a click adds a point on it, a drag adds one and moves it;
     // with Alt a drag bends the segment under the pointer, as on an automation lane.
-    ui.interact(visible, Id::unique(("clip-envelope-area", clip.0)), Sense::hover())
+    ui.interact(visible, Id::unique(("clip-envelope-area", site, clip.0)), Sense::hover())
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, format!("Gain envelope of {name}")));
     let any_down = ui.input(|i| i.pointer.any_down());
     if !any_down {
@@ -516,7 +541,7 @@ pub fn show(
         })
     };
     let body = hit.map(|hit| {
-        ui.interact(hit, Id::unique(("clip-envelope-body", clip.0)), Sense::click_and_drag())
+        ui.interact(hit, Id::unique(("clip-envelope-body", site, clip.0)), Sense::click_and_drag())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
     });
     if body.as_ref().is_some_and(egui::Response::is_pointer_button_down_on) {
@@ -530,7 +555,8 @@ pub fn show(
     };
     // A point already there, within a dot's width on screen: the line takes no second one on it.
     let taken = |x: f32| {
-        points.iter().any(|p| mapping.places(p.beat, length).into_iter().any(|at| (x_of(at) - x).abs() < POINT))
+        (0..points.len())
+            .any(|i| mapping.point_places(&points, i, length).into_iter().any(|at| (x_of(at) - x).abs() < POINT))
     };
     if let Some(body) = &body
         && body.clicked()
@@ -591,7 +617,7 @@ pub fn show(
             egui::Tooltip::always_open(
                 ui.ctx().clone(),
                 ui.layer_id(),
-                Id::unique(("clip-envelope-value", clip.0)),
+                Id::unique(("clip-envelope-value", site, clip.0)),
                 egui::PopupAnchor::Pointer,
             )
             .gap(12.0)
@@ -622,7 +648,7 @@ pub fn show(
             if hit.width() <= 0.0 || hit.height() <= 0.0 {
                 continue;
             }
-            let id = Id::unique(("clip-envelope-curve", clip.0, index, pass));
+            let id = Id::unique(("clip-envelope-curve", site, clip.0, index, pass));
             let response =
                 ui.interact(hit, id, Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::ResizeVertical);
             response.widget_info(|| {
@@ -656,13 +682,13 @@ pub fn show(
     let mut removed = None;
     let mut zeroed = None;
     for (index, point) in points.iter().enumerate() {
-        for (pass, at) in mapping.places(point.beat, length).into_iter().enumerate() {
+        for (pass, at) in mapping.point_places(&points, index, length).into_iter().enumerate() {
             let center = Pos2::new(x_of(at), y_of(rect, point.db, top));
             let hit = Rect::from_center_size(center, Vec2::splat(POINT_HIT));
             if !visible.intersects(hit) {
                 continue;
             }
-            let id = Id::unique(("clip-envelope-point", clip.0, index, pass));
+            let id = Id::unique(("clip-envelope-point", site, clip.0, index, pass));
             let response = ui.interact(hit, id, Sense::click_and_drag());
             let response = if response.dragged() {
                 response.on_hover_cursor(egui::CursorIcon::Grabbing)
@@ -714,7 +740,7 @@ pub fn show(
         egui::Tooltip::always_open(
             ui.ctx().clone(),
             ui.layer_id(),
-            Id::unique(("clip-envelope-value", clip.0)),
+            Id::unique(("clip-envelope-value", site, clip.0)),
             egui::PopupAnchor::Pointer,
         )
         .gap(12.0)
@@ -1113,6 +1139,25 @@ mod tests {
         assert_eq!(passed(&mut points, 2, 2.0, 0.0), 2, "from the right");
         let mut points = at(&[0.0, 2.0, 4.0]);
         assert_eq!(passed(&mut points, 0, 2.0, 0.0), 0, "from the left");
+    }
+
+    #[test]
+    fn the_left_point_of_a_step_at_the_loops_start_is_not_drawn_where_a_pass_wraps() {
+        let step = GainPoint::new;
+        // 0 dB up to the loop's start at beat 1, then silence, a step: passes of the loop start
+        // at the silent point, so the 0 dB one is drawn only where the clip comes to beat 1 from
+        // before it.
+        let points = [step(0.0, 0.0), step(1.0, 0.0), step(1.0, -70.0), step(2.0, -70.0)];
+        let lead_in = Mapping { offset: 0.0, loop_range: Some((1.0, 2.0)), rate: 1.0 };
+        assert_eq!(lead_in.point_places(&points, 1, 4.0), vec![1.0], "reached from before the loop");
+        assert_eq!(
+            lead_in.point_places(&points, 2, 4.0),
+            vec![1.0, 2.0, 3.0, 4.0],
+            "the step's right point on every pass"
+        );
+        let from_start = Mapping { offset: 1.0, loop_range: Some((1.0, 2.0)), rate: 1.0 };
+        assert!(from_start.point_places(&points, 1, 3.0).is_empty(), "never reached");
+        assert_eq!(from_start.point_places(&points, 2, 3.0), vec![0.0, 1.0, 2.0, 3.0]);
     }
 
     #[test]

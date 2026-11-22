@@ -1579,6 +1579,41 @@
       "docs/spec/ui-session-view.md"
     ]
   },
+  "ClipEditor/Audio editor/audio_editor_waveform_colour": {
+    "sourceFingerprint": "b30538a0602f2d94a7ced164459d82e2e7898578c3b7a65c9d1bec6766d5c919",
+    "summary": "Choose the colour of the waveform in the audio editor.",
+    "description": "The audio editor is the detail area's view of an audio clip, where its warp markers are placed. This preference decides the colour its large waveform is drawn in. The sound and the project do not change.",
+    "options": [
+      {
+        "name": "Track colour",
+        "description": "Draw the waveform in the clip's colour: its own when it has one, otherwise its track's, as the Arrangement colours the clip. This is the default."
+      },
+      {
+        "name": "Theme",
+        "description": "Draw the waveform in the colour the active theme gives waveforms (its .clip-waveform colour), and in a neutral ink that reads on the editor when the theme gives none."
+      }
+    ],
+    "whenToChange": "Keep Track colour to tell clips apart by colour while editing; choose Theme to see the waveform as the theme designed it.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/detail/audio_editor.rs",
+      "docs/spec/ui-audio-editor.md"
+    ]
+  },
+  "ClipEditor/Audio editor/audio_editor_marker_line_drag": {
+    "sourceFingerprint": "44e5793ee900149842c46a776a55a78c4c752c3c7e9f5044609ecb35c3b32db0",
+    "summary": "Choose whether a warp marker can be dragged by its line in the audio editor.",
+    "description": "Each warp marker in the audio editor has a flag on the marker lane under the ruler and a line down the waveform. Off, only the flag takes hold of the marker, and a drag anywhere on the waveform paints a time selection, beside a marker's line too. On, the line can be dragged as the flag can.",
+    "options": [],
+    "whenToChange": "Turn it on if you would rather grab warp markers anywhere along their line; leave it off to paint time selections freely across the waveform.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings/view_settings.rs",
+      "crates/ui/src/detail/audio_editor.rs",
+      "docs/spec/ui-audio-editor.md"
+    ]
+  },
   "ClipEditor/Piano roll/piano_roll_top": {
     "sourceFingerprint": "8720a624fd734467058d63f061368bb35ebbe526ebaeffaad8fcadded3a93e78",
     "summary": "Choose what remains visible when the clip editor is pulled to the top.",

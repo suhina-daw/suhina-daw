@@ -615,11 +615,11 @@ fn delete_in_the_audio_editor_removes_the_marker_not_the_clip() {
     harness.state_mut().run(&Action::new("clip.addWarpMarker", json!({ "clip": id, "beat": 2.0 })));
     harness.run();
     assert_eq!(loop_markers(&harness).len(), 3);
-    let wave = harness.get_by_label("Audio editor").rect();
+    // On its flag in the marker lane (its line takes the pointer only with the setting on).
     let on_it = harness.get_by_label("Warp marker 2").rect().center();
-    click_once_at(&mut harness, egui::pos2(on_it.x, wave.center().y + 20.0));
+    click_once_at(&mut harness, on_it);
     assert!(harness.state().audio_editor().focused(), "the click gave the editor the keyboard");
-    assert_eq!(harness.state().audio_editor().picked(), Some(2.0), "the marker clicked is picked");
+    assert_eq!(harness.state().audio_editor().picked(), [2.0], "the marker clicked is picked");
     harness.key_press(Key::Delete);
     harness.run();
     assert_eq!(loop_markers(&harness), [(0.0, 0.0), (4.0, 2.0)], "the picked marker is gone");
@@ -631,6 +631,43 @@ fn delete_in_the_audio_editor_removes_the_marker_not_the_clip() {
     harness.run();
     assert_eq!(loop_markers(&harness).len(), 2);
     assert_eq!(loop_clips(&harness), 1, "the clip is still there");
+}
+
+/// With the audio editor pressed last, Ctrl+A selects the whole file and picks its warp markers.
+#[test]
+fn ctrl_a_in_the_audio_editor_selects_the_whole_file() {
+    let mut harness = opened_audio_editor();
+    harness.get_by_label("Audio editor").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    harness.run();
+    let editor = harness.state().audio_editor();
+    let (start, end) = editor.span().expect("a time selection");
+    let beats: Vec<f64> = loop_markers(&harness).iter().map(|m| m.0).collect();
+    assert!(start <= beats[0] + 1e-9 && end >= beats[beats.len() - 1] - 1e-9, "{start}..{end} covers {beats:?}");
+    assert_eq!(editor.picked(), beats.as_slice(), "every marker is picked");
+}
+
+#[test]
+fn ctrl_click_picks_several_warp_markers_and_delete_removes_them_in_one_step() {
+    let mut harness = opened_audio_editor();
+    let id = loop_clip_id(&harness);
+    for beat in [1.0, 2.0, 3.0] {
+        harness.state_mut().run(&Action::new("clip.addWarpMarker", json!({ "clip": id, "beat": beat })));
+    }
+    harness.run();
+    assert_eq!(loop_markers(&harness).len(), 5);
+    let second = harness.get_by_label("Warp marker 2").rect().center();
+    click_once_at(&mut harness, second);
+    harness.get_by_label("Warp marker 4").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    assert_eq!(harness.state().audio_editor().picked(), [1.0, 3.0], "Ctrl adds the second");
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert_eq!(loop_markers(&harness), [(0.0, 0.0), (2.0, 1.0), (4.0, 2.0)], "both picked markers are gone");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(loop_markers(&harness).len(), 5, "one undo brings both back");
 }
 
 /// A warp marker dragged past the editor's right edge still moves when the button is let go

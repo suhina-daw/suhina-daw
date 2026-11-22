@@ -132,7 +132,36 @@ fn loop_row_height() -> f32 {
     el.style().and_then(|c| c.height).map_or(LOOP_ROW, |h| (h + 6.0).clamp(LOOP_ROW, 40.0))
 }
 const LOOP_BAR: f32 = 6.0;
-const LOOP_GRAB: f32 = 4.0;
+/// How far from an end of a loop bar, in points, a drag takes that end rather than the whole bar:
+/// this far out from the end and in from it, the inner part at most a third of the bar's width so
+/// a short bar keeps a middle to move it by.
+pub(crate) const LOOP_END_GRAB: f32 = 10.0;
+
+/// The part of a loop bar (the Arrangement's loop brace, the audio editor's loop row) a press
+/// takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LoopBarPart {
+    Start,
+    End,
+    Body,
+}
+
+/// The part of a loop bar drawn from `left` to `right` (in points) that a press at `x` takes:
+/// an end within [`LOOP_END_GRAB`] of it, outside or in (the inner part at most a third of the
+/// bar), the body between; `None` beside it.
+pub(crate) fn loop_bar_part(x: f32, left: f32, right: f32) -> Option<LoopBarPart> {
+    let (left, right) = (left.min(right), left.max(right));
+    let inner = LOOP_END_GRAB.min((right - left) / 3.0);
+    if x < left - LOOP_END_GRAB || x > right + LOOP_END_GRAB {
+        None
+    } else if x <= left + inner {
+        Some(LoopBarPart::Start)
+    } else if x >= right - inner {
+        Some(LoopBarPart::End)
+    } else {
+        Some(LoopBarPart::Body)
+    }
+}
 
 thread_local! {
     /// The `background-color` of `arrangement` and of `arrangement[kind="panel"]`, read once a
@@ -345,16 +374,19 @@ fn drawn_lanes(lanes: &[Lane], folds: &Folds) -> Vec<DrawnLane> {
     out
 }
 
-/// The beat width after zooming by `factor`, within [`ARRANGEMENT_BEAT_WIDTHS`].
-fn zoomed(beat_width: f32, factor: f32) -> f32 {
-    clamp_beat_width(beat_width * factor, &ARRANGEMENT_BEAT_WIDTHS)
+/// The beat width after zooming by `factor`, within [`ARRANGEMENT_BEAT_WIDTHS`], or out as far as
+/// `fits` (the width that shows the whole project) when that is narrower: a long project, songs
+/// laid end to end, is always seen whole.
+fn zoomed(beat_width: f32, factor: f32, fits: f32) -> f32 {
+    let least = ARRANGEMENT_BEAT_WIDTHS.start().min(fits.max(0.001));
+    clamp_beat_width(beat_width * factor, &(least..=*ARRANGEMENT_BEAT_WIDTHS.end()))
 }
 
 /// Zooms by `factor` around the point `offset` points right of the timeline's left edge: the
 /// new beat width and horizontal scroll, which keep the beat under that point where it was.
-fn zoom_at(beat_width: f32, scroll_x: f32, offset: f32, factor: f32) -> (f32, f32) {
+fn zoom_at(beat_width: f32, scroll_x: f32, offset: f32, factor: f32, fits: f32) -> (f32, f32) {
     let beat = (offset + scroll_x) / beat_width;
-    let width = zoomed(beat_width, factor);
+    let width = zoomed(beat_width, factor, fits);
     (width, beat * width - offset)
 }
 
@@ -584,8 +616,11 @@ fn show_lanes(
             || state.zoom_area.is_some_and(|rect| rect.contains(pointer));
         let zoom = ui.input(|i| i.zoom_delta());
         if zoom != 1.0 && time.contains(pointer) && !over_field {
+            // The width that shows the project whole, its last clip and the tail after it.
+            let whole = (timeline.end + TAIL_BARS * bar_beats).max(1.0);
+            let fits = time.width() / whole as f32;
             (state.beat_width, state.scroll.x) =
-                zoom_at(state.beat_width, state.scroll.x, pointer.x - time.left(), zoom);
+                zoom_at(state.beat_width, state.scroll.x, pointer.x - time.left(), zoom, fits);
             state.zoom_reach = f64::from((state.scroll.x + time.width()) / state.beat_width);
         }
         let (alt, wheel) = ui.input(|i| (i.modifiers.alt, i.smooth_scroll_delta()));
@@ -2120,6 +2155,7 @@ fn show_lanes(
                 origin: x_of(start),
                 beat_width: state.beat_width,
                 ink: ink_on(motion::mix(panel_surface(), rgb(clip.color), 0.82)),
+                site: "arrangement",
             };
             let snap = |elapsed: f64| elapsed;
             crate::arrangement::envelope::show(

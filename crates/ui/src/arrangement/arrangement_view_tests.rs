@@ -59,13 +59,26 @@ fn shift_click_takes_the_rectangle_from_the_anchor_across_tracks() {
 fn zoom_reaches_ten_times_further_in_than_before_and_stops() {
     let mut width = DEFAULT_BEAT_WIDTH;
     for _ in 0..100 {
-        width = zoomed(width, 1.5);
+        width = zoomed(width, 1.5, 1.0);
     }
     assert_eq!(width, 4000.0);
     for _ in 0..100 {
-        width = zoomed(width, 1.0 / 1.5);
+        width = zoomed(width, 1.0 / 1.5, 1.0);
     }
     assert_eq!(width, 1.0);
+}
+
+#[test]
+fn a_long_project_zooms_out_until_it_is_seen_whole() {
+    // 3 400 beats (eight songs end to end) in a view 1 200 points wide: 0.35 points a beat.
+    let fits = 1_200.0 / 3_400.0;
+    let mut width = DEFAULT_BEAT_WIDTH;
+    for _ in 0..100 {
+        width = zoomed(width, 1.0 / 1.5, fits);
+    }
+    assert!((width - fits).abs() < 1e-6, "{width}");
+    // A short one stops at a point a beat, as before.
+    assert_eq!(zoomed(1.0, 0.5, 30.0), 1.0);
 }
 
 #[test]
@@ -554,7 +567,7 @@ fn a_zoom_at_the_pointer_keeps_its_beat_under_it_past_the_content_end() {
     let (offset, view) = (600.0, 800.0);
     let (mut width, mut scroll) = (20.0, 400.0);
     for factor in [1.25, 1.25, 0.8, 0.5, 2.0] {
-        (width, scroll) = zoom_at(width, scroll, offset, factor);
+        (width, scroll) = zoom_at(width, scroll, offset, factor, 1.0);
         let reach = f64::from((scroll + view) / width);
         // A short project: 40 beats of content, less than the pointer's beat.
         scroll = scroll.clamp(0.0, most_scroll_x(40.0, reach, width, view));
@@ -1302,4 +1315,15 @@ fn the_take_marks_bars_are_evenly_spaced() {
         assert_eq!(ys[1] - ys[0], ys[2] - ys[1], "bottom {bottom}: {ys:?}");
         assert_eq!(ys[0].fract(), 0.5, "on a pixel's centre: {ys:?}");
     }
+}
+
+#[test]
+fn a_loop_bars_ends_take_a_press_ten_points_out_and_in_and_a_short_bar_keeps_a_middle() {
+    use LoopBarPart::{Body, End, Start};
+    let part = |x| loop_bar_part(x, 100.0, 300.0);
+    assert_eq!([part(89.0), part(91.0), part(110.0), part(111.0)], [None, Some(Start), Some(Start), Some(Body)]);
+    assert_eq!([part(289.0), part(290.0), part(310.0), part(311.0)], [Some(Body), Some(End), Some(End), None]);
+    // 15 points wide: 5 points in from each end take it, the middle 5 move the bar.
+    let short = |x| loop_bar_part(x, 100.0, 115.0);
+    assert_eq!([short(105.0), short(107.5), short(110.0)], [Some(Start), Some(Body), Some(End)]);
 }

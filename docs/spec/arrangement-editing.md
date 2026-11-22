@@ -150,6 +150,10 @@ goes straight to the beat, so lines stay on the bar; from the beat it goes to th
 8 bars and so on. A value of a bar or more is never drawn finer than it is. So with `1/16`, zoomed
 in, a beat has four lines; zoomed out, lines fall on beats, then on bars.
 
+**Zoom range.** Ctrl and the wheel zoom between 4 000 points a beat and 1 point a beat, or further
+out when the project needs it: always far enough to see it whole, from its start to its last
+clip's end and the 16 bars after it (songs laid end to end, say).
+
 **What snaps.** Everything placed in the view goes to the nearest line of the grid as it is drawn
 at that zoom (never before the start): a clip moved by dragging ([moving a clip](#moving-a-clip)),
 samples and MIDI files dragged from the browser onto a lane or the empty space below the tracks
@@ -195,6 +199,8 @@ shows its name in the body instead (› Clip edges).
 
 In the track headers the same keys work on tracks: a click selects one, Ctrl adds or takes one out,
 Shift takes the run of headers between the last one clicked and this one. Ctrl+G groups those.
+A time selection goes over to the tracks so picked, keeping its span: a stretch picked (the loop
+brace's, say) moves from track to track with clicks on their headers.
 After a header click Delete removes the selected tracks, not a clip (a clip on the track stays
 selected for the detail area until another is picked); a click on a clip or a lane gives Delete
 back to the clips. In the Launcher view a header click does the same for its track (#690). After a
@@ -874,10 +880,16 @@ marker row: a bar from the loop start to the loop end, bright while looping is o
 it is off. While looping is on, a line in the accent colour runs down every lane, the return tracks and
 Main at the loop start and at the loop end, so the region reads in the lanes too; while the
 brace is dragged the lines follow it. Dragging along an empty part of the row draws a new region on the grid a ruler click
-uses (Alt held: free) and turns looping on. Dragging within 4 px of an end of the brace moves that
-end; dragging its middle moves the whole region, keeping its length. A click on the brace, the key
-**Ctrl+L** (`transport.setLoopEnabled`, in the keymap) and a right-click on the row (**Turn loop
-on** or **Turn loop off**) turn looping on or off. With a time selection or clips selected, Ctrl+L
+uses (Alt held: free) and turns looping on. Dragging within 10 px of an end of the brace, outside it or in (in, at most a
+third of its width, so a short brace keeps a middle), moves that end, and the pointer is a two-way arrow there; dragging its middle moves the whole
+region, keeping its length, and the pointer is the four-way move arrow there. A
+click on the brace selects its span in time over every track (a click beside it does nothing);
+it never turns looping on or off. While a drag moves the brace or an end of it, the time selection
+follows it, on the tracks the selection is on (the selected tracks, with none). A click on the
+brace and a drag that moves it also take the play start marker to the loop's start, as a time
+selection made on the ruler takes it to its start, so the next play and a paste (Ctrl+V) begin
+there. The key **Ctrl+L** (`transport.setLoopEnabled`, in the keymap) and
+a right-click on the row (**Turn loop on** or **Turn loop off**) do. With a time selection or clips selected, Ctrl+L
 loops their span; pressed again while the loop is on over that very span, it turns looping off.
 While the piano roll has the keyboard (after a click in it) Ctrl+L leaves this loop alone, as the
 Arrangement's other keys do, and is the clip's own loop instead ([clip editor spec](ui-clip-editor.md)

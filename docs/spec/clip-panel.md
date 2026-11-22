@@ -58,7 +58,7 @@ beside it, and controls are 6 points apart, so no two touch.
 | | **Mode**: a list of Re-pitch, Rhythmic, Tonal, Texture, Smooth, High quality | `clip.setAudio` (`mode`) |
 | | **Tempo** with **Find** at the right of its name; under the field **÷2** and **×2**, and what the tempo came from | `clip.setTempo`, `clip.findTempo` |
 | | **Edit gain envelope**: a switch that opens the gain envelope on the waveform for editing (every audio clip's, or the clip's own, by Settings › *Envelope editing*), as Alt+E and the button by the clip's name do | `clip.setEnvelope` |
-| **Warp** (110 points) | The settings of the clip's warp mode (› Warp mode settings) | `clip.setAudio` |
+| **Warp** (110 points) | The settings of the clip's warp mode (› Warp mode settings); only for a mode that has settings | `clip.setAudio` |
 | **Audio editor** (110 points) | While the editor shows the clip: its **Grid**, **Snap**, **Fit**, **Reset warp…** and **Transients** | the editor's own state; Transients `clip.addWarpMarkersAtTransients` |
 | **Gain and Pitch** (128 points) | **Gain**: a vertical fader, its scale at its left (24, 0 half-way, −inf at the bottom), the dB readout under it | `clip.setGain` |
 | | **Pitch**: a knob in semitones; under it the semitones and the cents side by side, `st` and `ct` under them | `clip.setAudio` (`transpose`) |
@@ -97,16 +97,11 @@ with it, as it is after a tempo change.
 | Tonal | **Grain**: the length of the grains the sound is made of, each lined up with the one before; longer suits low notes, shorter fast ones | 10 to 400 ms | 60 ms | `grain` |
 | Texture | **Grain**: as Tonal's, without the lining up | 10 to 400 ms | 60 ms | `grain` |
 | | **Flux**: how far each grain's start moves at random, from none to a grain either way: the sound smears into a cloud as it rises | 0 to 100 % | 25 % | `flux` |
-| Re-pitch, Smooth, High quality | No settings (*No settings for this mode*) | | | |
+| Re-pitch, Smooth, High quality | No settings: the Warp part is left out, and the other parts take its room | | | |
 
-**The audio editor's buttons.** While the [audio editor](ui-audio-editor.md) shows the clip, the
-Audio editor part after the Warp part holds its controls (on its ruler before, where they covered the
-grid): **Editor grid**, a list of Adaptive, 1 bar, 1/2, 1/4, 1/8, 1/16 and 1/32; **Snap**, a switch,
-lit while marks snap to the grid; **Fit**, which fits the file to the editor; **Reset…**, which
-opens the Reset warp dialog; and **Transients** (*Add warp markers at transients* to a screen
-reader), which pins a warp marker on every transient of the file, where its sound is
-(`clip.addWarpMarkersAtTransients`, one undo step). The others change the editor, not the project.
-Without the editor the part is left out.
+**The audio editor's tools** are in the [audio editor](ui-audio-editor.md)'s own header, right
+of its tabs (› Header), not in a part of the panel: a column of the panel for five small controls
+took room from the parts beside it.
 
 ## Numbers
 
@@ -274,6 +269,20 @@ The points stay on the sound they were put on. Their beats are the content's, so
 the audio against the beats moves them with it: a clip's tempo or a stretch scales them with the
 warp markers, and Warp turned on or off, or the project's tempo under unwarped audio, moves each
 to the beat its second of the file is at now, as the clip's offset, length and loop move.
+
+## Several clips
+
+With several clips picked in the Arrangement, the panel shows the one picked last, and its name in
+the title is a list of all of them (*Editing*: each `track - name`, the one shown lit); picking
+another shows that one, in the panel and in its editor. For audio clips, what the panel sets that
+the clips share sets every picked audio clip at once, as one undo step: **Warp**, the warp mode and
+its settings, the tempo, **Gain** and **Pitch** (the same `clip.setAudio`, `clip.setGain` and
+`clip.setTempo` for each, in one gesture). The start, end and loop positions are each clip's own
+(the **Loop** switch turns every picked clip's loop on or off, as before). **Edit gain envelope**
+is greyed out: an envelope is one clip's. The audio editor's warp markers move together on clips as
+long as the one shown ([`ui-audio-editor.md`](ui-audio-editor.md) › Several clips). Another DAW's
+manual describes the same for warping (Ableton Live 12, 9.2.4.4 Multi-Clip Warping); there the
+editor shows only the clip clicked last, which a list of the picked clips improves on.
 
 ## The grey box
 

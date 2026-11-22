@@ -652,16 +652,15 @@ pub(super) fn drop_down(
 /// Gain and Pitch.
 pub(super) const CLIP_PART: f32 = 156.0;
 const AUDIO_PART: f32 = 112.0;
-/// The warp mode's settings, and the audio editor's buttons beside them.
+/// The warp mode's settings (the audio editor's tools are in its own header).
 const WARP_PART: f32 = 110.0;
-const EDITOR_PART: f32 = 110.0;
 const GAIN_PART: f32 = 128.0;
 pub(super) const PART_GAP: f32 = 12.0;
 /// The space between two parts one over the other.
 const PART_GAP_DOWN: f32 = 14.0;
-/// The panel's width in a row: its five parts, their gaps and its padding. It is the widest the
+/// The panel's width in a row: its four parts, their gaps and its padding. It is the widest the
 /// panel is made; a narrower one folds its parts into fewer columns (› Layout).
-pub(super) const ROW_WIDTH: f32 = CLIP_PART + AUDIO_PART + WARP_PART + EDITOR_PART + GAIN_PART + PART_GAP * 4.0 + 16.0;
+pub(super) const ROW_WIDTH: f32 = CLIP_PART + AUDIO_PART + WARP_PART + GAIN_PART + PART_GAP * 3.0 + 16.0;
 /// The narrowest the panel is made: two columns, the Clip part's and one as wide as the widest
 /// other part (Gain and Pitch).
 pub(super) const LEAST_WIDTH: f32 = CLIP_PART + GAIN_PART + PART_GAP + 16.0;
@@ -679,7 +678,7 @@ const AUDIO_HEIGHT: f32 = TOGGLE + FIELD + (NAME + FIELD + 4.0 + FIELD + 3.0 + 1
 
 /// How tall the panel is with its parts one under another (the detail area stacked).
 pub(super) fn stacked_height(_info: &ClipInfo) -> f32 {
-    CLIP_HEIGHT + 14.0 + AUDIO_HEIGHT + 14.0 + WARP_HEIGHT + 14.0 + EDITOR_HEIGHT + 14.0 + STACKED_GAIN + 16.0
+    CLIP_HEIGHT + 14.0 + AUDIO_HEIGHT + 14.0 + WARP_HEIGHT + 14.0 + STACKED_GAIN + 16.0
 }
 
 /// The parts of an audio clip's panel, in their order.
@@ -688,7 +687,6 @@ enum Part {
     Clip,
     Audio,
     Warp,
-    Editor,
     Gain,
 }
 
@@ -699,7 +697,6 @@ impl Part {
             Part::Clip => (CLIP_PART, CLIP_HEIGHT),
             Part::Audio => (AUDIO_PART, AUDIO_HEIGHT),
             Part::Warp => (WARP_PART, WARP_HEIGHT),
-            Part::Editor => (EDITOR_PART, EDITOR_HEIGHT),
             Part::Gain => (GAIN_PART, STACKED_GAIN),
         }
     }
@@ -806,8 +803,8 @@ fn title_rest(
     let name =
         Rect::from_min_max(Pos2::new(swatch.right() + 8.0, rect.top()), Pos2::new(right.left() - 8.0, rect.bottom()));
     if info.picked.len() > 1 {
-        // Several MIDI clips picked: the name is a list of them, the one the piano roll edits lit;
-        // picking another gives it the focus (#1054).
+        // Several clips picked: the name is a list of them, the one the piano roll or the audio
+        // editor edits lit; picking another gives it the focus (#1054).
         let field = Rect::from_center_size(name.center(), Vec2::new(name.width(), FIELD));
         let shown = info.picked.iter().find(|(.., focused)| *focused).map_or("", |(_, _, name, _)| name.as_str());
         let entries: Vec<Option<(&str, bool)>> =
@@ -840,6 +837,58 @@ pub(super) fn audio_panel(
     stacked: bool,
     actions: &mut Vec<Action>,
 ) {
+    let from = actions.len();
+    audio_parts(ui, painter, area, info, at, panel, stacked, actions);
+    // Several audio clips picked: what the panel sets on this one (Warp, its mode and settings,
+    // tempo, gain, pitch) it sets on every one, one undo step (› Several clips).
+    let now = ui.input(|i| i.time);
+    let more = fan_out(actions.get_mut(from..).unwrap_or_default(), at, &info.audio_others, now);
+    actions.extend(more);
+}
+
+/// The commands that set what several picked audio clips share.
+const SHARED: [&str; 3] = ["clip.setAudio", "clip.setGain", "clip.setTempo"];
+
+/// The same commands as those of `pushed` that set what the clips share on `at`, for each clip of
+/// `others`, all in one gesture (the drag's own, else one for the click at `now`), which the
+/// pushed one takes too, so the change is one undo step.
+fn fan_out(pushed: &mut [Action], at: ClipRef, others: &[u32], now: f64) -> Vec<Action> {
+    let ClipRef::Arrangement(_, id) = at else { return Vec::new() };
+    if others.is_empty() {
+        return Vec::new();
+    }
+    let mut more = Vec::new();
+    for action in pushed.iter_mut() {
+        if !SHARED.contains(&action.id) || action.params.get("clip").and_then(|c| c.as_u64()) != Some(u64::from(id.0)) {
+            continue;
+        }
+        let gesture = action
+            .params
+            .get("gesture")
+            .cloned()
+            .unwrap_or_else(|| crate::interaction::commands::gesture(format_args!("clips {now:.3}")));
+        action.params["gesture"] = gesture.clone();
+        for other in others {
+            let mut params = action.params.clone();
+            params["clip"] = json!(other);
+            params["gesture"] = gesture.clone();
+            more.push(Action::new(action.id, params));
+        }
+    }
+    more
+}
+
+#[allow(clippy::too_many_arguments)]
+fn audio_parts(
+    ui: &mut Ui,
+    painter: &egui::Painter,
+    area: Rect,
+    info: &ClipInfo,
+    at: ClipRef,
+    panel: &AudioPanel,
+    stacked: bool,
+    actions: &mut Vec<Action>,
+) {
     let area = area.shrink(8.0);
     if stacked {
         let mut top = area.top();
@@ -847,9 +896,8 @@ pub(super) fn audio_panel(
             |top: f32, height: f32| Rect::from_min_size(Pos2::new(area.left(), top), Vec2::new(area.width(), height));
         top = clip_part(ui, painter, part(top, area.height()), info, at, panel, actions) + 14.0;
         top = audio_part(ui, painter, part(top, area.bottom() - top), info, at, panel, actions) + 14.0;
-        top = warp_part(ui, painter, part(top, area.bottom() - top), info, at, panel, actions) + 14.0;
-        if crate::detail::audio_editor::shown_grid(ui.ctx()).is_some() {
-            top = editor_part(ui, painter, part(top, area.bottom() - top)) + 14.0;
+        if has_mode_settings(info.stretch) {
+            top = warp_part(ui, painter, part(top, area.bottom() - top), info, at, panel, actions) + 14.0;
         }
         let gain = part(top, STACKED_GAIN.min(area.bottom() - top));
         gain_and_pitch(ui, painter, gain, info, at, panel, true, actions);
@@ -857,10 +905,11 @@ pub(super) fn audio_panel(
     }
     // In a row, the parts fold into as many columns as the panel's width holds (› Layout); what
     // is taller than the area scrolls with the wheel.
-    let editor = crate::detail::audio_editor::shown_grid(ui.ctx()).is_some();
-    let parts: Vec<Part> = [Part::Clip, Part::Audio, Part::Warp, Part::Editor, Part::Gain]
+    let parts: Vec<Part> = [Part::Clip, Part::Audio, Part::Warp, Part::Gain]
         .into_iter()
-        .filter(|p| *p != Part::Editor || editor)
+        // A mode with no settings of its own (Smooth, Repitch and the others) has no settings part:
+        // a column saying so took a column's room from the rest.
+        .filter(|p| *p != Part::Warp || has_mode_settings(info.stretch))
         .collect();
     let sizes: Vec<(f32, f32)> = parts.iter().map(|p| p.size()).collect();
     let ends = fold(&sizes, area.width());
@@ -900,7 +949,6 @@ pub(super) fn audio_panel(
                 Part::Clip => _ = clip_part(ui, painter, rect, info, at, panel, actions),
                 Part::Audio => _ = audio_part(ui, painter, rect, info, at, panel, actions),
                 Part::Warp => _ = warp_part(ui, painter, rect, info, at, panel, actions),
-                Part::Editor => _ = editor_part(ui, painter, rect),
                 Part::Gain => gain_and_pitch(ui, painter, rect, info, at, panel, false, actions),
             }
             top += height + PART_GAP_DOWN;
@@ -1272,10 +1320,15 @@ fn audio_part(
     }
     // Edit gain envelope: opens the envelope on the clip's waveform in the Arrangement for
     // editing, as Alt+E and the button by the clip's name do.
+    // With several clips picked it is off: an envelope is one clip's.
     if matches!(at, ClipRef::Arrangement(..)) {
-        let on = crate::arrangement::envelope::is_editing(ui.ctx(), panel.clip);
-        if toggle(ui, painter, row(y, TOGGLE), "Envelope", "Edit gain envelope", on) {
-            crate::arrangement::envelope::toggle_editing(ui.ctx(), panel.clip);
+        if info.others.is_empty() {
+            let on = crate::arrangement::envelope::is_editing(ui.ctx(), panel.clip);
+            if toggle(ui, painter, row(y, TOGGLE), "Envelope", "Edit gain envelope", on) {
+                crate::arrangement::envelope::toggle_editing(ui.ctx(), panel.clip);
+            }
+        } else {
+            _ = small_button(ui, painter, row(y, TOGGLE), "Edit gain envelope", "Edit gain envelope", false);
         }
     }
     y + TOGGLE
@@ -1286,7 +1339,6 @@ fn audio_part(
 const WARP_HEIGHT: f32 = NAME + (NAME + FIELD + GAP) * 3.0;
 /// How tall the audio editor's part is: a caption, the grid list, Snap, then Fit and Reset, then
 /// Transients.
-const EDITOR_HEIGHT: f32 = NAME + NAME + FIELD + GAP + FIELD + GAP + FIELD + GAP + FIELD;
 
 /// What Rhythmic's Slice at list offers, and how each is shown.
 const SLICES: [(SliceAt, &str); 5] = [
@@ -1300,10 +1352,6 @@ const SLICES: [(SliceAt, &str); 5] = [
 /// What Rhythmic's Tail list offers.
 const TAILS: [(SliceTail, &str); 3] =
     [(SliceTail::Off, "Off"), (SliceTail::Loop, "Loop"), (SliceTail::BackAndForth, "Back and forth")];
-
-/// The grids the audio editor's Grid list offers: adaptive, then fixed values from a bar to a
-/// 32nd note.
-const GRIDS: [&str; 7] = ["Adaptive", "1 bar", "1/2", "1/4", "1/8", "1/16", "1/32"];
 
 /// A list under its name, both in `top`; the index of the entry picked, if one was.
 fn named_list(
@@ -1321,50 +1369,9 @@ fn named_list(
     drop_down(ui, painter, field, id, name, shown, &listed, top.width().max(110.0))
 }
 
-/// The audio editor's part, while it shows the clip (`docs/spec/clip-panel.md` › Warp mode
-/// settings): its Grid, Snap, Fit, Reset warp and Transients. Returns where it ends.
-fn editor_part(ui: &mut Ui, painter: &egui::Painter, part: Rect) -> f32 {
-    let Some(grid) = crate::detail::audio_editor::shown_grid(ui.ctx()) else { return part.top() };
-    let row = |y: f32, height: f32| Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), height));
-    let mut y = part.top();
-    name_over(painter, row(y, NAME), "Audio editor", Align2::LEFT_BOTTOM);
-    y += NAME;
-    let current =
-        if grid.is_adaptive() { "Adaptive".to_string() } else { grid.label().trim_end_matches(" off").to_string() };
-    let grids: Vec<(&str, bool)> = GRIDS.iter().map(|g| (*g, *g == current.trim_end_matches('T'))).collect();
-    let id = Id::unique("clip-panel-editor-grid");
-    let pick = named_list(ui, painter, row(y, NAME + FIELD), id, "Editor grid", &grids);
-    y += NAME + FIELD + GAP;
-    if let Some(name) = pick.and_then(|i| GRIDS.get(i)) {
-        let picked = if *name == "Adaptive" {
-            crate::detail::audio_editor::default_grid()
-        } else {
-            crate::detail::piano_roll_grid::PianoGrid::from_value(name)
-        };
-        let picked = crate::detail::piano_roll_grid::PianoGrid { snap: grid.snap, triplet: grid.triplet, ..picked };
-        crate::detail::audio_editor::ask(ui.ctx(), crate::detail::audio_editor::Request::Grid(picked));
-    }
-    if toggle(ui, painter, row(y, FIELD), "Snap to grid", "Snap", grid.snap) {
-        let toggled = grid.toggle_snap();
-        crate::detail::audio_editor::ask(ui.ctx(), crate::detail::audio_editor::Request::Grid(toggled));
-    }
-    y += FIELD + GAP;
-    let button = (part.width() - 4.0) / 2.0;
-    let fit = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(button, FIELD));
-    let reset = Rect::from_min_size(Pos2::new(part.left() + button + 4.0, y), Vec2::new(button, FIELD));
-    if small_button(ui, painter, fit, "Fit", "Fit", true) {
-        crate::detail::audio_editor::ask(ui.ctx(), crate::detail::audio_editor::Request::Fit);
-    }
-    if small_button(ui, painter, reset, "Reset…", "Reset warp…", true) {
-        crate::detail::audio_editor::ask(ui.ctx(), crate::detail::audio_editor::Request::Reset);
-    }
-    y += FIELD + GAP;
-    // A warp marker on every transient of the file, each where its sound is (#1185).
-    let transients = Rect::from_min_size(Pos2::new(part.left(), y), Vec2::new(part.width(), FIELD));
-    if small_button(ui, painter, transients, "Transients", "Add warp markers at transients", true) {
-        crate::detail::audio_editor::ask(ui.ctx(), crate::detail::audio_editor::Request::Transients);
-    }
-    y + FIELD
+/// Whether the warp mode `mode` has settings of its own, which the Warp part shows.
+fn has_mode_settings(mode: StretchMode) -> bool {
+    matches!(mode, StretchMode::Rhythmic | StretchMode::Tonal | StretchMode::Texture)
 }
 
 /// The Warp part (`docs/spec/clip-panel.md` › Warp mode settings): the settings of the clip's
@@ -1716,22 +1723,40 @@ mod fold_tests {
     use super::*;
 
     fn sizes() -> Vec<(f32, f32)> {
-        [Part::Clip, Part::Audio, Part::Warp, Part::Editor, Part::Gain].iter().map(|p| p.size()).collect()
+        [Part::Clip, Part::Audio, Part::Warp, Part::Gain].iter().map(|p| p.size()).collect()
+    }
+
+    #[test]
+    fn a_shared_setting_goes_to_every_picked_audio_clip_in_one_gesture() {
+        let at = ClipRef::Arrangement(TrackId(1), ClipId(7));
+        let mut pushed = vec![
+            Action::new("clip.setAudio", json!({ "clip": 7, "warp": true })),
+            // Not shared: the start marker is each clip's own.
+            Action::new("clip.setStart", json!({ "clip": 7, "offset": 1.0 })),
+        ];
+        let more = fan_out(&mut pushed, at, &[8, 9], 1.0);
+        let clips: Vec<(&str, serde_json::Value)> = more.iter().map(|a| (a.id, a.params["clip"].clone())).collect();
+        assert_eq!(clips, [("clip.setAudio", json!(8)), ("clip.setAudio", json!(9))]);
+        let gesture = &pushed[0].params["gesture"];
+        assert!(gesture.is_string() && more.iter().all(|a| &a.params["gesture"] == gesture), "one undo step");
+        assert!(pushed[1].params.get("gesture").is_none());
+        // One clip picked: nothing more.
+        assert!(fan_out(&mut pushed, at, &[], 1.0).is_empty());
     }
 
     #[test]
     fn at_its_widest_the_panel_is_one_row_and_narrower_it_folds() {
         let inner = |width: f32| width - 16.0;
-        assert_eq!(fold(&sizes(), inner(ROW_WIDTH)), [1, 2, 3, 4, 5], "every part side by side");
+        assert_eq!(fold(&sizes(), inner(ROW_WIDTH)), [1, 2, 3, 4], "every part side by side");
         // A part's width narrower: two of them go one over the other, never wider than given.
         let folded = fold(&sizes(), inner(ROW_WIDTH) - 40.0);
-        assert_eq!(folded.len(), 4, "{folded:?}");
+        assert_eq!(folded.len(), 3, "{folded:?}");
         // At the narrowest, two columns.
         let narrowest = fold(&sizes(), inner(LEAST_WIDTH));
         assert_eq!(narrowest.len(), 2, "{narrowest:?}");
-        assert_eq!(narrowest.last(), Some(&5));
+        assert_eq!(narrowest.last(), Some(&4));
         // Narrower than any part: one column.
-        assert_eq!(fold(&sizes(), 50.0), [5]);
+        assert_eq!(fold(&sizes(), 50.0), [4]);
         assert!(fold(&[], 100.0).is_empty());
     }
 }

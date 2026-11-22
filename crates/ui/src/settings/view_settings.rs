@@ -167,6 +167,11 @@ pub struct ViewSettings {
     pub liquid: crate::kit::liquid::Options,
     pub track_sizes: super::track_sizes::TrackSizes,
     pub waveform: WaveformAppearance,
+    /// The audio editor's waveform in the theme's `clip-waveform` colour; off, in the clip's
+    /// colour (its own, else its track's), as the Arrangement colours the clip.
+    pub audio_editor_theme_waveform: bool,
+    /// A warp marker's line down the audio editor's waveform can be dragged as its flag can.
+    pub audio_editor_line_drag: bool,
     /// How automation envelopes are coloured: in their track's colour, or in one line and one
     /// point colour (#1518).
     pub automation: AutomationAppearance,
@@ -318,6 +323,8 @@ impl Default for ViewSettings {
             liquid: crate::kit::liquid::Options::default(),
             track_sizes: super::track_sizes::TrackSizes::default(),
             waveform: WaveformAppearance::default(),
+            audio_editor_theme_waveform: false,
+            audio_editor_line_drag: false,
             automation: AutomationAppearance::default(),
             selection: crate::kit::selection::SelectionLook::default(),
             audio_colour_strength: 82,
@@ -420,8 +427,10 @@ impl ViewSettings {
             },
         ) + &format!("empty_group_processing = {}\n", if self.remove_group_processing { "remove" } else { "ask" })
             + &format!(
-                "waveform_colour = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
+                "waveform_colour = {}\naudio_editor_waveform_colour = {}\naudio_editor_marker_line_drag = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
                 self.waveform.mode.name(),
+                if self.audio_editor_theme_waveform { "theme" } else { "track" },
+                if self.audio_editor_line_drag { "on" } else { "off" },
                 crate::kit::theme::hex(self.waveform.custom),
                 self.audio_colour_strength,
                 self.header_colour_strength,
@@ -532,6 +541,10 @@ selection_custom_colour = {}
                     _ => return false,
                 };
             }
+            ("audio_editor_waveform_colour", "track") => self.audio_editor_theme_waveform = false,
+            ("audio_editor_waveform_colour", "theme") => self.audio_editor_theme_waveform = true,
+            ("audio_editor_marker_line_drag", "on") => self.audio_editor_line_drag = true,
+            ("audio_editor_marker_line_drag", "off") => self.audio_editor_line_drag = false,
             ("waveform_custom_colour", colour) => {
                 let Some(colour) = crate::kit::theme::parse_hex(colour) else { return false };
                 self.waveform.custom = colour;

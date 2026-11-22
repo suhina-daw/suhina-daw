@@ -236,7 +236,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "track.renameClips",
         label: "Name every clip of a track, in the arrangement and in its slots, after the track",
-        params: &[TRACK],
+        params: &[TRACK, GESTURE],
         kind: CommandKind::EDIT,
         run: crate::clip_color::rename_clips,
         policy: Policy::DEFAULT,

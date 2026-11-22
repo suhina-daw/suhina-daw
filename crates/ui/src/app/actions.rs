@@ -188,6 +188,8 @@ impl App {
                 let running = self.session().and_then(|s| s.player()).is_some_and(|p| p.monitor().running());
                 actions.push(if running { self.stop_action() } else { self.play_action() });
             }
+            // Quantise in an audio clip's editor, while it shows one: its transients onto the grid.
+            "pianoRoll.quantize" if let Some(quantize) = self.audio_editor_quantize() => actions.extend(quantize),
             // Quantise in the piano roll, while it shows a clip.
             "pianoRoll.quantize" => {
                 let clip = match self.shown {
@@ -217,7 +219,7 @@ impl App {
             | "selection.consolidate"
             | "selection.takeUp"
             | "selection.takeDown"
-                if self.audio_editor_has_keyboard() => {}
+                if self.audio_editor_keeps(action) => {}
             // While the piano roll has the keyboard, the edit keys act on its notes, or on nothing
             // when it has none to act on: never on the clip or the view behind it.
             "selection.delete" if self.piano_has_keyboard() || self.piano_edits_focused_clip() => {
@@ -245,6 +247,7 @@ impl App {
             | "selection.takeUp"
             | "selection.takeDown"
                 if self.piano_has_keyboard() => {}
+            "pianoRoll.loop" if self.audio_editor_has_keyboard() => actions.extend(self.audio_editor_loop()),
             _ if crate::settings::keymap::piano_roll_only(action) => actions.extend(self.piano_key(action)),
             // Lane headers or group headings picked: Delete takes them out of the track's layout,
             // one undo step (#1322).

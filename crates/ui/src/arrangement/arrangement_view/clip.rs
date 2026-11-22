@@ -1130,6 +1130,7 @@ pub(super) fn clip_box<'a>(
                 origin: x_of(start),
                 beat_width: state.beat_width,
                 ink: envelope_ink,
+                site: "arrangement",
             });
             // An audio clip's edge dragged with Ctrl and Alt stretches its audio: drawn stretched
             // as it goes, about the edge that stays, not only once it is let go.
@@ -1155,6 +1156,7 @@ pub(super) fn clip_box<'a>(
                         origin: stretched(start),
                         beat_width: state.beat_width * factor as f32,
                         ink: envelope_ink,
+                        site: "arrangement",
                     });
                     paint_clip(
                         &painter.with_clip_rect(clip_area),
@@ -1221,6 +1223,7 @@ pub(super) fn clip_box<'a>(
             origin: rect.left(),
             beat_width: state.beat_width,
             ink: envelope_ink,
+            site: "arrangement",
         });
         // The envelope's own grid (1/16 until another is picked in the clip's menu), not the
         // Arrangement's.

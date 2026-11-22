@@ -150,7 +150,9 @@ pub(super) fn dragged_loop(
 /// The loop brace in its row under the ruler: a bar from the loop start to the loop end, bright
 /// while looping is on. Dragging on the row draws a new region and turns looping on; dragging an
 /// end of the brace moves that end, dragging its middle moves it (on the ruler's grid; Alt:
-/// free); a click on it turns looping on or off (`docs/spec/arrangement-editing.md` › Loop region).
+/// free); a click on it selects its span in time over every track, ready to be dragged, and never
+/// turns looping on or off (Ctrl+L and the row's right-click menu do;
+/// `docs/spec/arrangement-editing.md` › Loop region).
 pub(super) fn loop_brace(
     ui: &Ui,
     timeline: &Timeline,
@@ -169,20 +171,18 @@ pub(super) fn loop_brace(
     let brace_x = timeline.loop_brace.map(|b| (x_of(b.start), x_of(b.end)));
     let part = |x: f32| -> Option<LoopGrab> {
         let (left, right) = brace_x?;
-        if (x - left).abs() <= LOOP_GRAB {
-            Some(LoopGrab::Start)
-        } else if (x - right).abs() <= LOOP_GRAB {
-            Some(LoopGrab::End)
-        } else if (left..=right).contains(&x) {
-            Some(LoopGrab::Body(0.0))
-        } else {
-            None
-        }
+        Some(match loop_bar_part(x, left, right)? {
+            LoopBarPart::Start => LoopGrab::Start,
+            LoopBarPart::End => LoopGrab::End,
+            LoopBarPart::Body => LoopGrab::Body(0.0),
+        })
     };
     if let Some(pointer) = response.hover_pos() {
         match part(pointer.x) {
+            // A two-way arrow over an end, which a drag stretches; the four-way move arrow over the
+            // middle, which a drag moves.
             Some(LoopGrab::Start | LoopGrab::End) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
-            Some(_) => ui.ctx().set_cursor_icon(egui::CursorIcon::Grab),
+            Some(_) => ui.ctx().set_cursor_icon(egui::CursorIcon::Move),
             None => {}
         }
     }
@@ -211,25 +211,68 @@ pub(super) fn loop_brace(
     }
     let dragged =
         state.gesture.loop_brace().copied().and_then(|(grab, raw)| dragged_loop(timeline, state, free, grab, raw));
+    // While the brace (or an end of it) is dragged, the time selection follows it on the tracks
+    // the selection is on (the selected tracks, with none), so the stretch looped reads in their
+    // lanes as it moves.
+    if let (Some((start, end)), Some((grab, _))) = (dragged, state.gesture.loop_brace().copied())
+        && !matches!(grab, LoopGrab::New(_))
+    {
+        let tracks = state
+            .time_selection()
+            .map(|s| s.tracks.clone())
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| state.selected_tracks.clone());
+        let moved = state.time_selection().is_none_or(|s| s.start != start || s.end != end);
+        if !tracks.is_empty() && moved {
+            state.set_time_selection(Some(TimeSelection { tracks, start, end, row: None }));
+        }
+    }
     if response.drag_stopped()
         && let Some((grab, _)) = state.gesture.end_loop_brace(|_| true)
         && let Some((start, end)) = dragged
     {
         let unchanged = timeline.loop_brace.is_some_and(|b| b.start == start && b.end == end);
+        // The brace moved shows its new span as the time selection on the tracks the selection
+        // was on (the selected tracks, with none), so the stretch looped reads in their lanes.
+        if !matches!(grab, LoopGrab::New(_)) && !unchanged {
+            let tracks = state
+                .time_selection()
+                .map(|s| s.tracks.clone())
+                .filter(|t| !t.is_empty())
+                .unwrap_or_else(|| state.selected_tracks.clone());
+            if !tracks.is_empty() {
+                state.set_time_selection(Some(TimeSelection { tracks, start, end, row: None }));
+            }
+        }
         match grab {
             // A new region is meant to be heard: it turns looping on.
             LoopGrab::New(_) => {
                 actions.push(Action::new("transport.setLoop", json!({ "start": start, "end": end, "enabled": true })));
             }
-            _ if !unchanged => actions.push(Action::new("transport.setLoop", json!({ "start": start, "end": end }))),
+            _ if !unchanged => {
+                actions.push(Action::new("transport.setLoop", json!({ "start": start, "end": end })));
+                // The play start marker goes to the loop's start, as a time selection made on the
+                // ruler takes it to its start: the next play, and Ctrl+V, begin there.
+                if (start - timeline.start_beat).abs() > 1e-9 {
+                    actions.push(Action::new("transport.setStart", json!({ "beats": start })));
+                }
+            }
             _ => {}
         }
     }
+    // A click on the brace selects its span in time over every track; one beside it does
+    // nothing.
     if response.clicked()
         && let Some(pointer) = response.interact_pointer_pos()
         && part(pointer.x).is_some()
+        && let Some(brace) = timeline.loop_brace
     {
-        actions.push(Action::new("transport.setLoopEnabled", json!({})));
+        let tracks = timeline.lanes.iter().map(|l| l.track).collect();
+        state.set_time_selection(Some(TimeSelection { tracks, start: brace.start, end: brace.end, row: None }));
+        // And the play start marker to the loop's start, as for a moved brace.
+        if (brace.start - timeline.start_beat).abs() > 1e-9 {
+            actions.push(Action::new("transport.setStart", json!({ "beats": brace.start })));
+        }
     }
     response.context_menu(|ui| {
         let on = timeline.loop_brace.is_some_and(|b| b.enabled);

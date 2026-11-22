@@ -692,8 +692,20 @@ impl ArrangementViewState {
     }
 
     /// Picks the track `track` the way a click on its header does: Shift takes the run of tracks
-    /// between the last one picked and this one, Ctrl (Cmd) adds it or takes it away.
+    /// between the last one picked and this one, Ctrl (Cmd) adds it or takes it away. A time
+    /// selection goes over to the tracks picked, keeping its span: the stretch picked (the loop's,
+    /// say) is moved from track to track by clicking their headers.
     pub(super) fn pick_track(&mut self, track: TrackId, shift: bool, command: bool, order: &[TrackId]) {
+        self.pick_track_only(track, shift, command, order);
+        if !self.selected_tracks.is_empty()
+            && let Some(selection) = self.time_selection.as_mut()
+        {
+            selection.tracks = self.selected_tracks.clone();
+            selection.row = None;
+        }
+    }
+
+    fn pick_track_only(&mut self, track: TrackId, shift: bool, command: bool, order: &[TrackId]) {
         if shift
             && let Some(anchor) = self.track_anchor
             && let (Some(from), Some(to)) =

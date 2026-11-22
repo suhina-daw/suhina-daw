@@ -29,6 +29,23 @@ pub fn item(ui: &mut Ui, text: &str, checked: bool) -> Response {
     response
 }
 
+/// A compact entry of a context menu, as the piano roll's are: `text` in the small font, the key
+/// that does the same (`key`, as the keymap labels it) at its right end in the hint ink, greyed
+/// and taking no click while `enabled` is false. The response, which the caller reads
+/// (`clicked()`, then `ui.close()`). The menu sizes to its widest entry, so it goes in a popup
+/// with a justified layout.
+pub fn action(ui: &mut Ui, text: &str, key: Option<&str>, enabled: bool) -> Response {
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let mut button = egui::Button::new(egui::RichText::new(text).font(font.clone())).frame(false);
+    if let Some(key) = key {
+        let hint = crate::kit::element::hint_ink();
+        button = button.shortcut_text(egui::RichText::new(key).font(theme::mono_font(theme::TEXT_SMALL)).color(hint));
+    }
+    let response = ui.add_enabled(enabled, button);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
+    response
+}
+
 /// An entry that opens a submenu of `content` beside it, its arrow at its right end; `marked`
 /// draws a dot before the arrow, for a submenu that holds the one chosen. The row's response.
 pub fn submenu(ui: &mut Ui, text: &str, marked: bool, content: impl FnOnce(&mut Ui)) -> Response {
