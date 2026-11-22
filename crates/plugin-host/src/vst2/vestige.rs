@@ -47,7 +47,7 @@ use std::ffi::c_void;
 
 /// VeSTige's `CCONST`: four characters packed into one 32-bit integer, the first character in
 /// the most significant byte. C's shift overflows into the sign bit when the first character
-/// is at least `0x80`; `wrapping_shl` keeps that behaviour instead of panicking.
+/// is at least `0x80`; `wrapping_shl` keeps that behavior instead of panicking.
 pub const fn CCONST(a: u8, b: u8, c: u8, d: u8) -> i32 {
     ((a as i32).wrapping_shl(24)) | ((b as i32).wrapping_shl(16)) | ((c as i32).wrapping_shl(8)) | (d as i32)
 }

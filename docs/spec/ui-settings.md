@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-11-20
+last_verified: 2026-11-21
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/settings_rows.rs
@@ -16,7 +16,8 @@ covers:
 
 Options › Settings (Ctrl+,) opens the Settings window over the main window. The window's status
 bar stays visible under it, undimmed, so an error or a confirmation from the page is read while
-it is open; moved into its own window, Settings has a status bar of its own at the bottom. How it
+it is open; moved into its own window, Settings has no status bar, and what it reports shows in
+the main window's. How it
 is drawn (sizes, colours, the controls) is in
 [components](../design/components.md) › Settings; this spec says what is on each page, how the
 pages scroll and how a setting finds its place.
@@ -103,7 +104,7 @@ what is inside it).
 | Browser | Previews | Preview selected file, Preview volume |
 | Browser | Sample map | Sample map layout, Preview on map hover, Map sample length limit, Map labels |
 | Browser | Tags | Colour tag limit |
-| Keys | Mouse and key behaviour | The clip editor's workflow settings (click, right click, double-click, duplicate key); kept in `keymap.json` |
+| Keys | Mouse and key behavior | The clip editor's workflow settings (click, right click, double-click, duplicate key); kept in `keymap.json` |
 | Keys | Shortcuts | The preset, every action's keys, Reset all |
 | Appearance | Window | Window zoom, Animations, Hide pointer while dragging (On by default; a theme's `drag-pointer` wins for its controls), Menu bar in window |
 | Appearance | Waveforms | Waveform scale |

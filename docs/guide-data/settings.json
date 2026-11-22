@@ -1663,7 +1663,7 @@
       ],
       "sourceFingerprint": "e70cb7e8e3c42733127a6be059c73210ef5aa3a1ccf63a6337f3cc116e2a197a",
       "helpStatus": "reviewed",
-      "description": "An automation lane draws a line, the envelope, through the points that set a parameter over time. By default the line and its points are drawn in their track's colour, so a lane shows which track it belongs to. On tracks with dull colours, such as the grey tracks of many imported projects, those lines can be hard to see. Fixed draws every envelope in one line colour and every point in one point colour, whatever the track's colour. A picked point keeps its own highlight and a lane that is switched off stays greyed out in both modes. The curve handles and the faint line of a painted range follow the line's colour. The choice is saved with your settings, not in the project, and applies at once.",
+      "description": "An automation lane draws a line, the envelope, through the points that set a parameter over time. By default the line and its points are drawn in their track's colour, so a lane shows which track it belongs to. On tracks with dull colours, such as the gray tracks of many imported projects, those lines can be hard to see. Fixed draws every envelope in one line colour and every point in one point colour, whatever the track's colour. A picked point keeps its own highlight and a lane that is switched off stays grayed out in both modes. The curve handles and the faint line of a painted range follow the line's colour. The choice is saved with your settings, not in the project, and applies at once.",
       "options": [
         {
           "name": "Track colour",
@@ -1674,7 +1674,7 @@
           "description": "Every envelope's line takes Automation line colour and every point Automation point colour; selecting this reveals their pickers."
         }
       ],
-      "whenToChange": "Choose Fixed when envelopes are hard to read on your tracks' colours, for example on a project whose tracks are all grey.",
+      "whenToChange": "Choose Fixed when envelopes are hard to read on your tracks' colours, for example on a project whose tracks are all gray.",
       "workInProgress": false
     },
     {
@@ -1688,7 +1688,7 @@
       ],
       "sourceFingerprint": "e68ad5bb77b844e83898661f89e43328ec2a78641b6547df699a3a84e9d87076",
       "helpStatus": "reviewed",
-      "description": "This colour picker appears when Automation colour is Fixed. Until you pick a colour, the line takes the colour the active theme gives fixed automation lines, which is the theme's accent unless the theme sets its own; the picker shows that colour. Once you pick one, every envelope line uses it in every theme, and the Theme button beside the picker gives the theme's colour back. A lane that is switched off keeps its grey line. The colour has no effect with Track colour.",
+      "description": "This colour picker appears when Automation colour is Fixed. Until you pick a colour, the line takes the colour the active theme gives fixed automation lines, which is the theme's accent unless the theme sets its own; the picker shows that colour. Once you pick one, every envelope line uses it in every theme, and the Theme button beside the picker gives the theme's colour back. A lane that is switched off keeps its gray line. The colour has no effect with Track colour.",
       "options": [],
       "whenToChange": "Pick a colour that stands out from the lanes' background and from your clips, if the theme's does not.",
       "workInProgress": false
@@ -1704,7 +1704,7 @@
       ],
       "sourceFingerprint": "1ce3faae16a0b15f3a33a488bdf6b577e04ee17a5ab7d39b9d507bd2258d60f3",
       "helpStatus": "reviewed",
-      "description": "This colour picker appears when Automation colour is Fixed. Until you pick a colour, points take the colour the active theme gives fixed automation points, which is the theme's accent unless the theme sets its own; the picker shows that colour. Once you pick one, every point that is not picked uses it in every theme, and the Theme button beside the picker gives the theme's colour back. Picked points keep their own highlight, so they still stand out, and the points of a lane that is switched off stay grey. The colour has no effect with Track colour.",
+      "description": "This colour picker appears when Automation colour is Fixed. Until you pick a colour, points take the colour the active theme gives fixed automation points, which is the theme's accent unless the theme sets its own; the picker shows that colour. Once you pick one, every point that is not picked uses it in every theme, and the Theme button beside the picker gives the theme's colour back. Picked points keep their own highlight, so they still stand out, and the points of a lane that is switched off stay gray. The colour has no effect with Track colour.",
       "options": [],
       "whenToChange": "Pick a colour different from the line's when you want points to stand out on it.",
       "workInProgress": false
@@ -2543,15 +2543,15 @@
       "workInProgress": false
     },
     {
-      "id": "Keys/Mouse and key behaviour/keymap.json",
+      "id": "Keys/Mouse and key behavior/keymap.json",
       "page": "Keys",
-      "section": "Mouse and key behaviour",
-      "name": "Piano roll mouse behaviour",
+      "section": "Mouse and key behavior",
+      "name": "Piano roll mouse behavior",
       "note": "Choose what clicks and right-clicks do to notes in the piano roll.",
       "keys": [
         "keymap.json"
       ],
-      "sourceFingerprint": "ab2e8d03a6fe8c47ae502d7b59a8da639c2915f5f2e7134bf08b8450d0e391ae",
+      "sourceFingerprint": "669f4aa0dcf2ff59e9a2281674a87f7d62fbac9deceef7815e3f60cee44dad29",
       "helpStatus": "reviewed",
       "description": "These four switches set how the mouse edits notes in the piano roll: whether a left click in Select draws a note, whether a right click deletes the note under the pointer, whether Shift with a right click splits a note, and whether Alt with a right click plays from the pointer.\n\nEach is On or Off. Changing any of them makes the keyboard preset Custom, because a preset is a set of these choices together with its keys. They are saved in keymap.json with the keys.",
       "options": [
@@ -2735,7 +2735,7 @@
       ],
       "sourceFingerprint": "678e47ae5499c1ff4c3d64fd706feb1f5271df17efe7b9a3ea256499dd53616a",
       "helpStatus": "reviewed",
-      "description": "When you select tracks or clips, in the Arrangement or the Launcher, their headers and clips are filled with one shared selection colour, so several selected items read as one selection even when their own colours differ. The track's or clip's own colour stays in a band at the header's edge and down the clip's leading edge, and an Arrangement clip's name bar keeps its own colour. A clip is filled however you picked it, by its name bar or by a click in its body. The selected tracks' lanes, and their columns in the Launcher, take a faint tint of the same colour. Names, waveforms and notes switch to an ink that reads on the selection colour. A track or clip that is switched off stays grey. The choice is saved with your settings, not in the project, and applies at once.",
+      "description": "When you select tracks or clips, in the Arrangement or the Launcher, their headers and clips are filled with one shared selection colour, so several selected items read as one selection even when their own colours differ. The track's or clip's own colour stays in a band at the header's edge and down the clip's leading edge, and an Arrangement clip's name bar keeps its own colour. A clip is filled however you picked it, by its name bar or by a click in its body. The selected tracks' lanes, and their columns in the Launcher, take a faint tint of the same colour. Names, waveforms and notes switch to an ink that reads on the selection colour. A track or clip that is switched off stays gray. The choice is saved with your settings, not in the project, and applies at once.",
       "options": [
         {
           "name": "From theme",
@@ -2828,15 +2828,15 @@
       ],
       "sourceFingerprint": "8e110af7a171571b9f33134c82e4049a9edb1fe78eee884063b187efcaedba7b",
       "helpStatus": "reviewed",
-      "description": "Place the always-visible Suhina name at the left or centre of the application bar. Project fields have their own position; fields sharing a position appear together. Long project names are clipped before they overlap controls. The bar shows on Windows only, where it is the window's title bar; Linux and macOS keep the system's title bar.",
+      "description": "Place the always-visible Suhina name at the left or center of the application bar. Project fields have their own position; fields sharing a position appear together. Long project names are clipped before they overlap controls. The bar shows on Windows only, where it is the window's title bar; Linux and macOS keep the system's title bar.",
       "options": [
         {
           "name": "Left",
           "description": "Show Suhina on the left."
         },
         {
-          "name": "Centre",
-          "description": "Show Suhina in the centre."
+          "name": "Center",
+          "description": "Show Suhina in the center."
         }
       ],
       "whenToChange": "Choose the location you find easiest to identify when switching windows.",
@@ -2903,18 +2903,18 @@
       ],
       "sourceFingerprint": "dae266646000145f29c6683f0006a43e574fe208f9eb77c42703f45e28f6d9b3",
       "helpStatus": "reviewed",
-      "description": "Place enabled project fields at the left or centre, independently of the application name. Fields placed together share a single group and long names are clipped inside it.",
+      "description": "Place enabled project fields at the left or center, independently of the application name. Fields placed together share a single group and long names are clipped inside it.",
       "options": [
         {
           "name": "Left",
           "description": "Show project fields on the left."
         },
         {
-          "name": "Centre",
-          "description": "Show project fields in the centre."
+          "name": "Center",
+          "description": "Show project fields in the center."
         }
       ],
-      "whenToChange": "Choose Centre to separate project information from a left-aligned Suhina name.",
+      "whenToChange": "Choose Center to separate project information from a left-aligned Suhina name.",
       "workInProgress": false
     },
     {
@@ -3001,7 +3001,7 @@
       ],
       "sourceFingerprint": "97029a5ae55e2fa09b1059f56800a7b0f19cb8637cd00bb0b8aae731b5def9f7",
       "helpStatus": "reviewed",
-      "description": "## Choosing a theme\n\nThe theme in use shows as a large card at the top: its name, and under it the name of the variant in use (Default for the theme's own values). Every theme, the one in use too, is in the list under All themes. Click a card to use that theme. Search themes finds a theme by its name, its folder name or the name of one of its variants.\n\nA theme with variants has a row of swatches under its card, the theme's own values first; click a swatch to use that variant. A card says whether its theme is Built-in or Custom, or Not converted for a theme from an earlier version that could not be converted (point at the card to see why). A warning badge on a card means its theme.css has notices: point at it to read them; the rest of the sheet still applies.\n\nA theme changes only the interface: existing tracks and clips keep their colours, and the colour picker and new tracks and clips use Suhina's own colours in every theme. A theme draws a track's or clip's colour from its color attribute.\n\n## Variants\n\nThe + box at the end of the large card's swatches opens the editor on a new variant of the theme in use, starting from the values in use: Save keeps it, Cancel leaves nothing behind. It is greyed when the theme offers no settings, since a variant of it could hold nothing.\n\nRight-click a swatch to use, edit, duplicate or delete that variant; rename it in the editor. The default variant is the theme's own values: it is renamed in Theme info… and cannot be deleted. The variants a built-in theme comes with cannot be changed: edit one and use Save as new variant. A variant you edited in an earlier version of Suhina offers Revert to built-in… instead of Delete.\n\n## Editing a variant\n\nEdit current variant opens the editor for the variant in use, and Back to themes returns to the list. It shows the variant's name and the settings the theme offers itself, written in its theme.css with @property and a label, in the groups the theme gives them. Each has a control for its type: a colour, a slider for a number in its range, a choice of words, or a field whose text is checked against the type. A theme that offers none says so.\n\nChanges show at once everywhere in Suhina but are not saved until you press Save; Edited beside the name says there are unsaved changes. Save as new variant keeps the changes as a new variant and uses it, and Discard changes puts back the saved values after asking. Save is greyed for the default variant and for a built-in theme's own variants. Leaving the editor with unsaved changes (Back to themes, another page, closing Settings) asks first: Save, Don't save or Cancel. Quitting Suhina drops unsaved changes.\n\n## New themes and sharing\n\nMore, beside Edit current variant, holds New theme…, Import theme…, Export theme…, Open the themes folder, Back up themes and Delete variant….\n\nNew theme… asks what to start from (Suhina's defaults, or any theme, built-in or yours), the theme's name, author and description, and whether to include the default artwork: the built-in control images, copied into the theme's assets folder with a rule for each in its theme.css, so you can edit them. Right-clicking a card offers New theme from this…, which starts from that theme.\n\nRight-click a card of your own theme for Theme info… (its name, author, description and the default variant's name), Show in folder, Add default artwork (the control images it does not have yet) and Delete theme…. Built-in themes cannot be changed or deleted: their items are greyed and say why.\n\nExport theme… writes a theme as one .theme.suhina file to share. Back up themes writes every theme into one zip. Import theme…, or dropping a .theme.suhina file, a theme's .css or .json, or a zip of themes on the window, brings it in. When that theme is here already, Suhina asks whether to replace it or bring it in as a copy.\n\nDeleting a variant or a theme asks first, then moves its file or folder to the system's Trash, from which it can be taken out again. If it cannot be moved, the status bar says why and nothing is deleted.\n\n## Moving toolbar controls\n\nRight-click the top control bar and choose Edit toolbar to move its controls: drag the outlined controls on an 8 point grid, then Done saves the positions in the theme, Cancel or Escape discards them, and Reset positions puts the controls back.\n\n## Theme files\n\nA theme is a folder in the themes folder: theme.json holds its name, swatch and description, theme.css its look, layout and settings (variables, selectors, @media, gradients, shadows, transitions, Flex and Grid; meter style, segments and intensity on the meter element), variants/NAME.json its variants, and assets/ its artwork. Edit them in any text editor; Suhina reads them again within a second. Suhina's editors change only the rules they write, such as moved controls, and leave the rest of theme.css as it is. The theme author guide in Suhina's documentation (docs/guide/theme-authoring.md) describes the format, the elements and selectors a theme can style, and what a theme can do.",
+      "description": "## Choosing a theme\n\nThe theme in use shows as a large card at the top: its name, and under it the name of the variant in use (Default for the theme's own values). Every theme, the one in use too, is in the list under All themes. Click a card to use that theme. Search themes finds a theme by its name, its folder name or the name of one of its variants.\n\nA theme with variants has a row of swatches under its card, the theme's own values first; click a swatch to use that variant. A card says whether its theme is Built-in or Custom, or Not converted for a theme from an earlier version that could not be converted (point at the card to see why). A warning badge on a card means its theme.css has notices: point at it to read them; the rest of the sheet still applies.\n\nA theme changes only the interface: existing tracks and clips keep their colours, and the colour picker and new tracks and clips use Suhina's own colours in every theme. A theme draws a track's or clip's colour from its color attribute.\n\n## Variants\n\nThe + box at the end of the large card's swatches opens the editor on a new variant of the theme in use, starting from the values in use: Save keeps it, Cancel leaves nothing behind. It is grayed when the theme offers no settings, since a variant of it could hold nothing.\n\nRight-click a swatch to use, edit, duplicate or delete that variant; rename it in the editor. The default variant is the theme's own values: it is renamed in Theme info… and cannot be deleted. The variants a built-in theme comes with cannot be changed: edit one and use Save as new variant. A variant you edited in an earlier version of Suhina offers Revert to built-in… instead of Delete.\n\n## Editing a variant\n\nEdit current variant opens the editor for the variant in use, and Back to themes returns to the list. It shows the variant's name and the settings the theme offers itself, written in its theme.css with @property and a label, in the groups the theme gives them. Each has a control for its type: a colour, a slider for a number in its range, a choice of words, or a field whose text is checked against the type. A theme that offers none says so.\n\nChanges show at once everywhere in Suhina but are not saved until you press Save; Edited beside the name says there are unsaved changes. Save as new variant keeps the changes as a new variant and uses it, and Discard changes puts back the saved values after asking. Save is grayed for the default variant and for a built-in theme's own variants. Leaving the editor with unsaved changes (Back to themes, another page, closing Settings) asks first: Save, Don't save or Cancel. Quitting Suhina drops unsaved changes.\n\n## New themes and sharing\n\nMore, beside Edit current variant, holds New theme…, Import theme…, Export theme…, Open the themes folder, Back up themes and Delete variant….\n\nNew theme… asks what to start from (Suhina's defaults, or any theme, built-in or yours), the theme's name, author and description, and whether to include the default artwork: the built-in control images, copied into the theme's assets folder with a rule for each in its theme.css, so you can edit them. Right-clicking a card offers New theme from this…, which starts from that theme.\n\nRight-click a card of your own theme for Theme info… (its name, author, description and the default variant's name), Show in folder, Add default artwork (the control images it does not have yet) and Delete theme…. Built-in themes cannot be changed or deleted: their items are grayed and say why.\n\nExport theme… writes a theme as one .theme.suhina file to share. Back up themes writes every theme into one zip. Import theme…, or dropping a .theme.suhina file, a theme's .css or .json, or a zip of themes on the window, brings it in. When that theme is here already, Suhina asks whether to replace it or bring it in as a copy.\n\nDeleting a variant or a theme asks first, then moves its file or folder to the system's Trash, from which it can be taken out again. If it cannot be moved, the status bar says why and nothing is deleted.\n\n## Moving toolbar controls\n\nRight-click the top control bar and choose Edit toolbar to move its controls: drag the outlined controls on an 8 point grid, then Done saves the positions in the theme, Cancel or Escape discards them, and Reset positions puts the controls back.\n\n## Theme files\n\nA theme is a folder in the themes folder: theme.json holds its name, swatch and description, theme.css its look, layout and settings (variables, selectors, @media, gradients, shadows, transitions, Flex and Grid; meter style, segments and intensity on the meter element), variants/NAME.json its variants, and assets/ its artwork. Edit them in any text editor; Suhina reads them again within a second. Suhina's editors change only the rules they write, such as moved controls, and leave the rest of theme.css as it is. The theme author guide in Suhina's documentation (docs/guide/theme-authoring.md) describes the format, the elements and selectors a theme can style, and what a theme can do.",
       "options": [],
       "whenToChange": "Choose a comfortable theme and, when it has them, a variant. Use Edit current variant to tailor the settings the theme offers and save them in a variant of your own; make a new theme from one you like to change its theme.css.",
       "workInProgress": false

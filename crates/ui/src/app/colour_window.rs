@@ -12,6 +12,8 @@ use crate::interaction::colour_picker::{
 use suhina_engine::model::Rgb;
 
 const WIDTH: f32 = 340.0;
+/// How tall the system's title bar is taken to be over a window whose content starts under it.
+const SYSTEM_TITLE_BAR: f32 = 32.0;
 
 #[derive(Default)]
 pub(super) struct ColourWindow {
@@ -24,6 +26,10 @@ pub(super) struct ColourWindow {
     // before applying queued moves, so feeding observations back here oscillates.
     initial_position: Option<Pos2>,
     height: f32,
+    /// How much taller the size asked of the window is than the panel in it, as last measured:
+    /// the dialog's padding, and its border and title row embedded, or the system's title bar in
+    /// a window of its own.
+    chrome: f32,
     focus_requested: bool,
     focused: bool,
     minimised: bool,
@@ -169,15 +175,36 @@ impl App {
         });
         let bounds = main_rect.unwrap_or_else(|| Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0)));
         let id = egui::ViewportId::from_hash_of("track-colour-window");
-        let height = (if self.colour_window.panel.expanded { 720.0_f32 } else { 400.0 })
-            .min((bounds.height() - 48.0).max(180.0));
+        // As tall as the panel, measured as it was drawn. A layout the user asked for that needs
+        // more room (Fine adjustment opening, the wheel's Value row) is drawn once the window has
+        // grown to it; one that needs less is drawn at once and the window shrinks after.
+        let room = (bounds.height() - 48.0).max(180.0);
+        let fit = |content: Option<f32>| {
+            content.map_or(400.0, |content| (content + self.colour_window.chrome).ceil()).min(room)
+        };
+        let panel = &mut self.colour_window.panel;
+        if panel.asks() {
+            let (now, asked) = (panel.height(false), panel.height(true));
+            let grown = self.colour_window.height >= fit(asked) - 0.5;
+            if grown || asked <= now {
+                panel.settle();
+            } else {
+                ctx.request_repaint_of(egui::ViewportId::from_hash_of("track-colour-window"));
+            }
+        }
+        let height = fit(match (panel.height(false), panel.height(true)) {
+            (Some(now), Some(asked)) => Some(now.max(asked)),
+            (now, asked) => now.or(asked),
+        });
+        let own_frame = self.own_window_frame();
+        let outer = outer_size(height, own_frame);
         if self.colour_window.height != height {
             // Expanding near the bottom must keep the new controls on screen. Ordinary
             // moves are left alone; only a size change rechecks the available bounds.
             if let Some(requested) = self.colour_window.initial_position {
                 let observed =
                     self.settings.colour_window_rect.map_or(requested, |[x, y, _, _]| Pos2::new(x as f32, y as f32));
-                let adjusted = place(bounds, Vec2::new(WIDTH, height + 32.0), Some(observed));
+                let adjusted = place(bounds, outer, Some(observed));
                 if adjusted != observed {
                     // An explicit one-shot move also works if the clamped position
                     // happens to equal the builder's unchanged opening position.
@@ -188,7 +215,7 @@ impl App {
         }
         let position = *self.colour_window.initial_position.get_or_insert_with(|| {
             let proposed = self.settings.colour_window_rect.map(|[x, y, _, _]| Pos2::new(x as f32, y as f32));
-            place(bounds, Vec2::new(WIDTH, height + 32.0), proposed)
+            place(bounds, outer, proposed)
         });
         let builder = egui::ViewportBuilder::default()
             .with_title(title.clone())
@@ -198,6 +225,7 @@ impl App {
             .with_minimize_button(false)
             .with_maximize_button(false)
             .with_window_level(browser_panel::map_window_level(main_focused, self.colour_window.focused));
+        let builder = crate::kit::own_window::builder(builder, own_frame);
         let enabled = current.is_some() && !self.dialog_holds_actions();
         let recent = &self.settings.recent_colours;
         let panel = &mut self.colour_window.panel;
@@ -208,13 +236,13 @@ impl App {
         let mut focused = false;
         let mut placement = None;
         let mut embedded_layer = None;
-        let mut embedded_background = None;
+        let mut chrome = None;
         let mut render = |ui: &mut Ui, embedded: bool| {
             if embedded {
                 embedded_layer = Some(ui.layer_id());
             }
             {
-                let style = crate::kit::element::COLOUR_PICKER.enter();
+                let style = crate::kit::dialog::enter("color-picker");
                 if !embedded && suhina_plugins::trace::on() {
                     suhina_plugins::trace::state(
                         "colour window surface",
@@ -229,25 +257,27 @@ impl App {
                         ),
                     );
                 }
-                // A base-sheet background is not an authored theme override. Only a
-                // detached viewport needs that explicit fill: its renderer clears to
-                // transparent. An embedded Window owns its background and final bounds;
-                // its content's available max_rect can extend beyond the fitted frame.
-                let inside = if embedded {
-                    let layer = ui.layer_id();
-                    let start = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx());
-                    let boxed = style.paint(ui.painter(), ui.max_rect());
-                    let end = ui.ctx().graphics_mut(|layers| layers.entry(layer).next_idx());
-                    embedded_background = Some((layer, start, end));
-                    boxed
+                // Embedded, it is a dialog over the window, its title row and Close button its
+                // own. In a window of its own it is that window's root, under the system's title
+                // bar; the window's base is `window`'s background, as under the main window.
+                let (outer, inside) = if embedded {
+                    let outer = Rect::from_min_size(ui.max_rect().min, Vec2::new(WIDTH, height));
+                    ui.allocate_rect(outer, egui::Sense::hover());
+                    let painter = ui.painter().clone();
+                    let (painted, title_row) = crate::kit::dialog::paint(&painter, &style, outer, Some(title.as_str()));
+                    let id = Id::unique("track-colour-window-close");
+                    let response = crate::kit::dialog::close_button(ui, &painter, painted.title, id, &title);
+                    drop(title_row);
+                    close |= response.clicked();
+                    (outer.height(), painted.content)
                 } else {
-                    style.paint_with(
-                        ui.painter(),
-                        ui.max_rect(),
-                        crate::kit::element::Native { fill: style.background(), ..Default::default() },
-                    )
-                }
-                .content;
+                    let base = crate::kit::own_window::base(ui, own_frame);
+                    let content = style.paint_root(ui.painter(), base.whole, base.corners);
+                    let inside =
+                        Rect::from_min_max(Pos2::new(content.left(), content.top() + base.title_bar), content.max);
+                    (base.whole.height(), inside)
+                };
+                chrome = Some(outer - inside.height());
                 ui.scope_builder(egui::UiBuilder::new().max_rect(inside), |ui| {
                     let mut styled = style.ui(ui);
                     egui::ScrollArea::vertical().show(&mut styled, |ui| {
@@ -295,37 +325,24 @@ impl App {
             });
         };
         if ctx.embed_viewports() {
-            // egui 0.37 already wraps an embedded viewport in a Window. Own that
-            // fallback here instead, to provide closing and changing compact/fine size
-            // without nesting one floating Window inside another.
-            let mut open = true;
-            let shown = egui::Window::new(&title)
-                .id(Id::unique("track-colour-window"))
-                .open(&mut open)
-                .collapsible(false)
-                .resizable(false)
-                .fixed_size([WIDTH, height])
+            // Where windows cannot open (the tests), the tool is a dialog over the window: one
+            // box, the dialog's, not one in an egui Window's frame.
+            crate::kit::floating::area(ctx, Id::unique("track-colour-window"), crate::kit::floating::Kind::Own)
+                .order(egui::Order::Middle)
+                .movable(true)
                 .default_pos(ctx.content_rect().center() - Vec2::new(WIDTH, height) * 0.5)
                 .show(ctx, |ui| render(ui, true));
-            // An authored panel background must obey the fitted Window too. Its final
-            // rectangle is known only after show; leave the Window's own shadow and
-            // other layers (menus/tooltips) alone.
-            if let (Some(shown), Some((layer, start, end))) = (shown, embedded_background) {
-                ctx.graphics_mut(|layers| {
-                    if let Some(list) = layers.get_mut(layer) {
-                        for index in start.0..end.0 {
-                            list.mutate_shape(egui::layers::ShapeIdx(index), |shape| {
-                                shape.clip_rect = shape.clip_rect.intersect(shown.response.rect);
-                            });
-                        }
-                    }
-                });
-            }
-            close = !open;
         } else {
             ctx.show_viewport_immediate(id, builder, |ui, class| {
                 render(ui, class == egui::ViewportClass::EmbeddedWindow);
             });
+        }
+        if let Some(chrome) = chrome
+            && chrome.is_finite()
+            && (chrome - self.colour_window.chrome).abs() > 0.5
+        {
+            self.colour_window.chrome = chrome.max(0.0);
+            ctx.request_repaint_of(id);
         }
         self.colour_window.focused = focused;
         self.colour_window.embedded_layer = embedded_layer;
@@ -395,6 +412,14 @@ fn focused_in_layer(ctx: &egui::Context, layer: egui::LayerId) -> bool {
     ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)).is_some_and(|r| r.layer_id == layer)
 }
 
+/// How big the window is on screen with content `height` tall, as [`place`] keeps it on screen:
+/// the system's title bar over it, unless the content runs under that bar (`frame.title_bar`),
+/// when `height` holds the bar already.
+fn outer_size(height: f32, frame: crate::kit::own_window::Frame) -> Vec2 {
+    let bar = if frame.title_bar > 0.0 { 0.0 } else { SYSTEM_TITLE_BAR };
+    Vec2::new(WIDTH, height + bar)
+}
+
 /// A new or remembered window stays on the current screen even after a monitor is removed.
 fn place(bounds: Rect, size: Vec2, remembered: Option<Pos2>) -> Pos2 {
     let proposed = remembered.filter(|p| p.x.is_finite() && p.y.is_finite()).unwrap_or(bounds.center() - size * 0.5);
@@ -409,15 +434,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initial_placement_centres_and_expansion_or_stale_positions_stay_inside_bounds() {
+    fn initial_placement_centers_and_expansion_or_stale_positions_stay_inside_bounds() {
         let bounds = Rect::from_min_size(Pos2::new(100.0, 50.0), Vec2::new(1280.0, 900.0));
         let compact = Vec2::new(WIDTH, 432.0);
-        let centre = place(bounds, compact, None);
-        assert_eq!(centre + compact * 0.5, bounds.center());
+        let center = place(bounds, compact, None);
+        assert_eq!(center + compact * 0.5, bounds.center());
         let expanded = Vec2::new(WIDTH, 752.0);
-        for remembered in [centre, Pos2::new(-3000.0, 2000.0), Pos2::new(f32::NAN, 0.0)] {
+        for remembered in [center, Pos2::new(-3000.0, 2000.0), Pos2::new(f32::NAN, 0.0)] {
             let rect = Rect::from_min_size(place(bounds, expanded, Some(remembered)), expanded);
             assert!(bounds.contains_rect(rect));
         }
+    }
+
+    /// A window whose content runs under the system's title bar is as tall as its content, so near
+    /// the screen's bottom it sits on the bottom edge, not a title bar's height above it.
+    #[test]
+    fn a_window_with_its_content_under_the_title_bar_is_as_tall_as_its_content() {
+        let framed = crate::kit::own_window::Frame { title_bar: 0.0, ..Default::default() };
+        let under = crate::kit::own_window::Frame { title_bar: 28.0, ..Default::default() };
+        assert_eq!(outer_size(400.0, framed), Vec2::new(WIDTH, 400.0 + SYSTEM_TITLE_BAR));
+        assert_eq!(outer_size(400.0, under), Vec2::new(WIDTH, 400.0));
+        let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0));
+        let low = Some(Pos2::new(100.0, 790.0));
+        assert_eq!(place(bounds, outer_size(400.0, under), low).y, 400.0);
+        assert_eq!(place(bounds, outer_size(400.0, framed), low).y, 400.0 - SYSTEM_TITLE_BAR);
     }
 }

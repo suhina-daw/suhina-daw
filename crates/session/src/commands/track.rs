@@ -37,7 +37,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "track.setPan",
         label: "Set the pan of each named track",
-        params: &[TRACKS, param("pan", ParamType::Number, "-1 is full left, 0 centre, 1 full right"), GESTURE],
+        params: &[TRACKS, param("pan", ParamType::Number, "-1 is full left, 0 center, 1 full right"), GESTURE],
         kind: CommandKind::EDIT,
         run: set_pan,
         policy: Policy::DEFAULT,

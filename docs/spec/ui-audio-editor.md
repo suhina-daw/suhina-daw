@@ -112,7 +112,7 @@ The numbers and the strip take the theme's `label` and `detail-fill`; the lines 
 ### The loop row
 
 A strip under the ruler (10 points) with the clip's loop as a bar, an arrow pointing in at each
-end, in the clip's colour; with the loop off the bar is grey over the part the clip plays. The
+end, in the clip's colour; with the loop off the bar is gray over the part the clip plays. The
 loop's edges also run as lines down the marker lane and the waveform.
 
 | Gesture | Effect |
@@ -142,7 +142,7 @@ A strip under the ruler (14 points) that holds:
   arrow over a marker and while one is dragged. With two or more picked, a band in the title ink runs along the lane from the first of them to the last, a bar along its top joining their flags. The flag takes hold of the marker; the line does
   only with *Drag warp markers by their line* on (off by default), so a drag beside a line paints
   the time selection.
-- **Transients**: a small grey mark where each note of the file starts that has no marker on it:
+- **Transients**: a small gray mark where each note of the file starts that has no marker on it:
   a suggested place for a marker. Candidates are found from the sound's spectrum (SuperFlux spectral
   flux: a rise of each frequency's level over the loudest of it and its neighbours 10 ms before),
   and a candidate is a note when the pitches sounding change across it (the powers of semitone
@@ -270,15 +270,15 @@ step.
 ## Right-click menu
 
 A right click on the waveform, the marker lane or a marker opens a menu at the pointer, compact
-and in the same order as the piano roll's: each item with its key at its right end, greyed where it
+and in the same order as the piano roll's: each item with its key at its right end, grayed where it
 has nothing to act on (rather than left out, so the items stay where the hand expects them). Each
 runs a command (one undo step) or changes the view; the point clicked is where the items that need
 one act (on the grid, Alt held when the menu opened: free).
 
 | Item | Does |
 |---|---|
-| **Delete** | The picked markers, or the marker the menu was opened on, as the Delete key (`clip.removeWarpMarker`, `clip.removeWarpMarkers`); greyed when that would leave fewer than two |
-| **Quantize** | As Ctrl+U (`clip.quantizeWarpMarkers`); greyed for a clip that is not warped |
+| **Delete** | The picked markers, or the marker the menu was opened on, as the Delete key (`clip.removeWarpMarker`, `clip.removeWarpMarkers`); grayed when that would leave fewer than two |
+| **Quantize** | As Ctrl+U (`clip.quantizeWarpMarkers`); grayed for a clip that is not warped |
 | **Quantize settings: 1/16, 100 %** | A submenu of the quantise grids and the amounts (100, 75, 50, 25 %), the name saying the ones chosen |
 | **Add warp marker here** | A marker at the point clicked, where its sound is (`clip.addWarpMarker`); on the marker lane, on the transient suggested near it, as a double-click there |
 | **Add warp markers at transients** | A marker on every note start of the file, as the header's Transients (`clip.addWarpMarkersAtTransients`) |
@@ -291,7 +291,7 @@ one act (on the grid, Alt held when the menu opened: free).
 | The grid's entries | Snap, the adaptive widths, the fixed values and triplets, as the header's grid list and the piano roll's keys (Ctrl+1 to Ctrl+4) |
 
 Cut, copy, paste and duplicate of the audio in a time selection, warp from a point (re-warping
-the audio after it), a clip's first beat for audio, normalising, cropping the file and turning
+the audio after it), a clip's first beat for audio, normalizing, cropping the file and turning
 audio into MIDI need commands of their own and are not in the menu yet.
 
 ## Zoom and scroll

@@ -3,7 +3,7 @@ description: Functional spec of the MIDI clip editor (piano roll): layout, toolb
 read_when: piano roll, clip editor, velocity range, rolled velocity, note.setVelocityRange, select next note, step through notes, Ctrl+arrow selection, grow selection, keyboard selection, join notes, fit to time range, crop clip, split clip, set 1.1.1 here, clip.setOrigin, right-click menu, context menu, invert selection, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
 type: spec
 status: draft
-last_verified: 2026-11-20
+last_verified: 2026-11-21
 covers:
   - crates/ui/src/detail/piano_roll.rs
   - crates/ui/src/detail/piano_roll_grid.rs
@@ -138,7 +138,11 @@ not from velocity or opacity. Muted, erased and out-of-window notes remain dimme
   header or a channel strip, a clip selected on that track stays
   selected and the switch goes to **Devices**, and a clip selected on another track is no longer
   selected; a click on a Launcher column's name clears the slot selection already, so there the
-  devices show on their own. A double-click on a
+  devices show on their own. A single plain click on an Arrangement header does the same with a
+  clip selected on another track (a clip on the clicked track stays selected), so an open detail
+  area moves to the clicked track at once, a group's included, whose double-click folds it
+  ([#1339](https://github.com/suhina-daw/suhina-daw/issues/1339)); a hidden area stays hidden
+  until the double-click. With Ctrl or Shift the click only changes the track selection. A double-click on a
   control in the header or the strip (a button, a fader, a knob, a value) is that control's own,
   as before.
 
@@ -1439,7 +1443,7 @@ divider, **Allow stacked notes**. The settings and their choices:
 | **Double-click on a note** (Select tool) | Deletes it, Does nothing | Deletes | Deletes | Deletes |
 
 - Choosing a preset fills in every setting with its column. Changing one setting, in the menu or
-  in Settings › Keys › Mouse and key behaviour (one row per setting), makes the mode **Custom**, with the
+  in Settings › Keys › Mouse and key behavior (one row per setting), makes the mode **Custom**, with the
   other settings kept as they were. Choosing **Custom** itself changes no setting, so a preset's
   column can be the start of a mix. A Custom mix that happens to equal a preset's column stays
   Custom until the preset is chosen.

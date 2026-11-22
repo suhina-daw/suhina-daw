@@ -3,7 +3,7 @@ description: Device groups - several devices on a track as one unit, with parall
 read_when: device group, group effects, group devices, parallel processing, parallel chain, branch, macro, macro control, mix, dry/wet, group preset, nested devices, layering instruments
 type: spec
 status: current
-last_verified: 2026-11-20
+last_verified: 2026-11-21
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/groups.rs
@@ -106,7 +106,12 @@ A group is either an **effect group** or an **instrument group**; it is never bo
 
 `device.duplicateMany`, `device.paste` and the group commands check these rules on the whole chain
 after the edit, and a refused edit changes nothing. A MIDI effect, built-in or `.sd`, leads the
-chain and goes only on a track that plays notes.
+chain and goes only on a track that plays notes. A chain that already breaks the rules (a
+project an earlier build left so, [#1673](https://github.com/suhina-daw/suhina-daw/issues/1673))
+can be repaired an edit at a time: an edit that leaves no more faults than the chain had is not
+refused, one that adds one is. A fault is a MIDI effect after the chain's start, a MIDI effect or
+instrument on a track that plays no notes, an instrument after the first, an effect before the
+instrument, or a group that breaks the group rules.
 
 Splitting notes between branches by key or velocity (a bass on the low keys, a pad on the high
 ones) is not in the first version: every branch hears every note. It is its own issue

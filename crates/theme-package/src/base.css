@@ -106,7 +106,7 @@ value-fill { background-color: var(--control-selectedBackground); }
 value-handle { background-color: var(--text-primary); }
 pan { background-color: var(--pan-background); }
 pan:hover { background-color: var(--panel-hoverBackground); }
-pan-centre { color: var(--pan-centre); }
+pan-center { color: var(--pan-center); }
 send { background-color: var(--control-background); }
 text-input, value, dropdown { border-color: var(--border); accent-color: var(--accent); }
 text-input:hover, value:hover, dropdown:hover { border-color: var(--border-strong); }
@@ -134,8 +134,12 @@ meter-level { color: var(--meter-normal); }
 meter-level[kind="hot"] { color: var(--meter-hot); }
 meter-clip { background-color: var(--recording); }
 
-/* A dialog's edge, and the rows of a floating list: the picked one's text. */
-dialog { border-color: var(--border-strong); }
+/* A dialog's edge and the room inside it, and the rows of a floating list: the picked one's text. */
+dialog { border-color: var(--border-strong); padding: 8px; }
+/* The missing files panel's own title bar and status bar run to its edges. */
+dialog[name="missing-files"] { padding: 0; }
+/* A dialog's buttons, 4 points apart. */
+dialog-actions { gap: 4px; }
 /* What floats over the window takes the panel colour over the user-agent sheet's plain one, so a
    theme's text stays readable on it. */
 menu, popup, dialog { background-color: var(--panel-background); }
@@ -249,7 +253,7 @@ arrangement track-header[kind="main"] { background-color: var(--panel-background
 arrangement track-header[kind="main"][selected] { background-color: var(--control-activeBackground); }
 arrangement track-number { color: var(--text-secondary); }
 arrangement clip[recording] { border-color: var(--recording); color: var(--text-primary); }
-/* A muted clip (turned off, or on a muted track) and a muted track's header are grey whatever
+/* A muted clip (turned off, or on a muted track) and a muted track's header are gray whatever
    their colour, a little lighter while selected, so they never read as a darker shade of what
    plays (#1393). In the Arrangement only: a deactivated Launcher clip keeps its own look. */
 arrangement clip[muted] { background-color: var(--clip-mutedBackground); }
@@ -523,7 +527,6 @@ list-row[kind="missing-file"][selected] { background-color: var(--control-active
 list-row[kind="missing-file"]:hover { background-color: var(--panel-hoverBackground); }
 list-row[kind="picker"] { background-color: var(--panel-hoverBackground); color: var(--text-secondary); }
 colour-swatch { border-color: var(--text-primary); }
-colour-picker { background-color: var(--panel-background); color: var(--text-primary); border-color: var(--border-strong); padding: 10px; }
 colour-field { border-color: var(--border-strong); border-width: 1px; }
 colour-field:focus { border-color: var(--accent); border-width: 2px; }
 colour-swatch[kind="square"] { border-color: var(--border); }

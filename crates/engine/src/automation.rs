@@ -20,7 +20,7 @@
 //! their value at the play start marker. The grid is the arrangement's, not the block's, so the
 //! sound does not depend on the block size. Nothing here allocates after the graph is built.
 
-use suhina_device_api::{Device, ParamKind, ParamShape, ShapeKind};
+use suhina_device_api::{Device, ParamKind, ParamShape, ProcessContext, Role, ShapeKind};
 use suhina_model::automation::{self as model, Curve, MAX_POINTS, MUTE, PAN, Taper, VOLUME, VolumeTaper};
 use suhina_model::{AutomationLane, Channel, Project, TrackId};
 
@@ -29,7 +29,7 @@ pub const STEP: usize = 64;
 /// Frames between the gains a mixer lane gives (a third of a millisecond at 48 kHz), fine enough
 /// for a smoothed jump to be an S rather than a few straight pieces.
 pub const MIX_STEP: usize = 16;
-/// How long a jump of a track's volume lane takes, in seconds: an S-shaped ramp centred on the
+/// How long a jump of a track's volume lane takes, in seconds: an S-shaped ramp centered on the
 /// jump, in the fader's position (`docs/spec/automation.md` › How the engine plays them).
 pub const VOLUME_SMOOTHING: f64 = 0.0044;
 /// Most built-in and `.sd` device lanes one chain plays; more are left out.
@@ -185,7 +185,7 @@ impl Envelope {
 
     /// The value at `time` with its jumps smoothed: each jump within half of `length` frames of
     /// `time` becomes an S-shaped ramp (smootherstep) in position, `length` frames long and
-    /// centred on the jump; everything else plays as drawn. Never allocates.
+    /// centered on the jump; everything else plays as drawn. Never allocates.
     pub(crate) fn smoothed_at(&self, time: u64, length: u64) -> f64 {
         if length < 2 || self.stepped {
             return self.value_at(time);
@@ -292,22 +292,36 @@ struct DeviceLane {
     next: Option<u64>,
 }
 
-/// The lanes of a chain's built-in and `.sd` devices and the changes they make in the current block.
+/// One audio effect's transport plan, even when the device has no parameter lanes.
+struct DeviceTime {
+    slot: usize,
+    delay: u32,
+    /// At most one record per frame; allocated with the graph, filled before worker dispatch.
+    spans: Vec<(usize, usize, ProcessContext)>,
+}
+
+/// Native parameter lanes and audio-effect contexts at each device's input time.
 pub(crate) struct DeviceLanes {
     lanes: Vec<DeviceLane>,
     /// This block's changes, in frame order.
     block: Vec<DeviceChange>,
+    times: Vec<DeviceTime>,
 }
 
 impl DeviceLanes {
     pub(crate) fn none() -> Self {
-        Self { lanes: Vec::new(), block: Vec::new() }
+        Self { lanes: Vec::new(), block: Vec::new(), times: Vec::new() }
     }
 
     /// Adds the lanes of the device in slot `slot`, matched to its parameters by id (a lane of
     /// an unknown parameter is left out). Allocates.
     pub(crate) fn add(&mut self, slot: usize, device: &dyn Device, lanes: &[AutomationLane], frames_per_beat: f64) {
         let info = device.info();
+        // Instruments and MIDI effects still follow their source-time events. Move their
+        // contexts only with the future event-alignment work, not independently of notes.
+        if info.role == Role::Effect && !self.times.iter().any(|time| time.slot == slot) {
+            self.times.push(DeviceTime { slot, delay: 0, spans: Vec::with_capacity(crate::chain::MAX_BLOCK) });
+        }
         for lane in lanes {
             let Some(param) = info.param_index(&lane.param) else { continue };
             if self.lanes.len() >= MAX_DEVICE_LANES || self.lanes.iter().any(|l| l.slot == slot && l.param == param) {
@@ -328,6 +342,9 @@ impl DeviceLanes {
     /// Makes room for a slot at `slot`: the lanes of that slot and the ones after it move up
     /// one.
     pub(crate) fn insert_slot(&mut self, slot: usize) {
+        for time in self.times.iter_mut().filter(|time| time.slot >= slot) {
+            time.slot += 1;
+        }
         for lane in self.lanes.iter_mut().filter(|l| l.slot >= slot) {
             lane.slot += 1;
         }
@@ -335,6 +352,9 @@ impl DeviceLanes {
 
     /// Set the latency before this device while building its chain or branch.
     pub(crate) fn delay_slot(&mut self, slot: usize, delay: u32) {
+        for time in self.times.iter_mut().filter(|time| time.slot == slot) {
+            time.delay = delay;
+        }
         for lane in self.lanes.iter_mut().filter(|lane| lane.slot == slot) {
             lane.delay = delay;
         }
@@ -342,6 +362,9 @@ impl DeviceLanes {
 
     /// A group's outer chain contributes this much latency to every lane inside it.
     pub(crate) fn add_delay(&mut self, delay: u32) {
+        for time in &mut self.times {
+            time.delay = time.delay.saturating_add(delay);
+        }
         for lane in &mut self.lanes {
             lane.delay = lane.delay.saturating_add(delay);
         }
@@ -375,11 +398,46 @@ impl DeviceLanes {
 
     /// Plans each lane at its own device's input time, including the chain's incoming sum.
     pub(crate) fn plan_delayed(&mut self, songs: &crate::plugin::SongHistory, input: u32, frames: usize) {
+        for time in &mut self.times {
+            time.spans.clear();
+            for (span, context) in songs.contexts(input.saturating_add(time.delay), frames) {
+                if time.spans.len() < time.spans.capacity() {
+                    time.spans.push((span.offset, span.offset + span.frames, context));
+                }
+            }
+        }
         self.plan_spans(|delay| songs.spans(input.saturating_add(delay), frames));
     }
 
+    /// Context at `frame` and the next historical boundary, capped by `end`. An unplanned
+    /// device (including an instrument) uses the current block's source-time context.
+    pub(crate) fn context_span(
+        &self,
+        slot: usize,
+        frame: usize,
+        end: usize,
+        fallback: &ProcessContext,
+        sample_rate: f64,
+    ) -> (ProcessContext, usize) {
+        let planned = self.times.iter().find(|time| time.slot == slot).and_then(|time| {
+            let after = time.spans.partition_point(|(from, _, _)| *from <= frame);
+            after.checked_sub(1).and_then(|i| time.spans.get(i)).filter(|(_, to, _)| frame < *to)
+        });
+        let (from, to, mut context) = planned.copied().unwrap_or((0, end, *fallback));
+        if context.playing {
+            context.beat += frame.saturating_sub(from) as f64 * context.tempo / (60.0 * sample_rate);
+        }
+        (context, to.min(end))
+    }
+
+    /// Whether this slot has an audio-effect transport plan. Instruments keep their existing
+    /// source-time event context until their events and contexts can be aligned together.
+    pub(crate) fn has_context(&self, slot: usize) -> bool {
+        self.times.iter().any(|time| time.slot == slot)
+    }
+
     fn plan_spans<I: Iterator<Item = crate::plugin::AutomationSpan>>(&mut self, spans: impl Fn(u32) -> I) {
-        let Self { lanes, block } = self;
+        let Self { lanes, block, .. } = self;
         block.clear();
         let room = block.capacity();
         for lane in lanes.iter_mut() {
@@ -417,7 +475,7 @@ impl DeviceLanes {
 }
 
 /// The gains of a track whose mixer follows lanes: the gains the rest of its way applies (its
-/// own channel's automated parameters at their neutral values: volume 1, centred, not muted),
+/// own channel's automated parameters at their neutral values: volume 1, centered, not muted),
 /// scaled frame by frame by the lanes.
 pub(crate) struct MixLanes {
     volume: Option<Envelope>,
@@ -479,7 +537,7 @@ impl MixLanes {
         let volume =
             self.volume.as_ref().map_or(1.0, |e| e.smoothed_at(time, self.smoothing).clamp(0.0, model::MAX_VOLUME));
         let (left, right) = match value(&self.pan).filter(|_| self.pan_applies) {
-            // Equal power, relative to the centre the rest of the gains were taken at.
+            // Equal power, relative to the center the rest of the gains were taken at.
             Some(pan) => {
                 let (left, right) = suhina_dsp::pan::gains(pan);
                 (left * std::f64::consts::SQRT_2, right * std::f64::consts::SQRT_2)
@@ -538,7 +596,7 @@ pub(crate) fn channel_of(project: &Project, track: TrackId) -> Option<&Channel> 
 }
 
 /// `project` with every mixer parameter that follows a lane at its neutral value (volume 1,
-/// centred, not muted), so the graph is built with the lanes' tracks heard and their gains
+/// centered, not muted), so the graph is built with the lanes' tracks heard and their gains
 /// applied after their chains; `None` when no lane plays (the project as it is). Every channel
 /// counts, the main one too (its lanes play after its chain, #687). Allocates.
 pub(crate) fn neutral(project: &Project) -> Option<Project> {

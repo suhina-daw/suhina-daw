@@ -502,7 +502,7 @@ impl Preset {
             Self::SelectFirst => "Duplicate is Ctrl+D; a right-click on a note does nothing",
             Self::DrawFirst => "Duplicate is Ctrl+B; in Draw and Paint a right-click on a note deletes it",
             Self::MouseFirst => "Every mouse switch is on; the left button draws in Select",
-            Self::Custom => "Each behaviour set on its own, in the toolbar's menu or Settings › Keys",
+            Self::Custom => "Each behavior set on its own, in the toolbar's menu or Settings › Keys",
         }
     }
 

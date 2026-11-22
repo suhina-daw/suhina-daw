@@ -8,18 +8,18 @@
 
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2};
 
-use crate::kit::theme::{self, PAD, ROW};
+use crate::kit::theme;
 use crate::kit::widgets;
 
 /// Width of the dialog.
-const WIDTH: f32 = 320.0;
+const WIDTH: f32 = 304.0;
 const LINE: f32 = 16.0;
 /// Projects listed before "and N more".
 const LISTED: usize = 6;
 
 /// Draws the dialog over `area`, above everything else, for the projects still being let go of.
 pub fn show(ui: &Ui, area: Rect, waiting: &[String]) {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = crate::kit::dialog::enter("closing");
     crate::kit::floating::area(ui.ctx(), Id::unique("closing"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -40,21 +40,16 @@ fn draw(ui: &Ui, dialog: &crate::kit::element::Entered, area: Rect, waiting: &[S
     painter.rect_filled(area, 0.0, crate::kit::style_class::surface_or(crate::kit::element::app_fill("window")));
 
     let listed = waiting.len().min(LISTED) + usize::from(waiting.len() > LISTED);
-    let height = ROW + PAD * 2.0 + (1 + listed) as f32 * LINE;
-    let size = crate::kit::floating::dialog_size(dialog, area, Vec2::new(WIDTH, height));
-    let rect = Rect::from_center_size(area.center(), size);
-    let rect = crate::kit::floating::dialog(
-        &painter,
-        dialog,
-        rect,
-        crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")),
-    );
-    let title = Rect::from_min_size(rect.min, Vec2::new(rect.width(), ROW));
-    drop(super::project_dialog::title_bar(&painter, title, "Closing Suhina"));
+    let height = (1 + listed) as f32 * LINE;
+    let outer =
+        Rect::from_center_size(area.center(), crate::kit::dialog::size(dialog, area, Vec2::new(WIDTH, height), true));
+    let (painted, title) = crate::kit::dialog::paint(&painter, dialog, outer, Some("Closing Suhina"));
+    drop(title);
+    let content = painted.content;
 
-    let mut y = title.bottom() + PAD;
+    let mut y = content.top();
     let mut line = |label: &str, color| {
-        let row = Rect::from_min_size(Pos2::new(rect.left() + PAD, y), Vec2::new(rect.width() - 2.0 * PAD, LINE));
+        let row = Rect::from_min_size(Pos2::new(content.left(), y), Vec2::new(content.width(), LINE));
         widgets::text_in(&painter, row, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), color);
         let response = ui.interact(row, Id::unique(("closing-line", row.top().to_bits(), label)), Sense::hover());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));

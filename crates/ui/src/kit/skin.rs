@@ -123,7 +123,7 @@ pub struct Skin {
     pub meter_intensity: u8,
     pub artwork_fps: u8,
     pub session: super::session_geometry::SessionGeometry,
-    /// None preserves the original centred control-bar layout.
+    /// None preserves the original centered control-bar layout.
     pub toolbar: Option<Toolbar>,
     /// Horizontal offsets from each module's native/CSS anchor, in logical points.
     pub toolbar_offsets: BTreeMap<String, i32>,
@@ -731,7 +731,7 @@ pub fn paint_as(el: &Entered, painter: &Painter, rect: Rect, role: &str, state: 
     paint_turned_as(el, painter, rect, role, state, ink, 0.0)
 }
 
-/// [`paint_as`], turned by `angle` (radians) about the rectangle's centre: a knob's pointer.
+/// [`paint_as`], turned by `angle` (radians) about the rectangle's center: a knob's pointer.
 pub fn paint_turned_as(
     el: &Entered,
     painter: &Painter,

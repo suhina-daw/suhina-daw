@@ -259,7 +259,7 @@ fn dragging_real_transport_snaps_and_saves_only_on_done_and_cancel_discards() {
     harness.run();
     assert!(
         (harness.get_by_label("Play").rect().left() - (moved.left() - 160.0)).abs() < 0.01,
-        "transport keeps its centre anchor when the window narrows"
+        "transport keeps its center anchor when the window narrows"
     );
     harness.set_size(Vec2::new(1920.0, 240.0));
     harness.run();
@@ -418,7 +418,7 @@ fn a_module_s_contents_lie_in_its_content_box() {
     harness.state_mut().app.use_test_skin(css("#transport { padding-left: 20px; }"));
     harness.run();
     let (padded, padded_stop) = (harness.get_by_label("Play").rect(), harness.get_by_label("Stop").rect());
-    // The module grows by 20 points and stays centred: its left edge moves 10 back, Play 20 on.
+    // The module grows by 20 points and stays centered: its left edge moves 10 back, Play 20 on.
     assert_eq!(padded.left(), play.left() + 10.0);
     assert_eq!(padded_stop.left() - padded.left(), stop.left() - play.left());
     skin::configure(&skin::Skin::default());

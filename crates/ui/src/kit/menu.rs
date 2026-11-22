@@ -30,7 +30,7 @@ pub fn item(ui: &mut Ui, text: &str, checked: bool) -> Response {
 }
 
 /// A compact entry of a context menu, as the piano roll's are: `text` in the small font, the key
-/// that does the same (`key`, as the keymap labels it) at its right end in the hint ink, greyed
+/// that does the same (`key`, as the keymap labels it) at its right end in the hint ink, grayed
 /// and taking no click while `enabled` is false. The response, which the caller reads
 /// (`clicked()`, then `ui.close()`). The menu sizes to its widest entry, so it goes in a popup
 /// with a justified layout.

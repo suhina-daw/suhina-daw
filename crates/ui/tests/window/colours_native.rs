@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Exercise the nested native viewport callback, rather than the embedded Window fallback.
+//! Exercise the nested native viewport callback, rather than the embedded dialog fallback.
 use super::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -86,6 +86,7 @@ fn native_colour_window_paints_its_dark_background_and_settles_after_a_native_dr
     }
     assert!(moves.borrow().is_empty(), "a native drag must not be replayed as move commands: {:?}", moves.borrow());
     let expected = live("panel-background");
+    let window_background = live("window-background");
     let frames = frames.borrow();
     assert!(frames.len() >= 24);
     for (rect, frame) in frames.iter().rev().take(8) {
@@ -106,6 +107,14 @@ fn native_colour_window_paints_its_dark_background_and_settles_after_a_native_dr
             )),
             "native client area {rect:?} must paint the theme background {expected:?}; largest fills: {fills:?}"
         );
+        // Under the dialog, the window's base: `window`'s background, as under the main window.
+        let base = frame.shapes.iter().position(|shape| {
+            matches!(&shape.shape, egui::Shape::Rect(fill) if fill.fill == window_background && fill.rect == *rect)
+        });
+        let root = frame.shapes.iter().position(
+            |shape| matches!(&shape.shape, egui::Shape::Rect(fill) if fill.fill == expected && fill.rect == *rect),
+        );
+        assert!(matches!((base, root), (Some(base), Some(root)) if base < root), "{fills:?}");
     }
     let last = &frames.last().unwrap().1.shapes;
     for (_, frame) in frames.iter().rev().skip(1).take(7) {

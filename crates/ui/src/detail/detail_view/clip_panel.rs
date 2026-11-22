@@ -173,7 +173,7 @@ pub(super) struct Field {
     pub per_tick: f64,
     /// Rounds a dragged value to its step.
     pub snap: fn(f64) -> f64,
-    /// Where its text sits: at the right for a position or a tempo, centred under a fader or knob.
+    /// Where its text sits: at the right for a position or a tempo, centered under a fader or knob.
     pub align: Align2,
     /// Drawn faint: a value that does not apply now (the loop's, while the loop is off).
     pub dim: bool,
@@ -189,7 +189,7 @@ fn thousandth(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
 }
 
-/// A field's surface. Fields keep the panel's gaps between them, so none touch (the grey box of
+/// A field's surface. Fields keep the panel's gaps between them, so none touch (the gray box of
 /// #1190). It is a `value[kind="field"]` to the theme (`:hover`, `:active`): its background,
 /// border and radius. Returns its `color` for its text.
 fn field_surface(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response) -> egui::Color32 {
@@ -1002,7 +1002,7 @@ pub(super) fn clip_part(
     let parse_length = |t: &str| bars_parse(t, bar, false);
     let places = |t: &str| bars_places(t, bar);
     let as_position = || Text { shown: &position, parse: &parse_position, places: Some(&places) };
-    // An arrangement clip's Set buttons stay where they are, greyed while the playhead is outside
+    // An arrangement clip's Set buttons stay where they are, grayed while the playhead is outside
     // the clip, so they do not come and go as a loop passes the clip's end.
     let set_to = |ui: &Ui, painter: &egui::Painter, name: Rect, what: &str| {
         if !panel.set_buttons {
@@ -1475,7 +1475,7 @@ pub fn find_tempo_key() -> Id {
     Id::unique("clip-panel-find-tempo")
 }
 
-/// The Gain and Pitch part: the fader and the knob side by side; centred in the part when
+/// The Gain and Pitch part: the fader and the knob side by side; centered in the part when
 /// `stacked`.
 #[allow(clippy::too_many_arguments)]
 fn gain_and_pitch(
@@ -1676,7 +1676,7 @@ fn pitch_part(
         let under = Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() + 1.0), Vec2::new(rect.width(), 11.0));
         widgets::text_in(painter, under, Align2::CENTER_TOP, unit, theme::ui_font(theme::TEXT_TINY), super::hint_ink());
     }
-    let centred = |range, per_point| Field {
+    let centered = |range, per_point| Field {
         range,
         per_point,
         per_tick: 1.0,
@@ -1686,12 +1686,12 @@ fn pitch_part(
     };
     let text = Text { shown: &signed, parse: &plain_number, places: None };
     let id = Id::unique(("clip-panel-field", "Semitones", clip.0));
-    if let Some(change) = number_field(ui, painter, st, id, "Semitones", semitones, text, centred(SEMITONES, 0.25)) {
+    if let Some(change) = number_field(ui, painter, st, id, "Semitones", semitones, text, centered(SEMITONES, 0.25)) {
         set_semitones = Some(change);
     }
     let text = Text { shown: &signed, parse: &plain_number, places: None };
     let id = Id::unique(("clip-panel-field", "Cents", clip.0));
-    if let Some(change) = number_field(ui, painter, ct, id, "Cents", cents, text, centred(CENTS, 0.5)) {
+    if let Some(change) = number_field(ui, painter, ct, id, "Cents", cents, text, centered(CENTS, 0.5)) {
         set_cents = Some(change);
     }
     if let Some(change) = set_semitones.or(set_cents) {

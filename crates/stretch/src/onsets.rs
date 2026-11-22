@@ -46,7 +46,7 @@ const PITCH_CHANGE: f32 = 0.3;
 /// became the part's 4 chords and 1 more, while the arpeggios kept 50 of 57 and 28 of 32 notes.
 const LEAST_RISE_DB: f32 = 11.0;
 /// Seconds the pitch is measured over on each side of a candidate (to the nearest power of two of
-/// frames), and how far from it each side's window is centred.
+/// frames), and how far from it each side's window is centered.
 const PITCH_WINDOW_SECONDS: f32 = 0.046;
 const PITCH_OFFSET_SECONDS: f32 = 0.045;
 /// The frequencies the semitone bands cover, in Hz.
@@ -221,10 +221,10 @@ impl Pitch {
         Pitch { size, window, fft: FftPlanner::<f32>::new().plan_fft_forward(size), band_of }
     }
 
-    /// The bands' powers in the window centred on frame `centre`, every channel's added, scaled
+    /// The bands' powers in the window centered on frame `center`, every channel's added, scaled
     /// to length 1; `None` where the window does not fit in the file.
-    fn bands(&self, samples: &[f32], channels: usize, frames: usize, centre: usize) -> Option<Vec<f32>> {
-        let start = centre.checked_sub(self.size / 2)?;
+    fn bands(&self, samples: &[f32], channels: usize, frames: usize, center: usize) -> Option<Vec<f32>> {
+        let start = center.checked_sub(self.size / 2)?;
         if start + self.size > frames {
             return None;
         }

@@ -38,10 +38,10 @@ const MEDIUM_GAIN: f64 = 2.0;
 const MEDIUM_KNEE: f64 = 2.0 / 3.0;
 /// Hard Curve is `atan(HARD_GAIN · u) / atan(HARD_GAIN)`: slope 6.8 at zero, 1 at `u` = 1.
 const HARD_GAIN: f64 = 10.0;
-/// Color Low at ±100 %: the gain of its very wide bell in decibels, at its centre.
+/// Color Low at ±100 %: the gain of its very wide bell in decibels, at its center.
 const COLOR_LOW_DB: f64 = 36.0;
-/// Color Low's bell: its centre and Q. So wide that above 100 Hz it falls about 6 dB per octave
-/// like a shelf, and it is gone by 5 kHz; below the centre it falls again.
+/// Color Low's bell: its center and Q. So wide that above 100 Hz it falls about 6 dB per octave
+/// like a shelf, and it is gone by 5 kHz; below the center it falls again.
 const COLOR_LOW_HZ: f64 = 41.4;
 const COLOR_LOW_Q: f64 = 0.103;
 /// Color High at ±100 %: the bell's gain in decibels.

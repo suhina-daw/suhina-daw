@@ -73,7 +73,7 @@ pub fn detect(data: &AudioData) -> Option<f64> {
         return None;
     }
     let mean = onsets.iter().sum::<f64>() / onsets.len() as f64;
-    let centred: Vec<f64> = onsets.iter().map(|o| o - mean).collect();
+    let centered: Vec<f64> = onsets.iter().map(|o| o - mean).collect();
 
     let hop_seconds = hop as f64 / rate;
     let lag_of = |bpm: f64| 60.0 / bpm / hop_seconds;
@@ -82,17 +82,17 @@ pub fn detect(data: &AudioData) -> Option<f64> {
         let whole = lag.floor() as usize;
         let fraction = lag - lag.floor();
         let at = |l: usize| -> f64 {
-            if l >= centred.len() {
+            if l >= centered.len() {
                 return 0.0;
             }
-            let count = centred.len() - l;
-            centred.iter().zip(centred.iter().skip(l)).map(|(a, b)| a * b).sum::<f64>() / count as f64
+            let count = centered.len() - l;
+            centered.iter().zip(centered.iter().skip(l)).map(|(a, b)| a * b).sum::<f64>() / count as f64
         };
         at(whole) * (1.0 - fraction) + at(whole + 1) * fraction
     };
     // The onsets' own variance: a beat must correlate with a good part of it.
     let variance = autocorrelation(0.0);
-    if variance.is_nan() || variance <= 0.0 || (lag_of(LOWEST) as usize) >= centred.len() {
+    if variance.is_nan() || variance <= 0.0 || (lag_of(LOWEST) as usize) >= centered.len() {
         return None;
     }
     // Onsets fall between hops, so a beat's peak spreads over neighbouring lags: the strongest

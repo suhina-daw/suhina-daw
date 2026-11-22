@@ -8,19 +8,28 @@
  * It holds only what keeps every element usable: layout, the regions' overflow, the default
  * artwork, the floating surfaces' blur, and plain readable text on an opaque window. It selects
  * elements by name, state and attribute only: no classes, no ids and no variables, and its only
- * colours are the window's two fixed plain ones and its background again for the menus, pop-ups
- * and dialogs over it, so nothing in it depends on a theme. The element
+ * colours are the window's two fixed plain ones and its background again for the menus, pop-ups,
+ * tooltips and dialogs over it, so nothing in it depends on a theme. The element
  * reference lists every element it names.
  */
 
 /* The floor's colours: plain light text on an opaque dark window, fixed values, so a theme
-   without the base sheet is readable before it styles anything. The base sheet gives the window
-   Suhina's own colours over them. */
+   without the base sheet is readable before it styles anything. The menus, pop-ups, tooltips and
+   dialogs over the window take its background too. The base sheet gives them Suhina's own colours
+   over these. */
 window { color: #e6e6e6; }
 window,
 popup,
 menu,
+tooltip,
 dialog { background-color: #1e1e1e; }
+
+/* A dialog keeps what it holds 10 points in from its edge; its title row runs along its top,
+   outside that. Its buttons stand in a row at the right of its bottom, 8 points apart. */
+dialog { padding: 10px; }
+/* The missing files panel's own title bar and status bar run to its edges. */
+dialog[name="missing-files"] { padding: 0; }
+dialog-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 
 /* The window is one grid of named areas (#1370): the bars, the lines over and under the views, the
    notice strip and the three panels. A theme moves one by giving it another area, or hides it with
@@ -105,12 +114,10 @@ piano-roll-toolbar,
 sample-map,
 popup,
 tooltip,
-colour-picker,
 settings,
 dialog,
 start-page,
-plugin-manager,
-export { overflow: hidden; }
+plugin-manager { overflow: hidden; }
 
 /* What floats over the window blurs the window's own layers behind it. */
 popup,
@@ -154,15 +161,15 @@ toolbar-module[kind="browser"] { margin-right: -2px; }
 /* The transport lays out play, stop and record, a point apart (#1453). */
 toolbar-module[kind="transport"] { display: flex; gap: 1px; }
 toolbar-module[kind="transport"] > button { flex-shrink: 0; }
-/* The application bar: its start, its centre and its end (the window's buttons, where Suhina draws
-   them, keep their own room past it). The start and the end share the room left, so the centre
-   stays in the middle; the centre takes at most half the bar. */
+/* The application bar: its start, its center and its end (the window's buttons, where Suhina draws
+   them, keep their own room past it). The start and the end share the room left, so the center
+   stays in the middle; the center takes at most half the bar. */
 application-bar { padding-left: 8px; align-items: stretch; }
 application-bar group { align-items: stretch; gap: 4px; min-width: 0; }
 group[kind="app-bar-start"],
 group[kind="app-bar-end"] { flex: 1; }
 group[kind="app-bar-end"] { justify-content: flex-end; }
-group[kind="app-bar-centre"] { max-width: 50%; }
+group[kind="app-bar-center"] { max-width: 50%; }
 application-bar bar-item { min-width: 0; flex-shrink: 1; }
 /* The piano roll's toolbar: the tools, the clipboard, quantise, the MIDI tools and the Rows group at
    its start, the menus, the grid value and the × at its end. Its gaps grow with its Toolbar size. */
@@ -215,8 +222,8 @@ group[kind="mixer-output"] { margin-bottom: 4px; }
 divider[kind="mixer-divider"] { margin: -1px 0; }
 pan[kind="mixer-pan"] { margin-bottom: 4px; }
 value[kind="mixer-volume-readout"] { margin-bottom: 2px; align-self: center; }
-/* The fader, its scale and the meter, centred in the strip with the scale before the fader, on
-   every strip alike (#1487 B19: only a narrow strip, Main's, was centred). */
+/* The fader, its scale and the meter, centered in the strip with the scale before the fader, on
+   every strip alike (#1487 B19: only a narrow strip, Main's, was centered). */
 /* It takes the room the other parts leave, or give up. */
 group[kind="mixer-level"] { display: flex; flex: 1 1 auto; min-height: 0; }
 group[kind="mixer-level"] > fader,
@@ -305,7 +312,7 @@ track-header[layout="narrow"] track-name[kind="arrangement-name"] { margin-left:
 track-header[layout="narrow"] button[kind="takes"] { margin: 0 4px 0 -22px; }
 track-header[layout="narrow"] button[kind="automation"] { margin-left: 6px; }
 track-header[layout="narrow"] button[kind="track-on"] { margin-left: 0; }
-/* Beside: the buttons, the volume and the pan on one line, the lanes' button (centred under the
+/* Beside: the buttons, the volume and the pan on one line, the lanes' button (centered under the
    track-on switch), the take lanes' button, the name and the sends on the other. */
 track-header[layout="side"] group[kind="header-first"] > button[kind="track-on"] { margin-left: 34px; }
 track-header[layout="side"] group[kind="header-second"] { padding-left: 54px; }

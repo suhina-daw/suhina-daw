@@ -28,6 +28,57 @@ pub(crate) fn keep_hosts_first(p: &mut Project) {
     }
 }
 
+/// Takes the clip-host mark off each channel device whose plug-in does not edit clips: the
+/// catalog finds the plug-in, does not list it as an ARA one, and no host found it to support ARA
+/// since. An earlier build took the plug-ins of a shell module for ARA ones (#1673) and made them
+/// clip hosts, pinned first in their chains (before the instrument) and left out of the device
+/// lists. The clips of a track left without a clip host no longer name one, so they play as they
+/// are. A device whose plug-in is not installed keeps its mark. Runs before each device edit, in
+/// its undo step. Returns whether anything changed.
+pub(crate) fn drop_false_hosts(session: &mut Session) -> bool {
+    let Some(env) = session.plugins.env() else { return false };
+    let mut false_hosts: Vec<(usize, usize)> = Vec::new();
+    for (channel_at, channel) in session.project.channels.iter().enumerate() {
+        for (at, device) in channel.devices.iter().enumerate().filter(|(_, d)| d.clip_host) {
+            let Some((found, _)) = crate::plugins::device_plugin(&env.catalog, device) else { continue };
+            if !found.plugin.ara && !session.plugins.found_to_edit_clips(&found.plugin.spec()) {
+                false_hosts.push((channel_at, at));
+            }
+        }
+    }
+    if false_hosts.is_empty() {
+        return false;
+    }
+    let mut channels = Vec::new();
+    for &(channel_at, at) in &false_hosts {
+        if let Some(channel) = session.project.channels.get_mut(channel_at) {
+            channels.push(channel.id);
+            if let Some(device) = channel.devices.get_mut(at) {
+                device.clip_host = false;
+            }
+        }
+    }
+    let p: &Project = &session.project;
+    let unhosted: Vec<TrackId> = p
+        .tracks
+        .iter()
+        .filter(|t| t.channel.is_some_and(|c| channels.contains(&c)))
+        .map(|t| t.id)
+        .filter(|&t| !has_host(p, t))
+        .collect();
+    for clip in session
+        .project
+        .arrangement
+        .lanes
+        .iter_mut()
+        .filter(|l| l.track.is_some_and(|t| unhosted.contains(&t)))
+        .flat_map(|l| l.clips.iter_mut())
+    {
+        clip.ara = false;
+    }
+    true
+}
+
 /// Whether the clip plays audio on `track`.
 fn plays_audio(p: &Project, track: TrackId, content: suhina_model::ContentId) -> bool {
     p.content(content).is_some_and(|c| {

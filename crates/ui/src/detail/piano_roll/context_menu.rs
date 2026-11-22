@@ -176,7 +176,7 @@ impl MenuCx<'_> {
         }
     }
 
-    /// The items, each with its key, greyed out where there is nothing to act on.
+    /// The items, each with its key, grayed out where there is nothing to act on.
     fn entries(&self, ui: &mut Ui, state: &PianoRollState, at: MenuAt) -> Option<Pick> {
         let clip = self.clip;
         let font = theme::ui_font(theme::TEXT_SMALL);

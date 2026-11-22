@@ -279,7 +279,7 @@ pub enum DeviceLayout {
 }
 
 /// How a track's volume and pan are shown: as the field they have always been (a bar for the
-/// volume, a centre bar for the pan), or as a knob beside the value.
+/// volume, a center bar for the pan), or as a knob beside the value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MixerControls {
     #[default]

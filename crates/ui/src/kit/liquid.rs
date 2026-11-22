@@ -255,12 +255,11 @@ fn floating(ctx: &Context, order: &[egui::LayerId]) -> (Vec<Floating>, Vec<egui:
             if shown <= 0.0 {
                 return None;
             }
-            // A popup styled where it opens (a device panel's drop-down) takes that style, its
-            // frame and its blur; the bar's menus paint `menu` themselves.
-            let own = (name == POPUP).then(|| in_place.get(&layer.id).cloned()).flatten();
+            // A popup or a bar's menu styled where it opens (a device panel's drop-down, the
+            // menu in its bar) takes that style, its frame and its blur.
+            let own = in_place.get(&layer.id).cloned();
             let restyled = match &own {
                 Some(style) => super::floating::frame_styled(ctx, style.clone(), &frame, shown),
-                None if name == MENU => None,
                 None => super::floating::frame(ctx, name, &frame, shown),
             };
             let blur = match own {
@@ -669,7 +668,7 @@ pub fn paint(painter: &Painter, rect: Rect, el: &super::element::Entered, base: 
     }
 }
 
-/// A bounded edge lens over this frame's backdrop. The centre is optically quiet and
+/// A bounded edge lens over this frame's backdrop. The center is optically quiet and
 /// all coordinates stay inside the captured screen, even against a window edge.
 fn refraction_mesh(rect: Rect, backdrop: Backdrop, strength: f32) -> egui::Mesh {
     let mut mesh = egui::Mesh::with_texture(backdrop.sharp_texture.unwrap_or(backdrop.texture));
@@ -770,7 +769,7 @@ fn surface_scale(rect: Rect) -> f32 {
     ((rect.height().min(rect.width()) - 12.0) / 28.0).clamp(0.0, 1.0)
 }
 
-/// A bounded rounded rim, with a quiet transparent centre. All vertices stay inside
+/// A bounded rounded rim, with a quiet transparent center. All vertices stay inside
 /// the editing rectangle: adjacent clips cannot cast highlights onto one another.
 /// This models reflected light only; it never samples or distorts musical content.
 fn rim_mesh(rect: Rect, strength: f32) -> egui::Mesh {
@@ -784,7 +783,7 @@ fn rim_mesh(rect: Rect, strength: f32) -> egui::Mesh {
         return mesh;
     }
     let radius = (rect.height().min(rect.width()) * 0.16).clamp(2.0, 6.0);
-    // Normalised depth, facing highlight, inner shade, opposing light return.
+    // Normalized depth, facing highlight, inner shade, opposing light return.
     // The outer transparent ring supplies a subpixel antialiasing fringe.
     let rings = [
         (0.0, 0.0, 0.0, 0.0),
@@ -803,7 +802,7 @@ fn rim_mesh(rect: Rect, strength: f32) -> egui::Mesh {
         let inner = rect.shrink(inset);
         let r = (radius - inset).max(0.0);
         for corner in 0..4 {
-            let centre = match corner {
+            let center = match corner {
                 0 => pos2(inner.right() - r, inner.top() + r),
                 1 => pos2(inner.right() - r, inner.bottom() - r),
                 2 => pos2(inner.left() + r, inner.bottom() - r),
@@ -823,7 +822,7 @@ fn rim_mesh(rect: Rect, strength: f32) -> egui::Mesh {
                 } else {
                     Color32::BLACK.gamma_multiply((black - white) * strength)
                 };
-                mesh.colored_vertex(centre + normal * r, color);
+                mesh.colored_vertex(center + normal * r, color);
             }
         }
     }

@@ -980,7 +980,7 @@ pub fn time_signature_list(
 }
 
 /// A clip slot's right-click menu: copy its clip, or paste the copied clip into it (`scene`
-/// from 1). Copy is greyed out on an empty slot, Paste while nothing has been copied.
+/// from 1). Copy is grayed out on an empty slot, Paste while nothing has been copied.
 /// The menu of a device in a track's chain: removing it takes it off the track, settings and
 /// all.
 /// A device's menu in the detail area; `branches` is how many branches it has when it is a

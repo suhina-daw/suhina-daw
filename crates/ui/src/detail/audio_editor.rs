@@ -33,7 +33,7 @@ pub const LOOP_ROW: f32 = 10.0;
 const LOOP_EDGE: f32 = 5.0;
 /// Height of the bar over the ruler: the file's name and format, and the Sample / Envelopes tabs.
 pub const HEADER_HEIGHT: f32 = 20.0;
-/// How wide the header's Sample / Envelopes tabs are, centred in it.
+/// How wide the header's Sample / Envelopes tabs are, centered in it.
 const TABS_WIDTH: f32 = 150.0;
 /// Room left on either side of the file when it is fitted to the area.
 const MARGIN: f32 = 8.0;
@@ -408,7 +408,7 @@ struct MenuCx<'a> {
 }
 
 /// The right-click menu's items (`docs/spec/ui-audio-editor.md` › Right-click menu), compact as
-/// the piano roll's, each with its key and greyed where there is nothing to act on; what one picks
+/// the piano roll's, each with its key and grayed where there is nothing to act on; what one picks
 /// is pushed to `actions` or done to the view.
 fn menu_items(ui: &mut Ui, cx: &MenuCx<'_>, state: &mut AudioEditorState, actions: &mut Vec<Action>) {
     use crate::kit::menu;
@@ -1533,7 +1533,7 @@ fn show_one(
     }
 
     // The loop row: the clip's loop as a bar with an arrow at each end, in the clip's colour; with
-    // the loop off, grey over the part the clip plays. A click switches the loop on or off; a drag
+    // the loop off, gray over the part the clip plays. A click switches the loop on or off; a drag
     // of an end moves that end, of the bar the whole loop, on the grid (Alt: free); each is one
     // `clip.setLoop`.
     let loop_on = clip.view.loop_range;

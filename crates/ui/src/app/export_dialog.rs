@@ -3,7 +3,7 @@
 
 //! File › Export…: renders the mix to the audio file the user chose — the basic dialog of
 //! [`docs/spec/export.md`](../../docs/spec/export.md) › In the app: the file (typed or
-//! browsed), the format, the sample rate, the depth, normalise, dither and overwrite. The
+//! browsed), the format, the sample rate, the depth, normalize, dither and overwrite. The
 //! export itself is the shared `project.export` command, so the dialog only gathers its
 //! params; the source and range of the render matrix are the slices after this one.
 
@@ -13,7 +13,8 @@ use egui::{Align2, Id, Key, Pos2, Rect, Ui, Vec2};
 use serde_json::{Value, json};
 
 use crate::app::project_dialog::{BUTTON, CloseChoice, LINE, SAVE_WIDTH, panel};
-use crate::kit::theme::{self, PAD, ROW};
+use crate::kit::dialog;
+use crate::kit::theme::{self, PAD};
 use crate::kit::widgets::{self, button};
 
 /// The formats the dialog offers, in its order; `From the file name` leaves `format` out, so
@@ -240,7 +241,7 @@ impl CloseChoice for ExportChoice {
 
 /// Draws the export dialog over `area`. Returns what was chosen, or `None` while it stays open.
 pub fn show_export(ui: &Ui, area: Rect, state: &mut ExportDialog) -> Option<ExportChoice> {
-    let style_class = crate::kit::element::DIALOG.enter();
+    let style_class = dialog::enter("export");
     crate::kit::floating::area(ui.ctx(), Id::unique("export-dialog"), crate::kit::floating::Kind::Own)
         .order(egui::Order::Foreground)
         .fixed_pos(area.min)
@@ -265,18 +266,18 @@ fn draw_export(
     // checkboxes, the note, and the buttons.
     let mp3 = state.resolved_format() == Some("mp3");
     let rows = if mp3 { 7.0 * LINE + LINE + 4.0 } else { 7.0 * LINE };
-    let panel =
-        panel(ui, dialog, area, Vec2::new(SAVE_WIDTH, ROW + rows + BUTTON.y + 3.0 * PAD), "Export audio", &mut closed);
+    let size = Vec2::new(SAVE_WIDTH, rows + PAD + dialog::BUTTON_HEIGHT);
+    let panel = panel(ui, dialog, area, size, "Export audio", &mut closed);
     let painter = ui.painter_at(area);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let label_width = 76.0;
-    let mut y = panel.top() + ROW + PAD;
+    let mut y = panel.top();
     let mut entered = false;
     let (caption, hint, fault) =
         (crate::kit::element::caption_ink(), crate::kit::element::hint_ink(), crate::kit::element::error_ink());
 
     // The file, with Browse… beside it.
-    let file_row = Rect::from_min_size(Pos2::new(panel.left() + PAD, y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
+    let file_row = Rect::from_min_size(Pos2::new(panel.left(), y), Vec2::new(panel.width(), LINE));
     widgets::text_in(&painter, file_row, Align2::LEFT_CENTER, "File", small.clone(), caption);
     let browse =
         Rect::from_min_size(Pos2::new(file_row.right() - 64.0, file_row.top() + 1.0), Vec2::new(64.0, BUTTON.y));
@@ -296,7 +297,7 @@ fn draw_export(
 
     // A label on the left; the widget goes over the rest of the row, in a scoped `Ui`.
     let label_row = |y: &mut f32, label: &str| {
-        let whole = Rect::from_min_size(Pos2::new(panel.left() + PAD, *y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
+        let whole = Rect::from_min_size(Pos2::new(panel.left(), *y), Vec2::new(panel.width(), LINE));
         widgets::text_in(&painter, whole, Align2::LEFT_CENTER, label, small.clone(), caption);
         let widget = Rect::from_min_max(
             Pos2::new(whole.left() + label_width, whole.top() + 1.0),
@@ -409,8 +410,8 @@ fn draw_export(
         state.mp3_rate = chosen_mp3;
     }
 
-    // Normalise, dither and overwrite on one row; dither greys out where the depth takes none.
-    let checks = Rect::from_min_size(Pos2::new(panel.left() + PAD, y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
+    // Normalize, dither and overwrite on one row; dither grays out where the depth takes none.
+    let checks = Rect::from_min_size(Pos2::new(panel.left(), y), Vec2::new(panel.width(), LINE));
     let at = |left: f32, width: f32| {
         Rect::from_min_size(Pos2::new(checks.left() + left, checks.top() + 1.0), Vec2::new(width, LINE - 2.0))
     };
@@ -420,7 +421,7 @@ fn draw_export(
         ui.put(at(100.0, 84.0), egui::Checkbox::new(&mut state.dither, "Dither"))
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Dither".to_string()));
     } else {
-        // Greyed where it does not apply: 32f needs none, and ogg takes no depth.
+        // Grayed where it does not apply: 32f needs none, and ogg takes no depth.
         let mut off = false;
         ui.scope(|scope| {
             scope.disable();
@@ -434,7 +435,7 @@ fn draw_export(
     y += LINE + 8.0;
 
     // What the export will run as, or why it will not; while it runs, that.
-    let note = Rect::from_min_size(Pos2::new(panel.left() + PAD, y), Vec2::new(panel.width() - 2.0 * PAD, LINE));
+    let note = Rect::from_min_size(Pos2::new(panel.left(), y), Vec2::new(panel.width(), LINE));
     let path = Path::new(state.path.trim());
     let empty = path.as_os_str().is_empty();
     let (text, colour) = if state.busy {
@@ -461,20 +462,20 @@ fn draw_export(
     };
     widgets::text_in(&painter, note, Align2::LEFT_CENTER, &text, small, colour);
 
-    let export_at =
-        Rect::from_min_size(Pos2::new(panel.right() - PAD - BUTTON.x, panel.bottom() - PAD - BUTTON.y), BUTTON);
-    let cancel_at = Rect::from_min_size(Pos2::new(export_at.left() - 4.0 - BUTTON.x, export_at.top()), BUTTON);
     // While the export renders on its worker the buttons wait: the job was sent whole, and
     // cancelling it is the render matrix's slice. While the states are being gathered the
     // Cancel works: the close cancels the gather, the late replies changing nothing.
-    let chosen = if state.busy {
-        None
-    } else {
-        state.job().filter(|_| button(ui, &painter, export_at, "Export", "Export the mix to the file") || entered)
-    };
-    if (!state.busy || state.gathering)
-        && (button(ui, &painter, cancel_at, "Cancel", "Cancel exporting") || ui.input(|i| i.key_pressed(Key::Escape)))
-    {
+    let cancels = !state.busy || state.gathering;
+    let mut buttons = Vec::new();
+    if cancels {
+        buttons.push(dialog::Action::new("Cancel", "Cancel exporting"));
+    }
+    if !state.busy {
+        buttons.push(dialog::Action::new("Export", "Export the mix to the file"));
+    }
+    let clicked = dialog::actions(ui, &painter, panel, &buttons).and_then(|index| buttons.get(index)).map(|b| b.text);
+    let chosen = if state.busy { None } else { state.job().filter(|_| clicked == Some("Export") || entered) };
+    if cancels && (clicked == Some("Cancel") || ui.input(|i| i.key_pressed(Key::Escape))) {
         return Some(ExportChoice::Cancel);
     }
     if closed.is_some() {

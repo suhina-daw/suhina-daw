@@ -34,7 +34,7 @@ it, Escape leaves it; `clip.rename`) and its length in beats at the right. A lin
 
 Under it, in a row (the detail area under the views), its parts side by side, 8 points in from the
 panel's edges and 12 points apart; with the detail area stacked at the side, one under another, the
-Gain and Pitch part centred.
+Gain and Pitch part centered.
 
 **Width.** In a row the panel is first as wide as all its parts side by side (680 points with the
 audio editor's part), the most it is ever made. Its right edge (*Clip panel width* to a screen
@@ -279,7 +279,7 @@ the clips share sets every picked audio clip at once, as one undo step: **Warp**
 its settings, the tempo, **Gain** and **Pitch** (the same `clip.setAudio`, `clip.setGain` and
 `clip.setTempo` for each, in one gesture). The start, end and loop positions are each clip's own
 (the **Loop** switch turns every picked clip's loop on or off, as before). **Edit gain envelope**
-is greyed out: an envelope is one clip's. The audio editor's warp markers move together on clips as
+is grayed out: an envelope is one clip's. The audio editor's warp markers move together on clips as
 long as the one shown ([`ui-audio-editor.md`](ui-audio-editor.md) › Several clips). Another DAW's
 manual describes the same for warping (Ableton Live 12, 9.2.4.4 Multi-Clip Warping); there the
 editor shows only the clip clicked last, which a list of the picked clips improves on.

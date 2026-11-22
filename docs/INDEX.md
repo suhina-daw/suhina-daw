@@ -9,7 +9,7 @@ for the documents about something, `python scripts/docs.py covers PATH` for thos
 | Document | What it says |
 |---|---|
 | [`AGENTS.md`](../AGENTS.md) | Rules for agents and contributors, what to run before finishing, where to read more |
-| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Clean-room rules, licences, AI-assisted contributions |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Clean-room rules, licenses, AI-assisted contributions |
 | [`ROADMAP.md`](../ROADMAP.md) | Milestones, what works now, what comes next |
 | [`README.md`](../README.md) | What Suhina is, how to try and build it |
 | [`docs/commands.md`](commands.md) | Every command with its kind and parameters, from the command registry (generated) |

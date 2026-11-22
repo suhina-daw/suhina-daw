@@ -21,7 +21,7 @@ use crate::{
 
 /// What a stand-in plug-in does with a block.
 #[derive(Clone, Copy)]
-enum Behaviour {
+enum Behavior {
     /// Scales the sound.
     Gain(f32),
     /// Plays a constant 0.5 on both sides from each note on until its note off.
@@ -36,7 +36,7 @@ enum Behaviour {
 }
 
 struct Stand {
-    behaviour: Behaviour,
+    behavior: Behavior,
     sounding: bool,
     history: Vec<f32>,
     /// Every event it got, with its frame in the renderer's output.
@@ -51,9 +51,9 @@ struct Stand {
 }
 
 impl Stand {
-    fn new(behaviour: Behaviour) -> Self {
+    fn new(behavior: Behavior) -> Self {
         Self {
-            behaviour,
+            behavior,
             sounding: false,
             history: Vec::new(),
             seen: Arc::default(),
@@ -86,9 +86,9 @@ impl PluginProcessor for Stand {
             seen.extend(events.iter().map(|&(at, e)| (self.frames + at, e)));
         }
         let frames = buffer.len() / 2;
-        match self.behaviour {
-            Behaviour::Gain(gain) => buffer.iter_mut().for_each(|s| *s *= gain),
-            Behaviour::Instrument => {
+        match self.behavior {
+            Behavior::Gain(gain) => buffer.iter_mut().for_each(|s| *s *= gain),
+            Behavior::Instrument => {
                 let mut next = events.iter().peekable();
                 for (frame, pair) in buffer.chunks_mut(2).enumerate() {
                     while let Some((_, event)) = next.next_if(|(at, _)| *at <= frame) {
@@ -102,7 +102,7 @@ impl PluginProcessor for Stand {
                     pair.iter_mut().for_each(|s| *s = value);
                 }
             }
-            Behaviour::Delay(by) => {
+            Behavior::Delay(by) => {
                 // `history` holds the last `by` frames.
                 if self.history.len() != by * 2 {
                     self.history = vec![0.0; by * 2];
@@ -113,8 +113,8 @@ impl PluginProcessor for Stand {
                     pair.copy_from_slice(&oldest);
                 }
             }
-            Behaviour::Gone => return false,
-            Behaviour::Render(until) => {
+            Behavior::Gone => return false,
+            Behavior::Render(until) => {
                 for (frame, pair) in buffer.chunks_mut(2).enumerate() {
                     let value = if self.frames + frame < until { 1.0 } else { 0.0 };
                     pair.iter_mut().for_each(|s| *s = value);
@@ -156,7 +156,7 @@ fn disabled_hosted_instrument_silences_upstream_sound_and_retains_state() {
     let mut p = project(vec![note(0., 1., 60)], 1., vec![device("fm-synth", &[]), instrument]);
     for enabled in [false, true] {
         p.channels[0].devices[1].enabled = enabled;
-        let stand = Stand::new(Behaviour::Instrument);
+        let stand = Stand::new(Behavior::Instrument);
         let seen = Arc::clone(&stand.seen);
         let out = render_offline_from(
             &p,
@@ -183,7 +183,7 @@ fn a_hosted_instrument_enabled_during_playback_receives_later_notes() {
     instrument.enabled = false;
     let mut p = project(vec![note(0., 0.25, 60), note(1., 0.25, 64), note(2., 0.25, 67)], 4., vec![instrument]);
     p.assign_ids().unwrap();
-    let stand = Stand::new(Behaviour::Instrument);
+    let stand = Stand::new(Behavior::Instrument);
     let seen = Arc::clone(&stand.seen);
     let mut renderer = Renderer::build(
         &p,
@@ -209,7 +209,7 @@ fn an_eq_after_a_plug_in_rings_its_output() {
     let mut renderer = Renderer::build(
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)])),
+            .with_plugins(plugins(&p, vec![(Stand::new(Behavior::Instrument), INSTRUMENT)])),
         SR,
         RenderOptions::PLAYING,
     )
@@ -237,7 +237,7 @@ fn a_plug_in_effect_processes_the_tracks_sound() {
     let wet = render_offline_from(
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)])),
+            .with_plugins(plugins(&p, vec![(Stand::new(Behavior::Gain(0.5)), EFFECT)])),
         SR,
         512,
         None,
@@ -252,7 +252,7 @@ fn a_plug_in_effect_processes_the_tracks_sound() {
     let both = render_offline_from(
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)])),
+            .with_plugins(plugins(&p, vec![(Stand::new(Behavior::Gain(0.5)), EFFECT)])),
         SR,
         333,
         None,
@@ -269,7 +269,7 @@ fn a_plug_in_is_told_the_loop_in_beats_and_in_seconds_through_the_tempo_map() {
     p.transport.tempo_changes = vec![TempoPoint { beat: 4.0, bpm: 60.0, ramp: false }].into();
     p.transport.loop_range = Some(LoopRange { start: 2.0, end: 8.0 });
     p.transport.loop_enabled = true;
-    let stand = Stand::new(Behaviour::Gain(1.0));
+    let stand = Stand::new(Behavior::Gain(1.0));
     let songs = Arc::clone(&stand.songs);
     let mut renderer = Renderer::build(
         &p,
@@ -292,7 +292,7 @@ fn an_offline_render_plays_through_the_loop_and_tells_plug_ins_of_no_cycle() {
     let mut p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3())]);
     p.transport.loop_range = Some(LoopRange { start: 2.0, end: 8.0 });
     p.transport.loop_enabled = true;
-    let stand = Stand::new(Behaviour::Gain(1.0));
+    let stand = Stand::new(Behavior::Gain(1.0));
     let songs = Arc::clone(&stand.songs);
     render_offline_from(
         &p,
@@ -318,7 +318,7 @@ fn an_eq_hears_live_notes_after_a_plug_in_with_the_transport_stopped() {
     let mut renderer = Renderer::build(
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)])),
+            .with_plugins(plugins(&p, vec![(Stand::new(Behavior::Instrument), INSTRUMENT)])),
         SR,
         RenderOptions::STOPPED,
     )
@@ -347,7 +347,7 @@ fn a_plug_in_instrument_gets_the_notes_at_their_frames() {
     let p = project(vec![note(0.0, 1.0, 60), note(1.5, 0.25, 64)], 2.0, vec![plug(vst3())]);
     let seen: Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>> = Arc::default();
     for block in [64, 512, 1_000] {
-        let mut stand = Stand::new(Behaviour::Instrument);
+        let mut stand = Stand::new(Behavior::Instrument);
         stand.seen = Arc::clone(&seen);
         let out = render_offline_from(
             &p,
@@ -379,7 +379,7 @@ fn a_plug_in_instrument_gets_the_notes_at_their_frames() {
 fn a_plug_in_instrument_on_an_armed_track_gets_live_controllers() {
     use crate::{LaunchCommand, LiveEvent};
     let p = project(Vec::new(), 1.0, vec![plug(vst3())]);
-    let stand = Stand::new(Behaviour::Instrument);
+    let stand = Stand::new(Behavior::Instrument);
     let seen = Arc::clone(&stand.seen);
     let mut renderer = Renderer::build(
         &p,
@@ -417,7 +417,7 @@ fn letting_go_of_a_controller_sets_its_pitch_bend_and_pressure_back() {
     use crate::{LaunchCommand, LiveEvent};
     let bent_after = |let_go: &dyn Fn(&mut crate::Controller, &mut crate::LiveSender), moved: bool| {
         let p = project(Vec::new(), 1.0, vec![plug(vst3())]);
-        let stand = Stand::new(Behaviour::Instrument);
+        let stand = Stand::new(Behavior::Instrument);
         let seen = Arc::clone(&stand.seen);
         let mut renderer = Renderer::build(
             &p,
@@ -647,7 +647,7 @@ fn a_plug_in_that_misses_passes_the_sound_or_stays_silent_and_the_engine_plays_o
     let dry = blocks(&mut dry, 40, 480);
 
     let p = project(notes.clone(), 4.0, vec![plug(vst3())]);
-    let effect = Stand::new(Behaviour::Gain(0.5));
+    let effect = Stand::new(Behavior::Gain(0.5));
     let answering = Arc::clone(&effect.answering);
     let mut renderer = Renderer::build(
         &p,
@@ -672,7 +672,7 @@ fn a_plug_in_that_misses_passes_the_sound_or_stays_silent_and_the_engine_plays_o
     let mut renderer = Renderer::build(
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gone), INSTRUMENT)])),
+            .with_plugins(plugins(&p, vec![(Stand::new(Behavior::Gone), INSTRUMENT)])),
         SR,
         RenderOptions::PLAYING,
     )
@@ -696,7 +696,7 @@ fn a_disabled_or_missing_plug_in_passes_the_sound_through() {
     let out = render_offline_from(
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.0)), EFFECT)])),
+            .with_plugins(plugins(&p, vec![(Stand::new(Behavior::Gain(0.0)), EFFECT)])),
         SR,
         512,
         None,
@@ -735,7 +735,7 @@ fn latency_compensation_lines_every_track_up_with_the_slowest() {
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
             &p,
-            vec![(Stand::new(Behaviour::Delay(LATENCY)), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })],
+            vec![(Stand::new(Behavior::Delay(LATENCY)), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })],
         )),
         SR,
         256,
@@ -760,7 +760,7 @@ fn latency_compensation_lines_every_track_up_with_the_slowest() {
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
             &p,
-            vec![(Stand::new(Behaviour::Gone), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })],
+            vec![(Stand::new(Behavior::Gone), PluginSlotInfo { latency: LATENCY as u32, ..EFFECT })],
         )),
         SR,
         RenderOptions::PLAYING,
@@ -789,7 +789,7 @@ fn a_plug_in_arrives_while_playing_and_stays_through_edits_and_restarts() {
     let before = blocks(&mut renderer, 5, 480);
     assert!(peak(&before) > 0.1);
     // The plug-in loads: it waits for a graph with its slot, then plays.
-    let first = Stand::new(Behaviour::Gain(0.0));
+    let first = Stand::new(Behavior::Gain(0.0));
     let first_dropped = Arc::clone(&first.dropped);
     controller.send_plugin(key, Box::new(first)).unwrap();
     blocks(&mut renderer, 2, 480);
@@ -807,7 +807,7 @@ fn a_plug_in_arrives_while_playing_and_stays_through_edits_and_restarts() {
 
     // A restarted plug-in replaces it; the old one goes back to be dropped off the audio
     // thread.
-    controller.send_plugin(key, Box::new(Stand::new(Behaviour::Gain(1.0)))).unwrap();
+    controller.send_plugin(key, Box::new(Stand::new(Behavior::Gain(1.0)))).unwrap();
     assert!(peak(&blocks(&mut renderer, 5, 480)) > 0.1);
     controller.collect();
     assert_eq!(first_dropped.load(Ordering::SeqCst), 1);
@@ -816,7 +816,7 @@ fn a_plug_in_arrives_while_playing_and_stays_through_edits_and_restarts() {
     let mut removed = edited.clone();
     removed.channels[0].devices.remove(1);
     let second_dropped = {
-        let stand = Stand::new(Behaviour::Gain(1.0));
+        let stand = Stand::new(Behavior::Gain(1.0));
         let dropped = Arc::clone(&stand.dropped);
         controller.send_plugin(key, Box::new(stand)).unwrap();
         dropped
@@ -837,7 +837,7 @@ fn a_plug_in_arrives_while_playing_and_stays_through_edits_and_restarts() {
 fn a_plug_in_on_a_muted_track_keeps_running_and_sounds_again() {
     let p = project(vec![note(0.0, 16.0, 60)], 16.0, vec![plug(vst3())]);
     let key = plugin_devices(&p)[0].key;
-    let stand = Stand::new(Behaviour::Instrument);
+    let stand = Stand::new(Behavior::Instrument);
     let dropped = Arc::clone(&stand.dropped);
     let mut renderer = Renderer::build(
         &p,
@@ -868,7 +868,7 @@ fn a_plug_in_on_a_muted_track_keeps_running_and_sounds_again() {
 fn a_stopped_preview_releases_its_note_on_the_frame_the_stop_applies() {
     for size in [512usize, 300] {
         let p = project(Vec::new(), 8.0, vec![plug(vst3())]);
-        let stand = Stand::new(Behaviour::Instrument);
+        let stand = Stand::new(Behavior::Instrument);
         let seen = Arc::clone(&stand.seen);
         let mut renderer = Renderer::build(
             &p,
@@ -896,7 +896,7 @@ fn a_stopped_preview_releases_its_note_on_the_frame_the_stop_applies() {
 #[test]
 fn held_notes_added_within_one_block_all_reach_the_plug_in() {
     let p = project(Vec::new(), 8.0, vec![plug(vst3())]);
-    let stand = Stand::new(Behaviour::Instrument);
+    let stand = Stand::new(Behavior::Instrument);
     let seen = Arc::clone(&stand.seen);
     let mut renderer = Renderer::build(
         &p,
@@ -925,7 +925,7 @@ fn held_notes_added_within_one_block_all_reach_the_plug_in() {
 #[test]
 fn a_plug_in_instrument_is_released_when_the_transport_stops() {
     let p = project(vec![note(0.0, 8.0, 60)], 8.0, vec![plug(vst3())]);
-    let stand = Stand::new(Behaviour::Instrument);
+    let stand = Stand::new(Behavior::Instrument);
     let seen = Arc::clone(&stand.seen);
     let mut renderer = Renderer::build(
         &p,
@@ -954,7 +954,7 @@ fn the_notes_at_the_loop_start_play_on_every_pass_with_no_all_notes_off() {
     let mut p = project(vec![note(0.0, 2.0, 60), note(2.0, 2.0, 62)], 4.0, vec![plug(vst3())]);
     p.transport.loop_range = Some(LoopRange { start: 0.0, end: 4.0 });
     p.transport.loop_enabled = true;
-    let stand = Stand::new(Behaviour::Instrument);
+    let stand = Stand::new(Behavior::Instrument);
     let seen = Arc::clone(&stand.seen);
     let mut renderer = Renderer::build(
         &p,
@@ -987,7 +987,7 @@ fn a_renderer_hands_its_plug_ins_to_the_next_one() {
     let notes = vec![note(0.0, 8.0, 69)];
     let p = project(notes, 8.0, vec![plug(vst3())]);
     let key = plugin_devices(&p)[0].key;
-    let first = Stand::new(Behaviour::Gain(0.0));
+    let first = Stand::new(Behavior::Gain(0.0));
     let dropped = Arc::clone(&first.dropped);
     let mut renderer = Renderer::build(
         &p,
@@ -1013,7 +1013,7 @@ fn a_renderer_hands_its_plug_ins_to_the_next_one() {
 
     // One sent but not placed yet comes back too.
     let mut controller = next.controller();
-    let queued = Stand::new(Behaviour::Gain(1.0));
+    let queued = Stand::new(Behavior::Gain(1.0));
     let queued_dropped = Arc::clone(&queued.dropped);
     controller.send_plugin(key, Box::new(queued)).unwrap();
     let back = next.into_plugins();
@@ -1047,7 +1047,7 @@ fn a_plug_in_that_arrived_while_playing_is_handed_over_with_its_slot() {
     let latency = PluginSlotInfo { instrument: false, latency: 32 };
     info.insert(key, latency);
     controller.set_plugin_info(info);
-    let stand = Stand::new(Behaviour::Gain(0.0));
+    let stand = Stand::new(Behavior::Gain(0.0));
     let dropped = Arc::clone(&stand.dropped);
     controller.send_plugin(key, Box::new(stand)).unwrap();
     blocks(&mut renderer, 2, 480);
@@ -1351,7 +1351,7 @@ fn a_plug_in_runs_in_a_group_branch_beside_a_dry_one() {
     let out = render_offline_from(
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Gain(0.5)), EFFECT)])),
+            .with_plugins(plugins(&p, vec![(Stand::new(Behavior::Gain(0.5)), EFFECT)])),
         SR,
         512,
         None,
@@ -1370,7 +1370,7 @@ fn a_plug_ins_latency_is_compensated_inside_its_group() {
     let reference = render_offline_from(
         &single,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&single, vec![(Stand::new(Behaviour::Delay(64)), delayed)])),
+            .with_plugins(plugins(&single, vec![(Stand::new(Behavior::Delay(64)), delayed)])),
         SR,
         512,
         None,
@@ -1380,7 +1380,7 @@ fn a_plug_ins_latency_is_compensated_inside_its_group() {
     let out = render_offline_from(
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Delay(64)), delayed)])),
+            .with_plugins(plugins(&p, vec![(Stand::new(Behavior::Delay(64)), delayed)])),
         SR,
         512,
         None,
@@ -1400,7 +1400,7 @@ fn plug_in_instruments_in_a_group_are_layered_and_a_gone_one_is_silent() {
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
             &p,
-            vec![(Stand::new(Behaviour::Instrument), INSTRUMENT), (Stand::new(Behaviour::Instrument), INSTRUMENT)],
+            vec![(Stand::new(Behavior::Instrument), INSTRUMENT), (Stand::new(Behavior::Instrument), INSTRUMENT)],
         )),
         SR,
         512,
@@ -1412,7 +1412,7 @@ fn plug_in_instruments_in_a_group_are_layered_and_a_gone_one_is_silent() {
         &project(vec![note(0.0, 1.0, 60)], 2.0, vec![plug(vst3())]),
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
             &project(vec![note(0.0, 1.0, 60)], 2.0, vec![plug(vst3())]),
-            vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)],
+            vec![(Stand::new(Behavior::Instrument), INSTRUMENT)],
         )),
         SR,
         512,
@@ -1428,7 +1428,7 @@ fn plug_in_instruments_in_a_group_are_layered_and_a_gone_one_is_silent() {
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
             &p,
-            vec![(Stand::new(Behaviour::Instrument), INSTRUMENT), (Stand::new(Behaviour::Gone), INSTRUMENT)],
+            vec![(Stand::new(Behavior::Instrument), INSTRUMENT), (Stand::new(Behavior::Gone), INSTRUMENT)],
         )),
         SR,
         512,
@@ -1454,7 +1454,7 @@ fn a_plug_in_keeps_running_when_it_moves_into_a_group() {
     let mut info = std::collections::HashMap::new();
     info.insert(key, EFFECT);
     controller.set_plugin_info(info);
-    let stand = Stand::new(Behaviour::Gain(0.0));
+    let stand = Stand::new(Behavior::Gain(0.0));
     let dropped = Arc::clone(&stand.dropped);
     controller.send_plugin(key, Box::new(stand)).unwrap();
     blocks(&mut renderer, 2, 480);
@@ -1473,7 +1473,7 @@ fn a_plug_in_keeps_running_when_it_moves_into_a_group() {
     assert_eq!(dropped.load(Ordering::SeqCst), 0, "the plug-in carried over into the group");
 
     // A restart reaches it inside the group.
-    controller.send_plugin(key, Box::new(Stand::new(Behaviour::Gain(1.0)))).unwrap();
+    controller.send_plugin(key, Box::new(Stand::new(Behavior::Gain(1.0)))).unwrap();
     assert!(peak(&blocks(&mut renderer, 5, 480)) > 0.1);
 }
 
@@ -1500,7 +1500,7 @@ fn a_clip_host_plays_its_clips_at_their_gains_and_the_others_go_past_it() {
     let mut host = plug(vst3());
     host.clip_host = true;
     let (p, pool) = hosted_project(0.5, vec![host.clone()], true, true);
-    let stand = Stand::new(Behaviour::Render(BEAT));
+    let stand = Stand::new(Behavior::Render(BEAT));
     let out = render_offline_from(
         &p,
         RenderInputs::from_audio(&pool, suhina_device_registry::factory())
@@ -1546,7 +1546,7 @@ fn a_clip_host_plays_its_clips_at_their_gains_and_the_others_go_past_it() {
     // A disabled host: every clip plays as it is.
     host.enabled = false;
     let (p, pool) = hosted_project(0.5, vec![host], true, true);
-    let stand = Stand::new(Behaviour::Render(BEAT));
+    let stand = Stand::new(Behavior::Render(BEAT));
     let off = left(
         &render_offline_from(
             &p,
@@ -1564,7 +1564,7 @@ fn a_clip_host_plays_its_clips_at_their_gains_and_the_others_go_past_it() {
 #[test]
 fn a_carried_instrument_releases_old_notes_before_the_new_engine_chases_them() {
     let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![plug(vst3())]);
-    let stand = Stand::new(Behaviour::Instrument);
+    let stand = Stand::new(Behavior::Instrument);
     let seen = Arc::clone(&stand.seen);
     let mut current = Renderer::build(
         &p,
@@ -1601,7 +1601,7 @@ fn play_chases_a_plugin_note_without_a_step_from_silence() {
     let mut renderer = Renderer::build(
         &p,
         RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory())
-            .with_plugins(plugins(&p, vec![(Stand::new(Behaviour::Instrument), INSTRUMENT)])),
+            .with_plugins(plugins(&p, vec![(Stand::new(Behavior::Instrument), INSTRUMENT)])),
         SR,
         RenderOptions::STOPPED,
     )
@@ -1626,8 +1626,8 @@ fn play_guard_reaches_a_plugin_note_after_reported_processing_latency() {
             RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
                 &p,
                 vec![
-                    (Stand::new(Behaviour::Instrument), INSTRUMENT),
-                    (Stand::new(Behaviour::Delay(512)), PluginSlotInfo { latency: 512, ..EFFECT }),
+                    (Stand::new(Behavior::Instrument), INSTRUMENT),
+                    (Stand::new(Behavior::Delay(512)), PluginSlotInfo { latency: 512, ..EFFECT }),
                 ],
             )),
             SR,
@@ -1647,7 +1647,7 @@ fn play_guard_reaches_a_plugin_note_after_reported_processing_latency() {
 #[test]
 fn pitch_releases_the_transposed_plugin_note_on_repeated_transport_starts() {
     let p = project(vec![note(0.0, 8.0, 69)], 8.0, vec![device("pitch", &[("pitch", 12.0)]), plug(vst3())]);
-    let stand = Stand::new(Behaviour::Instrument);
+    let stand = Stand::new(Behavior::Instrument);
     let seen = Arc::clone(&stand.seen);
     let mut renderer = Renderer::build(
         &p,
@@ -1687,8 +1687,8 @@ fn stopping_a_plugin_note_joins_the_delayed_release_without_a_step() {
                 RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()).with_plugins(plugins(
                     &p,
                     vec![
-                        (Stand::new(Behaviour::Instrument), INSTRUMENT),
-                        (Stand::new(Behaviour::Delay(latency)), PluginSlotInfo { latency: latency as u32, ..EFFECT }),
+                        (Stand::new(Behavior::Instrument), INSTRUMENT),
+                        (Stand::new(Behavior::Delay(latency)), PluginSlotInfo { latency: latency as u32, ..EFFECT }),
                     ],
                 )),
                 SR,
@@ -1731,7 +1731,7 @@ fn diagnostic_slot(processor: Box<dyn PluginProcessor>) -> crate::plugin::Plugin
 #[test]
 fn unanswered_trips_do_not_replace_the_longest_answered_trip() {
     use std::time::Instant;
-    let mut slot = diagnostic_slot(Box::new(Stand::new(Behaviour::Gone)));
+    let mut slot = diagnostic_slot(Box::new(Stand::new(Behavior::Gone)));
     slot.longest_us = 7;
     let deadline = Some(Instant::now() + Duration::from_secs(1));
     let mut samples = [0.0; 16];
@@ -1859,11 +1859,11 @@ fn notes_end_at_the_instrument_and_an_effect_after_it_gets_none() {
     let stands = |before: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>,
                   instrument: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>,
                   after: &Arc<std::sync::Mutex<Vec<(usize, NoteEvent)>>>| {
-        let mut a = Stand::new(Behaviour::Gain(1.0));
+        let mut a = Stand::new(Behavior::Gain(1.0));
         a.seen = Arc::clone(before);
-        let mut b = Stand::new(Behaviour::Instrument);
+        let mut b = Stand::new(Behavior::Instrument);
         b.seen = Arc::clone(instrument);
-        let mut c = Stand::new(Behaviour::Gain(1.0));
+        let mut c = Stand::new(Behavior::Gain(1.0));
         c.seen = Arc::clone(after);
         vec![(a, EFFECT), (b, INSTRUMENT), (c, EFFECT)]
     };
@@ -1887,7 +1887,7 @@ fn notes_end_at_the_instrument_and_an_effect_after_it_gets_none() {
 fn a_plug_in_after_a_delaying_one_is_told_the_song_of_what_it_hears() {
     const LATENCY: u32 = 4_800;
     let p = project(vec![note(0.0, 1.0, 60)], 8.0, vec![plug(vst3()), plug(vst3())]);
-    let (first, second) = (Stand::new(Behaviour::Delay(LATENCY as usize)), Stand::new(Behaviour::Gain(1.0)));
+    let (first, second) = (Stand::new(Behavior::Delay(LATENCY as usize)), Stand::new(Behavior::Gain(1.0)));
     let (heard_first, heard_second) = (Arc::clone(&first.songs), Arc::clone(&second.songs));
     let mut renderer = Renderer::build(
         &p,
@@ -2023,9 +2023,9 @@ fn plug_ins_in_a_group_branch_are_told_the_song_of_the_devices_before_them() {
         vec![grouped(vec![vec![plug(vst3()), plug(vst3())], vec![plug(vst3())]])],
     );
     let stands = [
-        Stand::new(Behaviour::Delay(LATENCY as usize)),
-        Stand::new(Behaviour::Gain(1.0)),
-        Stand::new(Behaviour::Gain(1.0)),
+        Stand::new(Behavior::Delay(LATENCY as usize)),
+        Stand::new(Behavior::Gain(1.0)),
+        Stand::new(Behavior::Gain(1.0)),
     ];
     let heard: Vec<_> = stands.iter().map(|s| Arc::clone(&s.songs)).collect();
     let infos = [PluginSlotInfo { latency: LATENCY, ..EFFECT }, EFFECT, EFFECT];
@@ -2055,7 +2055,7 @@ fn the_main_channels_plug_ins_are_told_the_song_of_the_mix_they_hear() {
             devices: vec![plug(vst3())],
             ..Channel::new(ChannelId(2), "Main")
         });
-        let (track, main) = (Stand::new(Behaviour::Delay(latency as usize)), Stand::new(Behaviour::Gain(1.0)));
+        let (track, main) = (Stand::new(Behavior::Delay(latency as usize)), Stand::new(Behavior::Gain(1.0)));
         let (heard_track, heard_main) = (Arc::clone(&track.songs), Arc::clone(&main.songs));
         let mut renderer = Renderer::build(
             &p,
@@ -2095,7 +2095,7 @@ fn a_latency_reported_later_moves_the_song_the_next_plug_in_is_told() {
         info
     };
     controller.set_plugin_info(info(0));
-    let (first, second) = (Stand::new(Behaviour::Gain(1.0)), Stand::new(Behaviour::Gain(1.0)));
+    let (first, second) = (Stand::new(Behavior::Gain(1.0)), Stand::new(Behavior::Gain(1.0)));
     let (heard_first, heard_second) = (Arc::clone(&first.songs), Arc::clone(&second.songs));
     controller.send_plugin(keys[0], Box::new(first)).unwrap();
     controller.send_plugin(keys[1], Box::new(second)).unwrap();

@@ -159,7 +159,7 @@ pub const MAX_BLOCK_FRAMES: usize = MAX_BLOCK;
 const MAX_VOICES: usize = 64;
 /// Audio clips that can play at once; more overlapping clips than this are skipped.
 const MAX_AUDIO_VOICES: usize = 64;
-/// Audio clips play at unity gain (0 dB) on a centred track: this undoes the headroom scaling
+/// Audio clips play at unity gain (0 dB) on a centered track: this undoes the headroom scaling
 /// that `track_gains` applies for the sine voices.
 const AUDIO_HEADROOM: f32 = 4.0;
 /// Voice and event tag for "not on a launcher column".
@@ -1938,7 +1938,7 @@ pub(crate) fn start_note(
 
 /// Where a track's sound goes: its bus (0 for the output, 1 + the chain's index when the track
 /// has a chain) and the gains its sources are mixed at; `None` when the track is silent and has no
-/// chain. A track with a chain is mixed at a centred unity gain, and its own gains apply after
+/// chain. A track with a chain is mixed at a centered unity gain, and its own gains apply after
 /// the chain.
 pub(crate) fn route(project: &Project, chains: &[Chain], track: TrackId) -> Option<(u32, (f32, f32))> {
     // A track with a chain plays into it even while it is not heard (muted, or another track
@@ -2045,7 +2045,7 @@ pub fn render_launches(
 }
 
 /// [`render_launches`] playing what `inputs` holds. This is the same path a live
-/// [`Controller`] drives, so launcher behaviour renders offline exactly as it plays.
+/// [`Controller`] drives, so launcher behavior renders offline exactly as it plays.
 pub fn render_launches_from(
     project: &Project,
     inputs: RenderInputs,
@@ -2128,7 +2128,7 @@ pub(crate) fn track_gains(project: &Project, track: TrackId) -> Option<(f32, f32
         volume *= gain(master);
     }
     let (left, right) = suhina_dsp::pan::gains(pan);
-    // Scaled so a centred note has unity gain on each side, and quieter overall to leave headroom.
+    // Scaled so a centered note has unity gain on each side, and quieter overall to leave headroom.
     let scale = volume * std::f64::consts::SQRT_2 * 0.25;
     Some(((left * scale) as f32, (right * scale) as f32))
 }

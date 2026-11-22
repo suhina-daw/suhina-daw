@@ -102,6 +102,7 @@ pub const ATTRIBUTES: &[(&str, &str)] = &[
     ("header-side", "the Arrangement header column's side of the timeline: left or right"),
     ("disclosure", "a container's reserved full-height disclosure gutter: left or right"),
     ("narrow", "a mixer strip 96 points wide or less"),
+    ("name", "which dialog a dialog is: export, color-picker, unsaved and the others its element lists"),
 ];
 
 /// The toolbar's areas, by id (`#tempo`).
@@ -126,7 +127,7 @@ pub const GROUP_IDS: &[&str] = &[
     "toolbar-start",
     "toolbar-end",
     "app-bar-start",
-    "app-bar-centre",
+    "app-bar-center",
     "app-bar-end",
     "mixer-body",
     "mixer-output",
@@ -558,8 +559,8 @@ pub const ELEMENTS: &[Element] = &[
         .artwork(&[own("volume.track"), own("volume.fill"), own("volume.handle")]),
     element("value-fill", Part, "The lit part of a level bar."),
     element("value-handle", Part, "The handle where a level bar's fill ends."),
-    element("pan", Control, "A pan control; drawn as a field, its centre's ticks are `pan-centre` and the bar from the centre its `value-fill`; drawn as a bar, its track is `pan[kind=\"bar\"]`.")
-        .parts(&["pan-centre", "value-fill"])
+    element("pan", Control, "A pan control; drawn as a field, its center's ticks are `pan-center` and the bar from the center its `value-fill`; drawn as a bar, its track is `pan[kind=\"bar\"]`.")
+        .parts(&["pan-center", "value-fill"])
         .attributes(&["kind"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
         .settings(VALUE_SETTINGS)
@@ -570,7 +571,7 @@ pub const ELEMENTS: &[Element] = &[
             own("pan.knob.body"),
             own("pan.knob.pointer"),
         ]),
-    element("pan-centre", Drawn, "The ticks at a pan field's centre."),
+    element("pan-center", Drawn, "The ticks at a pan field's center."),
     element("fader", Control, "A mixer strip's fader.")
         .parts(&["fader-cap", "fader-rail", "fader-scale"])
         .ids(Ids::Listed { prefix: "", names: LEVEL_FIELDS })
@@ -635,18 +636,20 @@ pub const ELEMENTS: &[Element] = &[
     element("tooltip", Region, "A tooltip, and the pill that follows the pointer while something is dragged: its `background-color`, its `color`, its `border-color` and, when what is under the pointer takes the drop, its `accent-color` for its edge.").settings(FLOATING),
     element("progress", Drawn, "A progress bar: a dialog's, the sample map's busy card and the MIDI panel's range bar.").parts(&["progress-fill"]),
     element("progress-fill", Part, "A progress bar's done part, in each of those."),
-    element("colour-picker", Region, "The non-modal track colour window: compact palettes and expandable precise controls."),
     element("colour-field", Control, "The colour field or wheel, with its border and keyboard focus outline.").attributes(&["kind"]),
     // Pages and dialogs.
     element("settings", Region, "The Settings page; docked over the views, `backdrop-filter: blur(<length>)` blurs them behind it.").parts(&["settings-nav"]).settings(FLOATING),
     element("settings-nav", Control, "An entry of the Settings page's list, `[checked]` for the page shown.").attributes(&["checked"]),
-    element("dialog", Region, "A dialog.").parts(&["dialog-title", "list-row"]).settings(FLOATING),
+    element("dialog", Region, "A dialog, named by its `name`: `about`, `agent`, `ara-edits` (Another track), `backup`, `closing`, `color-picker` (the track colour window), `export`, `folder-drop`, `group-removal`, `loading`, `missing-files`, `move-folder`, `name-clash`, `project` (New or open), `save`, `splash`, `theme-exists`, `unsaved` and `updates`. Its `padding` is the room between its edge and what it holds; its title row runs along its top inside its border, outside the padding.")
+        .parts(&["dialog-title", "dialog-actions", "list-row"])
+        .attributes(&["name"])
+        .settings(FLOATING),
     element("dialog-title", Part, "A dialog's title row, with its Close button: its `background-color`, its words `label[kind=\"title\"]`."),
+    element("dialog-actions", Part, "A dialog's row of buttons along the bottom of what it holds, laid out as a flex row: `justify-content` and `gap` place them, and a `flexible-space` in it, where a dialog puts one, takes the room left."),
     element("colour-swatch", Control, "A swatch of the colour picker, in a track's or a clip's menu: its `border-color` outlines the chosen one and the one under the pointer, and the square of the colour beside a picker's name, `colour-swatch[kind=\"square\"]`.").attributes(&["kind"]),
     element("list-row", Control, "A row of a list in a dialog or on the start page that a click picks (a recent project, a template): its `background-color` under the pointer, its `color` for its name. A dialog's row is `list-row[kind=\"dialog\"]`, a row of the Plug-in manager's table `list-row[kind=\"plugin\"]` (its fill while picked and under the pointer), a row of the missing files panel's table `list-row[kind=\"missing-file\"]` (the same) and the colour picker's row beside a name `list-row[kind=\"picker\"]`.").attributes(&["selected", "kind"]),
     element("start-page", Region, "The page shown with no project open."),
     element("plugin-manager", Region, "The Plug-in manager."),
-    element("export", Region, "The Export audio dialog."),
     element("theme-card", Control, "A theme's card in the theme picker, `[selected]` for the theme in use: its `border-color` for its edge (and for a swatch's ring), its `background-color` for the tint under the theme in use and its `accent-color` for the word *Active*.")
         .parts(&["theme-swatch"])
         .attributes(&["selected"]),

@@ -2068,7 +2068,7 @@ fn position_of(plot: Rect, y: f32) -> f64 {
 
 /// The lane position at height `y` in `plot`, not held in the lane: 1.2 is a fifth of the plot
 /// above its top. A point drag measures the pointer with it, so a point taken hold of off its
-/// centre still reaches the lane's ends when the pointer goes past them (#811).
+/// center still reaches the lane's ends when the pointer goes past them (#811).
 fn place_of(plot: Rect, y: f32) -> f64 {
     if plot.height() > 0.0 { f64::from((plot.bottom() - y) / plot.height()) } else { 0.0 }
 }
@@ -4014,7 +4014,7 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
 }
 
 /// A parameter's row in the menu: its name (short under a group's heading) and " •" when it has
-/// points; selected for the lane's own, greyed out when it is not `free`. Its accessible label is
+/// points; selected for the lane's own, grayed out when it is not `free`. Its accessible label is
 /// the whole "Device: Name". Answers whether it was clicked.
 fn parameter_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scroll: bool) -> bool {
     let mark = if choice.points.is_empty() { "" } else { " •" };
@@ -4033,7 +4033,7 @@ fn parameter_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scr
 
 /// A parameter's copy in the menu's "Automated" section: its whole name ("Utility: Gain"), as it
 /// stands outside its device's heading, selected for the lane's own (scrolled to on `scroll`)
-/// and greyed out when it is not `free`. Its accessible label ends in " (automated)", apart from
+/// and grayed out when it is not `free`. Its accessible label ends in " (automated)", apart from
 /// its row in its device. Answers whether it was clicked.
 fn automated_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scroll: bool) -> bool {
     let selected = choice.key == *current;
@@ -4057,7 +4057,7 @@ fn automated_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scr
 /// groups start closed except those holding the lane's own parameter (`current`), which is
 /// scrolled into view, and a track's only device; a search shows the devices and groups with
 /// matches open, and Enter takes the first match. A parameter another lane shows (`shown`) is
-/// greyed out. The menu fits in `room`, the height on its side of the dropdown, so it grows as
+/// grayed out. The menu fits in `room`, the height on its side of the dropdown, so it grows as
 /// headings open without moving. The lane's own parameter is scrolled to where it was chosen:
 /// its copy under "Automated" when it was chosen there (`from_automated`) and still has points,
 /// its own row otherwise; its device and group open either way. Answers the one chosen, and
@@ -4196,7 +4196,7 @@ fn parameter_menu(
 }
 
 /// The parameter menu under `response` (the top lane's dropdown, #1322): every parameter the
-/// track has, by device, those another lane shows greyed out. Answers the parameter chosen.
+/// track has, by device, those another lane shows grayed out. Answers the parameter chosen.
 fn parameter_dropdown(
     ui: &mut Ui,
     response: &egui::Response,

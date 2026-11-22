@@ -36,7 +36,7 @@
 @property --slot-empty { syntax: "<color>"; initial-value: #484642; }
 @property --track-mutedBackground { syntax: "<color>"; initial-value: #21201D; }
 @property --pan-background { syntax: "<color>"; initial-value: #1F1E1C; }
-@property --pan-centre { syntax: "<color>"; initial-value: #817F7A; }
+@property --pan-center { syntax: "<color>"; initial-value: #817F7A; }
 @property --clip-mutedBackground { syntax: "<color>"; initial-value: #A9A6A0; }
 @property --clip-mutedSelectedBackground { syntax: "<color>"; initial-value: #BDBAB4; }
 @property --track-headerMutedBackground { syntax: "<color>"; initial-value: #A9A6A0; }

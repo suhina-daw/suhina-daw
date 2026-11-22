@@ -215,6 +215,18 @@ impl SongHistory {
         }
     }
 
+    /// Native audio-effect contexts at their input time. Keep historical record boundaries:
+    /// continuous arrangement frames can still have different tempos or musical positions.
+    /// The caller copies these bounded spans before dispatching render workers.
+    pub(crate) fn contexts(
+        &self,
+        delay: u32,
+        frames: usize,
+    ) -> impl Iterator<Item = (AutomationSpan, suhina_device_api::ProcessContext)> + '_ {
+        let mut spans = self.spans(delay, frames);
+        std::iter::from_fn(move || spans.next_record())
+    }
+
     /// The song `frames` frames before the current block's start: the block that was playing
     /// then, moved on to that frame ([`SongPosition`]'s tempo, signature and loop of that block).
     /// Before playback began, the initial song stepped back ([`SongPosition::earlier`]).
@@ -276,7 +288,7 @@ pub(crate) struct AutomationSpans<'a> {
 }
 
 impl AutomationSpans<'_> {
-    fn next_record(&mut self) -> Option<AutomationSpan> {
+    fn next_record(&mut self) -> Option<(AutomationSpan, suhina_device_api::ProcessContext)> {
         if self.remaining == 0 {
             return None;
         }
@@ -314,10 +326,19 @@ impl AutomationSpans<'_> {
             parked: position_frame,
             advancing: song.playing && position >= 0,
         };
+        let elapsed = self.target - i128::from(at);
+        // A recorded block is one transport segment; loop/seek/tempo changes start a new
+        // record. Native effects need only its beat, tempo and playing state, not bar scans.
+        let context = suhina_device_api::ProcessContext {
+            tempo: song.tempo,
+            beat: song.beat
+                + if song.playing { elapsed as f64 * song.tempo / (60.0 * self.history.sample_rate) } else { 0.0 },
+            playing: song.playing,
+        };
         self.target += frames as i128;
         self.offset += frames;
         self.remaining -= frames;
-        Some(span)
+        Some((span, context))
     }
 }
 
@@ -325,10 +346,10 @@ impl Iterator for AutomationSpans<'_> {
     type Item = AutomationSpan;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut span = self.next_record()?;
+        let (mut span, _) = self.next_record()?;
         loop {
             let mut next = self.clone();
-            let Some(after) = next.next_record() else { break };
+            let Some((after, _)) = next.next_record() else { break };
             let end = span.time.map(|at| at.saturating_add(if span.advancing { span.frames as u64 } else { 0 }));
             if span.advancing != after.advancing
                 || end != after.time

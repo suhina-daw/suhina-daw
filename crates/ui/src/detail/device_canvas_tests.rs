@@ -2976,10 +2976,10 @@ fn button_drawn(style: Option<&str>, on: bool, fill: Color32) -> (bool, bool) {
     (artwork, filled)
 }
 
-/// A button's label has its capitals centred in the button, whatever the font's line height,
+/// A button's label has its capitals centered in the button, whatever the font's line height,
 /// at the SDK's size and at a size a sheet gives it (#1487 B12).
 #[test]
-fn a_buttons_label_sits_centred_in_the_button() {
+fn a_buttons_label_sits_centered_in_the_button() {
     for style in [None, Some("button { font-size: 14px; }")] {
         let canvas = Arc::new(DeviceUi {
             size: [60.0, 52.0],
@@ -3015,8 +3015,8 @@ fn a_buttons_label_sits_centred_in_the_button() {
             })
             .next()
             .expect("the label is drawn");
-        let centre = (top + bottom) / 2.0;
-        assert!((centre - 26.0).abs() <= 0.75, "{style:?}: the capitals' centre {centre} in a button centred at 26");
+        let center = (top + bottom) / 2.0;
+        assert!((center - 26.0).abs() <= 0.75, "{style:?}: the capitals' center {center} in a button centered at 26");
     }
 }
 

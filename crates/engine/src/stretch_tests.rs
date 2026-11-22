@@ -417,7 +417,7 @@ fn a_beat_between_close_markers_is_still_cut() {
     // The markers are cuts; no transients.
     let near = [0.0, 0.2, 2.2];
     assert_eq!(beats_without_a_cut(&fill, &near), vec![0.1, 1.2], "the beat at 0.1 is not hidden by 0");
-    // An even grid keeps its behaviour: a cut within half a beat hides the beat, one further out
+    // An even grid keeps its behavior: a cut within half a beat hides the beat, one further out
     // does not.
     let even = [0.0, 1.0, 2.0, 3.0];
     assert_eq!(beats_without_a_cut(&even, &[1.4]), vec![0.0, 2.0, 3.0]);

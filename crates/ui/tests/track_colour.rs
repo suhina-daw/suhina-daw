@@ -492,7 +492,7 @@ fn live_colour_drag(from_menu: bool) {
     harness.run();
     harness.get_by_label("+ More colours").click();
     harness.run();
-    harness.get_by_label("› Fine adjustment").click();
+    harness.get_by_label("Fine adjustment").click();
     harness.run();
     let field = harness.get_by_label("Colour field").rect();
     let from = field.left_top() + field.size() * 0.3;
@@ -662,7 +662,7 @@ fn selection_colour(harness: &mut Harness<'static, App>, mode: SelectionColour, 
 }
 
 /// A click on what is labelled `label`, with `modifiers` held (Ctrl adds to the selection): at its
-/// centre, or 6 points under its top for a clip's name bar, which picks the clip whole.
+/// center, or 6 points under its top for a clip's name bar, which picks the clip whole.
 fn pick(harness: &mut Harness<'static, App>, label: &str, name_bar: bool, modifiers: Modifiers) {
     let rect = harness.get_by_label(label).rect();
     let at = if name_bar { rect.center_top() + egui::vec2(0.0, 6.0) } else { rect.center() };

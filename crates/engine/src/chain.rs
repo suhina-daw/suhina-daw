@@ -49,7 +49,7 @@ const MAX_PENDING: usize = 256;
 const SUSTAIN_PEDAL: u8 = 64;
 
 const NOT_HELD: u64 = u64::MAX;
-/// Gain of a centred track at unity volume, which the sources of a chain track are mixed at
+/// Gain of a centered track at unity volume, which the sources of a chain track are mixed at
 /// (see `track_gains`); the track's real gains apply after the chain, divided by this.
 pub(crate) const CHAIN_INPUT_GAIN: f32 = 0.25;
 
@@ -109,10 +109,10 @@ pub(crate) struct Chain {
     /// a bus or an automated volume (those take a new graph).
     pub(crate) built_volume: Option<f64>,
     /// The pan it was built at, when its pan is applied live ([`Chain::set_live_pan`]): its gains
-    /// and its post-fader sends' are then built centred and [`Chain::pan`] carries the pan. None
+    /// and its post-fader sends' are then built centered and [`Chain::pan`] carries the pan. None
     /// for a bus (a group's pan does not apply) or a track with mix lanes, whose gains hold it.
     pub(crate) built_pan: Option<f64>,
-    /// The pan's equal-power factors on the left and right gains (1 and 1 centred), smoothed like
+    /// The pan's equal-power factors on the left and right gains (1 and 1 centered), smoothed like
     /// a fader as a live pan turns them; 1 and 1 without a live pan.
     pub(crate) pan: (LiveVolume, LiveVolume),
     /// A fader move since the graph was built, as a factor on `post`, its cue and its post-fader
@@ -571,7 +571,7 @@ impl Chain {
         self.pan.1.target = right;
     }
 
-    /// Builds the chain with its pan applied live from `pan`: its gains are centred.
+    /// Builds the chain with its pan applied live from `pan`: its gains are centered.
     pub(crate) fn set_built_pan(&mut self, pan: f64) {
         let (left, right) = pan_factors(pan);
         self.built_pan = Some(pan);
@@ -1828,9 +1828,18 @@ pub(crate) fn run_device_keyed(
     key: Option<&[f32]>,
 ) {
     // Give context-dependent instruments the tempo before an event at frame zero.
-    device.set_context(context);
-    let run_span = |device: &mut Box<dyn Device>, buffer: &mut [f32], from: usize, to: usize| {
-        process(device, buffer, from, to, &span_context(context, from, sample_rate), key);
+    let at_context = |frame| lanes.context_span(slot, frame, to, context, sample_rate).0;
+    let timed = lanes.has_context(slot);
+    device.set_context(&if timed { at_context(from) } else { *context });
+    let run_span = |device: &mut Box<dyn Device>, buffer: &mut [f32], mut from: usize, end: usize| {
+        while from < end {
+            let (heard, next) = lanes.context_span(slot, from, end, context, sample_rate);
+            if timed {
+                device.set_context(&heard);
+            }
+            process(device, buffer, from, next, &heard, key);
+            from = next;
+        }
     };
     let mut at_done = from;
     let mut changes = lanes.changes(slot, from, to).peekable();
@@ -1839,15 +1848,24 @@ pub(crate) fn run_device_keyed(
         while let Some(change) = changes.next_if(|c| c.frame <= at) {
             run_span(device, buffer, at_done, change.frame.max(at_done));
             at_done = change.frame.max(at_done);
+            if timed {
+                device.set_context(&at_context(at_done));
+            }
             device.set_param(change.param, change.value);
         }
         run_span(device, buffer, at_done, at);
         at_done = at;
+        if timed {
+            device.set_context(&at_context(at));
+        }
         device.event(event);
     }
     for change in changes {
         run_span(device, buffer, at_done, change.frame.max(at_done));
         at_done = change.frame.max(at_done);
+        if timed {
+            device.set_context(&at_context(at_done));
+        }
         device.set_param(change.param, change.value);
     }
     run_span(device, buffer, at_done, to);
@@ -1939,14 +1957,6 @@ pub(crate) fn set_song_delay(slot: &mut DeviceSlot, before: u32) {
     }
 }
 
-fn span_context(context: &ProcessContext, frame: usize, sample_rate: f64) -> ProcessContext {
-    let mut context = *context;
-    if context.playing {
-        context.beat += frame as f64 * context.tempo / (60.0 * sample_rate);
-    }
-    context
-}
-
 fn process(
     device: &mut Box<dyn Device>,
     buffer: &mut [f32],
@@ -1982,7 +1992,7 @@ impl Default for LiveVolume {
     }
 }
 
-/// The equal-power factors of pan `pan` (-1 to 1) on centred gains: 1 and 1 centred, √2 and 0 at
+/// The equal-power factors of pan `pan` (-1 to 1) on centered gains: 1 and 1 centered, √2 and 0 at
 /// the left end.
 /// A live level's factor against the level a graph was built at: `level` clamped to the most a
 /// fader or a send can be (+6 dB), or `None` when the ratio is not a finite `f32` (a built level
@@ -2040,7 +2050,7 @@ mod live_volume_tests {
     use suhina_model::{AutomationLane, AutomationPoint, Channel, ChannelId};
 
     /// The left output of a passthrough chain fed ones, after a fader move to `volume` has
-    /// settled, with a pan lane at the centre when `pan_lane`.
+    /// settled, with a pan lane at the center when `pan_lane`.
     fn settled(volume: f64, pan_lane: bool) -> f32 {
         let mut chain = Chain::passthrough(TrackId(1), 0, 48_000);
         if pan_lane {

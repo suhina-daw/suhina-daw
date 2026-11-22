@@ -188,12 +188,12 @@ impl Stretch {
         self.channels
     }
 
-    /// Samples between the input position and the centre of the block analysed for it.
+    /// Samples between the input position and the center of the block analysed for it.
     pub fn input_latency(&self) -> usize {
         self.stft.analysis_latency()
     }
 
-    /// Samples between a block's centre and when it is heard.
+    /// Samples between a block's center and when it is heard.
     pub fn output_latency(&self) -> usize {
         self.stft.synthesis_latency()
     }

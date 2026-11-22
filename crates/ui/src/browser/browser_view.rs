@@ -2505,7 +2505,7 @@ fn open_tags_section(projects: &mut Projects, out: &mut BrowserOut) {
     run(projects, "library.setSectionOpen", json!({ "section": SectionKind::Tags.name(), "open": true }), out);
 }
 
-/// Where a section title's chevron is drawn, its centre's x, in a sidebar whose left is `left`.
+/// Where a section title's chevron is drawn, its center's x, in a sidebar whose left is `left`.
 fn title_chevron_x(left: f32) -> f32 {
     left + PAD + 4.0
 }
