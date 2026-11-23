@@ -377,7 +377,7 @@ pub(crate) fn show(
         // a moment as the peak line is, or the level now. Red once past 0 dB.
         let mode_key = id.with("readout-mode");
         let mode = ui.ctx().data(|d| d.get_temp::<Readout>(mode_key)).unwrap_or_default();
-        let mut peak = |rect: Rect, db: f64, name: &str| {
+        let peak = |rect: Rect, db: f64, name: &str| {
             let area = Rect::from_center_size(
                 Pos2::new(rect.center().x, rect.top() - READOUT_HEIGHT / 2.0),
                 Vec2::new(rect.width().max(40.0), READOUT_HEIGHT),
@@ -702,7 +702,8 @@ fn band(painter: &egui::Painter, rect: Rect, low: f32, high: f32, color: Color32
 /// The color `t` of the way from `a` to `b`.
 fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
     let mix = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round().clamp(0.0, 255.0) as u8;
-    Color32::from_rgba_unmultiplied(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()), mix(a.a(), b.a()))
+    let ([ar, ag, ab, aa], [br, bg, bb, ba]) = (a.to_srgba_unmultiplied(), b.to_srgba_unmultiplied());
+    Color32::from_rgba_unmultiplied(mix(ar, br), mix(ag, bg), mix(ab, bb), mix(aa, ba))
 }
 
 /// The large meters' scales: dB beside the input and output meters, the reduction's beside its
