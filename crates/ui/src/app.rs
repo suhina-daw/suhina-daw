@@ -615,10 +615,9 @@ pub struct App {
     /// The main window was asked to be see-through, which its windows of their own follow.
     see_through_asked: bool,
     /// The detail area was closed as an editor (the splitter dragged down, the toolbar's ×, View ›
-    /// Hide editor): selecting a clip opens it again. And the clip shown last frame, to tell when
-    /// another is selected (`docs/spec/ui-clip-editor.md` › Least height and closing).
+    /// Hide editor): selecting a clip opens it again (`docs/spec/ui-clip-editor.md` › Least height
+    /// and closing).
     editor_closed: bool,
-    last_clip: Option<ClipRef>,
     /// The piano roll's own grid value, used unless Settings has it follow the control bar's.
     piano_grid: crate::detail::piano_roll_grid::PianoGrid,
     detail_width: f32,
@@ -892,7 +891,6 @@ impl App {
             window_corner: 0,
             see_through_asked: true,
             editor_closed: false,
-            last_clip: None,
             piano_grid: crate::detail::piano_roll_grid::PianoGrid::default(),
             detail_width: detail_view::STACK_WIDTH,
             page: PageState::default(),
@@ -3711,10 +3709,10 @@ impl App {
                 }
                 self.detail_showing = detail_view::Showing::Clip;
                 self.clip_opened = true;
-            } else if self.detail_open && shown_clip.is_some() && (clicked || shown_clip != self.last_clip) {
-                self.detail_showing = detail_view::Showing::Clip;
             }
-            self.last_clip = shown_clip;
+            // One click on a clip only selects it: the detail area keeps what it shows, a track's
+            // devices staying in view while clips are picked, and the clip editor showing the clip
+            // clicked when it was the editor that showed. A double-click opens the editor.
             self.expanded_panel = None;
             // The EQ panel's analyser reads the meter monitor's spectrum rings; the monitor's
             // arc goes to the panels through the frame's temp data, published here, before
