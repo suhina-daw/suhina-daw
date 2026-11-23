@@ -49,7 +49,7 @@ const METER_WIDTH: f32 = 9.0;
 const ARROW_WIDTH: f32 = 9.0;
 /// The widest a Meters view column grows, and the strip above its meter that holds its value.
 const METER_COLUMN: f32 = 110.0;
-const READOUT_HEIGHT: f32 = 30.0;
+const READOUT_HEIGHT: f32 = 18.0;
 /// The room the Meters view keeps on each side of a meter for its scale's numbers.
 const METER_ROOM: f32 = 18.0;
 /// The curve's points across the display.
@@ -373,16 +373,20 @@ pub(crate) fn show(
         let readout = |rect: Rect, text: String, color: Color32| {
             painter.text(Pos2::new(rect.center().x, rect.top() - 9.0), Align2::CENTER_CENTER, text, big.clone(), color);
         };
-        // Over each level meter its peak, held as its peak line is: red once past 0 dB.
+        // In the top of each level meter its peak, held as its peak line is, in a small box that
+        // turns red once the peak is past 0 dB.
         let peak = |rect: Rect, db: f64| {
             let held = peak_hold(ui.ctx(), rect, db);
-            let color = if held > 0.0 { METER_HOT } else { colors.text_secondary };
+            let over = held > 0.0;
+            let tag =
+                Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::new((rect.width() - 4.0).max(0.0), 13.0));
+            painter.rect_filled(tag, 3.0, if over { METER_HOT } else { Color32::from_black_alpha(170) });
             painter.text(
-                Pos2::new(rect.center().x, rect.top() - READOUT_HEIGHT + 6.0),
+                tag.center(),
                 Align2::CENTER_CENTER,
-                format!("peak {}", level_text(held)),
+                level_text(held),
                 small.clone(),
-                color,
+                if over { Color32::WHITE } else { colors.text_secondary },
             );
         };
         peak(areas.input, live.detector);
