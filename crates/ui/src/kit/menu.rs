@@ -29,6 +29,29 @@ pub fn item(ui: &mut Ui, text: &str, checked: bool) -> Response {
     response
 }
 
+/// An entry of a menu that does something (not a choice): `text` on it, the key that does the
+/// same (`key`, as the keymap shows it) at its right end in the hint ink, grayed and taking no
+/// click while `enabled` is false. The response, which the caller reads (`clicked()`, then
+/// `ui.close()`).
+pub fn entry(ui: &mut Ui, text: &str, key: Option<&str>, enabled: bool) -> Response {
+    let face = Face { shortcut: key, enabled, ..ENTRY };
+    let response = row(ui, text, false, 0.0, face);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
+    // A screen reader says the key after the name, as it does for any menu entry.
+    if let Some(key) = key {
+        ui.ctx().accesskit_node_builder(response.id, |node| node.set_keyboard_shortcut(key));
+    }
+    response
+}
+
+/// An entry that turns something on or off (a check box in a menu), checked while `on`: the
+/// response, which the caller reads (`clicked()` turns it the other way).
+pub fn toggle(ui: &mut Ui, text: &str, on: bool) -> Response {
+    let response = row(ui, text, on, 0.0, ENTRY);
+    response.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, on, text));
+    response
+}
+
 /// A compact entry of a context menu, as the piano roll's are: `text` in the small font, the key
 /// that does the same (`key`, as the keymap labels it) at its right end in the hint ink, grayed
 /// and taking no click while `enabled` is false. The response, which the caller reads
@@ -72,11 +95,33 @@ pub fn hint(ui: &mut Ui, text: &str) {
     words(ui, text, ink);
 }
 
+/// A note that explains the entries above it, dim, wrapped to the menu's width (`width`, or the
+/// room the menu has), taking no click.
+pub fn note(ui: &mut Ui, text: &str, width: Option<f32>) {
+    let ink = LABEL.attribute("kind", "hint").look().color();
+    // While egui measures the menu, the room it offers: a note given no width wraps at most there.
+    let width = width.unwrap_or_else(|| if ui.is_sizing_pass() { ui.available_width() } else { across(ui, 0.0) });
+    let wrap = (width - 2.0 * INSET).max(1.0);
+    let galley = ui.painter().layout(text.to_owned(), theme::ui_font(theme::TEXT_SMALL), ink, wrap);
+    let size = Vec2::new(width, galley.size().y.max(theme::ROW));
+    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
+    let at = Pos2::new(rect.left() + INSET, rect.center().y - galley.size().y / 2.0);
+    widgets::paint_text(ui.painter(), at, galley, ink);
+}
+
 /// A line between groups of entries.
 pub fn separator(ui: &mut Ui) {
-    let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), LINE), Sense::hover());
+    let (line, _) = ui.allocate_exact_size(Vec2::new(across(ui, 0.0), LINE), Sense::hover());
     let ink = SEPARATOR.attribute("kind", "menu").look().color();
     ui.painter().hline(line.x_range(), line.center().y, theme::hairline(ink));
+}
+
+/// How wide a row `width` wide at least is drawn: across the menu, which is as wide as its widest
+/// row. While egui measures the menu (its sizing pass) a row asks only for its own width, or the
+/// menu would grow to all the room it is offered, as a justified layout does not.
+fn across(ui: &Ui, width: f32) -> f32 {
+    if ui.is_sizing_pass() { width } else { width.max(ui.available_width()) }
 }
 
 /// How a row is drawn besides its words: in the small font (a compact context menu's) or the
@@ -107,7 +152,7 @@ fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32, face: Face<'_>) -> Re
     let key_width = face.shortcut.map_or(0.0, |key| widgets::text_width(ui, key, key_font.clone()) + KEY_GAP);
     let width = widgets::text_width(ui, text, font.clone()) + key_width + 2.0 * INSET + extra;
     let sense = if face.enabled { Sense::click() } else { Sense::hover() };
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width.max(ui.available_width()), face.height), sense);
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(across(ui, width), face.height), sense);
     let entry = BUTTON.attribute("kind", "entry");
     let look = entry.response(&response).attr(Checked, checked).look();
     let fill = if checked {
@@ -143,8 +188,7 @@ fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32, face: Face<'_>) -> Re
 fn words(ui: &mut Ui, text: &str, ink: egui::Color32) {
     let font = theme::ui_font(theme::TEXT);
     let width = widgets::text_width(ui, text, font.clone()) + 2.0 * INSET;
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(width.max(ui.available_width()), theme::ROW), Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(across(ui, width), theme::ROW), Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
     widgets::text_in(ui.painter(), rect.shrink2(Vec2::new(INSET, 0.0)), Align2::LEFT_CENTER, text, font, ink);
 }

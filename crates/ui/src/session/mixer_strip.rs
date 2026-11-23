@@ -620,12 +620,12 @@ fn output_row(
     widgets::dropdown(ui, painter, field, &response, current);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
-        let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
-        if ui.selectable_label(column.output_name.is_none(), text("Main")).clicked() && column.output_name.is_some() {
+        if crate::kit::menu::item(ui, "Main", column.output_name.is_none()).clicked() && column.output_name.is_some() {
             picked = Some(serde_json::Value::from("main"));
         }
         for (group, name) in groups.iter().filter(|(g, _)| *g != column.track) {
-            if ui.selectable_label(column.output == Some(*group), text(name)).clicked() && column.output != Some(*group)
+            if crate::kit::menu::item(ui, name, column.output == Some(*group)).clicked()
+                && column.output != Some(*group)
             {
                 picked = Some(serde_json::Value::from(group.0));
             }

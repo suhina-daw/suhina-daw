@@ -934,7 +934,8 @@ fn groups_nest_fold_and_take_tracks_from_the_menu_and_by_dragging() {
     harness.run();
     harness.get_by_label_contains("Move into group").click();
     harness.run();
-    harness.get_all_by_label("Group").next().unwrap().click();
+    // The submenu's first entry, the outer group; the menu's own Group (Ctrl+G) comes before it.
+    harness.get_all_by_label("Group").nth(1).unwrap().click();
     harness.run();
     assert!(parent_name(&harness, "Keys").is_some());
 

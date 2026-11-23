@@ -1051,9 +1051,8 @@ fn sample_recording(ui: &mut egui::Ui, bounds: Rect, track: TrackId, device: usi
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
             ui.spacing_mut().interact_size.y = bounds.height();
             ui.menu_button(format!("Input: {}", crate::interaction::menus::audio_input_text(&input)), |ui| {
-                let mut next_armed = armed;
-                if ui.checkbox(&mut next_armed, "Arm track").changed() {
-                    actions.push(Action::new("track.setArm", json!({"track":track.0, "armed":next_armed})));
+                if crate::kit::menu::toggle(ui, "Arm track", armed).clicked() {
+                    actions.push(Action::new("track.setArm", json!({"track":track.0, "armed":!armed})));
                 }
                 crate::interaction::menus::audio_input_choices(ui, track, &input, channels, actions);
             });
