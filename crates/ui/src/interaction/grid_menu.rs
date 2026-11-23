@@ -7,66 +7,46 @@
 use egui::Ui;
 
 use crate::detail::piano_roll_grid::{FIXED_VALUES, GridMode, PianoGrid, Width};
-use crate::kit::theme;
+use crate::kit::menu;
 
 /// A grid menu's entries, all in the menu itself, compact: Snap to grid; the adaptive widths in
-/// rows of three and the fixed values in two rows of five under small headings; Narrow grid,
-/// Widen grid and Triplet grid. `keys` are the key labels of snap, narrow, widen and triplet
-/// (empty for none). The chosen ones carry a tick; an entry `enabled` refuses is grayed out. The
-/// piano roll's toolbar, the Arrangement's toolbar and its menus show the same entries. Returns
-/// the grid picked.
+/// rows of three and the fixed values in two rows of five under headings; Narrow grid, Widen grid
+/// and Triplet grid, drawn with the kit's menu rows (`kit::menu`). `keys` are the key labels of
+/// snap, narrow, widen and triplet (empty for none). The chosen ones are filled; an entry
+/// `enabled` refuses is grayed out. The piano roll's toolbar, the Arrangement's toolbar and its
+/// menus show the same entries. Returns the grid picked.
 pub fn grid_entries(
     ui: &mut Ui,
     grid: PianoGrid,
     keys: &[String; 4],
     enabled: &dyn Fn(&PianoGrid) -> bool,
 ) -> Option<PianoGrid> {
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    let mono = theme::mono_font(theme::TEXT_SMALL);
     let picked = std::cell::Cell::new(None);
-    let hint = crate::kit::element::hint_ink();
     ui.set_min_width(220.0);
-    // A tick before a chosen entry, the room for one before the others, so names line up.
-    let ticked = |on: bool, name: &str| format!("{} {name}", if on { "\u{2713}" } else { "\u{2002}" });
-    // One row: its text, its key at the right, a tick when `on` says so.
-    let row = |ui: &mut Ui, name: &str, key: &str, on: Option<bool>, result: PianoGrid| {
-        let allowed = enabled(&result);
-        let text = egui::RichText::new(ticked(on.unwrap_or(false), name)).font(font.clone());
-        let button =
-            egui::Button::new(text).frame(false).shortcut_text(egui::RichText::new(key).font(mono.clone()).color(hint));
-        let response = ui.add_enabled(allowed, button);
-        let label = if key.is_empty() { name.to_string() } else { format!("{name} ({key})") };
-        response.widget_info(|| match on {
-            Some(on) => egui::WidgetInfo::selected(egui::Role::Button, allowed, on, &label),
-            None => egui::WidgetInfo::labeled(egui::Role::Button, allowed, &label),
-        });
-        if response.clicked() {
+    let pick = |ui: &mut Ui, entry: menu::Entry<'_>, result: PianoGrid| {
+        if entry.enabled(enabled(&result)).compact().show(ui).clicked() {
             picked.set(Some(result));
             ui.close();
         }
     };
-    // A heading, then `cells` in rows of `columns`: a short name, ticked when chosen, the grid
-    // it picks and its accessible label.
+    // A heading, then `cells` in rows of `columns`, each an equal share of the menu's width: a
+    // short name, filled when chosen, the grid it picks and the name read out.
     let table = |ui: &mut Ui, title: &str, columns: usize, cells: Vec<(String, bool, PianoGrid, String)>| {
-        ui.label(egui::RichText::new(title).font(font.clone()).color(hint));
-        egui::Grid::new(("grid-menu", title)).spacing(egui::vec2(10.0, 2.0)).show(ui, |ui| {
-            for (index, (name, on, result, label)) in cells.into_iter().enumerate() {
-                let allowed = enabled(&result);
-                let text = egui::RichText::new(ticked(on, &name)).font(font.clone());
-                let response = ui.add_enabled(allowed, egui::Button::new(text).frame(false));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, allowed, on, &label));
-                if response.clicked() {
-                    picked.set(Some(result));
-                    ui.close();
+        menu::heading(ui, title);
+        let gap = 2.0;
+        let width = ((ui.available_width() - gap * (columns as f32 - 1.0)) / columns as f32).max(36.0);
+        for line in cells.chunks(columns) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for (name, on, result, label) in line {
+                    let cell = egui::vec2(width, ui.spacing().interact_size.y);
+                    ui.allocate_ui(cell, |ui| pick(ui, menu::Entry::new(name).chosen(*on).named(label), *result));
                 }
-                if (index + 1) % columns == 0 {
-                    ui.end_row();
-                }
-            }
-        });
+            });
+        }
     };
-    row(ui, "Snap to grid", &keys[0], Some(grid.snap), grid.toggle_snap());
-    ui.separator();
+    pick(ui, menu::Entry::new("Snap to grid").check(grid.snap).key(Some(&keys[0])), grid.toggle_snap());
+    menu::separator(ui);
     let widths = Width::ALL
         .into_iter()
         .map(|w| {
@@ -75,7 +55,7 @@ pub fn grid_entries(
             (w.name().to_string(), grid.mode == GridMode::Adaptive(w), result, label)
         })
         .collect();
-    table(ui, "Adaptive grid:", 3, widths);
+    table(ui, "Adaptive grid", 3, widths);
     // Picking a value turns snapping back on (the control bar's none is snap off).
     let values = FIXED_VALUES
         .iter()
@@ -86,12 +66,12 @@ pub fn grid_entries(
             (name, grid.mode == GridMode::Fixed(i), result, v.to_string())
         })
         .collect();
-    table(ui, "Fixed grid:", 5, values);
-    ui.separator();
-    row(ui, "Narrow grid", &keys[1], None, grid.narrower());
-    row(ui, "Widen grid", &keys[2], None, grid.wider());
-    ui.separator();
-    row(ui, "Triplet grid", &keys[3], Some(grid.triplet), grid.toggle_triplet());
+    table(ui, "Fixed grid", 5, values);
+    menu::separator(ui);
+    pick(ui, menu::Entry::new("Narrow grid").key(Some(&keys[1])), grid.narrower());
+    pick(ui, menu::Entry::new("Widen grid").key(Some(&keys[2])), grid.wider());
+    menu::separator(ui);
+    pick(ui, menu::Entry::new("Triplet grid").check(grid.triplet).key(Some(&keys[3])), grid.toggle_triplet());
     picked.get().filter(|p| *p != grid)
 }
 

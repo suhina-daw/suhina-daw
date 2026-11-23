@@ -501,8 +501,8 @@ fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<Icon
     egui::Popup::menu(&response).show(|ui| {
         for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
             let enabled = matches!(button, IconButton::Paste) || selected;
-            let text = egui::RichText::new(icon_hint(button, paint.keymap)).font(theme::ui_font(theme::TEXT_SMALL));
-            if ui.add_enabled(enabled, egui::Button::new(text)).clicked() {
+            let text = icon_hint(button, paint.keymap);
+            if crate::kit::menu::Entry::new(&text).enabled(enabled).compact().show(ui).clicked() {
                 picked = Some(button);
                 ui.close();
             }
@@ -565,41 +565,32 @@ fn workflow_menu(
 /// dim at the right, then Allow stacked notes. A pick is left in `state` for the window, which
 /// keeps it in the keymap.
 pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Keymap, state: &mut PianoRollState) {
+    use crate::kit::menu::{self, Entry};
     use crate::settings::keymap::Preset;
     use crate::settings::workflow::{Pick, Setting};
     let mode = keymap.preset();
     let current = keymap.workflow();
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    // Each setting's value, dim at the right: `label[kind="hint"]`.
-    let hint = crate::detail::detail_view::hint_ink();
     let mut picked = None;
     for choice in Preset::MODES {
-        let response = ui.selectable_label(choice == mode, egui::RichText::new(choice.name()).font(font.clone()));
-        if response.clicked() {
+        if Entry::new(choice.name()).chosen(choice == mode).compact().show(ui).clicked() {
             if choice != mode {
                 picked = Some(Pick::Mode(choice));
             }
             ui.close();
         }
     }
-    ui.separator();
+    menu::separator(ui);
     // Each setting in a word or two, its value dim at the right and its choices one level down:
     // short enough to read at a glance, and changed and tried at once.
     for setting in Setting::ALL {
         let chosen = current.get(setting);
         let shown = setting.choices().get(chosen).copied().unwrap_or("");
         let value = setting.short_choices().get(chosen).copied().unwrap_or(shown);
-        let button = egui::Button::new(egui::RichText::new(setting.short_name()).font(font.clone())).right_text((
-            egui::RichText::new(value).font(font.clone()).color(hint),
-            egui::containers::menu::SubMenuButton::arrow_atom(None),
-        ));
         let label = format!("{}: {shown}", setting.name());
-        let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
+        let response = Entry::new(setting.short_name()).value(value).named(&label).compact().submenu(ui, |ui| {
             for (index, choice) in setting.choices().iter().enumerate() {
-                let response = ui.selectable_label(index == chosen, egui::RichText::new(*choice).font(font.clone()));
                 let name = format!("{}: {choice}", setting.name());
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, index == chosen, &name));
-                if response.clicked() {
+                if Entry::new(choice).chosen(index == chosen).named(&name).compact().show(ui).clicked() {
                     if index != chosen {
                         picked = Some(Pick::Setting(setting, index));
                     }
@@ -607,17 +598,14 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
                 }
             }
         });
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         response.on_hover_text(setting.note());
     }
     // How notes that land on others of their key behave belongs with how the mouse edits them
     // (› Allow stacked notes).
-    ui.separator();
+    menu::separator(ui);
     let stacked = !state.notes_replace;
-    let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
-    response
-        .widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Workflow: Allow stacked notes"));
-    if response.clicked() {
+    let entry = Entry::new("Allow stacked notes").check(stacked).named("Workflow: Allow stacked notes");
+    if entry.compact().show(ui).clicked() {
         state.view_picked = Some(super::ViewPick::AllowStacked(!stacked));
         ui.close();
     }
@@ -625,31 +613,23 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
     // runs on past the note placed over it (› Resizing, Covered notes).
     let whole = state.covered_whole;
     let mut covered_pick = None;
-    ui.add_enabled_ui(!stacked, |ui| {
-        let value = if whole { "Delete" } else { "Keep rest" };
-        let button = egui::Button::new(egui::RichText::new("Covered notes").font(font.clone())).right_text((
-            egui::RichText::new(value).font(font.clone()).color(hint),
-            egui::containers::menu::SubMenuButton::arrow_atom(None),
-        ));
-        let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
-            for (on, name) in [(true, "Delete them"), (false, "Keep the rest")] {
-                let response = ui.selectable_label(whole == on, egui::RichText::new(name).font(font.clone()));
-                let label = format!("Covered notes: {name}");
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, whole == on, &label));
-                if response.clicked() {
-                    if whole != on {
-                        covered_pick = Some(on);
-                    }
-                    ui.close();
+    let value = if whole { "Delete" } else { "Keep rest" };
+    let label = format!("Covered notes: {}", if whole { "Delete them" } else { "Keep the rest" });
+    let covered = Entry::new("Covered notes").value(value).named(&label).enabled(!stacked).compact();
+    let response = covered.submenu(ui, |ui| {
+        for (on, name) in [(true, "Delete them"), (false, "Keep the rest")] {
+            let label = format!("Covered notes: {name}");
+            if Entry::new(name).chosen(whole == on).named(&label).compact().show(ui).clicked() {
+                if whole != on {
+                    covered_pick = Some(on);
                 }
+                ui.close();
             }
-        });
-        let label = format!("Covered notes: {}", if whole { "Delete them" } else { "Keep the rest" });
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, !stacked, &label));
-        response.on_hover_text(
-            "With stacked notes off: a note that one placed over it covers from its start goes whole, or keeps what runs on past",
-        );
+        }
     });
+    response.on_hover_text(
+        "With stacked notes off: a note that one placed over it covers from its start goes whole, or keeps what runs on past",
+    );
     if let Some(on) = covered_pick {
         state.view_picked = Some(super::ViewPick::CoveredWhole(on));
     }
