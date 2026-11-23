@@ -178,12 +178,17 @@ pub(super) fn sub_row(lane_time: Rect, row: usize, rows: usize) -> Rect {
 }
 
 pub(super) fn clip_rect(lane_time: Rect, start: f64, length: f64, x_of: &dyn Fn(f64) -> f32) -> Rect {
-    let left = x_of(start).round();
-    Rect::from_min_max(
-        Pos2::new(left, lane_time.top()),
-        Pos2::new((x_of(start + length).round() - 1.0).max(left + 1.0), lane_time.bottom()),
-    )
+    // Held to a reach well past the lane's sides: zoomed in, a clip's ends are hundreds of
+    // thousands of points away, and a body drawn out to them lost precision and flickered. An end
+    // past the reach is far out of sight, so nothing (an edge, a handle) is seen where it is cut.
+    let reach = (lane_time.left() - CLIP_REACH, lane_time.right() + CLIP_REACH);
+    let left = x_of(start).round().clamp(reach.0, reach.1);
+    let right = (x_of(start + length).round() - 1.0).clamp(reach.0, reach.1);
+    Rect::from_min_max(Pos2::new(left, lane_time.top()), Pos2::new(right.max(left + 1.0), lane_time.bottom()))
 }
+
+/// How far past a lane's sides a clip's drawn body reaches (`clip_rect`).
+const CLIP_REACH: f32 = 4000.0;
 
 /// One arrangement clip: draws it and moves it when dragged, along its lane or onto another.
 /// Returns the clip and its start when it is being dragged onto another lane, to be drawn there.
