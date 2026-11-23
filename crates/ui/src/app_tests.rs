@@ -748,6 +748,15 @@ fn the_quick_add_palette_targets_the_track_of_the_clip_worked_on() {
     harness.state_mut().do_action("view.quickAdd", &mut Vec::new());
     harness.run();
     assert_eq!(harness.state().quick_add_target().and_then(|(track, _)| track), Some(keys), "a header clicked last");
+
+    // In the Launcher view, the slot clicked last.
+    harness.state_mut().quick_add = None;
+    harness.state_mut().shown = View::Session;
+    harness.state_mut().view.selected = Some(keys);
+    harness.state_mut().view.selected_slot = Some((other.0, 0));
+    harness.state_mut().view.track_focus = false;
+    harness.state_mut().do_action("view.quickAdd", &mut Vec::new());
+    assert_eq!(harness.state().quick_add_target().and_then(|(track, _)| track), Some(other.0), "the slot's track");
 }
 
 /// The ARA edits prompt and the missing files panel are drawn over the window: plug-in

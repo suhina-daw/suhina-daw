@@ -1104,48 +1104,55 @@ fn the_transient_commands_take_the_note_starts_found_in_the_background() {
     assert_eq!(harness.state_mut().with_transients(&ctx, vec![own.clone()]), [own]);
 }
 
-/// Ctrl+D duplicates the device the user is working on: one clicked on its panel's background,
-/// and one whose panel had a control pressed (a knob takes the press for itself, so no click
-/// reaches the panel). Each is one undo step (#1355).
+/// The duplicate key of each keymap preset (Ctrl+D, Ctrl+B in Draw-first) duplicates the device
+/// the user is working on: one clicked on its panel's background, and one whose panel had a
+/// control pressed (a knob takes the press for itself, so no click reaches the panel). Each is
+/// one undo step (#1355).
 #[test]
-fn ctrl_d_duplicates_a_device_picked_by_its_panel_or_a_control_on_it() {
+fn the_duplicate_key_duplicates_a_device_picked_by_its_panel_or_a_control_on_it() {
+    use suhina_ui::settings::keymap::{Keymap, Preset};
     let device_count =
         |h: &Harness<'static, App>| h.state().session().map(|s| s.project().channels[0].devices.len()).unwrap_or(0);
-    let mut app = App::new();
-    app.set_session(Session::new(project_with_a_device()), &[]);
-    let mut harness = window(app);
-    harness.get_by_label("Track Drums").click();
-    harness.run();
+    for (preset, key) in [(Preset::SelectFirst, Key::D), (Preset::DrawFirst, Key::B)] {
+        let mut app = App::new();
+        app.set_session(Session::new(project_with_a_device()), &[]);
+        let mut keymap = Keymap::default();
+        keymap.set_preset(preset);
+        app.set_keymap(keymap);
+        let mut harness = window(app);
+        harness.get_by_label("Track Drums").click();
+        harness.run();
 
-    harness.get_by_label("Device Utility").click();
-    harness.run();
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::D);
-    harness.run();
-    assert_eq!(device_count(&harness), 2, "a click on the panel, then Ctrl+D");
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
-    harness.run();
-    assert_eq!(device_count(&harness), 1, "one undo step");
+        harness.get_by_label("Device Utility").click();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, key);
+        harness.run();
+        assert_eq!(device_count(&harness), 2, "{preset:?}: a click on the panel, then the duplicate key");
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+        assert_eq!(device_count(&harness), 1, "{preset:?}: one undo step");
 
-    // A header click gives the keys to the tracks; a press on one of the panel's controls takes
-    // them back for the device.
-    harness.get_by_label("Track Drums").click();
-    harness.run();
-    let panel = harness.get_by_label("Device Utility").rect();
-    let control = [egui::accesskit::Role::Slider, egui::accesskit::Role::SpinButton]
-        .into_iter()
-        .flat_map(|role| harness.query_all_by_role(role).map(|n| n.rect()).collect::<Vec<_>>())
-        .find(|rect| panel.contains_rect(*rect))
-        .expect("a control on the Utility's panel");
-    harness.hover_at(control.center());
-    harness.run();
-    harness.drag_at(control.center());
-    harness.run();
-    harness.drop_at(control.center());
-    harness.run();
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::D);
-    harness.run();
-    assert_eq!(device_count(&harness), 2, "a press on a control, then Ctrl+D");
-    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
-    harness.run();
-    assert_eq!(device_count(&harness), 1, "one undo step");
+        // A header click gives the keys to the tracks; a press on one of the panel's controls
+        // takes them back for the device.
+        harness.get_by_label("Track Drums").click();
+        harness.run();
+        let panel = harness.get_by_label("Device Utility").rect();
+        let control = [egui::accesskit::Role::Slider, egui::accesskit::Role::SpinButton]
+            .into_iter()
+            .flat_map(|role| harness.query_all_by_role(role).map(|n| n.rect()).collect::<Vec<_>>())
+            .find(|rect| panel.contains_rect(*rect))
+            .expect("a control on the Utility's panel");
+        harness.hover_at(control.center());
+        harness.run();
+        harness.drag_at(control.center());
+        harness.run();
+        harness.drop_at(control.center());
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, key);
+        harness.run();
+        assert_eq!(device_count(&harness), 2, "{preset:?}: a press on a control, then the duplicate key");
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+        assert_eq!(device_count(&harness), 1, "{preset:?}: one undo step");
+    }
 }
