@@ -79,6 +79,9 @@ separator[kind="row"] { color: var(--border); }
 button { background-color: var(--control-background); color: var(--text-primary); border-color: var(--border-strong); accent-color: var(--accent); }
 button:hover { background-color: var(--control-hoverBackground); }
 button:disabled { color: var(--text-hint); }
+/* A push button with words (Save, Cancel): a hairline edge; the dialog's main action's in the accent. */
+button[kind="push"] { border-width: 1px; }
+button[kind="primary"] { border-width: 1px; border-color: var(--accent); }
 
 /* A toggle (mute, cue, a view's switch): dim words, a step brighter under the pointer; lit, the
    chosen fill and the text on it. Solo is lit in the accent, arm in the recording colors. The

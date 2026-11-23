@@ -791,8 +791,11 @@ with a `background-color` does not repaint the buttons on it. A control's own su
 (no border is drawn without a width; `border-width: 0 0 1px` or `border-bottom-width` and the
 other sides draw some sides only), `box-shadow` and `opacity`; `transparent` paints nothing.
 A button keeps its artwork (Suhina's `button.svg`, or your own `button` artwork) whatever
-background, radius or border you give it: they tint and round the artwork. To draw a button as
-its CSS shape alone, say `image: none` on it. For example, a toolbar as one surface with recessed
+background, radius or border you give it: the `background-color` colors the artwork (it is its
+`currentColor`), the radius rounds it, and your `background-image` and border are drawn over it.
+To draw a button as its CSS shape alone, say `image: none` on it. A push button with words (Save,
+Cancel) is `button[kind="push"]`, a dialog's main action `button[kind="primary"]`; their edge is
+their border, `border-width: 1px` unless you give another (`0` for none). For example, a toolbar as one surface with recessed
 displays:
 
 ```css

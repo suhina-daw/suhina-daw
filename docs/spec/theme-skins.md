@@ -608,9 +608,13 @@ every arrangement.
 `opacity` from its element, the native values where the sheet sets none. A transparent
 background paints nothing, never a see-through hole in the window. A button draws the artwork
 its cascaded `image` names (the user-agent sheet's `button { image: url("suhina:button.svg"); }`,
-or the theme's) unless the sheet says `image: none`: then it draws its CSS shape alone. A
-background, radius or border the sheet gives a button tints and rounds its artwork; it does not
-replace it, so whether a button has artwork never depends on which sheet set its colors (#1696).
+or the theme's) unless the sheet says `image: none`: then it draws its CSS shape alone. Over
+artwork, the sheet's `background-color` is the artwork's `currentColor`, its `border-radius` rounds
+it, its `background-image` is painted over it and its border over that, as CSS draws a border over
+the background; whether a button has artwork never depends on which sheet set its colors (#1696).
+A push button with words is `button[kind="push"]`, the dialog's main action
+`button[kind="primary"]`: its edge is its CSS border (the base sheet gives both `border-width:
+1px`, the primary one in the accent), not a line of the code's own.
 `appearance` is a separate choice, of what kind of control to draw (`pan { appearance: knob; }`);
 each kind draws the artwork `image` names for it. The toolbar's tempo, position and RAM/CPU
 fields paint the same way.

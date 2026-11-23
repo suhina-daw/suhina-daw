@@ -343,13 +343,17 @@ fn surface(
     decided: Option<f32>,
 ) {
     // The button's artwork, unless the sheet says `image: none` for it (`skin::button`): the sheet
-    // chooses the artwork, so a background, radius or border it gives tints and rounds the artwork
-    // rather than replacing it.
+    // chooses the artwork, so a background or radius it gives tints and rounds the artwork rather
+    // than replacing it, and its border is drawn over it, as CSS draws a border over the
+    // background.
     let fill = if decided.is_some() { fill } else { el.background_or(fill) };
     let artwork_radius = el.radius_or(radius);
     if super::skin::button(painter, rect, el, super::skin::State::response(response, on), fill, artwork_radius) {
         // The artwork cast the shadows already, in its own shape.
         el.paint_gradients_with(painter, rect, artwork_radius, decided.unwrap_or(1.0));
+        if let Some(style) = el.style() {
+            super::native_css::border(painter, rect, artwork_radius, &style);
+        }
         return;
     }
     let native = super::element::Native { radius, fill };
@@ -1823,7 +1827,9 @@ pub(crate) fn labeled_button(
 ) -> Response {
     let primary = push == Push::Primary;
     let response = button_area(ui, rect, id, label);
-    let el = BUTTON.response(&response).enter();
+    // `button[kind="push"]`, `[kind="primary"]` for the dialog's main action: its edge is its
+    // CSS border, which the base sheet gives.
+    let el = BUTTON.attribute("kind", if primary { "primary" } else { "push" }).response(&response).enter();
     let hovered = hover(ui, &response);
     let fill = if primary {
         motion::mix(el.accent(), el.hover_fade(1.0, Look::background), hovered * 0.25)
@@ -1832,9 +1838,6 @@ pub(crate) fn labeled_button(
     };
     let radius = el.radius_or(0.0);
     button_surface(painter, rect, &el, &response, primary, fill, radius);
-    // Its edge in its `border-color` (the accent for the primary one), its text in its `color`.
-    let edge = if primary { el.accent() } else { el.border() };
-    painter.rect_stroke(rect, radius, theme::hairline(edge), egui::StrokeKind::Inside);
     let small = theme::ui_font(theme::TEXT_SMALL);
     let ink = match push {
         Push::Primary => super::element::LABEL.attribute("kind", "inverse").look().color(),
