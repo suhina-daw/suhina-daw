@@ -91,10 +91,13 @@ pub(super) fn show(
     .into_iter()
     .enumerate()
     {
+        // Within the bar's padding box: a button face the sheet paints must not stand past the
+        // bar's overflow clip (a bar with a bottom border is a pixel shorter than its room).
         let rect = Rect::from_min_size(
             controls.min + egui::vec2(index as f32 * CONTROL_WIDTH, 0.0),
             egui::vec2(CONTROL_WIDTH, controls.height()),
-        );
+        )
+        .intersect(style_class.input_clip(whole));
         let glyph = ["−", "□", "×"].get(index).copied().unwrap_or("");
         let id = egui::Id::unique(("window-control", label));
         let response = crate::kit::widgets::button_area(ui, rect, id, format!("Window {label}")).on_hover_text(label);
