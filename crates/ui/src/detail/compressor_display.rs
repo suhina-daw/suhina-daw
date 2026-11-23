@@ -492,8 +492,23 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     if top < rect.bottom() {
         gradient(painter, rect, rect.bottom(), top, &stops, METER_LIT);
     }
-    segments(painter, rect, colors.window_background);
-    let tick = colors.text_secondary.gamma_multiply(0.35);
+    // The highest level lately, held a moment and then falling, as a line in the color lit there.
+    let held = peak_hold(painter.ctx(), rect, db);
+    if held > RANGE.0 {
+        let y = level_y(held, rect).round() + 0.5;
+        let color = stops
+            .windows(2)
+            .find_map(|pair| match pair {
+                [(y0, c0), (y1, c1)] if y <= *y0 && y >= *y1 => {
+                    let t = if (y1 - y0).abs() > f32::EPSILON { (y - y0) / (y1 - y0) } else { 0.0 };
+                    Some(blend(*c0, *c1, t))
+                }
+                _ => None,
+            })
+            .unwrap_or(METER_HOT);
+        painter.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(1.5, color));
+    }
+    let tick = colors.text_secondary.gamma_multiply(0.3);
     for mark in [-12.0, -24.0, -36.0, -48.0] {
         let y = level_y(mark, rect).round() + 0.5;
         painter.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(1.0, tick));
@@ -506,8 +521,34 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
 }
 
 /// How strongly a meter's lit part shows, and its unlit part.
-const METER_LIT: f32 = 0.72;
-const METER_UNLIT: f32 = 0.1;
+const METER_LIT: f32 = 0.6;
+const METER_UNLIT: f32 = 0.07;
+/// How long a meter's peak line holds, in seconds, and how fast it falls after, in dB a second.
+const PEAK_HOLD: f64 = 1.5;
+const PEAK_FALL: f64 = 20.0;
+
+/// The level a meter's peak line shows: the highest `db` seen in the last [`PEAK_HOLD`] seconds,
+/// then falling [`PEAK_FALL`] dB a second. Kept by the meter's place on screen; the window is drawn
+/// again while it falls.
+fn peak_hold(ctx: &egui::Context, rect: Rect, db: f64) -> f64 {
+    let now = ctx.input(|i| i.time);
+    let id = egui::Id::unique(("compressor-meter-peak", rect.left().round() as i32, rect.top().round() as i32));
+    let held = ctx.data_mut(|d| {
+        let (peak, at) = d.get_temp::<(f64, f64)>(id).unwrap_or((RANGE.0, now));
+        let since = now - at;
+        let fallen = if since > PEAK_HOLD { peak - (since - PEAK_HOLD) * PEAK_FALL } else { peak };
+        if db >= fallen {
+            d.insert_temp(id, (db, now));
+            db
+        } else {
+            fallen
+        }
+    });
+    if held > db && held > RANGE.0 {
+        ctx.request_repaint();
+    }
+    held
+}
 /// A level meter's colors near and past full scale.
 const METER_AMBER: Color32 = Color32::from_rgb(0xe8, 0xc0, 0x4f);
 const METER_HOT: Color32 = Color32::from_rgb(0xe8, 0x5a, 0x4f);
@@ -543,17 +584,6 @@ fn gradient(painter: &egui::Painter, rect: Rect, from: f32, to: f32, stops: &[(f
 fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
     let mix = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round().clamp(0.0, 255.0) as u8;
     Color32::from_rgba_unmultiplied(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()), mix(a.a(), b.a()))
-}
-
-/// Thin gaps across a meter every few points, so it reads as a column of segments.
-fn segments(painter: &egui::Painter, rect: Rect, gap: Color32) {
-    let gap = Stroke::new(1.0, gap.gamma_multiply(0.85));
-    let mut y = rect.bottom() - 3.0;
-    while y > rect.top() {
-        let line = y.round() + 0.5;
-        painter.line_segment([Pos2::new(rect.left(), line), Pos2::new(rect.right(), line)], gap);
-        y -= 3.0;
-    }
 }
 
 /// The large meters' scales: dB beside the input and output meters, the reduction's beside its
@@ -600,8 +630,7 @@ fn reduction_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palett
     if bottom > rect.top() + 0.5 {
         gradient(painter, rect, rect.top(), bottom, &stops, METER_LIT);
     }
-    segments(painter, rect, colors.window_background);
-    let tick = colors.text_secondary.gamma_multiply(0.35);
+    let tick = colors.text_secondary.gamma_multiply(0.3);
     for mark in [6.0, 12.0, 18.0] {
         let y = reduction_y(mark, rect).round() + 0.5;
         painter.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(1.0, tick));
