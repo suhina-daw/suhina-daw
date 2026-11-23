@@ -66,11 +66,14 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
 - **Kit widgets, not egui's** (AGENTS.md golden rule 15): a button is `widgets::button`, a field
   `widgets::text_input`, a value `widgets::number_input`/`percent_slider`, a switch
   `widgets::lit_toggle`, words `widgets::text_in`, and a menu's rows `kit::menu` (`item` for a
-  choice, `entry` for an action with its key and grayed state, `submenu`, `heading`, `hint`,
-  `note`, `separator`) inside the menu egui opens. The track, clip and device menus
-  (`interaction/menus.rs`) are the example; the arrangement's and piano roll's other menus still
-  use egui's rows and move over in #1688. A panel laid out in egui's flow (a column
-  of rows, as the track color window) takes `kit::controls` (`button`, `check_box`, `options`,
+  choice, `entry` for an action with its key and grayed state, `toggle` for a check box,
+  `submenu`, `heading`, `hint`, `note`, `separator`, `slider`) inside the menu egui opens; a row
+  that needs more (a grayed choice, a key beside a check box, a value at its right end, a name
+  read out apart from its words, a compact row, a submenu a click inside keeps open) is built
+  with `menu::Entry`. Every menu is drawn this way, the menu bar's and a drop-down's list
+  (`kit::widgets::combo_box`) included (`interaction/menus.rs` is the example). A menu's button
+  is a `widgets::button_area` with a dropdown face, not egui's `menu_button`. A panel laid out in
+  egui's flow (a column of rows, as the track color window) takes `kit::controls` (`button`, `check_box`, `options`,
   `disclosure`, `slider`, `heading`, `note`, `text`, `separator`); a view with a fixed geometry
   paints the same faces from `widgets` (`button_with_id`, `check_box`, `option_face`,
   `slider_face`) into its own rectangles. Both reuse the elements Settings and the dialogs use,

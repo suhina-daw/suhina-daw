@@ -100,18 +100,18 @@ pub(super) fn marker_flags(
                 egui::TextEdit::singleline(name).hint_text("Marker name").desired_width(140.0),
             );
             let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ui.button("Rename").clicked() || entered {
+            if crate::kit::menu::entry(ui, "Rename", None, true).clicked() || entered {
                 let name = name.trim().to_string();
                 if !name.is_empty() && name != marker.name {
                     actions.push(Action::new("marker.rename", json!({ "index": index, "name": name })));
                 }
                 ui.close();
             }
-            if ui.button("Jump to marker").clicked() {
+            if crate::kit::menu::entry(ui, "Jump to marker", None, true).clicked() {
                 actions.push(Action::new("marker.jump", json!({ "index": index })));
                 ui.close();
             }
-            if ui.button("Delete marker").clicked() {
+            if crate::kit::menu::entry(ui, "Delete marker", None, true).clicked() {
                 actions.push(Action::new("marker.delete", json!({ "index": index })));
                 ui.close();
             }
@@ -276,7 +276,7 @@ pub(super) fn loop_brace(
     }
     response.context_menu(|ui| {
         let on = timeline.loop_brace.is_some_and(|b| b.enabled);
-        if ui.button(if on { "Turn loop off" } else { "Turn loop on" }).clicked() {
+        if crate::kit::menu::entry(ui, if on { "Turn loop off" } else { "Turn loop on" }, None, true).clicked() {
             actions.push(Action::new("transport.setLoopEnabled", json!({ "enabled": !on })));
             ui.close();
         }

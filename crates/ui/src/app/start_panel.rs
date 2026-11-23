@@ -312,7 +312,7 @@ fn projects(ui: &mut Ui, area: Rect, state: &mut StartState, lists: &Lists, now:
                             choice = Some(StartChoice::Open(path.clone()));
                         }
                         response.context_menu(|ui| {
-                            if ui.button("Remove from list").clicked() {
+                            if crate::kit::menu::entry(ui, "Remove from list", None, true).clicked() {
                                 choice = Some(StartChoice::Forget(path.clone()));
                                 ui.close();
                             }

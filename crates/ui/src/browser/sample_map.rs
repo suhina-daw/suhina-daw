@@ -746,21 +746,23 @@ fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
         ui.label(egui::RichText::new("Labels").color(tier.secondary).size(theme::TEXT_SMALL));
         let percent = (view.label_size * 100.0).round() as u32;
         let name = |p: u32| if p == 0 { "Off".to_string() } else { format!("{p} %") };
-        egui::ComboBox::from_id_salt("sample-map-labels")
-            .width(56.0)
-            .selected_text(name(percent))
-            .show_ui(ui, |ui| {
+        crate::kit::widgets::combo_box(
+            ui,
+            egui::ComboBox::from_id_salt("sample-map-labels").width(56.0).selected_text(name(percent)),
+            |ui| {
                 for size in crate::settings::MAP_LABEL_SIZES {
-                    if ui.selectable_label(percent == size, name(size)).clicked() && percent != size {
-                        view.label_size = size as f32 / 100.0;
-                        events.push(MapEvent::LabelSize(size));
+                    if crate::kit::menu::item(ui, &name(size), percent == size).clicked() {
+                        if percent != size {
+                            view.label_size = size as f32 / 100.0;
+                            events.push(MapEvent::LabelSize(size));
+                        }
+                        ui.close();
                     }
                 }
-            })
-            .response
-            .on_hover_text(
-                "The size of the groups' names on the map; Off hides them, the legend still names the kinds",
-            );
+            },
+        )
+        .response
+        .on_hover_text("The size of the groups' names on the map; Off hides them, the legend still names the kinds");
     });
     together(ui, 170.0, |ui| {
         ui.label(egui::RichText::new("Volume").color(tier.secondary).size(theme::TEXT_SMALL));
@@ -899,34 +901,34 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
             return;
         };
         {
-            if ui.button("Show similar").clicked() {
+            if crate::kit::menu::entry(ui, "Show similar", None, true).clicked() {
                 events.push(MapEvent::Similar(i));
                 ui.close();
             }
             let pinned = points.get(i).is_some_and(|p| p.pinned);
-            if ui.button(if pinned { "Unpin" } else { "Pin" }).clicked() {
+            if crate::kit::menu::entry(ui, if pinned { "Unpin" } else { "Pin" }, None, true).clicked() {
                 events.push(MapEvent::Pin(i));
                 ui.close();
             }
             if !tags.is_empty() {
-                ui.menu_button("Tag", |ui| {
+                crate::kit::menu::submenu(ui, "Tag", false, |ui| {
                     for tag in tags {
-                        let mut on = points.get(i).is_some_and(|p| p.tags.contains(tag));
-                        if ui.checkbox(&mut on, tag.as_str()).clicked() {
-                            events.push(MapEvent::Tag { item: i, tag: tag.clone(), on });
+                        let on = points.get(i).is_some_and(|p| p.tags.contains(tag));
+                        if crate::kit::menu::toggle(ui, tag.as_str(), on).clicked() {
+                            events.push(MapEvent::Tag { item: i, tag: tag.clone(), on: !on });
                             ui.close();
                         }
                     }
                 });
             }
             if let Some(point) = points.get(i) {
-                ui.menu_button("Kind", |ui| kind_menu(ui, i, point, events));
+                crate::kit::menu::submenu(ui, "Kind", false, |ui| kind_menu(ui, i, point, events));
             }
-            if ui.button("Show in folder").clicked() {
+            if crate::kit::menu::entry(ui, "Show in folder", None, true).clicked() {
                 events.push(MapEvent::ShowInFolder(i));
                 ui.close();
             }
-            if ui.button("Copy to folder…").clicked() {
+            if crate::kit::menu::entry(ui, "Copy to folder…", None, true).clicked() {
                 events.push(MapEvent::CopyTo(i));
                 ui.close();
             }
@@ -1029,13 +1031,13 @@ fn kind_text(point: &MapPoint) -> String {
 /// The point menu's **Kind** submenu: **Automatic** (the name and the sound decide), then every
 /// kind, the one set by hand marked.
 fn kind_menu(ui: &mut Ui, item: usize, point: &MapPoint, events: &mut Vec<MapEvent>) {
-    if ui.radio(!point.by_hand, "Automatic").on_hover_text("From its name and its sound").clicked() {
+    if crate::kit::menu::item(ui, "Automatic", !point.by_hand).on_hover_text("From its name and its sound").clicked() {
         events.push(MapEvent::SetKind { item, kind: None });
         ui.close();
     }
-    ui.separator();
+    crate::kit::menu::separator(ui);
     for kind in Kind::ALL {
-        if ui.radio(point.by_hand && point.kind == kind, kind.label()).clicked() {
+        if crate::kit::menu::item(ui, kind.label(), point.by_hand && point.kind == kind).clicked() {
             events.push(MapEvent::SetKind { item, kind: Some(kind) });
             ui.close();
         }

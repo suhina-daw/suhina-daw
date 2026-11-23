@@ -326,7 +326,10 @@ impl App {
                             .selected_text(egui::RichText::new(chosen).font(mono.clone()).color(scope.color())),
                         |ui| {
                             for q in QUANTIZATION {
-                                ui.selectable_value(&mut chosen, q, egui::RichText::new(q).font(mono.clone()));
+                                if crate::kit::menu::item(ui, q, chosen == q).clicked() {
+                                    chosen = q;
+                                    ui.close();
+                                }
                             }
                         },
                     )

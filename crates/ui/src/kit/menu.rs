@@ -12,7 +12,7 @@
 use egui::{Align2, Pos2, Rect, Response, Role, Sense, Ui, Vec2, WidgetInfo};
 
 use crate::kit::element::{BUTTON, Checked, LABEL, SEPARATOR};
-use crate::kit::{theme, widgets};
+use crate::kit::{controls, theme, widgets};
 
 /// How far a row's words sit from its edges.
 const INSET: f32 = 8.0;
@@ -24,9 +24,7 @@ const LINE: f32 = 7.0;
 /// An entry of a menu, `text` on it, `checked` while it is the one chosen: the response, which
 /// the caller reads (`clicked()`, then `ui.close()`).
 pub fn item(ui: &mut Ui, text: &str, checked: bool) -> Response {
-    let response = row(ui, text, checked, 0.0, ENTRY);
-    response.widget_info(|| WidgetInfo::selected(Role::Button, true, checked, text));
-    response
+    Entry::new(text).chosen(checked).show(ui)
 }
 
 /// An entry of a menu that does something (not a choice): `text` on it, the key that does the
@@ -34,22 +32,13 @@ pub fn item(ui: &mut Ui, text: &str, checked: bool) -> Response {
 /// click while `enabled` is false. The response, which the caller reads (`clicked()`, then
 /// `ui.close()`).
 pub fn entry(ui: &mut Ui, text: &str, key: Option<&str>, enabled: bool) -> Response {
-    let face = Face { shortcut: key, enabled, ..ENTRY };
-    let response = row(ui, text, false, 0.0, face);
-    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
-    // A screen reader says the key after the name, as it does for any menu entry.
-    if let Some(key) = key {
-        ui.ctx().accesskit_node_builder(response.id, |node| node.set_keyboard_shortcut(key));
-    }
-    response
+    Entry::new(text).key(key).enabled(enabled).show(ui)
 }
 
 /// An entry that turns something on or off (a check box in a menu), checked while `on`: the
 /// response, which the caller reads (`clicked()` turns it the other way).
 pub fn toggle(ui: &mut Ui, text: &str, on: bool) -> Response {
-    let response = row(ui, text, on, 0.0, ENTRY);
-    response.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, on, text));
-    response
+    Entry::new(text).check(on).show(ui)
 }
 
 /// A compact entry of a context menu, as the piano roll's are: `text` in the small font, the key
@@ -58,29 +47,179 @@ pub fn toggle(ui: &mut Ui, text: &str, on: bool) -> Response {
 /// (`clicked()`, then `ui.close()`). The menu sizes to its widest entry, so it goes in a popup
 /// with a justified layout.
 pub fn action(ui: &mut Ui, text: &str, key: Option<&str>, enabled: bool) -> Response {
-    // As tall as the menu's rows are set (a compact menu sets them lower than a row).
-    let height = ui.spacing().interact_size.y.max(1.0);
-    let face = Face { small: true, height, shortcut: key, enabled };
-    let response = row(ui, text, false, 0.0, face);
-    response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
-    response
+    Entry::new(text).key(key).enabled(enabled).compact().show(ui)
 }
 
 /// An entry that opens a submenu of `content` beside it, its arrow at its right end; `marked`
 /// draws a dot before the arrow, for a submenu that holds the one chosen. The row's response.
 pub fn submenu(ui: &mut Ui, text: &str, marked: bool, content: impl FnOnce(&mut Ui)) -> Response {
-    let response = row(ui, text, false, ARROW, ENTRY);
-    response.widget_info(|| WidgetInfo::labeled(Role::MenuItem, true, text));
-    let ink = BUTTON.attribute("kind", "entry").response(&response).look().color();
-    let arrow = Pos2::new(response.rect.right() - INSET, response.rect.center().y);
-    let painter = ui.painter();
-    // Pointing right: the submenu opens beside the row.
-    widgets::chevron(painter, arrow, false, ink);
-    if marked {
-        painter.circle_filled(Pos2::new(arrow.x - 10.0, arrow.y), 2.0, ink);
+    Entry::new(text).marked(marked).submenu(ui, content)
+}
+
+/// What an entry is besides a row that takes a click.
+#[derive(Clone, Copy, PartialEq)]
+enum Mark {
+    /// It does something.
+    Action,
+    /// One of a set of choices, chosen or not.
+    Choice(bool),
+    /// A check box, on or off.
+    Check(bool),
+}
+
+/// An entry of a menu, set up step by step and drawn with [`Entry::show`] (or
+/// [`Entry::submenu`], for one that opens a submenu): what [`item`], [`entry`], [`toggle`],
+/// [`action`] and [`submenu`] draw, for the rows that need more than one of them says (a grayed
+/// choice, a key beside a check box, a value at the right end, a name read out that differs from
+/// the words shown).
+#[derive(Clone, Copy)]
+pub struct Entry<'a> {
+    text: &'a str,
+    name: Option<&'a str>,
+    trailing: Option<(&'a str, bool)>,
+    mark: Mark,
+    enabled: bool,
+    small: bool,
+    marked: bool,
+    keep_open: bool,
+}
+
+impl<'a> Entry<'a> {
+    /// An entry with `text` on it that does something, in the menu's font, taking a click.
+    pub fn new(text: &'a str) -> Self {
+        Entry {
+            text,
+            name: None,
+            trailing: None,
+            mark: Mark::Action,
+            enabled: true,
+            small: false,
+            marked: false,
+            keep_open: false,
+        }
     }
-    egui::containers::menu::SubMenu::new().show(ui, &response, content);
-    response
+
+    /// The key that does the same (as the keymap shows it) at its right end in the hint ink, read
+    /// out as its keyboard shortcut. `None` (or an empty key) shows none.
+    pub fn key(mut self, key: Option<&'a str>) -> Self {
+        self.trailing = key.filter(|k| !k.is_empty()).map(|k| (k, true));
+        self
+    }
+
+    /// A value at its right end in the hint ink, in the menu's font: what a submenu holds now.
+    pub fn value(mut self, value: &'a str) -> Self {
+        self.trailing = Some((value, false));
+        self
+    }
+
+    /// One of a set of choices, filled while `chosen`.
+    pub fn chosen(mut self, chosen: bool) -> Self {
+        self.mark = Mark::Choice(chosen);
+        self
+    }
+
+    /// A check box, filled while `on`.
+    pub fn check(mut self, on: bool) -> Self {
+        self.mark = Mark::Check(on);
+        self
+    }
+
+    /// Grayed, taking no click and opening no submenu, while `enabled` is false.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    /// In the small font and as tall as the menu's rows are set, as a compact context menu's.
+    pub fn compact(mut self) -> Self {
+        self.small = true;
+        self
+    }
+
+    /// The name a screen reader (and a test) reads, when it says more than the words shown.
+    pub fn named(mut self, name: &'a str) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    /// For a submenu: a dot before its arrow while `marked`, as for one that holds the choice.
+    pub fn marked(mut self, marked: bool) -> Self {
+        self.marked = marked;
+        self
+    }
+
+    /// For a submenu: a click inside it (into a field it holds) leaves it open; its own picks
+    /// close it.
+    pub fn keep_open(mut self) -> Self {
+        self.keep_open = true;
+        self
+    }
+
+    /// Draws the entry: the response, which the caller reads (`clicked()`, then `ui.close()`).
+    pub fn show(self, ui: &mut Ui) -> Response {
+        let checked = matches!(self.mark, Mark::Choice(true) | Mark::Check(true));
+        let response = row(ui, self.text, checked, 0.0, self.face(ui));
+        let (name, enabled) = (self.name.unwrap_or(self.text), self.enabled);
+        response.widget_info(|| match self.mark {
+            Mark::Action => WidgetInfo::labeled(Role::Button, enabled, name),
+            Mark::Choice(on) => WidgetInfo::selected(Role::Button, enabled, on, name),
+            Mark::Check(on) => WidgetInfo::selected(Role::CheckBox, enabled, on, name),
+        });
+        // A screen reader says the key after the name, as it does for any menu entry.
+        if let Some((key, true)) = self.trailing {
+            ui.ctx().accesskit_node_builder(response.id, |node| node.set_keyboard_shortcut(key));
+        }
+        response
+    }
+
+    /// Draws the entry as one that opens a submenu of `content` beside it, its arrow at its right
+    /// end. The row's response.
+    pub fn submenu(self, ui: &mut Ui, content: impl FnOnce(&mut Ui)) -> Response {
+        let response = row(ui, self.text, false, ARROW, self.face(ui));
+        let (name, enabled, marked) = (self.name.unwrap_or(self.text), self.enabled, self.marked);
+        // A marked submenu reads as selected (a chosen source behind it), as its dot shows.
+        response.widget_info(|| {
+            if marked {
+                WidgetInfo::selected(Role::MenuItem, enabled, true, name)
+            } else {
+                WidgetInfo::labeled(Role::MenuItem, enabled, name)
+            }
+        });
+        let mut ink = BUTTON.attribute("kind", "entry").response(&response).look().color();
+        if !enabled {
+            ink = crate::kit::element::hint_ink();
+        }
+        let arrow = Pos2::new(response.rect.right() - INSET, response.rect.center().y);
+        let painter = ui.painter();
+        // Pointing right: the submenu opens beside the row.
+        widgets::chevron(painter, arrow, false, ink);
+        if self.marked {
+            painter.circle_filled(Pos2::new(arrow.x - 10.0, arrow.y), 2.0, ink);
+        }
+        if enabled {
+            let mut sub = egui::containers::menu::SubMenu::new();
+            if self.keep_open {
+                let config = egui::containers::menu::MenuConfig::new()
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+                sub = sub.config(config);
+            }
+            sub.show(ui, &response, content);
+        }
+        response
+    }
+
+    /// How wide the entry is drawn at least: its words, its key or value and its insets. A
+    /// table of entries makes every cell this wide, so no row of it is wider than the menu egui
+    /// measured.
+    pub fn width(&self, ui: &Ui) -> f32 {
+        natural_width(ui, self.text, 0.0, self.face(ui)).0
+    }
+
+    fn face(&self, ui: &Ui) -> Face<'a> {
+        // A compact row is as tall as the menu's rows are set (lower than a full row).
+        let height = if self.small { ui.spacing().interact_size.y.max(1.0) } else { theme::ROW };
+        Face { small: self.small, height, trailing: self.trailing, enabled: self.enabled }
+    }
 }
 
 /// Words that head a group of entries and take no click.
@@ -110,6 +249,33 @@ pub fn note(ui: &mut Ui, text: &str, width: Option<f32>) {
     widgets::paint_text(ui.painter(), at, galley, ink);
 }
 
+/// A slider in a menu ([`controls::slider`]): `name` at its left, `shown(value)` at its right.
+/// [`SLIDER`] wide while egui measures the menu, so it does not grow the menu to all the room
+/// around it, and across the menu after. It moves in whole `step`s from the range's start. The
+/// response, `changed()` when `value` changed.
+pub fn slider(
+    ui: &mut Ui,
+    name: &str,
+    value: &mut f32,
+    range: std::ops::RangeInclusive<f32>,
+    step: f32,
+    shown: impl Fn(f32) -> String,
+) -> Response {
+    let width = across(ui, SLIDER);
+    ui.allocate_ui(Vec2::new(width, theme::ROW), |ui| controls::stepped_slider(ui, name, value, range, step, shown))
+        .inner
+}
+
+/// The ink of the chosen entry's words, on its chosen fill: for what a caller draws on a chosen
+/// row besides them (a waveform's picture).
+pub fn chosen_ink(response: &Response) -> egui::Color32 {
+    let look = BUTTON.attribute("kind", "entry").response(response).attr(Checked, true).look();
+    look.own_color_or(theme::text_on(look.background()))
+}
+
+/// How wide a slider in a menu is at least.
+const SLIDER: f32 = 240.0;
+
 /// A line between groups of entries.
 pub fn separator(ui: &mut Ui) {
     let (line, _) = ui.allocate_exact_size(Vec2::new(across(ui, 0.0), LINE), Sense::hover());
@@ -130,12 +296,10 @@ fn across(ui: &Ui, width: f32) -> f32 {
 struct Face<'a> {
     small: bool,
     height: f32,
-    shortcut: Option<&'a str>,
+    /// What its right end shows: a key (`true`, in the mono font) or a value (in the menu's).
+    trailing: Option<(&'a str, bool)>,
     enabled: bool,
 }
-
-/// An entry of a menu: the menu's font, a row tall, no key, clickable.
-const ENTRY: Face<'static> = Face { small: false, height: theme::ROW, shortcut: None, enabled: true };
 
 /// The room between a row's words and its key.
 const KEY_GAP: f32 = 16.0;
@@ -148,9 +312,8 @@ const KEY_GAP: f32 = 16.0;
 /// the entry's disabled color (the hint ink unless the theme gives one).
 fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32, face: Face<'_>) -> Response {
     let font = theme::ui_font(if face.small { theme::TEXT_SMALL } else { theme::TEXT });
-    let key_font = theme::mono_font(theme::TEXT_SMALL);
-    let key_width = face.shortcut.map_or(0.0, |key| widgets::text_width(ui, key, key_font.clone()) + KEY_GAP);
-    let width = widgets::text_width(ui, text, font.clone()) + key_width + 2.0 * INSET + extra;
+    let key_font = key_font(face, &font);
+    let (width, key_width) = natural_width(ui, text, extra, face);
     let sense = if face.enabled { Sense::click() } else { Sense::hover() };
     let (rect, response) = ui.allocate_exact_size(Vec2::new(across(ui, width), face.height), sense);
     let entry = BUTTON.attribute("kind", "entry");
@@ -170,18 +333,35 @@ fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32, face: Face<'_>) -> Re
         let disabled = BUTTON.attribute("kind", "entry").pointer(false, false, true).look().color();
         if disabled == look.color() { hint } else { disabled }
     } else if checked {
-        look.own_color_or(theme::text_on(look.background()))
+        chosen_ink(&response)
     } else {
         look.color()
     };
     let inside = Rect::from_min_max(rect.min + Vec2::new(INSET, 0.0), rect.max - Vec2::new(INSET + extra, 0.0));
-    if let Some(key) = face.shortcut {
+    if let Some((key, _)) = face.trailing {
         let key_ink = if face.enabled { hint } else { hint.gamma_multiply(0.6) };
         widgets::text_in(ui.painter(), inside, Align2::RIGHT_CENTER, key, key_font, key_ink);
     }
     let words = Rect::from_min_max(inside.min, inside.max - Vec2::new(key_width, 0.0));
     widgets::text_in(ui.painter(), words, Align2::LEFT_CENTER, text, font, ink);
     response
+}
+
+/// The font of a row's key (the mono font) or value (the row's own).
+fn key_font(face: Face<'_>, font: &egui::FontId) -> egui::FontId {
+    match face.trailing {
+        Some((_, true)) => theme::mono_font(theme::TEXT_SMALL),
+        _ => font.clone(),
+    }
+}
+
+/// How wide a row of `text` is at least, `extra` more at its right end, and how much of that its
+/// key or value takes.
+fn natural_width(ui: &Ui, text: &str, extra: f32, face: Face<'_>) -> (f32, f32) {
+    let font = theme::ui_font(if face.small { theme::TEXT_SMALL } else { theme::TEXT });
+    let key_font = key_font(face, &font);
+    let key_width = face.trailing.map_or(0.0, |(key, _)| widgets::text_width(ui, key, key_font) + KEY_GAP);
+    (widgets::text_width(ui, text, font) + key_width + 2.0 * INSET + extra, key_width)
 }
 
 /// One line of `text` in `ink` that takes no click, as wide as it needs.

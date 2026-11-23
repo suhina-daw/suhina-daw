@@ -758,7 +758,7 @@ pub(super) fn title_row(
         let response = widgets::button_area(ui, swatch, Id::unique(("clip-panel-color", panel.clip.0)), "Clip color");
         egui::Popup::menu(&response).show(|ui| {
             color_picker::clip_row(ui, panel.color, &[panel.clip], actions);
-            if ui.button("Track color").clicked() {
+            if crate::kit::menu::entry(ui, "Track color", None, true).clicked() {
                 actions.push(Action::new("clip.setColor", json!({ "clip": panel.clip.0, "color": "none" })));
                 ui.close();
             }
@@ -1235,13 +1235,12 @@ fn audio_part(
         ];
         match &panel.candidates {
             None => {
-                ui.label("Looking…");
+                crate::kit::menu::hint(ui, "Looking…");
             }
             Some(found) => {
                 for ((source, text), bpm) in names.into_iter().zip(found.iter()) {
                     let shown = bpm.map_or_else(|| format!("{text}: none"), |b| format!("{text}: {b:.2}"));
-                    let button = egui::Button::new(egui::RichText::new(shown)).wrap_mode(egui::TextWrapMode::Extend);
-                    if ui.add_enabled(bpm.is_some(), button).clicked() {
+                    if crate::kit::menu::Entry::new(&shown).enabled(bpm.is_some()).show(ui).clicked() {
                         set = bpm.map(|b| (b, source, false));
                         ui.close();
                     }

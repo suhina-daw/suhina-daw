@@ -18,7 +18,7 @@ use crate::detail::detail_view::ClipRef;
 use crate::detail::piano_roll::Placement;
 use crate::interaction::grid::track_color;
 use crate::interaction::key_name::key_name;
-use crate::kit::theme;
+use crate::kit::menu;
 
 /// The most ghost notes one clip shows, so a big project never draws without end.
 pub const MAX_GHOSTS: usize = 20_000;
@@ -559,7 +559,6 @@ fn round(beat: f64) -> f64 {
 /// None, Playing together, This track and, in a submenu, every other MIDI clip. A pick changes
 /// `source` at once: window state, not a command.
 pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostSource, word: bool) -> Rect {
-    let font = theme::ui_font(theme::TEXT_SMALL);
     let mut picked = None;
     // The button is short, so it fits beside the workflow menu, and drawn as the toolbar's other
     // menus are; it is dimmed while nothing shows, and its tooltip and accessible label name what
@@ -573,9 +572,7 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
     egui::Popup::menu(&response).show(|ui| {
         let mut entry = |ui: &mut Ui, choice: GhostSource, shown: &str, label: &str| {
             let on = *source == choice;
-            let response = ui.selectable_label(on, egui::RichText::new(shown).font(font.clone()));
-            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
-            if response.clicked() {
+            if menu::Entry::new(shown).chosen(on).named(label).compact().show(ui).clicked() {
                 picked = Some(choice);
                 ui.close();
             }
@@ -584,13 +581,13 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
             let name = choice.name(ghosts);
             entry(ui, choice, &name, &format!("Ghost notes: {name}"));
         }
-        ui.separator();
+        menu::separator(ui);
         let chosen = matches!(source, GhostSource::Clip(_));
-        let title = egui::RichText::new("Clip\u{2026}").font(font.clone());
-        let clip_menu = ui.menu_button(title, |ui| {
+        // Marked with a dot while a clip's notes are the ghosts.
+        let clips = menu::Entry::new("Clip\u{2026}").marked(chosen).named("Ghost notes: Clip\u{2026}");
+        clips.compact().submenu(ui, |ui| {
             if ghosts.choices.is_empty() {
-                let hint = crate::detail::detail_view::hint_ink();
-                ui.label(egui::RichText::new("No other MIDI clip").font(font.clone()).color(hint));
+                menu::hint(ui, "No other MIDI clip");
             }
             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                 for choice in &ghosts.choices {
@@ -599,9 +596,6 @@ pub(crate) fn menu(ui: &mut Ui, rect: Rect, ghosts: &Ghosts, source: &mut GhostS
                 }
             });
         });
-        clip_menu
-            .response
-            .widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, chosen, "Ghost notes: Clip\u{2026}"));
     });
     response.on_hover_text(format!(
         "Ghost notes: {}. Notes of other clips drawn faintly behind this clip's notes",

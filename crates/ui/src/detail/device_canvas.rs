@@ -3,6 +3,7 @@
 
 //! SDK drawing programs are evaluated only on the UI thread.
 use crate::detail::detail_view::GraphParameter;
+use crate::kit::menu;
 use crate::kit::widgets::{Action, fixed};
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::json;
@@ -536,13 +537,10 @@ fn sample_waveform(
     response.context_menu(|ui| {
         if slicing {
             if let Some(key) = selected_key {
-                ui.label(format!(
-                    "Slice {} · {} (MIDI {key})",
-                    selected_index + 1,
-                    crate::interaction::key_name::key_name(key)
-                ));
+                let name = crate::interaction::key_name::key_name(key);
+                menu::heading(ui, &format!("Slice {} · {name} (MIDI {key})", selected_index + 1));
             }
-            if ui.button("Zoom to selected slice").clicked() {
+            if menu::entry(ui, "Zoom to selected slice", None, true).clicked() {
                 if let Some(source) = &source {
                     let span = (selection_end - selection_start).clamp(1. / source.frames().max(1) as f64, 1.);
                     view = SampleView { start: selection_start.clamp(0., 1. - span), span };
@@ -556,32 +554,37 @@ fn sample_waveform(
                     .data(|d| d.get_temp::<(f64, f64)>(numeric_id))
                     .filter(|(old, _)| *old == selection_start)
                     .map_or(selection_start, |(_, value)| value);
-                ui.horizontal(|ui| {
-                    ui.label("Boundary (source fraction)");
-                    ui.add(egui::DragValue::new(&mut position).speed(0.0001).range(boundary_low..=boundary_high));
+                // Its place is typed inside, then applied: a click in it keeps it open.
+                menu::Entry::new("Move boundary").keep_open().submenu(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        crate::kit::controls::text(ui, "Boundary (source fraction)");
+                        let number =
+                            egui::DragValue::new(&mut position).speed(0.0001).range(boundary_low..=boundary_high);
+                        crate::kit::widgets::number_input(ui, None, number);
+                    });
+                    if menu::entry(ui, "Apply boundary", None, true).clicked() {
+                        edit_boundary(actions, "move", Some(selection_start), Some(position));
+                        ui.close();
+                    }
                 });
                 ui.ctx().data_mut(|d| d.insert_temp(numeric_id, (selection_start, position)));
-                if ui.button("Apply boundary").clicked() {
-                    edit_boundary(actions, "move", Some(selection_start), Some(position));
-                    ui.close();
-                }
-                if ui.button("Delete boundary").clicked() {
+                if menu::entry(ui, "Delete boundary", None, true).clicked() {
                     edit_boundary(actions, "delete", Some(selection_start), None);
                     ui.close();
                 }
             }
         }
-        if correction_mode && ui.button("Regenerate slices").clicked() {
+        if correction_mode && menu::entry(ui, "Regenerate slices", None, true).clicked() {
             edit_boundary(actions, "regenerate", None, None);
             ui.close();
         }
         // Shared waveform clients expose only commands their parameter contract supports.
         if parameters.iter().any(|p| p.id == "grid_division") {
-            ui.menu_button("Grid", |ui| {
+            menu::submenu(ui, "Grid", false, |ui| {
                 for (index, label) in
                     ["Off", "1/4", "1/8", "1/16", "1/32", "1/8 triplet", "1/16 triplet"].iter().enumerate()
                 {
-                    if ui.selectable_label(value("grid_division") as usize == index, *label).clicked() {
+                    if menu::item(ui, label, value("grid_division") as usize == index).clicked() {
                         actions.push(Action::new(
                             "device.setParam",
                             json!({"track":track.0,"device":address,"param":"grid_division","value":index}),
@@ -592,18 +595,27 @@ fn sample_waveform(
             });
         }
         if ["source_numerator", "source_denominator"].iter().all(|id| parameters.iter().any(|p| p.id == *id)) {
-            ui.menu_button("Source time signature", |ui| {
+            // Its count and its note value are set inside, then applied: a click in it keeps it open.
+            menu::Entry::new("Source time signature").keep_open().submenu(ui, |ui| {
                 let meter_id = source_id.with("meter-edit");
                 let mut meter = ui
                     .ctx()
                     .data(|d| d.get_temp::<(f64, usize)>(meter_id))
                     .unwrap_or((f64::from(value("source_numerator")).max(1.), value("source_denominator") as usize));
-                ui.add(egui::DragValue::new(&mut meter.0).range(1. ..=16.).speed(1.));
+                ui.horizontal(|ui| {
+                    crate::kit::controls::text(ui, "Beats");
+                    let number = egui::DragValue::new(&mut meter.0).range(1. ..=16.).speed(1.);
+                    crate::kit::widgets::number_input(ui, None, number);
+                });
+                menu::heading(ui, "Note value");
                 for (index, label) in ["2", "4", "8", "16"].iter().enumerate() {
-                    ui.radio_value(&mut meter.1, index, *label);
+                    if menu::item(ui, label, meter.1 == index).clicked() {
+                        meter.1 = index;
+                    }
                 }
                 ui.ctx().data_mut(|d| d.insert_temp(meter_id, meter));
-                if ui.button("Apply time signature").clicked() {
+                menu::separator(ui);
+                if menu::entry(ui, "Apply time signature", None, true).clicked() {
                     // One undo step: both values in one gesture.
                     for (param, value) in
                         [("source_numerator", meter.0.round()), ("source_denominator", meter.1 as f64)]
@@ -618,19 +630,19 @@ fn sample_waveform(
             });
         }
         if parameters.iter().any(|p| p.id == "grid_snap") {
-            let mut snapping = value("grid_snap") > 0.;
-            if ui.checkbox(&mut snapping, "Snap to grid (Alt bypasses)").changed() {
+            let snapping = value("grid_snap") > 0.;
+            if menu::toggle(ui, "Snap to grid (Alt bypasses)", snapping).clicked() {
                 actions.push(Action::new(
                     "device.setParam",
-                    json!({"track":track.0,"device":address,"param":"grid_snap","value":u8::from(snapping)}),
+                    json!({"track":track.0,"device":address,"param":"grid_snap","value":u8::from(!snapping)}),
                 ));
             }
         }
-        if ui.button("Show whole sample").clicked() {
+        if menu::entry(ui, "Show whole sample", None, true).clicked() {
             view = SampleView::default();
             ui.close();
         }
-        if ui.button("Zoom to source region").clicked() {
+        if menu::entry(ui, "Zoom to source region", None, true).clicked() {
             if let Some(source) = &source {
                 let minimum = 1. / source.frames().max(1) as f64;
                 let span = (active_end - active_start).clamp(minimum, 1.);
@@ -1045,19 +1057,19 @@ fn sample_recording(ui: &mut egui::Ui, bounds: Rect, track: TrackId, device: usi
         .unwrap_or_default();
     let record_x = bounds.right() - if recording { 152. } else { 78. };
     let menu = Rect::from_min_size(Pos2::new(record_x - 164., bounds.top()), Vec2::new(160., bounds.height()));
-    ui.scope_builder(
-        egui::UiBuilder::new().max_rect(menu).layout(egui::Layout::right_to_left(egui::Align::Center)),
-        |ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-            ui.spacing_mut().interact_size.y = bounds.height();
-            ui.menu_button(format!("Input: {}", crate::interaction::menus::audio_input_text(&input)), |ui| {
-                if crate::kit::menu::toggle(ui, "Arm track", armed).clicked() {
-                    actions.push(Action::new("track.setArm", json!({"track":track.0, "armed":!armed})));
-                }
-                crate::interaction::menus::audio_input_choices(ui, track, &input, channels, actions);
-            });
-        },
-    );
+    // A dropdown, as the toolbars' are: its words the input, its menu the input's choices.
+    let text = format!("Input: {}", crate::interaction::menus::audio_input_text(&input));
+    let id = sample_source_id(track, device).with("input-menu");
+    let response = crate::kit::widgets::button_area(ui, menu, id, &text);
+    // Its ink is picked against the device panel's surface it sits on.
+    let surface = crate::kit::style_class::surface_or(colors().panel_background);
+    crate::kit::widgets::subtle_dropdown(ui, ui.painter(), menu, &response, &text, surface);
+    egui::Popup::menu(&response).show(|ui| {
+        if menu::toggle(ui, "Arm track", armed).clicked() {
+            actions.push(Action::new("track.setArm", json!({"track":track.0, "armed":!armed})));
+        }
+        crate::interaction::menus::audio_input_choices(ui, track, &input, channels, actions);
+    });
     for (text, on, x) in [(if recording { "Recording" } else { "Record" }, true, 8.), ("Stop", false, 90.)] {
         if !on && !recording {
             continue;
@@ -1066,12 +1078,11 @@ fn sample_recording(ui: &mut egui::Ui, bounds: Rect, track: TrackId, device: usi
             Pos2::new(record_x + x - 8., bounds.top()),
             Vec2::new(if on { 78. } else { 70. }, bounds.height()),
         );
-        let response = ui.put(
-            button,
-            egui::Button::new(if on { format!("   {text}") } else { text.into() })
-                .corner_radius(0.)
-                .selected(on && recording),
-        );
+        // The kit's button, lit (its primary look) while recording; the record dot sits left of
+        // its words.
+        let words = if on { format!("   {text}") } else { text.to_owned() };
+        let id = sample_source_id(track, device).with(("record-button", on));
+        let response = crate::kit::widgets::button_with_id(ui, ui.painter(), button, id, &words, text, on && recording);
         if on {
             ui.painter().circle_filled(
                 Pos2::new(button.left() + 10., button.center().y),
@@ -2865,12 +2876,8 @@ pub(crate) fn show(
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
                 let mut picked = None;
-                // The standard popup frame, as every other dropdown's; `popup` styles its rows and
-                // `button[checked]` the chosen one (#1239).
+                // The kit's compact menu rows (`kit::menu`), styled as every menu's are.
                 popup.show(|ui| {
-                    let popup = crate::kit::element::POPUP.enter();
-                    let mut styled_ui = popup.ui(ui);
-                    let ui = &mut *styled_ui;
                     ui.spacing_mut().item_spacing.y = 0.;
                     ui.spacing_mut().scroll =
                         egui::style::ScrollStyle { bar_width: 6., ..egui::style::ScrollStyle::solid() };
@@ -2885,18 +2892,18 @@ pub(crate) fn show(
                         .map(|(_, label)| {
                             ui.fonts_mut(|fonts| {
                                 fonts
-                                    .layout_no_wrap((*label).into(), egui::FontId::proportional(11.), Color32::WHITE)
+                                    .layout_no_wrap(
+                                        (*label).into(),
+                                        crate::kit::theme::ui_font(crate::kit::theme::TEXT_SMALL),
+                                        Color32::WHITE,
+                                    )
                                     .size()
                                     .x
                             })
                         })
                         .fold(0., f32::max);
                     let scroll = &ui.spacing().scroll;
-                    let width = text_width
-                        + ui.spacing().button_padding.x * 2.
-                        + scroll.bar_width
-                        + scroll.bar_inner_margin
-                        + scroll.bar_outer_margin;
+                    let width = text_width + 16. + scroll.bar_width + scroll.bar_inner_margin + scroll.bar_outer_margin;
                     ui.set_min_width(
                         width.ceil() + if matches!(control.widget, Some(Widget::WaveformMenu)) { 48. } else { 0. },
                     );
@@ -2904,12 +2911,12 @@ pub(crate) fn show(
                     egui::ScrollArea::vertical().max_height(240.).show(ui, |ui| {
                         for (value, label) in choices {
                             let selected = p.value.round() == value;
-                            let text = egui::RichText::new(label).size(11.);
+                            let row = menu::Entry::new(label).chosen(selected).compact();
                             let clicked = if matches!(control.widget, Some(Widget::WaveformMenu)) {
-                                let response = ui.add_sized(
-                                    Vec2::new(ui.available_width(), 18.),
-                                    egui::Button::selectable(selected, text).right_text(()),
-                                );
+                                // Taller, for the wave drawn after its name.
+                                ui.spacing_mut().interact_size.y = 18.;
+                                let response = row.show(ui);
+                                ui.spacing_mut().interact_size.y = 14.;
                                 let icon = Rect::from_min_size(
                                     response.rect.left_top() + Vec2::new(text_width + 12., 3.),
                                     Vec2::new(36., 10.),
@@ -2928,12 +2935,12 @@ pub(crate) fn show(
                                     points,
                                     Stroke::new(
                                         1.,
-                                        if selected { ui.visuals().selection.stroke.color } else { colors().accent },
+                                        if selected { menu::chosen_ink(&response) } else { colors().accent },
                                     ),
                                 ));
                                 response.clicked()
                             } else {
-                                ui.selectable_label(selected, text).clicked()
+                                row.show(ui).clicked()
                             };
                             if clicked {
                                 picked = Some(value);

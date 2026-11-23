@@ -158,7 +158,23 @@ pub fn slider(
     step: f32,
     shown: impl Fn(f32) -> String,
 ) -> Response {
-    let (response, track, share) = slide(ui, name, value, range, step, shown, None);
+    let (response, track, share) = slide(ui, name, value, range, step, shown, None, false);
+    widgets::slider_face(ui, ui.painter(), track, &response, share, false);
+    response
+}
+
+/// A slider as [`slider`] that moves in whole `step`s from the range's start, so the value it
+/// draws and registers is the value it sets (a held drag between two steps changes nothing).
+/// The range's end stays reachable when the span is not a whole number of steps.
+pub fn stepped_slider(
+    ui: &mut Ui,
+    name: &str,
+    value: &mut f32,
+    range: RangeInclusive<f32>,
+    step: f32,
+    shown: impl Fn(f32) -> String,
+) -> Response {
+    let (response, track, share) = slide(ui, name, value, range, step, shown, None, true);
     widgets::slider_face(ui, ui.painter(), track, &response, share, false);
     response
 }
@@ -176,7 +192,7 @@ pub fn band(
     stops: &[Color32],
     fill: Color32,
 ) -> Response {
-    let (response, track, share) = slide(ui, name, value, range, step, shown, None);
+    let (response, track, share) = slide(ui, name, value, range, step, shown, None, false);
     widgets::band_face(ui, ui.painter(), track, &response, share, stops, fill);
     response
 }
@@ -196,7 +212,7 @@ pub fn stepped_band(
     let count = colors.len().max(1);
     let mut value = (*index).min(count - 1) as f32;
     let (mut response, track, share) =
-        slide(ui, name, &mut value, 0.0..=(count - 1) as f32, 1.0, |v| shown(v as usize), Some(count));
+        slide(ui, name, &mut value, 0.0..=(count - 1) as f32, 1.0, |v| shown(v as usize), Some(count), false);
     let next = value as usize;
     if next != *index {
         *index = next;
@@ -209,7 +225,9 @@ pub fn stepped_band(
 /// The row, the pointer and the keys of [`slider`], [`band`] and [`stepped_band`], with the
 /// words drawn: the response, the track the face is drawn in and the handle's share of it. With
 /// `cells`, the track is that many equal blocks for the whole numbers of `range` (from 0): the
-/// pointer takes the block it is over, and the handle's share is the middle of its block.
+/// pointer takes the block it is over, and the handle's share is the middle of its block. With
+/// `snap`, a change lands on a whole `step` from the range's start (the end stays reachable).
+#[allow(clippy::too_many_arguments)]
 fn slide(
     ui: &mut Ui,
     name: &str,
@@ -218,6 +236,7 @@ fn slide(
     step: f32,
     shown: impl Fn(f32) -> String,
     cells: Option<usize>,
+    snap: bool,
 ) -> (Response, Rect, f32) {
     let (low, high) = (*range.start(), *range.end());
     let (_, row) = ui.allocate_space(Vec2::new(ui.available_width(), HEIGHT));
@@ -258,6 +277,12 @@ fn slide(
         next += (right as f32 - left as f32) * step;
     }
     let next = if low <= high { next.clamp(low, high) } else { *value };
+    let next = if snap && next != *value && step > 0.0 && low <= high && next.is_finite() {
+        let near = (low + ((next - low) / step).round() * step).clamp(low, high);
+        if high - next < (near - next).abs() { high } else { near }
+    } else {
+        next
+    };
     if next != *value && next.is_finite() {
         *value = next;
         response.mark_changed();
