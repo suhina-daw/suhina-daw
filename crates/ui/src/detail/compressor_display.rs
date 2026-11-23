@@ -478,20 +478,15 @@ fn tabs(ui: &mut egui::Ui, display: Rect, id: egui::Id, values: &Values, palette
 fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     let colors = super::device_canvas::colors();
     painter.rect_filled(rect, 1.0, colors.window_background);
-    // Lit from its foot as a hardware meter is: the theme's level color up to -12 dB, warming to
-    // amber by -3 dB and red past 0 dB. The unlit rest shows the same colors faintly.
-    // The colors toned down toward the meter's ground, so the fill reads as light behind the
-    // scale rather than a block of paint; only the last few dB warm, and only past 0 dB is red.
+    // Three zones, as level meters have them: the theme's level color up to -6 dB, amber from
+    // there to full scale, red only past 0 dB. Each a solid band, toned toward the meter's ground
+    // so the fill reads as light behind the scale; the unlit rest shows the zones faintly.
     let ground = colors.window_background;
-    let level = blend(ground, palette.level, 0.6);
-    let stops = [
-        (rect.bottom(), blend(ground, palette.level, 0.45)),
-        (level_y(-18.0, rect), level),
-        (level_y(-6.0, rect), level),
-        (level_y(-1.0, rect), blend(ground, METER_AMBER, 0.6)),
-        (level_y(0.0, rect), blend(ground, METER_HOT, 0.7)),
-        (rect.top(), blend(ground, METER_HOT, 0.7)),
-    ];
+    let (level, amber, hot) =
+        (blend(ground, palette.level, 0.62), blend(ground, METER_AMBER, 0.62), blend(ground, METER_HOT, 0.75));
+    let (caution, full) = (level_y(-6.0, rect), level_y(0.0, rect));
+    let stops =
+        [(rect.bottom(), level), (caution, level), (caution, amber), (full, amber), (full, hot), (rect.top(), hot)];
     gradient(painter, rect, rect.bottom(), rect.top(), &stops, METER_UNLIT);
     let top = level_y(db, rect);
     if top < rect.bottom() {
@@ -531,7 +526,7 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
 const METER_LIT: f32 = 1.0;
 const METER_UNLIT: f32 = 0.12;
 /// How long a meter's peak line holds, in seconds, and how fast it falls after, in dB a second.
-const PEAK_HOLD: f64 = 1.5;
+const PEAK_HOLD: f64 = 2.0;
 const PEAK_FALL: f64 = 20.0;
 
 /// The level a meter's peak line shows: the highest `db` seen in the last [`PEAK_HOLD`] seconds,
