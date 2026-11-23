@@ -2215,3 +2215,18 @@ fn a_rule_scoped_to_the_menu_bar_reaches_its_entries() {
     suhina_ui::kit::native_css::set_user_sheet(None);
     assert!(entry > 0, "the hovered entry is filled with the scoped rule's color");
 }
+
+#[test]
+fn a_menu_title_on_the_bar_takes_its_fill_from_its_own_rule() {
+    let css = format!("menu-bar bar-item[kind=\"menu\"][checked] {{ background-color: {}; }}", hex(odd(57)));
+    let mut window = window(demo_app());
+    window.run_steps(4);
+    window.get_by_label("File").hover();
+    window.run_steps(3);
+    assert_eq!(filled_with(&window, odd(57)), 0, "no rule, no such fill");
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    window.run_steps(4);
+    let lit = filled_with(&window, odd(57));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(lit > 0, "the hovered title is filled with its rule's color");
+}

@@ -155,8 +155,10 @@ fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> 
     }
     let lit = response.hovered() || egui::Popup::is_id_open(ui.ctx(), id);
     let look = BAR_ITEM.attribute("kind", "menu").attr(Checked, lit).look();
+    // `menu-bar bar-item[kind="menu"][checked]`'s fill while hovered or open (the hover color
+    // unless a theme gives its own); egui's hovered fill where no sheet styles the window.
     if lit {
-        ui.painter().rect_filled(rect, 3.0, ui.visuals().widgets.hovered.weak_bg_fill);
+        ui.painter().rect_filled(rect, 3.0, look.computed_background_or(ui.visuals().widgets.hovered.weak_bg_fill));
     }
     widgets::text_in(ui.painter(), rect, Align2::CENTER_CENTER, title, font, look.color());
     let inner = popup.show(|ui| open_menu(ui, content)).map(|shown| shown.inner);

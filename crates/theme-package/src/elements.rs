@@ -269,7 +269,7 @@ pub const ELEMENTS: &[Element] = &[
         .ids(Ids::Listed { prefix: "", names: GROUP_IDS })
         .attributes(&["kind"]),
     element("flexible-space", Drawn, "A gap in a bar that takes the room left over."),
-    element("bar-item", Part, "An item of the status bar, the application bar or the piano roll's toolbar, by id; the words of the piano roll toolbar's menus (Grid, Workflow, Ghosts) are `bar-item[kind=\"menu\"]`, `[muted]` while what it names is off and `[checked]` while the menu is hovered or open; a menu's title on the menu bar is `bar-item[kind=\"menu\"]` too (scope a rule with `menu-bar` or `piano-roll-toolbar` to reach one of them), and the status bar's counts `[kind=\"status-counts\"]`.")
+    element("bar-item", Part, "An item of the status bar, the application bar or the piano roll's toolbar, by id; the words of the piano roll toolbar's menus (Grid, Workflow, Ghosts) are `bar-item[kind=\"menu\"]`, `[muted]` while what it names is off and `[checked]` while the menu is hovered or open; a menu's title on the menu bar is `bar-item[kind=\"menu\"]` too, its `background-color` the fill behind it while `[checked]` (scope a rule with `menu-bar` or `piano-roll-toolbar` to reach one of them), and the status bar's counts `[kind=\"status-counts\"]`.")
         .ids(Ids::Listed { prefix: "", names: BAR_ITEM_IDS })
         .attributes(&["kind", "muted", "checked"]),
     element("status-bar", Region, "The bar at the bottom of the window.").parts(&["bar-item"]),

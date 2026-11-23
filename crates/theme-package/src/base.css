@@ -490,6 +490,7 @@ label[kind="inverse"] { color: var(--text-inverse); }
 label[kind="on-light"] { color: var(--text-onColorLight); }
 label[kind="on-dark"] { color: var(--text-onColorDark); }
 bar-item[kind="menu"] { color: var(--text-secondary); }
+menu-bar bar-item[kind="menu"][checked] { background-color: var(--control-hoverBackground); }
 bar-item[kind="status-counts"] { color: var(--text-hint); }
 project-tab { border-color: var(--border); }
 toolbar-module[kind="signature"] { color: var(--text-secondary); }
