@@ -177,6 +177,9 @@ pub(super) struct Field {
     pub align: Align2,
     /// Drawn faint: a value that does not apply now (the loop's, while the loop is off).
     pub dim: bool,
+    /// In whole semitones: Shift with an arrow key steps an octave, not a tenth
+    /// ([`widgets::drag_semitones`]).
+    pub semitones: bool,
 }
 
 fn tenth(v: f64) -> f64 {
@@ -412,7 +415,11 @@ pub(super) fn number_field(
         Some(step) if !places.is_empty() => (step / 4.0, step),
         _ => (field.per_point, field.per_tick),
     };
-    let drag = widgets::drag_value(ui, &response, &mut preview, value, per_point, per_tick, field.range, value);
+    let drag = if field.semitones && places.is_empty() {
+        widgets::drag_semitones(ui, &response, &mut preview, value, per_point, field.range, value)
+    } else {
+        widgets::drag_value(ui, &response, &mut preview, value, per_point, per_tick, field.range, value)
+    };
     match drag {
         Drag::Moving(v) => {
             ui.data_mut(|d| d.insert_temp(preview_id, v));
@@ -991,6 +998,7 @@ pub(super) fn clip_part(
         snap: |v| (v * 4.0).round() / 4.0,
         align: Align2::RIGHT_CENTER,
         dim: false,
+        semitones: false,
     };
     let position = |v: f64| bars_text(v, bar, true);
     let parse_position = |t: &str| bars_parse(t, bar, true);
@@ -1270,6 +1278,7 @@ fn audio_part(
         snap: thousandth,
         align: Align2::RIGHT_CENTER,
         dim: false,
+        semitones: false,
     };
     let id = Id::unique(("clip-panel-field", "Tempo", clip.0));
     let value = panel.tempo.unwrap_or(f64::NAN);
@@ -1396,8 +1405,15 @@ fn warp_part(
     let number = |ui: &mut Ui, y: &mut f32, name: &str, value: f64, range: (f64, f64), unit: &'static str| {
         name_over(painter, row(*y, NAME), name, Align2::LEFT_BOTTOM);
         *y += NAME;
-        let field =
-            Field { range, per_point: 0.5, per_tick: 1.0, snap: whole, align: Align2::RIGHT_CENTER, dim: false };
+        let field = Field {
+            range,
+            per_point: 0.5,
+            per_tick: 1.0,
+            snap: whole,
+            align: Align2::RIGHT_CENTER,
+            dim: false,
+            semitones: false,
+        };
         let shown = move |v: f64| format!("{v:.0} {unit}");
         let text = Text { shown: &shown, parse: &plain_number, places: None };
         let id = Id::unique(("clip-panel-field", name, clip));
@@ -1575,6 +1591,7 @@ fn gain_part(
         snap: tenth,
         align: Align2::CENTER_CENTER,
         dim: false,
+        semitones: false,
     };
     let text = Text { shown: &gain_text, parse: &plain_number, places: None };
     if let Some(change) =
@@ -1645,7 +1662,8 @@ fn pitch_part(
     let mut set_semitones: Option<Change> = None;
     let mut set_cents: Option<Change> = None;
     let mut sent: Option<f64> = None;
-    match widgets::drag_value(ui, &response, &mut preview, semitones, 0.25, 1.0, SEMITONES, 0.0) {
+    // Shift with an arrow key steps an octave.
+    match widgets::drag_semitones(ui, &response, &mut preview, semitones, 0.25, SEMITONES, 0.0) {
         Drag::Moving(v) => {
             ui.data_mut(|d| d.insert_temp(preview_id, v));
             widgets::value_drag_returns_to(ui.ctx(), center);
@@ -1668,22 +1686,25 @@ fn pitch_part(
         let under = Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() + 1.0), Vec2::new(rect.width(), 11.0));
         widgets::text_in(painter, under, Align2::CENTER_TOP, unit, theme::ui_font(theme::TEXT_TINY), super::hint_ink());
     }
-    let centered = |range, per_point| Field {
+    let centered = |range, per_point, semitones| Field {
         range,
         per_point,
         per_tick: 1.0,
         snap: whole,
         align: Align2::CENTER_CENTER,
         dim: false,
+        semitones,
     };
     let text = Text { shown: &signed, parse: &plain_number, places: None };
     let id = Id::unique(("clip-panel-field", "Semitones", clip.0));
-    if let Some(change) = number_field(ui, painter, st, id, "Semitones", semitones, text, centered(SEMITONES, 0.25)) {
+    if let Some(change) =
+        number_field(ui, painter, st, id, "Semitones", semitones, text, centered(SEMITONES, 0.25, true))
+    {
         set_semitones = Some(change);
     }
     let text = Text { shown: &signed, parse: &plain_number, places: None };
     let id = Id::unique(("clip-panel-field", "Cents", clip.0));
-    if let Some(change) = number_field(ui, painter, ct, id, "Cents", cents, text, centered(CENTS, 0.5)) {
+    if let Some(change) = number_field(ui, painter, ct, id, "Cents", cents, text, centered(CENTS, 0.5, false)) {
         set_cents = Some(change);
     }
     if let Some(change) = set_semitones.or(set_cents) {

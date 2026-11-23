@@ -3079,14 +3079,20 @@ pub(crate) fn show(
             };
             // A negative scale steps the other way too; a stepper's own buttons keep their direction.
             let key_delta = (if axis == 0 { dx } else { dy }) * binding.drag_scale.signum() as i32 + step_click;
+            // A parameter in semitones (a transpose, a pitch) steps one semitone with an arrow key,
+            // and an octave with Shift: a tenth of a semitone would round away on a whole-semitone
+            // value, and an octave is the step a pitch is moved by.
+            let semitones = p.unit == "st";
             if key_delta != 0
                 && !matches!(
                     control.gesture,
                     UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
                 )
-                && (discrete || p.ui.step > 0.0 || step_click != 0)
+                && (discrete || p.ui.step > 0.0 || step_click != 0 || semitones)
             {
-                let step = if discrete {
+                let step = if semitones && step_click == 0 {
+                    if fine < 1.0 { crate::kit::widgets::OCTAVE } else { 1.0 }
+                } else if discrete {
                     p.ui.step.max(1.0)
                 } else if let Some(Widget::Stepper { decimals }) = control.widget {
                     10_f64.powi(-(decimals.min(8) as i32)) * fine

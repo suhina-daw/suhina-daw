@@ -1421,8 +1421,39 @@ pub fn drag_value_axis(
     default: f64,
     axis: DragAxis,
 ) -> Drag {
-    drag_value_inner(ui, response, preview, value, per_point, per_tick, range, default, axis, true)
+    drag_value_inner(ui, response, preview, value, per_point, per_tick, range, default, axis, true, None)
 }
+
+/// [`drag_value`] for a value in whole semitones: an arrow key steps one semitone, and Shift with
+/// it an octave (12) rather than a tenth, which the whole-semitone value would round away. The
+/// drag and the wheel are [`drag_value`]'s.
+#[allow(clippy::too_many_arguments)]
+pub fn drag_semitones(
+    ui: &Ui,
+    response: &Response,
+    preview: &mut Option<f64>,
+    value: f64,
+    per_point: f64,
+    range: (f64, f64),
+    default: f64,
+) -> Drag {
+    drag_value_inner(
+        ui,
+        response,
+        preview,
+        value,
+        per_point,
+        1.0,
+        range,
+        default,
+        DragAxis::Vertical,
+        true,
+        Some(OCTAVE),
+    )
+}
+
+/// The semitones Shift with an arrow key steps a value in semitones by.
+pub const OCTAVE: f64 = 12.0;
 
 /// [`drag_value`] for a control that reads its keys itself (a time signature, typed as `3/4`
 /// across its two numbers, [`hold_value_keys`]): the drag, the wheel and a double-click only.
@@ -1437,7 +1468,7 @@ pub fn drag_value_without_keys(
     range: (f64, f64),
     default: f64,
 ) -> Drag {
-    drag_value_inner(ui, response, preview, value, per_point, per_tick, range, default, DragAxis::Vertical, false)
+    drag_value_inner(ui, response, preview, value, per_point, per_tick, range, default, DragAxis::Vertical, false, None)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1452,6 +1483,8 @@ fn drag_value_inner(
     default: f64,
     axis: DragAxis,
     keys: bool,
+    // What Shift with an arrow key steps by instead of a tenth of `per_tick`.
+    shift_tick: Option<f64>,
 ) -> Drag {
     let _el = VALUE.response(response).enter();
     // Keys to the control clicked last: the arrows step it, Enter sets what was typed.
@@ -1464,7 +1497,12 @@ fn drag_value_inner(
         return Drag::Set(typed_value(number, range));
     }
     if steps != 0 {
-        let step = f64::from(steps) * per_tick * if fine { 0.1 } else { 1.0 };
+        let step = f64::from(steps)
+            * match (fine, shift_tick) {
+                (true, Some(tick)) => tick,
+                (true, None) => per_tick * 0.1,
+                (false, _) => per_tick,
+            };
         *preview = None;
         return Drag::Done(stepped(value, range, step));
     }

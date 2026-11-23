@@ -3119,3 +3119,74 @@ fn a_dials_pointer_line_takes_the_themes_knob_pointer_color() {
     });
     assert_eq!(line, Some(Color32::from_rgb(0x12, 0xAB, 0x34)), "the panel's pointer color");
 }
+
+/// A dial on a parameter in semitones steps one semitone with an arrow key and an octave with
+/// Shift, whole or not (a Sampler's pitch is continuous, a Pitch effect's whole).
+#[test]
+fn an_arrow_steps_a_semitone_dial_by_one_and_shift_by_an_octave() {
+    let canvas = Arc::new(DeviceUi {
+        size: [60.0, 60.0],
+        controls: vec![CustomControl {
+            id: "pitch".into(),
+            name: "Pitch".into(),
+            tooltip: String::new(),
+            bounds: [0.0, 0.0, 60.0, 60.0],
+            widget: Some(Widget::Dial { label: String::new(), decimals: 0, format: Default::default(), image: None }),
+            visible_when: None,
+            gesture: UiGesture::Drag,
+            x: None,
+            y: Some(UiBinding::new("pitch")),
+            drawing: Vec::new(),
+        }],
+        ..Default::default()
+    });
+    let pitch = GraphParameter {
+        unit: "st".into(),
+        min: -48.0,
+        max: 48.0,
+        value: 0.0,
+        default: 0.0,
+        ..parameter("pitch", false)
+    };
+    let center = Pos2::new(30.0, 30.0);
+    for (shift, wanted) in [(false, 1.0), (true, 12.0)] {
+        let modifiers = if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
+        let mut events: Vec<(Vec<egui::Event>, egui::Modifiers)> =
+            click_to_focus(center).into_iter().map(|e| (e, egui::Modifiers::NONE)).collect();
+        events.push((
+            vec![egui::Event::Key {
+                key: egui::Key::ArrowUp,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            }],
+            modifiers,
+        ));
+        let ctx = egui::Context::default();
+        let at = crate::detail::detail_view::DeviceAt::at(0);
+        let mut actions = Vec::new();
+        for (events, modifiers) in events {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(72.0))),
+                events,
+                modifiers,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                show(
+                    ui,
+                    Rect::from_min_size(Pos2::ZERO, Vec2::splat(60.0)),
+                    &canvas,
+                    &crate::detail::device_widgets::PanelState::none(),
+                    std::slice::from_ref(&pitch),
+                    TrackId(1),
+                    &at,
+                    &mut actions,
+                )
+            });
+            output.textures_delta.clear();
+        }
+        assert_eq!(last_value(&actions), Some(wanted), "Shift {shift}");
+    }
+}
