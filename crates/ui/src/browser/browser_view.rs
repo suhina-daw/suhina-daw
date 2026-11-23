@@ -3388,12 +3388,10 @@ fn footer_overflow(
     });
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "More tags".to_string()));
-    // `button[kind="more"]`: no fill until the pointer is on it (the base sheet's), fading in;
-    // drawn as a menu's rows are, its CSS box with no artwork.
+    // `button[kind="more"]`: no fill until the pointer is on it (the base sheet's), fading in.
     {
         let el = BUTTON.attribute("kind", "more").response(&response).enter();
-        let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
-        el.paint_with(painter, clipped, crate::kit::element::Native { radius: 0.0, fill });
+        widgets::hover_face(ui, painter, clipped, &el, &response, false, 0.0);
     }
     painter.text(clipped.center(), Align2::CENTER_CENTER, "…", theme::ui_font(theme::TEXT_SMALL), tier.secondary);
     if tags.iter().any(|t| state.tag_filter.contains(&t.id)) {

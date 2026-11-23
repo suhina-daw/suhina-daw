@@ -791,8 +791,7 @@ other sides draw some sides only), `box-shadow` and `opacity`; `transparent` pai
 A button keeps its artwork (Suhina's `button.svg`, or your own `button` artwork) whatever
 background, radius or border you give it: the `background-color` colors the artwork (it is its
 `currentColor`), the radius rounds it, and your `background-image` and border are drawn over it.
-To draw a button as its CSS shape alone, say `image: none` on it. The buttons drawn as a menu's
-rows are (`button[kind="entry"]`, the browser's "…" `button[kind="more"]`) never draw artwork. A push button with words (Save,
+To draw a button as its CSS shape alone, say `image: none` on it. A push button with words (Save,
 Cancel, Settings' Help and Close, a dialog's Close) is `button[kind="push"]`, a dialog's main
 action `button[kind="primary"]` and one that stands back (a folder's Remove) `button[kind="secondary"]`;
 the base sheet rounds them (`border-radius: 4px`) and gives them no edge, except the main

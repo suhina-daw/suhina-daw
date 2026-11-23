@@ -613,8 +613,6 @@ or the theme's) unless the sheet says `image: none`: then it draws its CSS shape
 artwork, the sheet's `background-color` is the artwork's `currentColor`, its `border-radius` rounds
 it, its `background-image` is painted over it and its border over that, as CSS draws a border over
 the background; whether a button has artwork never depends on which sheet set its colors (#1696).
-A button drawn as a menu's rows are (`button[kind="entry"]`, the browser's "…"
-`button[kind="more"]`) draws its CSS shape alone, as those rows do: no artwork.
 A push button with words is `button[kind="push"]`, the dialog's main action
 `button[kind="primary"]`: its edge is its CSS border (the base sheet gives both `border-width:
 1px`, the primary one in the accent), not a line of the code's own.

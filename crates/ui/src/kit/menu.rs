@@ -349,8 +349,7 @@ pub fn choice(ui: &mut Ui, text: &str, name: &str, on: bool, enabled: bool) -> R
     let el = BUTTON.attribute("kind", "entry").response(&response).attr(Checked, on);
     let el = if enabled { el } else { el.pointer(false, false, true) }.enter();
     let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
-    // Drawn as a menu's rows are: its CSS box, no artwork.
-    el.paint_with(ui.painter(), rect, crate::kit::element::Native { radius: 2.0, fill });
+    widgets::button_surface(ui.painter(), rect, &el, &response, on, fill, 2.0);
     let ink = el.color();
     drop(el);
     let words = Rect::from_min_max(rect.min + Vec2::new(INSET, 0.0), rect.max - Vec2::new(INSET, 0.0));
