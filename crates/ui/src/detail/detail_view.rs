@@ -94,6 +94,7 @@ pub fn show_row(
     let area = el.paint(&painter, area).content;
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip to see it here"),
+        Detail::NoClip => hint(&painter, area, "No clip selected"),
         Detail::Devices(chain) => return chain_row(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
             let (column, picked) = clip_properties(ui, &painter, area, info, false, None, actions);
@@ -550,6 +551,7 @@ pub fn show_stack(
     let area = el.paint(&painter, area).content;
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip"),
+        Detail::NoClip => hint(&painter, area, "No clip selected"),
         Detail::Devices(chain) => return chain_stack(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
             let (column, picked) = clip_properties(ui, &painter, area, info, true, None, actions);

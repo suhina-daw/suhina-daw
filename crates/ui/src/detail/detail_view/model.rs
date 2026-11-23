@@ -530,6 +530,9 @@ pub enum Detail {
     Devices(Chain),
     Clip(Box<ClipInfo>, Chain),
     Nothing,
+    /// The clip view with no clip selected: it stays the clip view until a track's devices are
+    /// asked for (a double-click on its header).
+    NoClip,
 }
 
 impl Detail {
@@ -565,7 +568,7 @@ impl Detail {
     ) -> Vec<(TrackId, Vec<usize>, u32, f64)> {
         let chain = match self {
             Self::Devices(chain) | Self::Clip(_, chain) => chain,
-            Self::Nothing => return Vec::new(),
+            Self::Nothing | Self::NoClip => return Vec::new(),
         };
         let Some(channel) = project
             .tracks

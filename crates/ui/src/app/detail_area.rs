@@ -42,10 +42,10 @@ impl App {
             self.selected_device = None;
             self.device_picks.clear();
         }
-        if clicked && self.detail_open {
-            self.detail_showing = detail_view::Showing::Devices;
-            self.track_devices = true;
-        }
+        // A click on a track keeps what the area shows: the devices view follows the track, the
+        // clip view stays the clip view ("No clip selected" without one). A double-click on a
+        // header shows its devices (above).
+
         // The editor shown (a double-click on a clip, the Clip part of the switch, a menu's Show
         // editor): the clip is in the detail area again.
         if self.detail_showing == detail_view::Showing::Clip {
@@ -599,6 +599,9 @@ impl App {
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
             detail_view::build_with(s.project(), track, clip, &mut |t, p| reports.remove(&(t, p.to_vec())), nam_lists)
         });
+        if clip.is_none() && !self.track_devices && self.detail_showing == detail_view::Showing::Clip {
+            shown = detail_view::Detail::NoClip;
+        }
         // Automated parameters show what plays at the playhead, running or stopped (#706, #811);
         // without a player, at the start.
         let mut wanted = Vec::new();
