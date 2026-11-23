@@ -903,16 +903,16 @@ fn sidebar_view(
     for (response, folder) in menus {
         let path = folder.display().to_string();
         response.context_menu(|ui| {
-            if ui.button("Refresh").clicked() {
+            if crate::kit::menu::entry(ui, "Refresh", None, true).clicked() {
                 run(projects, "library.refresh", json!({ "folder": path }), out);
                 state.relist();
                 ui.close();
             }
-            if ui.button("Pin").clicked() {
+            if crate::kit::menu::entry(ui, "Pin", None, true).clicked() {
                 run(projects, "library.pin", json!({ "item": path }), out);
                 ui.close();
             }
-            if ui.button("Remove from the browser").clicked() {
+            if crate::kit::menu::entry(ui, "Remove from the browser", None, true).clicked() {
                 if run(projects, "library.removeFolder", json!({ "folder": path }), out)
                     && state.place == Some(Place::Folder(folder.clone()))
                 {
@@ -1427,7 +1427,7 @@ fn tag_folder_menu(
     {
         ui.ctx().data_mut(|d| d.insert_temp(rename_id, name.trim().to_string()));
     }
-    ui.separator();
+    crate::kit::menu::separator(ui);
     // A new tag inside: made from the field, moved under the folder it was made for. Its
     // color comes from the palette beside the field — the same pick a tag's menu makes,
     // but for a tag the folder is making ([#1254] review › color options in a folder's
@@ -1451,7 +1451,7 @@ fn tag_folder_menu(
     field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
     ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
     let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-    let with_button = ui.button("Add tag").clicked();
+    let with_button = crate::kit::menu::entry(ui, "Add tag", None, true).clicked();
     if (with_enter || with_button) && !new_name.trim().is_empty() {
         // The name one of the tags has: refused before the command, as the section's menus
         // do ([#1254] review: `setTag` would recolor and file that tag instead, and say it
@@ -1479,7 +1479,9 @@ fn tag_folder_menu(
             }
         }
     }
-    if ui.button("Add folder").clicked() && add_tag_folder(state, projects, json!({ "parent": my }), out) {
+    if crate::kit::menu::entry(ui, "Add folder", None, true).clicked()
+        && add_tag_folder(state, projects, json!({ "parent": my }), out)
+    {
         // The branch itself opens, so the new folder shows wherever it sits
         // ([#1254] review).
         tag_branch_open(projects, out, folder_id);
@@ -1491,7 +1493,7 @@ fn tag_folder_menu(
     let armed = state.tag_remove_confirm.as_deref() == Some(my.as_str());
     let label =
         if armed { format!("Remove folder {}? ({} move up)", store_name, carried) } else { "Remove".to_string() };
-    if ui.button(label).clicked() {
+    if crate::kit::menu::entry(ui, &label, None, true).clicked() {
         if !armed && carried > 0 {
             state.tag_remove_confirm = Some(my);
         } else {
@@ -1502,7 +1504,7 @@ fn tag_folder_menu(
             }
         }
     }
-    if armed && ui.button("Keep").clicked() {
+    if armed && crate::kit::menu::entry(ui, "Keep", None, true).clicked() {
         state.tag_remove_confirm = None;
     }
 }
@@ -1536,8 +1538,8 @@ fn picked_remove_menu(
             format!("{t} tag{} and {f} folder{}", if t == 1 { "" } else { "s" }, if f == 1 { "" } else { "s" })
         }
     };
-    ui.label(format!("{what} picked"));
-    ui.separator();
+    crate::kit::menu::heading(ui, &format!("{what} picked"));
+    crate::kit::menu::separator(ui);
     let armed = state.tag_remove_confirm.as_deref() == Some(PICK_REMOVE);
     let label = if armed {
         let mut parts = Vec::new();
@@ -1551,7 +1553,7 @@ fn picked_remove_menu(
     } else {
         format!("Remove {what}")
     };
-    if ui.button(label).clicked() {
+    if crate::kit::menu::entry(ui, &label, None, true).clicked() {
         if !armed && (items > 0 || moved > 0) {
             state.tag_remove_confirm = Some(PICK_REMOVE.to_string());
         } else {
@@ -1578,7 +1580,7 @@ fn picked_remove_menu(
             ui.close();
         }
     }
-    if armed && ui.button("Keep").clicked() {
+    if armed && crate::kit::menu::entry(ui, "Keep", None, true).clicked() {
         state.tag_remove_confirm = None;
     }
 }
@@ -2010,7 +2012,7 @@ fn tags_section(
                     let hex = theme::hex(crate::interaction::color_picker::color32(picked));
                     run(projects, "library.setTag", json!({ "id": format!("#{}", row.entry.id()), "color": hex }), out);
                 }
-                ui.separator();
+                crate::kit::menu::separator(ui);
                 // A new tag from here: a typed name, added with Enter or the Add tag button, in
                 // the color this menu shows outlined, shown dimmed until something carries it
                 // (#1196).
@@ -2024,7 +2026,7 @@ fn tags_section(
                     .widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
                 ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
                 let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                let with_button = ui.button("Add tag").clicked();
+                let with_button = crate::kit::menu::entry(ui, "Add tag", None, true).clicked();
                 if (with_enter || with_button) && !new_name.trim().is_empty() {
                     let taken = projects.file_library_mut().tag_flat();
                     if taken.iter().any(|t| t.name == new_name.trim()) {
@@ -2046,7 +2048,7 @@ fn tags_section(
                 }
                 // A new folder beside the tag: the right-click on any tag offers the first
                 // folder too, at the tag's own level ([#1254] review › New folder on any tag).
-                if ui.button("New folder").clicked() {
+                if crate::kit::menu::entry(ui, "New folder", None, true).clicked() {
                     let store = projects.file_library_mut().tags();
                     let parent = suhina_library::store::find_entry_parent(&store, row.entry.id()).and_then(|(p, _)| p);
                     let params = match parent {
@@ -2069,7 +2071,7 @@ fn tags_section(
                 } else {
                     format!("Remove tag {}", row.entry.name())
                 };
-                if ui.button(label).clicked() {
+                if crate::kit::menu::entry(ui, &label, None, true).clicked() {
                     if !armed && suhina_library::store::tag_count(std::slice::from_ref(&row.entry)) > 0 {
                         state.tag_remove_confirm = Some(row.entry.name().to_string());
                     } else {
@@ -2084,7 +2086,7 @@ fn tags_section(
                         ui.close();
                     }
                 }
-                if armed && ui.button("Keep").clicked() {
+                if armed && crate::kit::menu::entry(ui, "Keep", None, true).clicked() {
                     state.tag_remove_confirm = None;
                 }
             });
@@ -2384,7 +2386,7 @@ fn section_title(
     let popup =
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             let label = if open { format!("Close {}", kind.title()) } else { format!("Open {}", kind.title()) };
-            if ui.button(label).clicked()
+            if crate::kit::menu::entry(ui, &label, None, true).clicked()
                 && run(projects, "library.setSectionOpen", json!({ "section": kind.name(), "open": !open }), out)
             {
                 state.relist();
@@ -2392,7 +2394,7 @@ fn section_title(
             }
             let order = sections_list.iter().map(|s| s.kind).collect::<Vec<SectionKind>>();
             let (up, down) = (at > 0, at + 1 < order.len());
-            if ui.add_enabled(up, egui::Button::new("Move up")).clicked() {
+            if crate::kit::menu::entry(ui, "Move up", None, up).clicked() {
                 let mut moved = order.clone();
                 moved.swap(at - 1, at);
                 let params = json!({ "order": moved.iter().map(|k| json!(k.name())).collect::<Vec<_>>() });
@@ -2401,7 +2403,7 @@ fn section_title(
                     ui.close();
                 }
             }
-            if ui.add_enabled(down, egui::Button::new("Move down")).clicked() {
+            if crate::kit::menu::entry(ui, "Move down", None, down).clicked() {
                 let mut moved = order.clone();
                 moved.swap(at, at + 1);
                 let params = json!({ "order": moved.iter().map(|k| json!(k.name())).collect::<Vec<_>>() });
@@ -2416,7 +2418,7 @@ fn section_title(
             // store's way is the menu's too). The field and the button are the same the rows'
             // menus carry.
             if kind == SectionKind::Tags {
-                ui.separator();
+                crate::kit::menu::separator(ui);
                 let pick_id = Id::unique(("browser-title-tag-color", epoch, kind.name()));
                 let picked_now = {
                     let stored: Option<String> = ui.ctx().data(|d| d.get_temp(pick_id));
@@ -2437,7 +2439,7 @@ fn section_title(
                     .widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
                 ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
                 let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                let with_button = ui.button("Add tag").clicked();
+                let with_button = crate::kit::menu::entry(ui, "Add tag", None, true).clicked();
                 if (with_enter || with_button) && !new_name.trim().is_empty() {
                     // The name one of the tags has: refused before the command, as the rows'
                     // menus do ([#1254] review: `setTag` would recolor that tag instead and say
@@ -2472,7 +2474,9 @@ fn section_title(
                 // The first folder still comes from here ([#1254] › Tag folders): a top-level
                 // one has no row's menu to come from. It shows itself as the tag's add does: a
                 // closed section opens for it ([#1254] review).
-                if ui.button("New folder").clicked() && add_tag_folder(state, projects, json!({}), out) {
+                if crate::kit::menu::entry(ui, "New folder", None, true).clicked()
+                    && add_tag_folder(state, projects, json!({}), out)
+                {
                     if !open {
                         open_tags_section(projects, out);
                     }
@@ -2557,7 +2561,7 @@ fn row_menu(
         (true, true) => format!("Unpin {} items", targets.len()),
         (false, true) => format!("Pin {} items", targets.len()),
     };
-    if ui.button(pin_label).clicked() {
+    if crate::kit::menu::entry(ui, &pin_label, None, true).clicked() {
         let command = if pinned { "library.unpin" } else { "library.pin" };
         for key in &targets {
             run(projects, command, json!({ "item": key }), out);
@@ -2568,7 +2572,7 @@ fn row_menu(
     // A tag shows ticked when every target carries it; a click sets it on all of them, or
     // clears it from all when all carry it.
     let carried: Vec<Vec<u32>> = targets.iter().map(|key| projects.file_library_mut().item_tags(key)).collect();
-    ui.menu_button("Tag", |ui| {
+    crate::kit::menu::Entry::new("Tag").keep_open().submenu(ui, |ui| {
         // A library wide in tags hides rows past the window: the rows scroll inside their
         // own room, as the footer's overflow does ([#1254] review), and the field below
         // stays fixed at the menu's end.
@@ -2589,7 +2593,7 @@ fn row_menu(
                 }
             }
         });
-        ui.separator();
+        crate::kit::menu::separator(ui);
         // A new tag, set on the targets at once.
         // Keyed on the library's epoch: a replaced library's menu starts with no draft of the
         // old one's to make there ([#1254] review).
@@ -2617,7 +2621,7 @@ fn row_menu(
     if let Some(Item::File(path)) = item.item()
         && let Some(parent) = path.parent()
         && item.kind != ItemKind::Folder
-        && ui.button("Go to folder").clicked()
+        && crate::kit::menu::entry(ui, "Go to folder", None, true).clicked()
     {
         state.search.clear();
         state.place = Some(Place::Folder(parent.to_path_buf()));
@@ -2634,11 +2638,11 @@ fn row_menu(
     // The row's file, or every selected file when the row is one of them, copied into a
     // folder; the originals stay (#865).
     let files = copy_files(item, state.selected());
-    if !files.is_empty() && ui.button("Copy to folder…").clicked() {
+    if !files.is_empty() && crate::kit::menu::entry(ui, "Copy to folder…", None, true).clicked() {
         out.copy_to = files;
         ui.close();
     }
-    if item.kind == ItemKind::Folder && ui.button("Refresh").clicked() {
+    if item.kind == ItemKind::Folder && crate::kit::menu::entry(ui, "Refresh", None, true).clicked() {
         state.relist();
         ui.close();
     }
@@ -3227,7 +3231,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                     let hex = theme::hex(crate::interaction::color_picker::color32(picked));
                     run(projects, "library.setTag", json!({ "id": format!("#{0}", tag.id), "color": hex }), out);
                 }
-                ui.separator();
+                crate::kit::menu::separator(ui);
                 let new_id = Id::unique(("browser-footer-new-tag", epoch, tag.id));
                 let mut new_name: String = ui.ctx().data(|d| d.get_temp(new_id)).unwrap_or_default();
                 let field = crate::kit::widgets::text_input(
@@ -3238,7 +3242,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                     .widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, "New tag name".to_string()));
                 ui.ctx().data_mut(|d| d.insert_temp(new_id, new_name.clone()));
                 let with_enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                let with_button = ui.button("Add tag").clicked();
+                let with_button = crate::kit::menu::entry(ui, "Add tag", None, true).clicked();
                 if (with_enter || with_button) && !new_name.trim().is_empty() {
                     let taken = projects.file_library_mut().tag_flat();
                     if taken.iter().any(|t| t.name == new_name.trim()) {
@@ -3275,7 +3279,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                 } else {
                     format!("Remove tag {}", tag.name)
                 };
-                if ui.button(label).clicked() {
+                if crate::kit::menu::entry(ui, &label, None, true).clicked() {
                     if !armed && count > 0 {
                         state.tag_remove_confirm = Some(tag.name.clone());
                     } else {
@@ -3289,7 +3293,7 @@ fn footer_view(ui: &mut Ui, area: Rect, state: &mut BrowserState, projects: &mut
                         ui.close();
                     }
                 }
-                if armed && ui.button("Keep").clicked() {
+                if armed && crate::kit::menu::entry(ui, "Keep", None, true).clicked() {
                     state.tag_remove_confirm = None;
                 }
             });

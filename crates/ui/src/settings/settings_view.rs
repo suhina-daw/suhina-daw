@@ -1561,10 +1561,10 @@ const DEFAULT_REASON: &str = "The default variant is the theme's own values; it 
 
 /// A menu item or button that is grayed with `reason` on hover when it does not apply.
 fn item(ui: &mut Ui, label: &str, reason: Option<&str>) -> bool {
-    let response = ui.add_enabled(reason.is_none(), egui::Button::new(label));
+    let response = crate::kit::menu::entry(ui, label, None, reason.is_none());
     match reason {
         Some(reason) => {
-            response.on_disabled_hover_text(reason);
+            response.on_hover_text(reason);
             false
         }
         None => response.clicked(),
@@ -1614,8 +1614,9 @@ fn theme_gallery(ui: &mut Ui, page: Rect, themes: &ThemesView, state: &mut PageS
             state.theme_editor = true;
             state.scrolled = None;
         }
-        ui.menu_button("More", |ui| {
-            if ui.button("New theme…").clicked() {
+        let more = crate::kit::controls::button(ui, "More");
+        egui::Popup::menu(&more).show(|ui| {
+            if crate::kit::menu::entry(ui, "New theme…", None, true).clicked() {
                 state.theme_dialog = Some(new_theme(None));
                 ui.close();
             }
@@ -1625,23 +1626,16 @@ fn theme_gallery(ui: &mut Ui, page: Rect, themes: &ThemesView, state: &mut PageS
                 ("Open the themes folder", ThemeRequest::OpenFolder),
                 ("Back up themes", ThemeRequest::Backup),
             ] {
-                if ui.button(label).clicked() {
+                if crate::kit::menu::entry(ui, label, None, true).clicked() {
                     request = Some(action);
                     ui.close();
                 }
             }
-            ui.separator();
+            crate::kit::menu::separator(ui);
             let refused = delete_refused(themes, &themes.current);
-            let label = egui::RichText::new("Delete variant…").color(if refused.is_none() {
-                crate::kit::element::error_ink()
-            } else {
-                ink().hint
-            });
-            let response = ui.add_enabled(refused.is_none(), egui::Button::new(label));
-            response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, refused.is_none(), "Delete variant…"));
+            let response = crate::kit::menu::entry(ui, "Delete variant…", None, refused.is_none());
             if let Some(reason) = refused {
-                response.on_disabled_hover_text(reason);
+                response.on_hover_text(reason);
             } else if response.clicked() {
                 state.theme_dialog = Some(delete_variant(themes, &themes.current));
                 ui.close();
@@ -1710,10 +1704,16 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
                 ui.add_sized([140.0, theme::ROW], egui::Label::new("Start from"));
                 let label = format!("Start from {start}");
                 let combo = egui::ComboBox::from_id_salt("new-theme-from").selected_text(start).width(260.0);
-                let response = combo.show_ui(ui, |ui| {
-                    ui.selectable_value(&mut new.from, None, "Suhina's defaults");
+                let response = widgets::combo_box(ui, combo, |ui| {
+                    if crate::kit::menu::item(ui, "Suhina's defaults", new.from.is_none()).clicked() {
+                        new.from = None;
+                        ui.close();
+                    }
                     for (id, name, _) in &themes.list {
-                        ui.selectable_value(&mut new.from, Some(id.clone()), name);
+                        if crate::kit::menu::item(ui, name, new.from.as_ref() == Some(id)).clicked() {
+                            new.from = Some(id.clone());
+                            ui.close();
+                        }
                     }
                 });
                 response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &label));
@@ -1947,11 +1947,11 @@ fn theme_card(
     }
     response.context_menu(|ui| {
         // The large card is the theme in use already.
-        if !active && ui.button("Use").clicked() {
+        if !active && crate::kit::menu::entry(ui, "Use", None, true).clicked() {
             asked = Some(ThemeRequest::Use(base.to_owned()));
             ui.close();
         }
-        if ui.button("New theme from this…").clicked() {
+        if crate::kit::menu::entry(ui, "New theme from this…", None, true).clicked() {
             let from = if in_use { themes.current.clone() } else { base.to_owned() };
             state.theme_dialog = Some(new_theme(Some(from)));
             ui.close();
@@ -1962,7 +1962,7 @@ fn theme_card(
             state.theme_dialog = Some(ThemeDialog::Info { id: base.to_owned(), info });
             ui.close();
         }
-        if ui.button("Export theme…").clicked() {
+        if crate::kit::menu::entry(ui, "Export theme…", None, true).clicked() {
             asked = Some(ThemeRequest::ExportPackage(base.to_owned()));
             ui.close();
         }
@@ -1978,7 +1978,7 @@ fn theme_card(
             asked = Some(ThemeRequest::AddDefaultArtwork(base.to_owned()));
             ui.close();
         }
-        ui.separator();
+        crate::kit::menu::separator(ui);
         if item(ui, "Delete theme…", refused) {
             state.theme_dialog = Some(ThemeDialog::Delete { id: base.to_owned(), name: name.clone(), revert: false });
             ui.close();
@@ -2010,21 +2010,21 @@ fn theme_card(
                 asked = Some(ThemeRequest::Use((*variant).to_string()));
             }
             swatch.context_menu(|ui| {
-                if ui.button("Use").clicked() {
+                if crate::kit::menu::entry(ui, "Use", None, true).clicked() {
                     asked = Some(ThemeRequest::Use((*variant).to_string()));
                     ui.close();
                 }
-                if ui.button("Edit…").clicked() {
+                if crate::kit::menu::entry(ui, "Edit…", None, true).clicked() {
                     asked = Some(ThemeRequest::Use((*variant).to_string()));
                     state.theme_editor = true;
                     state.scrolled = None;
                     ui.close();
                 }
-                if ui.button("Duplicate").clicked() {
+                if crate::kit::menu::entry(ui, "Duplicate", None, true).clicked() {
                     asked = Some(ThemeRequest::DuplicateVariant((*variant).to_string()));
                     ui.close();
                 }
-                ui.separator();
+                crate::kit::menu::separator(ui);
                 let revert = themes.overridden.iter().any(|o| o == variant);
                 let label = if revert { "Revert to built-in…" } else { "Delete…" };
                 if item(ui, label, delete_refused(themes, variant)) {
@@ -3408,10 +3408,12 @@ fn choice_field<T: Clone + PartialEq>(
     widgets::form_dropdown(ui, painter, field, &response, shown);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
-        let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
         for (label, value) in options {
-            if ui.selectable_label(value == current, text(label)).clicked() && value != current {
-                picked = Some(value.clone());
+            if crate::kit::menu::Entry::new(label).chosen(value == current).compact().show(ui).clicked() {
+                if value != current {
+                    picked = Some(value.clone());
+                }
+                ui.close();
             }
         }
     });

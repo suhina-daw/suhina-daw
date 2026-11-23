@@ -311,12 +311,15 @@ fn draw_export(
     let format_at = label_row(&mut y, "Format");
     let shown = FORMATS[state.format].0;
     ui.scope_builder(egui::UiBuilder::new().max_rect(format_at), |ui| {
-        let response = egui::ComboBox::from_id_salt("export-format")
-            .selected_text(egui::RichText::new(shown).font(small.clone()))
-            .width(170.0)
-            .show_ui(ui, |ui| {
+        let response = widgets::combo_box(
+            ui,
+            egui::ComboBox::from_id_salt("export-format")
+                .selected_text(egui::RichText::new(shown).font(small.clone()))
+                .width(170.0),
+            |ui| {
                 for (index, (name, ext)) in FORMATS.iter().enumerate() {
-                    if ui.selectable_label(state.format == index, *name).clicked() {
+                    if crate::kit::menu::item(ui, name, state.format == index).clicked() {
+                        ui.close();
                         state.format = index;
                         // The file name follows the choice, as the spec's dialog does; from
                         // the file name it does not touch it. And flac cannot take the float
@@ -329,8 +332,9 @@ fn draw_export(
                         }
                     }
                 }
-            })
-            .response;
+            },
+        )
+        .response;
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Format {shown}")));
     });
 
@@ -341,17 +345,21 @@ fn draw_export(
     let rate_shown = format!("{rate} Hz");
     let mut chosen_rate = state.rate;
     ui.scope_builder(egui::UiBuilder::new().max_rect(rate_at), |ui| {
-        let response = egui::ComboBox::from_id_salt("export-rate")
-            .selected_text(egui::RichText::new(&rate_shown).font(small.clone()))
-            .width(170.0)
-            .show_ui(ui, |ui| {
+        let response = widgets::combo_box(
+            ui,
+            egui::ComboBox::from_id_salt("export-rate")
+                .selected_text(egui::RichText::new(&rate_shown).font(small.clone()))
+                .width(170.0),
+            |ui| {
                 for hz in rates {
-                    if ui.selectable_label(rate == *hz, format!("{hz} Hz")).clicked() {
+                    if crate::kit::menu::item(ui, &format!("{hz} Hz"), rate == *hz).clicked() {
                         chosen_rate = *hz;
+                        ui.close();
                     }
                 }
-            })
-            .response;
+            },
+        )
+        .response;
         response
             .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Sample rate {rate_shown}")));
     });
@@ -369,17 +377,21 @@ fn draw_export(
         let depth_shown = depth.0;
         let mut chosen_depth = state.depth;
         ui.scope_builder(egui::UiBuilder::new().max_rect(depth_at), |ui| {
-            let response = egui::ComboBox::from_id_salt("export-depth")
-                .selected_text(egui::RichText::new(depth_shown).font(small.clone()))
-                .width(170.0)
-                .show_ui(ui, |ui| {
+            let response = widgets::combo_box(
+                ui,
+                egui::ComboBox::from_id_salt("export-depth")
+                    .selected_text(egui::RichText::new(depth_shown).font(small.clone()))
+                    .width(170.0),
+                |ui| {
                     for (index, (name, _)) in DEPTHS.iter().enumerate() {
-                        if ui.selectable_label(state.depth == index, *name).clicked() {
+                        if crate::kit::menu::item(ui, name, state.depth == index).clicked() {
                             chosen_depth = index;
+                            ui.close();
                         }
                     }
-                })
-                .response;
+                },
+            )
+            .response;
             response.widget_info(|| {
                 egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("Bit depth {depth_shown}"))
             });
@@ -393,17 +405,21 @@ fn draw_export(
         let mp3_shown = MP3_RATES[state.mp3_rate.min(MP3_RATES.len() - 1)].0;
         let mut chosen_mp3 = state.mp3_rate;
         ui.scope_builder(egui::UiBuilder::new().max_rect(mp3_at), |ui| {
-            let response = egui::ComboBox::from_id_salt("export-mp3-rate")
-                .selected_text(egui::RichText::new(mp3_shown).font(small.clone()))
-                .width(170.0)
-                .show_ui(ui, |ui| {
+            let response = widgets::combo_box(
+                ui,
+                egui::ComboBox::from_id_salt("export-mp3-rate")
+                    .selected_text(egui::RichText::new(mp3_shown).font(small.clone()))
+                    .width(170.0),
+                |ui| {
                     for (index, (name, _)) in MP3_RATES.iter().enumerate() {
-                        if ui.selectable_label(state.mp3_rate == index, *name).clicked() {
+                        if crate::kit::menu::item(ui, name, state.mp3_rate == index).clicked() {
                             chosen_mp3 = index;
+                            ui.close();
                         }
                     }
-                })
-                .response;
+                },
+            )
+            .response;
             response
                 .widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, format!("MP3 rate {mp3_shown}")));
         });

@@ -554,16 +554,20 @@ fn sample_waveform(
                     .data(|d| d.get_temp::<(f64, f64)>(numeric_id))
                     .filter(|(old, _)| *old == selection_start)
                     .map_or(selection_start, |(_, value)| value);
-                ui.horizontal(|ui| {
-                    crate::kit::controls::text(ui, "Boundary (source fraction)");
-                    let number = egui::DragValue::new(&mut position).speed(0.0001).range(boundary_low..=boundary_high);
-                    crate::kit::widgets::number_input(ui, None, number);
+                // Its place is typed inside, then applied: a click in it keeps it open.
+                menu::Entry::new("Move boundary").keep_open().submenu(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        crate::kit::controls::text(ui, "Boundary (source fraction)");
+                        let number =
+                            egui::DragValue::new(&mut position).speed(0.0001).range(boundary_low..=boundary_high);
+                        crate::kit::widgets::number_input(ui, None, number);
+                    });
+                    if menu::entry(ui, "Apply boundary", None, true).clicked() {
+                        edit_boundary(actions, "move", Some(selection_start), Some(position));
+                        ui.close();
+                    }
                 });
                 ui.ctx().data_mut(|d| d.insert_temp(numeric_id, (selection_start, position)));
-                if menu::entry(ui, "Apply boundary", None, true).clicked() {
-                    edit_boundary(actions, "move", Some(selection_start), Some(position));
-                    ui.close();
-                }
                 if menu::entry(ui, "Delete boundary", None, true).clicked() {
                     edit_boundary(actions, "delete", Some(selection_start), None);
                     ui.close();
@@ -1074,12 +1078,11 @@ fn sample_recording(ui: &mut egui::Ui, bounds: Rect, track: TrackId, device: usi
             Pos2::new(record_x + x - 8., bounds.top()),
             Vec2::new(if on { 78. } else { 70. }, bounds.height()),
         );
-        let response = ui.put(
-            button,
-            egui::Button::new(if on { format!("   {text}") } else { text.into() })
-                .corner_radius(0.)
-                .selected(on && recording),
-        );
+        // The kit's button, lit (its primary look) while recording; the record dot sits left of
+        // its words.
+        let words = if on { format!("   {text}") } else { text.to_owned() };
+        let id = sample_source_id(track, device).with(("record-button", on));
+        let response = crate::kit::widgets::button_with_id(ui, ui.painter(), button, id, &words, text, on && recording);
         if on {
             ui.painter().circle_filled(
                 Pos2::new(button.left() + 10., button.center().y),

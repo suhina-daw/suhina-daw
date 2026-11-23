@@ -2198,3 +2198,20 @@ fn a_rule_for_every_button_reaches_a_device_s_on_switch() {
     let off = under(&mut h, css, |h| painted_at(h, odd(249)));
     assert!(off.iter().any(|rect| switch.expand(1.0).contains_rect(*rect)), "the switch off: {off:?} in {switch:?}");
 }
+
+/// The menu bar's menus are drawn with the kit's rows, so a rule scoped to the bar reaches their
+/// entries (`menu-bar button[kind="entry"]`).
+#[test]
+fn a_rule_scoped_to_the_menu_bar_reaches_its_entries() {
+    let css = format!("menu-bar button[kind=\"entry\"]:hover {{ background-color: {}; }}", hex(odd(53)));
+    let mut window = window(demo_app());
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    window.run_steps(4);
+    window.get_by_label("File").click();
+    window.run_steps(3);
+    window.get_by_label("Export…").hover();
+    window.run_steps(3);
+    let entry = filled_with(&window, odd(53));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(entry > 0, "the hovered entry is filled with the scoped rule's color");
+}

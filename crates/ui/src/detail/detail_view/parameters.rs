@@ -197,7 +197,11 @@ pub(super) fn parameter_widget(
                     .width(rect.width()),
                 |ui| {
                     for (i, label) in style.options.iter().enumerate() {
-                        ui.selectable_value(&mut *value, i as f64, label);
+                        let chosen = *value == i as f64;
+                        if crate::kit::menu::item(ui, label, chosen).clicked() {
+                            *value = i as f64;
+                            ui.close();
+                        }
                     }
                 },
             )

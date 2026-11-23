@@ -57,7 +57,7 @@ impl App {
         let mut theme_skin = skin::current();
         let mut changed = false;
         response.context_menu(|ui| {
-            if !editing && ui.button("Edit toolbar").clicked() {
+            if !editing && crate::kit::menu::entry(ui, "Edit toolbar", None, true).clicked() {
                 ui.ctx().data_mut(|d| {
                     d.insert_temp(
                         edit_id(),
@@ -70,7 +70,7 @@ impl App {
                 });
                 ui.close();
             }
-            if ui.button("Restore default toolbar").clicked() {
+            if crate::kit::menu::entry(ui, "Restore default toolbar", None, true).clicked() {
                 std::sync::Arc::make_mut(&mut theme_skin).toolbar = None;
                 std::sync::Arc::make_mut(&mut theme_skin).toolbar_offsets.clear();
                 changed = true;
