@@ -22,9 +22,11 @@ document describes its panel and what the device hands it.
 
 ## The panel
 
-628 × 168 (`suhina_device_compressor::panel`): Ratio, Attack, Knee and Release dials at the left,
-the display in the middle (`Widget::CompressorDisplay`, host-drawn, 316 wide), Thresh, Output,
-Dry/Wet, Input and SC HP (the side-chain high-pass) dials at the right. Every parameter has a dial;
+628 × 168 (`suhina_device_compressor::panel`), its dials grouped by what they do. At the left,
+what is compressed: Thresh and Ratio above, Input and Knee below, beside the display's threshold
+arrow. In the middle the display (`Widget::CompressorDisplay`, host-drawn, 316 wide). At the
+right, how it sounds: Attack, Release and Dry/Wet above, Output and SC HP (the side-chain
+high-pass) below. Every parameter has a dial;
 the display only adds ways to move the threshold and the ratio.
 
 The display has a row of tabs at its top, **Curve**, **Activity** and **Meters**, and at the right

@@ -1,10 +1,10 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The Compressor's panel (docs/spec/compressor.md › The panel): the dynamics dials at the left,
-//! the display in the middle ([`Widget::CompressorDisplay`], drawn on the host side from
+//! The Compressor's panel (docs/spec/compressor.md › The panel): the curve's dials and the input
+//! at the left, the display in the middle ([`Widget::CompressorDisplay`], drawn on the host side from
 //! [`crate::gain_change`] and the device's readouts, with its Curve, Activity and Meters views)
-//! and the level dials at the right. The dials are the SDK's own, so the theme draws them like
+//! and the timing, mix, output and key filter dials at the right. The dials are the SDK's own, so the theme draws them like
 //! every other device's.
 
 use suhina_device_sdk::builtin::{COMPACT_HEIGHT, Layout};
@@ -59,15 +59,18 @@ fn panel() -> DeviceUi {
                        the input meter for the threshold."
         .into();
     let controls = vec![
-        dial("ratio", "Ratio", left(0), 0, true, TextFormat::Number, 2),
-        dial("attack", "Attack", left(1), 0, true, TextFormat::Seconds, 2),
-        dial("knee", "Knee", left(0), 1, false, TextFormat::Decibels, 1),
-        dial("release", "Release", left(1), 1, true, TextFormat::Seconds, 0),
+        // What is compressed: the curve's threshold, ratio and knee, and the input driving into
+        // them, beside the display's threshold arrow.
+        dial("threshold", "Thresh", left(0), 0, false, TextFormat::Decibels, 1),
+        dial("ratio", "Ratio", left(1), 0, true, TextFormat::Number, 2),
+        dial("input", "Input", left(0), 1, false, TextFormat::Decibels, 1),
+        dial("knee", "Knee", left(1), 1, false, TextFormat::Decibels, 1),
         display,
-        dial("threshold", "Thresh", right(0), 0, false, TextFormat::Decibels, 1),
-        dial("output", "Output", right(1), 0, false, TextFormat::Decibels, 1),
+        // How it sounds: its timing and the mix above, the level out and the key's filter below.
+        dial("attack", "Attack", right(0), 0, true, TextFormat::Seconds, 2),
+        dial("release", "Release", right(1), 0, true, TextFormat::Seconds, 0),
         dial("mix", "Dry/Wet", right(2), 0, false, TextFormat::Percent, 0),
-        dial("input", "Input", right(0), 1, false, TextFormat::Decibels, 1),
+        dial("output", "Output", right(0), 1, false, TextFormat::Decibels, 1),
         dial("sidechainHighPass", "SC HP", right(1), 1, true, TextFormat::Frequency, 0),
     ];
     // The canvas draws every parameter, so the generated list under it draws none of them.
