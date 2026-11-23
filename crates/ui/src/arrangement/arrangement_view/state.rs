@@ -105,7 +105,6 @@ pub(crate) struct CurveDrag {
 pub(crate) struct ValueDrag {
     pub(super) track: TrackId,
     pub(super) control: Control,
-    pub(super) start: f64,
     pub(super) now: f64,
     pub(super) tracks: Vec<TrackId>,
 }

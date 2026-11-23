@@ -141,14 +141,9 @@ pub(super) fn value_control(
     // The tracks this drag moves: one track, or the whole selection it is part of.
     let tracks = state.controlled_tracks(track);
     let mut preview = state.gesture.value().filter(|d| d.track == track && d.control == control).map(|d| d.now);
-    // Another track of the same selection moves with the drag, by the same amount: what it shows
-    // is its own value moved by the drag's offset, before the command lands.
-    let moved = state
-        .gesture
-        .value()
-        .filter(|d| d.control == control && d.tracks.contains(&track))
-        .map(|d| moved_by_drag(value, d, range));
-    let shown = preview.or(moved).unwrap_or(value);
+    // Another track of the same selection moves with the drag through the commands every frame
+    // sends: it shows its own value as each lands.
+    let shown = preview.unwrap_or(value);
     let mut hover = 0.0;
     let mut control_response = None;
     let mut committed = None;
@@ -170,9 +165,11 @@ pub(super) fn value_control(
         widgets::value_drag_pointer(ui.ctx(), &response, el);
         control_response = Some(response.clone());
         hover = widgets::hover(ui, &response);
-        // One track hears every frame of a drag: each sets the value, all in one gesture, so the
-        // drag is one step. A selection of several moves together when the drag ends, by the
-        // same amount (`value_action`).
+        // Every frame of a drag is heard: each sets the value, all in one gesture, so the drag is
+        // one step. On a track of a selection of several, the window widens each frame to the
+        // whole selection (`App::drag_to_selection`): every track moves by as much as the one
+        // dragged, from where the drag started, so the selection is heard moving and keeps its
+        // differences (#1278).
         let one = tracks.len() == 1;
         let channel = match control {
             Control::Volume => commands::ChannelControl::Volume,
@@ -182,19 +179,17 @@ pub(super) fn value_control(
         let drag =
             widgets::drag_value_axis(ui, &response, &mut preview, value, per_point, per_tick, range, default, axis);
         let mine = |g: &Gesture| matches!(g, Gesture::Value(d) if d.track == track && d.control == control);
-        let start = || Gesture::Value(ValueDrag { track, control, start: value, now: value, tracks: tracks.clone() });
+        let start = || Gesture::Value(ValueDrag { track, control, now: value, tracks: tracks.clone() });
         match state.gesture.value_frame(&response, drag, start, mine) {
             Drag::Moving(v) => {
                 if let Some(drag) = state.gesture.value_mut() {
-                    (drag.start, drag.now) = (value, v);
+                    drag.now = v;
                 }
-                if one {
-                    actions.push(set(v));
-                }
+                actions.push(set(v));
             }
             Drag::Done(v) => {
                 committed = Some(v);
-                actions.push(if one { set(v) } else { value_action(control, &tracks, value, v) });
+                actions.push(set(v));
             }
             Drag::Set(v) => {
                 committed = Some(v);
@@ -207,9 +202,8 @@ pub(super) fn value_control(
     // there, so nothing glides back afterwards; other changes (an undo, say) glide.
     let anim = id.with(("shown", control as u8));
     let dragged = match state.gesture.value() {
-        Some(drag) if drag.control == control && drag.tracks.contains(&track) => {
-            Some(moved_by_drag(value, drag, range))
-        }
+        Some(drag) if drag.control == control && drag.track == track => Some(drag.now),
+        Some(drag) if drag.control == control && drag.tracks.contains(&track) => Some(value),
         _ => committed,
     };
     let shown = match dragged {
@@ -276,43 +270,11 @@ pub(super) fn pan_knob(
     widgets::knob_with_value(painter, rect, el, position, pointer, response, &text, ink, right, theme::TEXT_SMALL);
 }
 
-/// What a track whose value is `value` shows while `drag` moves its selection: the dragged track
-/// shows what the drag reached and the others keep their distance from it, as [`value_action`]
-/// will leave them. A drag to silence, or from it, is set on them all outright.
 /// A number typed or a double-click on one field of a selection: every track takes the value.
 fn value_set(control: Control, tracks: &[TrackId], to: f64) -> Action {
     let ids: Vec<u32> = tracks.iter().map(|t| t.0).collect();
     match control {
         Control::Volume => commands::set_volume(&ids, to, false),
-        Control::Pan => Action::new("track.setPan", json!({ "tracks": ids, "pan": (to * 100.0).round() / 100.0 })),
-    }
-}
-
-pub(super) fn moved_by_drag(value: f64, drag: &ValueDrag, range: (f64, f64)) -> f64 {
-    let delta = drag.now - drag.start;
-    let silenced = drag.control == Control::Volume && drag.now <= range.0;
-    if value == drag.start || silenced || !delta.is_finite() {
-        return drag.now;
-    }
-    if value.is_finite() { (value + delta).clamp(range.0, range.1) } else { value }
-}
-
-/// The command a finished volume or pan drag runs: one track is set to the value the drag reached,
-/// and a selection of several moves together by the same amount, keeping their differences. A move
-/// that cannot be counted in dB (a track at silence, whose value is -inf) is set outright.
-pub(super) fn value_action(control: Control, tracks: &[TrackId], from: f64, to: f64) -> Action {
-    let ids: Vec<u32> = tracks.iter().map(|t| t.0).collect();
-    let one = tracks.len() == 1;
-    let delta = to - from;
-    match control {
-        Control::Volume if !one && delta.is_finite() => {
-            let db = if to <= VOLUME_RANGE.0 { -200.0 } else { (delta * 10.0).round() / 10.0 };
-            Action::new("track.adjustVolume", json!({ "tracks": ids, "db": db }))
-        }
-        Control::Volume => commands::set_volume(&ids, to, false),
-        Control::Pan if !one && delta.is_finite() => {
-            Action::new("track.adjustPan", json!({ "tracks": ids, "pan": (delta * 100.0).round() / 100.0 }))
-        }
         Control::Pan => Action::new("track.setPan", json!({ "tracks": ids, "pan": (to * 100.0).round() / 100.0 })),
     }
 }

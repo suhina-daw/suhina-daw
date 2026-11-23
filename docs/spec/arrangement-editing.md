@@ -1142,12 +1142,13 @@ lays the control out horizontally (`direction: horizontal`).
 
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging
-one field moves every selected track's by the same amount (the others follow it as it is dragged,
-and the commands land when it is let go; a number typed or a double-click sets them all to that
-value), one click on a track-on or a solo button turns them all
-off or on, and the whole list is one undo step. With one track selected, or with a click outside
-the selection, they act on that track alone, and it is heard while it is dragged: each frame sets
-the value in one `gesture`, so the drag is one undo step.
+one field moves every selected track's by the same amount from where the drag started, each
+kept within its range (a pan within -1 to 1) and heard as it is dragged: each frame sets them all
+(`track.setMixerValues`) in one `gesture`, so the drag is one undo step, as in the Launcher
+view's strips. A number typed or a double-click sets them all to that value, one click on a
+track-on or a solo button turns them all off or on, and the whole list is one undo step. With
+one track selected, or with a click outside the selection, they act on that track alone, and it
+is heard while it is dragged the same way.
 
 **Ctrl (Cmd on macOS) and the wheel over a field** change its value instead of scrolling the view: one tick of a
 wheel is one step (1 dB, or 0.02 of pan), Shift as well makes it ten times finer, and the view

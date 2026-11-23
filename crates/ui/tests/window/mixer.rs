@@ -451,7 +451,8 @@ fn dragging_one_fader_of_a_selection_moves_every_track_in_proportion() {
     harness.hover_at(at - egui::vec2(20.0, 0.0));
     harness.step();
     harness.step();
-    // While it is dragged each field shows its own value moved, not the one being dragged.
+    // While it is dragged each field shows its own value moved, not the one being dragged: the
+    // other track's is set every frame (#1278).
     for (track, was) in ["Drums", "Bass"].iter().zip(&before) {
         let shown = harness.get_by_label(&format!("{track} volume")).value();
         let wanted = format!("{:.1}", 20.0 * was.log10() - 5.0);
@@ -465,6 +466,59 @@ fn dragging_one_fader_of_a_selection_moves_every_track_in_proportion() {
     for (track, (was, now)) in ["Drums", "Bass"].iter().zip(before.iter().zip(&after)) {
         assert!((now / was - quieter).abs() < 1e-3, "{track}: {was} -> {now}");
     }
+}
+
+/// A pan drag on one track of three selected in the Arrangement moves every one of them while the
+/// button is held, each by as much as the one dragged and within -1 to 1, and they stay where
+/// they were left, also from hard left past the center (#1278).
+#[test]
+fn dragging_one_pan_of_a_selection_moves_every_track_as_it_moves() {
+    let mut harness = arrangement_app();
+    let tracks = ["Drums", "Bass", "Keys"];
+    let pan_of = |h: &Harness<'static, App>, name: &str| -> f64 {
+        let Some(project) = h.state().session().map(Session::project) else { return f64::NAN };
+        let channel = project.tracks.iter().find(|t| t.name == name).and_then(|t| t.channel);
+        channel.and_then(|c| project.channel(c)).map_or(f64::NAN, |c| c.pan)
+    };
+    let id = |h: &Harness<'static, App>, name: &str| -> u32 {
+        h.state().session().and_then(|s| s.project().tracks.iter().find(|t| t.name == name)).map_or(0, |t| t.id.0)
+    };
+    for (name, pan) in tracks.iter().zip([-1.0, -0.8, -0.6]) {
+        let track = id(&harness, name);
+        harness.state_mut().run(&Action::new("track.setPan", json!({ "tracks": [track], "pan": pan })));
+    }
+    harness.run();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    for name in ["Bass", "Keys"] {
+        harness.get_by_label(&format!("Track {name}")).click_modifiers(Modifiers::COMMAND);
+        harness.run();
+    }
+
+    // Up raises a pan, on a bar and on a knob alike: 150 points is 1.5 to the right.
+    let at = harness.get_by_label("Drums pan").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.step();
+    for step in 1..=3 {
+        harness.hover_at(at - egui::vec2(0.0, 50.0 * step as f32));
+        harness.step();
+    }
+    harness.step();
+    let held: Vec<f64> = tracks.iter().map(|name| pan_of(&harness, name)).collect();
+    assert!((held[0] - 0.5).abs() < 0.011, "the dragged track follows the drag while held: {held:?}");
+    assert!((held[1] - 0.7).abs() < 0.011 && (held[2] - 0.9).abs() < 0.011, "the others move with it: {held:?}");
+    harness.drop_at(at - egui::vec2(0.0, 150.0));
+    harness.run();
+    let after: Vec<f64> = tracks.iter().map(|name| pan_of(&harness, name)).collect();
+    for (was, now) in held.iter().zip(&after) {
+        assert!((was - now).abs() < 0.011, "they stay where they were left: {held:?} -> {after:?}");
+    }
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    let undone: Vec<f64> = tracks.iter().map(|name| pan_of(&harness, name)).collect();
+    assert_eq!(undone, [-1.0, -0.8, -0.6], "the drag is one undo step");
 }
 
 /// A track's volume and its send to A Reverb in dB, the bottom of the range for none.
