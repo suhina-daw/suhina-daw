@@ -275,7 +275,8 @@ fn areas(display: Rect, view: View) -> Areas {
         // as wide as a third of the body leaves room for a scale's numbers (or the arrow) on each
         // side, and only that room apart, so they read as one group.
         let third = body.width() / 3.0;
-        let width = (third - 2.0 * METER_SIDE).clamp(12.0, 64.0);
+        // Slim, as level meters are: a bar wide enough to read, the room round it the scale's.
+        let width = (third - 2.0 * METER_SIDE).clamp(12.0, 20.0);
         let gap = METER_SIDE + 6.0;
         let left = body.center().x - (3.0 * width + 2.0 * gap) / 2.0;
         let meter = |i: f32| {
@@ -487,7 +488,6 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     let (caution, full) = (level_y(-6.0, rect), level_y(0.0, rect));
     let stops =
         [(rect.bottom(), level), (caution, level), (caution, amber), (full, amber), (full, hot), (rect.top(), hot)];
-    gradient(painter, rect, rect.bottom(), rect.top(), &stops, METER_UNLIT);
     let top = level_y(db, rect);
     if top < rect.bottom() {
         gradient(painter, rect, rect.bottom(), top, &stops, METER_LIT);
@@ -522,9 +522,8 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     );
 }
 
-/// How strongly a meter's lit part shows, and its unlit part (its colors are toned down already).
+/// How strongly a meter's lit part shows (its colors are toned down already).
 const METER_LIT: f32 = 1.0;
-const METER_UNLIT: f32 = 0.12;
 /// How long a meter's peak line holds, in seconds, and how fast it falls after, in dB a second.
 const PEAK_HOLD: f64 = 2.0;
 const PEAK_FALL: f64 = 20.0;
@@ -629,7 +628,6 @@ fn reduction_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palett
     let ground = colors.window_background;
     let reduction = blend(ground, palette.reduction, 0.55);
     let stops = [(rect.top(), reduction), (rect.bottom(), blend(ground, palette.reduction, 0.4))];
-    gradient(painter, rect, rect.top(), rect.bottom(), &stops, METER_UNLIT);
     let bottom = reduction_y(db, rect);
     if bottom > rect.top() + 0.5 {
         gradient(painter, rect, rect.top(), bottom, &stops, METER_LIT);
