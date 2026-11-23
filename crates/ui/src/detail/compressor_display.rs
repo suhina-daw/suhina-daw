@@ -478,17 +478,82 @@ fn tabs(ui: &mut egui::Ui, display: Rect, id: egui::Id, values: &Values, palette
 fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     let colors = super::device_canvas::colors();
     painter.rect_filled(rect, 1.0, colors.window_background);
+    // Lit from its foot as a hardware meter is: the theme's level color up to -12 dB, warming to
+    // amber by -3 dB and red past 0 dB. The unlit rest shows the same colors faintly.
+    let stops = [
+        (rect.bottom(), palette.level),
+        (level_y(-12.0, rect), palette.level),
+        (level_y(-3.0, rect), METER_AMBER),
+        (level_y(0.0, rect), METER_HOT),
+        (rect.top(), METER_HOT),
+    ];
+    gradient(painter, rect, rect.bottom(), rect.top(), &stops, METER_UNLIT);
     let top = level_y(db, rect);
     if top < rect.bottom() {
-        let fill = Rect::from_min_max(Pos2::new(rect.left(), top), rect.max);
-        let color = if db > 0.0 { Color32::from_rgb(0xe8, 0x5a, 0x4f) } else { palette.level };
-        painter.rect_filled(fill, 1.0, color);
+        gradient(painter, rect, rect.bottom(), top, &stops, METER_LIT);
     }
-    let zero = level_y(0.0, rect);
+    segments(painter, rect, colors.window_background);
+    let tick = colors.text_secondary.gamma_multiply(0.35);
+    for mark in [-12.0, -24.0, -36.0, -48.0] {
+        let y = level_y(mark, rect).round() + 0.5;
+        painter.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(1.0, tick));
+    }
+    let zero = level_y(0.0, rect).round() + 0.5;
     painter.line_segment(
         [Pos2::new(rect.left(), zero), Pos2::new(rect.right(), zero)],
-        Stroke::new(1.0, colors.text_secondary.gamma_multiply(0.6)),
+        Stroke::new(1.0, colors.text_secondary.gamma_multiply(0.7)),
     );
+}
+
+/// How strongly a meter's lit part shows, and its unlit part.
+const METER_LIT: f32 = 0.72;
+const METER_UNLIT: f32 = 0.1;
+/// A level meter's colors near and past full scale.
+const METER_AMBER: Color32 = Color32::from_rgb(0xe8, 0xc0, 0x4f);
+const METER_HOT: Color32 = Color32::from_rgb(0xe8, 0x5a, 0x4f);
+
+/// `rect`'s width filled from y `from` to y `to` in the colors `stops` give at their y (from the
+/// bottom up), blended between them, at `alpha`.
+fn gradient(painter: &egui::Painter, rect: Rect, from: f32, to: f32, stops: &[(f32, Color32)], alpha: f32) {
+    let (low, high) = (from.max(to), from.min(to));
+    let mut mesh = egui::Mesh::default();
+    for pair in stops.windows(2) {
+        let [(y0, c0), (y1, c1)] = pair else { continue };
+        let (bottom, top) = (y0.max(*y1), y0.min(*y1));
+        let (a, b) = (bottom.min(low), top.max(high));
+        if a <= b {
+            continue;
+        }
+        let at = |y: f32| {
+            let t = if (y1 - y0).abs() > f32::EPSILON { ((y - y0) / (y1 - y0)).clamp(0.0, 1.0) } else { 0.0 };
+            blend(*c0, *c1, t).gamma_multiply(alpha)
+        };
+        let base = mesh.vertices.len() as u32;
+        mesh.colored_vertex(Pos2::new(rect.left(), a), at(a));
+        mesh.colored_vertex(Pos2::new(rect.right(), a), at(a));
+        mesh.colored_vertex(Pos2::new(rect.right(), b), at(b));
+        mesh.colored_vertex(Pos2::new(rect.left(), b), at(b));
+        mesh.add_triangle(base, base + 1, base + 2);
+        mesh.add_triangle(base, base + 2, base + 3);
+    }
+    painter.add(Shape::mesh(mesh));
+}
+
+/// The color `t` of the way from `a` to `b`.
+fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
+    let mix = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round().clamp(0.0, 255.0) as u8;
+    Color32::from_rgba_unmultiplied(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()), mix(a.a(), b.a()))
+}
+
+/// Thin gaps across a meter every few points, so it reads as a column of segments.
+fn segments(painter: &egui::Painter, rect: Rect, gap: Color32) {
+    let gap = Stroke::new(1.0, gap.gamma_multiply(0.85));
+    let mut y = rect.bottom() - 3.0;
+    while y > rect.top() {
+        let line = y.round() + 0.5;
+        painter.line_segment([Pos2::new(rect.left(), line), Pos2::new(rect.right(), line)], gap);
+        y -= 3.0;
+    }
 }
 
 /// The large meters' scales: dB beside the input and output meters, the reduction's beside its
@@ -529,9 +594,17 @@ fn meter_scales(painter: &egui::Painter, areas: &Areas, palette: Palette) {
 fn reduction_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     let colors = super::device_canvas::colors();
     painter.rect_filled(rect, 1.0, colors.window_background);
+    let stops = [(rect.top(), palette.reduction), (rect.bottom(), palette.reduction)];
+    gradient(painter, rect, rect.top(), rect.bottom(), &stops, METER_UNLIT);
     let bottom = reduction_y(db, rect);
     if bottom > rect.top() + 0.5 {
-        painter.rect_filled(Rect::from_min_max(rect.min, Pos2::new(rect.right(), bottom)), 1.0, palette.reduction);
+        gradient(painter, rect, rect.top(), bottom, &stops, METER_LIT);
+    }
+    segments(painter, rect, colors.window_background);
+    let tick = colors.text_secondary.gamma_multiply(0.35);
+    for mark in [6.0, 12.0, 18.0] {
+        let y = reduction_y(mark, rect).round() + 0.5;
+        painter.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(1.0, tick));
     }
 }
 
