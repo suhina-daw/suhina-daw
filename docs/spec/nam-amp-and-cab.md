@@ -349,14 +349,19 @@ Everything the user does is one of the existing device commands plus one new `Ed
     disk (and its unpacked copy) is not there; a file outside the library — its absolute path,
     recorded when it is all there is. A relative text the pack stands in for stores as the
     relative text it was read by, so a caller that hands it back keeps the same reference
-    ([ADR 0036] › 7). One undo step, as `device.setParam` takes.
+    ([ADR 0036] › 7), but only when the pack carries that name and the text names no file from
+    the working folder: a file of the user's own in a folder shaped like the pack's place is
+    stored by its absolute path. One undo step, as `device.setParam` takes.
 - `device.savePreset{track, device, name}` — the device's values, and the file it selects, into
   the library's `Presets/<device id>/<name>.<device id>.preset.suhina`
   ([ADR 0036] › 5, [ADR 0014]'s format with its `file` field). A same-name preset is replaced.
   A state the library's move carried — the file in the library now, the state still naming the
   old folder — saves by the file's library-relative place ([ADR 0014] › Amendment); a file
   outside the library is refused. Not a project change: no undo step, nothing to save; the
-  panel's menu runs it.
+  panel's menu runs it. A preset's file is read only where the preset names it: one that names
+  a file in an old default folder that is no longer there (a file the move kept there because
+  the library held its name) is reported missing when the preset is added, never read through
+  the old-folder mapping, which would run the library's other file of that name.
 
 The session keeps the parsed models and decoded IRs keyed by path — the same road the decoded
 audio files take ([ADR 0011](../decisions/0011-preview-and-added-audio.md); the session fills a

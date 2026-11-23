@@ -1748,3 +1748,83 @@ fn imported_audio_stretch_places_the_recorded_pulse_on_the_project_grid() {
     assert!(peak(0.3, 0.65) < 0.0001, "it must not play at the unstretched half second");
     assert_eq!(std::fs::read(path).unwrap(), file);
 }
+
+/// A relative path shaped like the pack's place (`…/Amp models/Suhina/<name>`) is kept relative
+/// only when the pack carries that name and the text names no file from the working folder: a
+/// file of the user's own there is stored by its absolute path and loads, as one in any other
+/// folder does; a pack name with no file on the disk stays the pack's stand-in (#1369).
+#[test]
+fn a_working_folder_path_shaped_like_the_packs_place_is_the_users_own_file() {
+    let base = temp_dir("pack-shaped-base");
+    // Relative to the working folder, as a CLI or MCP caller names it.
+    let root = format!("suhina-pack-shaped-{}", std::process::id());
+    let _ = std::fs::remove_dir_all(&root);
+    let shaped = format!("{root}/Amp models/Suhina/Mine.nam");
+    let other = format!("{root}/Amp models/Other/Mine.nam");
+    for path in [&shaped, &other] {
+        std::fs::create_dir_all(Path::new(path).parent().unwrap()).unwrap();
+        std::fs::write(path, SHIPPED_OVERDRIVE).unwrap();
+    }
+    let mut session = Session::new(blank_project());
+    session.set_library_base(base.clone());
+    run(&mut session, "track.add", json!({ "kind": "audio" })).unwrap();
+    run(&mut session, "device.add", json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+    for path in [&other, &shaped] {
+        let out = run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": path })).unwrap();
+        let stored = out["file"].as_str().unwrap().to_owned();
+        assert!(Path::new(&stored).is_absolute(), "{path} is stored by its absolute path: {stored}");
+        assert!(session.device_asset(&stored).is_some(), "{path} loads");
+    }
+    let _ = std::fs::remove_dir_all(&root);
+
+    // A name the pack carries, with no file on the disk: the pack stands in, the text stays.
+    let packed = format!("{root}/Amp models/Suhina/Suhina Overdrive.nam");
+    let out = run(&mut session, "device.setNamFile", json!({ "track": 1, "device": 0, "path": packed })).unwrap();
+    assert_eq!(out["file"], packed.as_str(), "the pack's stand-in keeps the relative text");
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// A preset saved from a file kept in the old default folder (its name taken in the library)
+/// names the old place. Once that copy is gone, adding the preset does not load the library's
+/// other file of the same name through the old-folder mapping: the device starts without a
+/// file and the result says why (#1369).
+#[test]
+fn a_preset_from_a_kept_old_folder_file_never_loads_another_file_of_its_name() {
+    let dir = temp_dir("preset-old-folder");
+    let old = dir.join("NAM models/Clash.nam");
+    let new = dir.join("Sounds/NAM/Amp models/Clash.nam");
+    std::fs::create_dir_all(old.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(new.parent().unwrap()).unwrap();
+    std::fs::write(&old, SHIPPED_OVERDRIVE).unwrap();
+    std::fs::write(&new, include_bytes!("../../../packs/nam-amp-modeler/Suhina Clean.nam")).unwrap();
+    // A project whose device runs the old folder's file, kept there since the library holds the name.
+    let mut device = Device::new("NAM Amp Modeler", DeviceKind::Builtin("nam-amp-modeler".into()));
+    device.state = Some(text(&old).into_bytes().into());
+    let mut project = ProjectBuilder::new().audio_track(1, "Audio").build_without_ids();
+    project.channels[0].devices.push(device);
+    let mut session = Session::new(suhina_test_support::with_ids(project));
+    session.set_library_base(dir.clone());
+    session.sync_device_files();
+    let saved = run(&mut session, "device.savePreset", json!({ "track": 1, "device": 0, "name": "Kept" })).unwrap();
+    let preset = PathBuf::from(saved["preset"].as_str().unwrap());
+
+    // While the old copy is there, the preset runs it.
+    let add = |dir: &Path| {
+        let mut second = Session::new(blank_project());
+        second.set_library_base(dir.to_path_buf());
+        run(&mut second, "track.add", json!({ "kind": "audio" })).unwrap();
+        let added = run(&mut second, "device.add", json!({ "track": 1, "preset": text(&preset) })).unwrap();
+        let file = run(&mut second, "device.file", json!({ "track": 1, "device": 0 })).unwrap();
+        (added, file)
+    };
+    let (added, file) = add(&dir);
+    assert!(added.get("file_missing").is_none(), "{added}");
+    assert_eq!(file["name"], "Suhina Overdrive", "the kept file runs");
+
+    // The old copy removed: the library's Clash.nam (Suhina Clean) is not taken in its place.
+    std::fs::remove_file(&old).unwrap();
+    let (added, file) = add(&dir);
+    assert!(added["file_missing"].as_str().is_some_and(|why| why.contains("old default folder")), "{added}");
+    assert_ne!(file["name"], "Suhina Clean", "no other file of the name runs");
+    let _ = std::fs::remove_dir_all(&dir);
+}
