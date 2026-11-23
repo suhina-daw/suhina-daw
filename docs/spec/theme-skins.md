@@ -469,6 +469,14 @@ page's (ADR 0031, amendment of 2026-11-15).
   state.
 - **Not the theme's.** What a base rule gives an element is not authored, as the user agent's is
   not: the code that asks whether a theme styled something sees only the theme's rules.
+- **The sheet decides, the code draws** (#1695). Everything a theme author could want to change
+  (a color, a size, a border, which artwork) comes from a sheet, the base sheet's rule where no
+  theme gives one, and the code draws the computed value: it keeps no color or size of its own to
+  fall back to, since such a copy drifts from the sheet unseen. Code keeps only what is
+  arithmetic about the layout (a corner a quarter of the control's height, a hit area, the
+  grid's spacing); where a theme should be able to change it, the sheet gives the input and the
+  code the formula. The areas of #1695 move the code there one at a time, and #1694 then counts
+  the base tier as authored.
 - **No fixed color.** Every color in the base sheet reads a variable (it may mix one with
   `black` to shade it), so a theme's variables reach everything it styles and an element added in
   a later version matches a theme that never heard of it. A test checks it.
@@ -498,19 +506,19 @@ page's (ADR 0031, amendment of 2026-11-15).
   `dropdown-arrow`, a typed number (`text-input[kind="typed"]`), a routing field's `:hover`
   (`dropdown[kind="subtle"]`); a slider's rail, fill and handle; a fader cap's fill; a meter's
   levels and clip light; a dialog's edge; the rows of a floating list (`list-row`,
-  `list-row[selected]`); the section of the Launcher, the mixer and the Arrangement (#1450): a
+  `list-row[selected]`, their fill while picked and under the pointer `list-row[kind="floating"]`); the section of the Launcher, the mixer and the Arrangement (#1450): a
   scene's button (`scene`, `:hover`, `[playing]`; `scene[kind="stop-all"]`), a track's stop button
   (`slot[kind="stop"]`, `:hover`, `[queued]`), an empty slot (`session slot`, `[selected]`) and
   `slot-mark`, the Launcher's clips by state (`session clip[muted]`, `[queued]`, `[selected]`),
   `slot-record` (`:hover`, `[recording]`), `mapping-overlay`, Main's headers, the
   Launcher's lines (`separator[kind="band"]`, `"column"`, `"slot"`), a splitter's `divider`, the
-  switches `button[kind="record"]`, `"metronome"`, `"monitor"`, `"lanes"`, `"envelope"` and
+  switches `button[kind="record"]` (its dot `button[kind="record"] icon[kind="record"]`), `"metronome"`, `"monitor"`, `"lanes"`, `"envelope"` and
   `"shape"` (lit with `[checked]`), a strip's `mixer`, `device-list` and its rows (`:hover`,
   `[selected]`, `[muted]`), `fader`, `fader-scale`, `fader-rail`, `send` (`:hover`), `scroll-bar`
   and the metronome's level popup (`popup[kind="level"]`, its slider's parts); and in the Arrangement `arrangement`
   and `arrangement[kind="panel"]` (the colors under the grid and under the panels), `ruler`, the
   grid lines, `tempo-mark`, `start-marker`, `playhead`, `loop-line`, `loop-region`, `marker`,
-  `arrangement-tool`, `time-selection` by kind (`ruler`, `draw`, `take`, `automation`, `editor`),
+  `arrangement-tool`, the returns button (`button[kind="returns"]`), `time-selection` by kind (`ruler`, `draw`, `take`, `automation`, `editor`),
   `marquee`, `clip[recording]`, `track-lane[checked]`, the track headers (`[selected]`; Main's),
   `clip-gain`, `clip-fade-handle`, and the automation lanes' parts; the detail panels' and the browser's section (#1451): the browser's own
   text and its words in it (`browser label[kind]`, from the `--browser-text-*` variables), its rows
@@ -598,9 +606,13 @@ every arrangement.
 (`kit::element`, `Entered::paint`): `background-color`, `background-image`, `border-radius`,
 `border-width` with `border-color` (no border without a width), `box-shadow` and
 `opacity` from its element, the native values where the sheet sets none. A transparent
-background paints nothing, never a see-through hole in the window. A button the sheet
-shapes (background, radius or border width) is not covered by the artwork Suhina ships;
-a theme's own `button` artwork still wins. The toolbar's tempo, position and RAM/CPU
+background paints nothing, never a see-through hole in the window. A button draws the artwork
+its cascaded `image` names (the user-agent sheet's `button { image: url("suhina:button.svg"); }`,
+or the theme's) unless the sheet says `image: none`: then it draws its CSS shape alone. A
+background, radius or border the sheet gives a button tints and rounds its artwork; it does not
+replace it, so whether a button has artwork never depends on which sheet set its colors (#1696).
+`appearance` is a separate choice, of what kind of control to draw (`pan { appearance: knob; }`);
+each kind draws the artwork `image` names for it. The toolbar's tempo, position and RAM/CPU
 fields paint the same way.
 
 **Paint order.** Every element `Entered::paint` draws paints in CSS's order, whatever its kind:
@@ -690,11 +702,13 @@ reads `backdrop-filter` too (#1487 F4), from any rule for `settings`; with none 
 `border-bottom-width` and `border-left-width` (one to four lengths, as `padding`), each 0 to
 16 px; `border-color` is one color for all four sides. Sides of one width follow the element's
 `border-radius`; sides of different widths are drawn straight. egui's ordinary widgets (in
-Settings, dialogs and the browser, styled by the generic `button` rules) draw one outline all round: a rule whose sides differ gives them its
+Settings, dialogs and the browser: the drop-downs' faces, styled by the generic `button` rules) draw one outline all round: a rule whose sides differ gives them its
 `border-color` and leaves their outline's width as it was, rather than a box of its widest side.
 
-**egui's own widgets at the root (#1442, #1452).** egui draws its buttons, check boxes, drop-downs, text
-fields, scroll bars, menus and pop-ups from `egui::Visuals`. The window builds them from the
+**egui's own widgets at the root (#1442, #1452).** egui draws its drop-downs' faces, text
+fields, scroll bars, menus and pop-ups from `egui::Visuals`; the views draw no egui button, check
+box, radio button or selectable label, only the kit's (`kit::controls`, `kit::widgets`), which
+read their elements' computed style like every other control (#1696). The window builds them from the
 sheet. Under every theme's rules they take the computed style of `widget`, looked up inside the
 `window` (so a backdrop's fading reaches them): `widget` at rest, `:hover` and `:active` (fill
 and words), `widget[kind="static"]` what egui draws that takes no input (egui's non-interactive

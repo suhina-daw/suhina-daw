@@ -499,8 +499,7 @@ specific selector to win over Suhina's.
   `button[kind="check"][checked]`. A bar's plain `color` no longer reaches a menu's title or the
   tabs' names: color the bar through `--text-secondary`, or give them a rule
   (`menu-bar bar-item[kind="menu"], project-tabs label[kind="caption"] { color: … }`).
-- **egui's own widgets** (the fields, drop-downs, check boxes and entries of Settings and the
-  menus) take `widget`: at rest, `:hover`, `:active`, `[checked]` for the selection,
+- **egui's own widgets** (the fields and drop-downs of Settings and the menus) take `widget`: at rest, `:hover`, `:active`, `[checked]` for the selection,
   `[kind="window"]` for egui's windows and menus, `[kind="field"]` behind a text field. Its words
   at rest are `--text-value`, a `button`'s `--text-primary`; your rules for `button`, `text-input`,
   `menu` and `scroll-bar` still go over it. What egui draws that takes no input, its separators,
@@ -688,7 +687,7 @@ control is dragged or shows the arrow of the drag's direction; `auto` keeps the 
 | Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-slice`, `start-marker`, `loop-region`, `ruler-number`, `ruler-tick`, `piano-tool` with `#piano-<tool>`, `midi-tools` (with `slider#quantise-amount`), `clip-info`, `editor-tab` (`#tab-clip`, `#tab-devices`, `#tab-notes`, `#tab-transform`) |
 | Browser `browser` | `browser-place`, `browser-row`, `browser-play`, `browser-tag-dot`, `browser-preview-wave`, `#browser-search`, `#browser-new-folder` (`text-input`) |
 | Devices `device`, `#device-<id>` | `device-header`, `device-control`, `slider`, `slider-rail`, `slider-fill`, `slider-handle`, `knob`, `value` |
-| Dialogs `settings`, `dialog`, `start-page`, `plugin-manager` | `button` (also egui's check boxes and drop-downs), `button[checked]` (a chosen item), `text-input`, `settings-nav`, `progress`, `progress-fill`, `menu`, `popup` |
+| Dialogs `settings`, `dialog`, `start-page`, `plugin-manager` | `button` (also the drop-downs' faces), `button[kind="check"]` (a tick box), `button[kind="entry"]` (a choice in a list, `[checked]` the chosen one), `button[checked]` (a chosen item), `text-input`, `settings-nav`, `progress`, `progress-fill`, `menu`, `popup` |
 
 States: the pointer's and focus are pseudo-classes, `:hover`, `:active`, `:disabled`, `:focus`;
 what Suhina knows about a part is an attribute, `[checked]`, `[selected]`, `[muted]`,
@@ -791,11 +790,13 @@ with a `background-color` does not repaint the buttons on it. A control's own su
 `background-color`, `background-image`, `border-radius`, `border-width` with `border-color`
 (no border is drawn without a width; `border-width: 0 0 1px` or `border-bottom-width` and the
 other sides draw some sides only), `box-shadow` and `opacity`; `transparent` paints nothing.
-A button shaped this way is not covered by the artwork Suhina ships, only by your own
-`button` artwork. For example, a toolbar as one surface with recessed displays:
+A button keeps its artwork (Suhina's `button.svg`, or your own `button` artwork) whatever
+background, radius or border you give it: they tint and round the artwork. To draw a button as
+its CSS shape alone, say `image: none` on it. For example, a toolbar as one surface with recessed
+displays:
 
 ```css
-#browser button, #metronome button { background-color: transparent; box-shadow: none; }
+#browser button, #metronome button { image: none; background-color: transparent; box-shadow: none; }
 #browser button:hover, #metronome button:hover { border-width: 1px; border-color: var(--accent); }
 #performance { background-color: transparent; }
 #tempo, #position { background-color: var(--my-well); border-radius: 4px; }
@@ -974,10 +975,13 @@ value) and `slider-handle` (`width`), with the artwork roles `slider.rail`, `sli
 ### Buttons and fields everywhere
 
 `button` (with `:hover`, `:active`, `:disabled` and `[checked]` for a chosen row in a list or
-menu) and `text-input` style Suhina's ordinary widgets too: the buttons, check boxes,
-drop-downs and text fields in Settings, in dialogs (Export audio, Save, the loading and closing
-dialogs), on the start page, in the browser, the sample map, the Plug-in manager and in
-popups. Scope them to one place with its element: `settings button`, `dialog text-input`.
+menu) and `text-input` style Suhina's ordinary widgets too: the buttons, drop-downs and text
+fields in Settings, in dialogs (Export audio, Save, the loading and closing dialogs), on the start
+page, in the browser, the sample map, the Plug-in manager and in popups. A tick box is
+`button[kind="check"]` with its words `label[kind="check"]`, a choice in a list (Settings' help,
+the sample map's layouts and its list, quick add's filters, a device's radio parameter)
+`button[kind="entry"]`, `[checked]` for the chosen one, and a button that removes or discards
+something has its words in `label[kind="error"]`'s `color`. Scope them to one place with its element: `settings button`, `dialog text-input`.
 `border-width: 0` removes egui's own outline. egui draws one outline all round, so sides of
 different widths (`border-width: 0 0 2px`) give these widgets only the `border-color`; the
 browser's search field and Settings' theme swatches draw each side. Settings' choices of several parts (Ask, Panel,
@@ -998,7 +1002,8 @@ the plain `button`.
 egui's separators, the edges of its group frames and its labels are not buttons: style them with
 `widget[kind="static"]`, and hide its lines with `widget[kind="static"] { border-color: transparent; }`.
 A disabled egui widget is drawn faded in its own state's look, so `button:disabled` does not reach
-egui's widgets at all.
+egui's widgets at all; it does style Suhina's own buttons that cannot be pressed now (dim words, as
+the base sheet gives them).
 
 A region's own `border-radius` and border (a `menu`'s, `settings`', a `dialog`'s) frame the region;
 the widgets inside take theirs from the `button` rules that reach them, so a round menu does not make
