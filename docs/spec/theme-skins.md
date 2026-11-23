@@ -613,6 +613,8 @@ or the theme's) unless the sheet says `image: none`: then it draws its CSS shape
 artwork, the sheet's `background-color` is the artwork's `currentColor`, its `border-radius` rounds
 it, its `background-image` is painted over it and its border over that, as CSS draws a border over
 the background; whether a button has artwork never depends on which sheet set its colors (#1696).
+A button drawn as a menu's rows are (`button[kind="entry"]`, the browser's "…"
+`button[kind="more"]`) draws its CSS shape alone, as those rows do: no artwork.
 A push button with words is `button[kind="push"]`, the dialog's main action
 `button[kind="primary"]`: its edge is its CSS border (the base sheet gives both `border-width:
 1px`, the primary one in the accent), not a line of the code's own.
@@ -1674,7 +1676,7 @@ of bars, and a slider id per parameter.
   `[kind="tag-check"][checked]`, `[kind="focus"][checked]`, `button[kind="more"]:hover`), as
   Suhina Meadow, Blocks, Sheet and Dark Gloss do. A device's on switch
   (`button#control-device-on`, `[checked]` while it runs) is one of them: a theme's rule for every
-  `button` reaches it as it does any button. An expanded panel's × (`button[kind="close"]`) still takes only a rule for itself, and the
+  `button` reaches it as it does any button. So do an expanded panel's × (`button[kind="close"]`) and the browser's "…" (`button[kind="more"]`), and the
   piano roll's toolbar draws every button, its menus too, as `piano-tool`. A device's own
   drawings (its canvas, the EQ's display, a sampler's waveform and envelope) take the colors of
   `device-canvas` in the device's scope, read once a frame. A region's plain `color` no longer

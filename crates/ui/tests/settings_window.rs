@@ -917,10 +917,10 @@ fn help_chooses_how_descriptions_are_shown() {
     assert_eq!(harness.state().settings().setting_descriptions, Descriptions::Tooltip, "a tooltip by default");
     harness.get_by_label("Settings help").click();
     harness.run();
-    harness.get_by_label("Below the name: each setting's description is always shown").click();
+    harness.get_by_label("Below the name: always shown").click();
     harness.run();
     assert_eq!(harness.state().settings().setting_descriptions, Descriptions::Shown);
-    harness.get_by_label("? icon: point at the ? next to a setting to read what it does").click();
+    harness.get_by_label("? icon: point at the ? beside a setting").click();
     harness.run();
     let settings = harness.state().settings().clone();
     assert_eq!(settings.setting_descriptions, Descriptions::Icon);

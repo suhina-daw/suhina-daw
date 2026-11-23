@@ -133,7 +133,8 @@ fn choice_in(ui: &Ui, rect: Rect, (text, name): (&str, &str), on: bool, ink: Opt
     response.widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), on, name));
     let el = BUTTON.attribute("kind", "entry").attr(crate::kit::element::Checked, on).response(&response).enter();
     let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
-    widgets::button_surface(ui.painter(), rect, &el, &response, on, fill, 2.0);
+    // Drawn as a menu's rows are: its CSS box, no artwork.
+    el.paint_with(ui.painter(), rect, crate::kit::element::Native { radius: 2.0, fill });
     let words = rect.shrink2(Vec2::new(INSET, 0.0));
     widgets::text_in(ui.painter(), words, Align2::LEFT_CENTER, text, font(), ink.unwrap_or_else(|| el.color()));
     response
@@ -174,7 +175,8 @@ pub fn disclosure(ui: &mut Ui, text: &str, open: bool) -> Response {
     let hot = response.hovered() || response.has_focus();
     let fill = if hot { entry.clone().pointer(true, false, false).look().background() } else { Color32::TRANSPARENT };
     let el = entry.clone().response(&response).enter();
-    widgets::button_surface(ui.painter(), rect, &el, &response, open, fill, 2.0);
+    // Drawn as a menu's rows are: its CSS box, no artwork.
+    el.paint_with(ui.painter(), rect, crate::kit::element::Native { radius: 2.0, fill });
     drop(el);
     let ink = entry.response(&response).look().color();
     widgets::chevron(ui.painter(), Pos2::new(rect.left() + 6.0, rect.center().y), open, ink);
@@ -193,7 +195,8 @@ pub fn arrow_button(ui: &mut Ui, name: &str, left: bool) -> Response {
     let hot = response.hovered() || response.has_focus();
     let fill = if hot { entry.clone().pointer(true, false, false).look().background() } else { Color32::TRANSPARENT };
     let el = entry.clone().response(&response).enter();
-    widgets::button_surface(ui.painter(), rect, &el, &response, false, fill, 2.0);
+    // Drawn as a menu's rows are: its CSS box, no artwork.
+    el.paint_with(ui.painter(), rect, crate::kit::element::Native { radius: 2.0, fill });
     drop(el);
     let ink = entry.response(&response).look().color();
     let c = rect.center();

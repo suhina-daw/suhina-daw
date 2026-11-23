@@ -1234,9 +1234,9 @@ pub fn ask_leave(state: &mut PageState, to: Leave) {
 
 /// The ways a setting's description can be shown, as the Help dialog offers them.
 const DESCRIPTION_CHOICES: [(Descriptions, &str); 3] = [
-    (Descriptions::Tooltip, "Tooltip: point at a setting's name to read what it does"),
-    (Descriptions::Icon, "? icon: point at the ? next to a setting to read what it does"),
-    (Descriptions::Shown, "Below the name: each setting's description is always shown"),
+    (Descriptions::Tooltip, "Tooltip: point at a setting's name"),
+    (Descriptions::Icon, "? icon: point at the ? beside a setting"),
+    (Descriptions::Shown, "Below the name: always shown"),
 ];
 
 /// Help over the Settings window: what the names and descriptions are, and how a description is

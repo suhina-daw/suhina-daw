@@ -3985,7 +3985,8 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
             egui::Color32::TRANSPARENT
         };
         let el = entry.clone().response(&response).enter();
-        widgets::button_surface(painter, rect, &el, &response, false, fill, 2.0);
+        // Drawn as a menu's rows are: its CSS box, no artwork.
+        el.paint_with(painter, rect, crate::kit::element::Native { radius: 2.0, fill });
         drop(el);
         widgets::chevron(painter, Pos2::new(rect.left() + 6.0, rect.center().y), open, crate::kit::element::hint_ink());
         let font = theme::ui_font(theme::TEXT);
@@ -4492,7 +4493,8 @@ fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::R
     {
         let hot = crate::kit::element::BUTTON.builder().pointer(true, false, false).probe().background();
         let el = crate::kit::element::BUTTON.attribute("kind", "entry").response(response).enter();
-        widgets::button_surface(painter, rect, &el, response, false, hot.gamma_multiply(hover), 3.0);
+        // Drawn as a menu's rows are: its CSS box, no artwork.
+        el.paint_with(painter, rect, crate::kit::element::Native { radius: 3.0, fill: hot.gamma_multiply(hover) });
     }
     let ink = match glyph {
         Glyph::Pinned => crate::kit::element::AUTOMATION_PIN.look().color(),
