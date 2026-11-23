@@ -2630,7 +2630,6 @@ fn plugin_actions(
     plugins: &mut PluginsView,
 ) -> Option<PluginRequest> {
     let mut request = None;
-    let small = theme::ui_font(theme::TEXT_SMALL);
     let line = |y: &mut f32, height: f32| {
         let rect = Rect::from_min_size(Pos2::new(page.left(), *y), Vec2::new(page.width(), height));
         *y += height;
@@ -2660,17 +2659,14 @@ fn plugin_actions(
             Pos2::new(buttons.left() + index as f32 * (half + 1.0), buttons.top()),
             Vec2::new(half, buttons.height()),
         );
-        let response = widgets::button_area(ui, cell, Id::unique(("scan", index)), text);
-        let el = crate::kit::element::BUTTON.response(&response).enter();
-        // While a scan runs, the buttons stand back: the region's fill under the hint's ink.
-        let fill = if plugins.scanning {
-            el.background_or(crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")))
-        } else {
-            el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background)
-        };
-        painter.rect_filled(cell, 0.0, fill);
-        let color = if plugins.scanning { ink().hint } else { el.color() };
-        widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, small.clone(), color);
+        // Push buttons, `:disabled` while a scan runs.
+        let response = ui
+            .add_enabled_ui(!plugins.scanning, |ui| {
+                let response = widgets::button_area(ui, cell, Id::unique(("scan", index)), text);
+                widgets::push_face(ui, painter, cell, &response, (text, widgets::Push::Plain), None);
+                response
+            })
+            .inner;
         if response.clicked() && !plugins.scanning {
             request = Some(PluginRequest::Scan { all });
         }
