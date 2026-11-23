@@ -774,6 +774,8 @@ fn draw_type_menus(
         let mut picked = None;
         // The standard popup frame and the kit's compact rows, as every menu's.
         egui::Popup::menu(&response).show(|ui| {
+            // Compact rows, as low as the band's own field.
+            ui.spacing_mut().interact_size.y = 14.0;
             for (i, name) in TYPE_NAMES.iter().enumerate() {
                 if crate::kit::menu::Entry::new(name).chosen(band.kind == i).compact().show(ui).clicked() {
                     picked = Some(i);

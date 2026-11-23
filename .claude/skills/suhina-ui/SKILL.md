@@ -71,9 +71,9 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   that needs more (a grayed choice, a key beside a check box, a value at its right end, a name
   read out apart from its words, a compact row, a submenu a click inside keeps open) is built
   with `menu::Entry`. Every menu is drawn this way, the menu bar's and a drop-down's list
-  (`kit::widgets::combo_box`) included (`interaction/menus.rs` is the example). A menu's button is a `widgets::button_area` with a dropdown face, not egui's `menu_button`. A
-  panel laid out in egui's flow (a column
-  of rows, as the track color window) takes `kit::controls` (`button`, `check_box`, `options`,
+  (`kit::widgets::combo_box`) included (`interaction/menus.rs` is the example). A menu's button
+  is a `widgets::button_area` with a dropdown face, not egui's `menu_button`. A panel laid out in
+  egui's flow (a column of rows, as the track color window) takes `kit::controls` (`button`, `check_box`, `options`,
   `disclosure`, `slider`, `heading`, `note`, `text`, `separator`); a view with a fixed geometry
   paints the same faces from `widgets` (`button_with_id`, `check_box`, `option_face`,
   `slider_face`) into its own rectangles. Both reuse the elements Settings and the dialogs use,

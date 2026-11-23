@@ -1260,14 +1260,14 @@ pub fn hideable_headings() -> impl Iterator<Item = &'static str> {
 fn columns_menu(ui: &mut Ui, state: &mut ManagerState, out: &mut ManagerOut) {
     for index in HIDEABLE {
         let name = COLUMNS[index];
-        let mut on = state.shows(index);
-        if ui.checkbox(&mut on, name).changed() {
-            state.set_shown(index, on);
+        let on = state.shows(index);
+        if crate::kit::menu::toggle(ui, name, on).clicked() {
+            state.set_shown(index, !on);
             out.hidden = Some(state.hidden.clone());
         }
     }
-    ui.separator();
-    if ui.button("Show every column").clicked() {
+    crate::kit::menu::separator(ui);
+    if crate::kit::menu::entry(ui, "Show every column", None, true).clicked() {
         state.hidden.clear();
         out.hidden = Some(Vec::new());
         ui.close();

@@ -3407,13 +3407,12 @@ fn footer_overflow(
                 for tag in tags {
                     let on = state.tag_filter.contains(&tag.id);
                     let label = format!("Tag {}", tag.name);
-                    let row = ui.add(egui::Button::selectable(on, &label).min_size(Vec2::new(0.0, OVERFLOW_ROW)));
-                    // The folded state is its own: what the label says stays, so tests and
-                    // readers find the filter they mean, and the screen lets the ring's
-                    // state read ([#1254] review).
-                    row.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label.clone()));
+                    // The kit's entry, read as the filter it turns ("Tag …", selected while
+                    // on, [#1254] review), its words after room for the tag's color dot.
+                    let shown = format!("    {}", tag.name);
+                    let row = crate::kit::menu::Entry::new(&shown).chosen(on).named(&label).show(ui);
                     if let Some(color) = theme::parse_hex(&tag.color) {
-                        let at = row.rect.left_center() + Vec2::new(8.0, 0.0);
+                        let at = row.rect.left_center() + Vec2::new(12.0, 0.0);
                         ui.painter().circle_filled(at, 3.0, color);
                         if on {
                             ui.painter().circle_stroke(at, 4.5, Stroke::new(1.0, tier.primary));

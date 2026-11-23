@@ -239,18 +239,23 @@ fn a_submenu_kept_open_stays_open_after_a_click_inside() {
 /// A button whose menu (closed only by a click outside, as the automation lanes' are) holds a
 /// slider; its value is kept.
 fn slider() -> Harness<'static, f32> {
+    slider_over(100.0, 1.0)
+}
+
+/// A menu with a slider from 0 to `end` in `step`s, at half way.
+fn slider_over(end: f32, step: f32) -> Harness<'static, f32> {
     Harness::builder().allow_missing_glyphs().with_size(egui::vec2(640.0, 480.0)).build_ui_state(
-        |ui, level: &mut f32| {
+        move |ui, level: &mut f32| {
             crate::kit::theme::install(ui.ctx());
             let response = ui.button("Open");
             egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(
                 |ui| {
                     super::entry(ui, "Loop selection", None, true);
-                    super::slider(ui, "Depth", level, 0.0..=100.0, 1.0, |v| format!("{v:.0} %"));
+                    super::slider(ui, "Depth", level, 0.0..=end, step, |v| format!("{v:.0} %"));
                 },
             );
         },
-        50.0,
+        end / 2.0,
     )
 }
 
@@ -292,4 +297,35 @@ fn a_slider_in_a_menu_lands_on_whole_steps() {
     }
     harness.run();
     assert_eq!(*harness.state(), 37.0, "the click set the step it shows");
+}
+
+/// A click `along` the slider's rail (0 to 1) in an open menu.
+fn click_rail(harness: &mut Harness<'static, f32>, along: f32) {
+    harness.run();
+    harness.get_by_label("Open").click_secondary();
+    harness.run();
+    harness.run();
+    let rail = harness.get_by_label_contains("Depth").rect();
+    let at = egui::pos2(rail.left() + 4.0 + along * (rail.width() - 8.0), rail.center().y);
+    harness.event(egui::Event::PointerMoved(at));
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run();
+}
+
+#[test]
+fn a_slider_in_a_menu_reaches_the_end_of_an_uneven_range() {
+    // From 0 to 10 in steps of 3: the steps stop at 9, the end is still reachable.
+    let mut harness = slider_over(10.0, 3.0);
+    click_rail(&mut harness, 0.99);
+    assert_eq!(*harness.state(), 10.0, "the click near the end set the end");
+    let mut harness = slider_over(10.0, 3.0);
+    click_rail(&mut harness, 0.4);
+    assert_eq!(*harness.state(), 3.0, "a click inside the range still lands on a step");
 }

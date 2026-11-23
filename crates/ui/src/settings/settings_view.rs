@@ -1610,7 +1610,7 @@ fn theme_gallery(ui: &mut Ui, page: Rect, themes: &ThemesView, state: &mut PageS
     let mut request = None;
     let current = crate::kit::theme_vars::split_id(&themes.current).0.to_owned();
     ui.horizontal(|ui| {
-        if ui.button("Edit current variant").clicked() {
+        if crate::kit::controls::button(ui, "Edit current variant").clicked() {
             state.theme_editor = true;
             state.scrolled = None;
         }

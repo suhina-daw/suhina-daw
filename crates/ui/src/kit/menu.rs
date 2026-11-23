@@ -268,7 +268,11 @@ pub fn slider(
     // A menu's slider moves in whole steps, so a value it shows is the value it sets, and a held
     // drag between two steps changes nothing (each change may put something in again).
     if response.changed() && step > 0.0 {
-        let snap = |v: f32| (low + ((v - low) / step).round() * step).clamp(low, high);
+        // The range's end stays reachable when the span is not a whole number of steps.
+        let snap = |v: f32| {
+            let near = (low + ((v - low) / step).round() * step).clamp(low, high);
+            if high - v < (near - v).abs() { high } else { near }
+        };
         *value = snap(*value);
         if *value == snap(start) {
             *value = start;
