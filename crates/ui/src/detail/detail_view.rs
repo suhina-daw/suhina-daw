@@ -1165,7 +1165,9 @@ fn device_panel(
         let font = theme::ui_font(theme::TEXT_TINY);
         let at = device.at.value();
         let chevron = Rect::from_center_size(Pos2::new(kind_right - 5.0, header.center().y), Vec2::new(10.0, 12.0));
-        let width = widgets::text_width(ui, "Sidechain", font.clone()) + 6.0;
+        // A dot before the word says whether the key is read: filled while on, a ring while off.
+        const DOT: f32 = 8.0;
+        let width = widgets::text_width(ui, "Sidechain", font.clone()) + 6.0 + DOT;
         let button =
             Rect::from_center_size(Pos2::new(chevron.left() - width / 2.0, header.center().y), Vec2::new(width, 12.0));
         kind_right = button.left() - 4.0;
@@ -1198,7 +1200,19 @@ fn device_panel(
         } else {
             dim
         };
-        painter.text(button.center(), egui::Align2::CENTER_CENTER, "Sidechain", font, ink);
+        let dot = Pos2::new(button.left() + 3.0 + 2.5, button.center().y);
+        if on {
+            painter.circle_filled(dot, 2.5, ink);
+        } else {
+            painter.circle_stroke(dot, 2.5, egui::Stroke::new(1.0, ink));
+        }
+        painter.text(
+            Pos2::new(button.center().x + DOT / 2.0, button.center().y),
+            egui::Align2::CENTER_CENTER,
+            "Sidechain",
+            font,
+            ink,
+        );
         widgets::chevron(painter, chevron.center(), true, if choices.hovered() { bright } else { dim });
         if let Some(key) = &side.key
             && response.clicked()
