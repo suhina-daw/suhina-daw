@@ -263,7 +263,7 @@ pub fn paint_text(painter: &Painter, pos: Pos2, galley: Arc<Galley>, color: Colo
 pub fn button_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString) -> Response {
     let response = ui.interact(rect, id, Sense::click());
     let label = label.to_string();
-    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &label));
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), &label));
     response
 }
 
@@ -342,20 +342,15 @@ fn surface(
     radius: f32,
     decided: Option<f32>,
 ) {
-    let style = el.style();
-    // A shape the sheet gives the button wins over the artwork Suhina ships, not over the theme's own.
-    let shaped = style
-        .as_ref()
-        .is_some_and(|style| style.authored.background || style.authored.radius || style.authored.border_width);
-    let role = super::skin::button_role(el);
-    if !shaped || role != "button" || super::skin::has_own("button") {
-        let fill = if decided.is_some() { fill } else { el.background_or(fill) };
-        let radius = el.radius_or(radius);
-        if super::skin::button(painter, rect, el, super::skin::State::response(response, on), fill, radius) {
-            // The artwork cast the shadows already, in its own shape.
-            el.paint_gradients_with(painter, rect, radius, decided.unwrap_or(1.0));
-            return;
-        }
+    // The button's artwork, unless the sheet says `image: none` for it (`skin::button`): the sheet
+    // chooses the artwork, so a background, radius or border it gives tints and rounds the artwork
+    // rather than replacing it.
+    let fill = if decided.is_some() { fill } else { el.background_or(fill) };
+    let artwork_radius = el.radius_or(radius);
+    if super::skin::button(painter, rect, el, super::skin::State::response(response, on), fill, artwork_radius) {
+        // The artwork cast the shadows already, in its own shape.
+        el.paint_gradients_with(painter, rect, artwork_radius, decided.unwrap_or(1.0));
+        return;
     }
     let native = super::element::Native { radius, fill };
     match decided {
@@ -603,9 +598,8 @@ pub fn lit_toggle(
     lit_toggle_of(ui, response, builder, attrs, on, (Some("toggle"), Readable::Always))
 }
 
-/// [`lit_toggle`] of a toggle of its own `kind` (a `button[kind="record"]`), whose lit ink the sheet
-/// gives and which stays the sheet's where only the sheet's fill is under it: the record and
-/// metronome buttons of the control bar and the Launcher.
+/// [`lit_toggle`] of a toggle of its own `kind` (a `button[kind="record"]`), whose lit ink is the
+/// sheet's on any fill: the record and metronome buttons of the control bar and the Launcher.
 pub fn lit_toggle_kind(
     ui: &Ui,
     response: &Response,
@@ -614,7 +608,7 @@ pub fn lit_toggle_kind(
     on: bool,
     kind: &'static str,
 ) -> Lit {
-    lit_toggle_of(ui, response, builder, attrs, on, (Some(kind), Readable::OnThemeFill))
+    lit_toggle_of(ui, response, builder, attrs, on, (Some(kind), Readable::Design))
 }
 
 /// [`lit_toggle_kind`] of a toggle with no `kind` of its own, whose states `attrs` (`[playing]`) the
@@ -626,17 +620,18 @@ pub fn lit_toggle_state(
     attrs: &[super::element::Attr],
     on: bool,
 ) -> Lit {
-    lit_toggle_of(ui, response, builder, attrs, on, (None, Readable::OnThemeFill))
+    lit_toggle_of(ui, response, builder, attrs, on, (None, Readable::Design))
 }
 
-/// How a lit toggle's ink is kept readable on its fill: a rule's ink is its own, else the sheet's
-/// ink is moved off a fill it does not read on.
+/// Whether a lit toggle's ink, the sheet's, is moved off a fill it does not read on (under 3:1).
+/// It never depends on which sheet gave the ink or the fill (#1696).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Readable {
-    /// On every fill.
+    /// Always: a letter on the button (solo's S, a toggle's words).
     Always,
-    /// Only on a fill a theme's rule gave, the sheet's own pair being the design's.
-    OnThemeFill,
+    /// Never: the pair is the button's look, whatever their contrast (the record and arm buttons'
+    /// red on dark red, a scene's launch button).
+    Design,
 }
 
 /// [`Lit`] of a toggle of `kind`, or the one its builder gives it, whose ink is kept readable as
@@ -688,9 +683,10 @@ fn sheet_toggle(
     let lit = ends(true);
     let fill = at(&lit, Look::background);
     let ink = at(&lit, Look::color);
-    let (themed_ink, themed_fill) =
-        lit.0.style().map_or((false, false), |style| (style.authored.color, style.authored.background));
-    let ink = if themed_ink || (keep == Readable::OnThemeFill && !themed_fill) { ink } else { readable(ink, fill) };
+    let ink = match keep {
+        Readable::Always => readable(ink, fill),
+        Readable::Design => ink,
+    };
     Toggle { off, on: (fill, ink), own_image: entered_lit && lit.0.image_unlike(&plain.0) }
 }
 
@@ -1800,6 +1796,32 @@ pub(crate) fn button_with_id(
     label: &str,
     primary: bool,
 ) -> Response {
+    labeled_button(ui, painter, rect, id, (text, label), if primary { Push::Primary } else { Push::Plain })
+}
+
+/// What a push button is for, which its colors say ([`push_button`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Push {
+    /// An ordinary button: `button`'s fill, edge and `color`.
+    Plain,
+    /// The dialog's main action: the accent's fill and edge, its words in `label[kind="inverse"]`'s
+    /// `color`.
+    Primary,
+    /// An action that removes or discards something: `button`'s fill and edge, its words in
+    /// `label[kind="error"]`'s `color`.
+    Danger,
+}
+
+/// A push button in `rect` with `text` on it, named `label` ([`button_with_id`]), as `push` says.
+pub(crate) fn labeled_button(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    id: Id,
+    (text, label): (&str, &str),
+    push: Push,
+) -> Response {
+    let primary = push == Push::Primary;
     let response = button_area(ui, rect, id, label);
     let el = BUTTON.response(&response).enter();
     let hovered = hover(ui, &response);
@@ -1814,7 +1836,11 @@ pub(crate) fn button_with_id(
     let edge = if primary { el.accent() } else { el.border() };
     painter.rect_stroke(rect, radius, theme::hairline(edge), egui::StrokeKind::Inside);
     let small = theme::ui_font(theme::TEXT_SMALL);
-    let ink = if primary { super::element::LABEL.attribute("kind", "inverse").look().color() } else { el.color() };
+    let ink = match push {
+        Push::Primary => super::element::LABEL.attribute("kind", "inverse").look().color(),
+        Push::Danger => super::element::LABEL.attribute("kind", "error").look().color(),
+        Push::Plain => el.color(),
+    };
     text_in(painter, rect, Align2::CENTER_CENTER, text, small, ink);
     response
 }
@@ -2008,8 +2034,20 @@ fn band_handle(ui: &Ui, painter: &Painter, band: Rect, response: &Response, shar
 /// and its `background-color` for the mark; the words a `label[kind="check"]`'s `color`, its
 /// `:hover` one under the pointer. The response; a click asks for the other value.
 pub fn check_box(ui: &Ui, painter: &Painter, rect: Rect, id: Id, label: &str, on: bool) -> Response {
+    check_box_named(ui, painter, rect, id, (label, label), on)
+}
+
+/// [`check_box`] with `words` beside its mark (none: the caller writes them) and named `name`.
+pub fn check_box_named(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    id: Id,
+    (label, name): (&str, &str),
+    on: bool,
+) -> Response {
     let response = ui.interact(rect, id, Sense::click());
-    response.widget_info(|| WidgetInfo::selected(Role::CheckBox, ui.is_enabled(), on, label));
+    response.widget_info(|| WidgetInfo::selected(Role::CheckBox, ui.is_enabled(), on, name));
     let mark = Rect::from_center_size(Pos2::new(rect.left() + 6.0, rect.center().y), Vec2::splat(11.0));
     let el = BUTTON.attribute("kind", "check").response(&response).attr(Checked, on).enter();
     let edge = if response.has_focus() { el.accent() } else { el.border() };

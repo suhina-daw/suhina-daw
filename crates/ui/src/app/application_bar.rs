@@ -96,8 +96,9 @@ pub(super) fn show(
             egui::vec2(CONTROL_WIDTH, controls.height()),
         );
         let glyph = ["−", "□", "×"].get(index).copied().unwrap_or("");
-        let response = ui.put(rect, egui::Button::new(glyph).frame(false)).on_hover_text(label);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Window {label}")));
+        let id = egui::Id::unique(("window-control", label));
+        let response = crate::kit::widgets::button_area(ui, rect, id, format!("Window {label}")).on_hover_text(label);
+        crate::kit::widgets::flat_button(ui, ui.painter(), rect, &response, glyph, (crate::kit::theme::TEXT, None));
         if response.clicked() {
             ui.ctx().send_viewport_cmd(command);
         }

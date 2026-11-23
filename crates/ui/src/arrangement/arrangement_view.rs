@@ -1259,17 +1259,11 @@ fn show_lanes(
         .intersect(corner);
         let response = widgets::button_area(ui, button, Id::unique("arrangement-returns-toggle"), label);
         let hover = widgets::hover(ui, &response);
-        let el = crate::kit::element::BUTTON.id("returns-toggle").response(&response).enter();
+        let el =
+            crate::kit::element::BUTTON.id("returns-toggle").attribute("kind", "returns").response(&response).enter();
         let fill = el.hover_fade(hover, crate::kit::element::Look::background);
         painter.rect_filled(button, 2.0, fill);
-        widgets::text_in(
-            &painter,
-            button,
-            Align2::CENTER_CENTER,
-            label,
-            font,
-            el.color_or(crate::kit::element::caption_ink()),
-        );
+        widgets::text_in(&painter, button, Align2::CENTER_CENTER, label, font, el.color());
         if response.clicked() {
             state.returns_hidden = !state.returns_hidden;
         }

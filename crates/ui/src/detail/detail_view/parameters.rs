@@ -174,16 +174,16 @@ pub(super) fn parameter_widget(
     let style = &parameter.ui;
     match parameter.control {
         ParameterControl::Toggle => {
-            let mut checked = *value >= 0.5;
-            let response = ui.checkbox(&mut checked, "");
+            let checked = *value >= 0.5;
+            let response = crate::kit::controls::check_box(ui, "", checked);
             // Only a click writes: a value automation plays between off and on stays as it is.
-            if response.changed() {
-                *value = f64::from(checked);
+            if response.clicked() {
+                *value = f64::from(!checked);
             }
             response
         }
         ParameterControl::Button => {
-            let response = ui.selectable_label(*value >= 0.5, &parameter.name);
+            let response = crate::kit::controls::choice_word(ui, &parameter.name, &parameter.name, *value >= 0.5);
             if response.clicked() {
                 *value = if *value >= 0.5 { 0.0 } else { 1.0 };
             }
@@ -210,7 +210,9 @@ pub(super) fn parameter_widget(
         ParameterControl::Radio => {
             ui.vertical_centered(|ui| {
                 for (i, label) in style.options.iter().enumerate() {
-                    ui.selectable_value(&mut *value, i as f64, label);
+                    if crate::kit::controls::choice(ui, label, *value == i as f64).clicked() {
+                        *value = i as f64;
+                    }
                 }
             })
             .response

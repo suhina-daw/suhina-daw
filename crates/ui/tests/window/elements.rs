@@ -66,10 +66,16 @@ fn hex(color: egui::Color32) -> String {
 
 /// Shows `h` with `rules` (selector, property, color) as the user's sheet, then every rule's
 /// color that no shape painted.
+/// What a test that reads a button's fill from the painted rectangles puts first in its sheet:
+/// buttons drawn as their CSS shape. With artwork, a fill tints the artwork's texture and is no
+/// rectangle's color (#1696).
+const SHAPES: &str = "button { image: none; }\n";
+
 fn missing(h: &mut Harness<'static, App>, rules: &[(&str, &str, egui::Color32)]) -> Vec<String> {
-    let css: String = rules
-        .iter()
-        .map(|(selector, property, color)| format!("{selector} {{ {property}: {}; }}\n", hex(*color)))
+    let css: String = std::iter::once(SHAPES.to_owned())
+        .chain(
+            rules.iter().map(|(selector, property, color)| format!("{selector} {{ {property}: {}; }}\n", hex(*color))),
+        )
         .collect();
     suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
     for _ in 0..4 {
@@ -529,7 +535,7 @@ fn solo_cue_and_arm_take_their_own_rules_lit_and_unlit() {
 fn a_rule_for_every_button_needs_lit_rules_to_keep_solo_cue_and_arm_lit() {
     let mut h = lit_drums();
     let show = |h: &mut Harness<'static, App>, css: &str| {
-        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
         for _ in 0..4 {
             h.step();
         }
@@ -567,7 +573,7 @@ fn a_rule_for_every_button_needs_a_lit_rule_to_keep_the_browser_s_chosen_chip_li
     let mut h = browser_with_chips();
     let general = format!("button {{ background-color: {}; }}", hex(odd(97)));
     let lit_and_unlit = |h: &mut Harness<'static, App>, css: &str| {
-        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
         for _ in 0..4 {
             h.step();
         }
@@ -675,7 +681,7 @@ fn a_solo_turned_off_fades_from_its_lit_rule_s_fill() {
     h.run();
     let css = "button#control-solo { background-color: #101010; } \
                button#control-solo[checked] { background-color: #f0f0f0; }";
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
     h.run_steps(30);
     h.get_by_label("End solo on Drums").click();
     h.run_steps(3);
@@ -1062,7 +1068,7 @@ fn a_rule_for_every_button_needs_a_lit_rule_to_keep_a_track_s_on_switch_lit() {
         h.get_by_label("Turn Keys off").click();
         h.run();
         let fills = |h: &mut Harness<'static, App>, css: String| {
-            suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+            suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
             for _ in 0..4 {
                 h.step();
             }

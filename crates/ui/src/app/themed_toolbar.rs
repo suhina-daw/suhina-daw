@@ -147,9 +147,9 @@ impl App {
             .show(ui.ctx(), |tools| {
                 tools.label("Drag the outlined controls · 8 point snap grid");
                 tools.horizontal(|tools| {
-                    done = tools.button("Done").clicked();
-                    cancel |= tools.button("Cancel").clicked();
-                    if tools.button("Reset positions").clicked() {
+                    done = crate::kit::controls::button(tools, "Done").clicked();
+                    cancel |= crate::kit::controls::button(tools, "Cancel").clicked();
+                    if crate::kit::controls::button(tools, "Reset positions").clicked() {
                         draft.skin.toolbar_offsets.clear();
                     }
                 });

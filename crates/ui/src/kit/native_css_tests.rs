@@ -1013,7 +1013,7 @@ fn a_level_bar_or_surface_squeezed_below_a_point_draws_nothing_and_never_panics(
 
 #[test]
 fn checked_and_selected_states_reach_the_sheet() {
-    let css = "#control-solo[checked] { background-color: #FF8800; } \
+    let css = "#control-solo { image: none; } #control-solo[checked] { background-color: #FF8800; } \
                track-header[selected] { background-color: #102030; }";
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(20.0, 16.0));
     for on in [false, true] {
@@ -1625,10 +1625,40 @@ fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_color_spares_t
     assert_ne!(fill, Some(egui::Color32::from_rgb(0x10, 0x20, 0x30)), "the rails keep their own color");
 }
 
+/// A button draws the artwork its `image` names (the user agent's `button.svg`) under any
+/// background, radius or border the sheet gives it, which tint and round it; only `image: none`
+/// draws its CSS shape alone. Which sheet gave the colors never decides (#1696).
+#[test]
+fn a_button_keeps_its_artwork_unless_the_sheet_says_image_none() {
+    let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(40.0, 20.0));
+    let draw = |css: &str| {
+        painted(css, |ui| {
+            let response = ui.interact(field, egui::Id::unique("stop"), egui::Sense::click());
+            let stop = test_el("button").id("stop").response(&response).enter();
+            crate::kit::widgets::button_surface(ui.painter(), field, &stop, &response, false, egui::Color32::GRAY, 0.0);
+        })
+    };
+    let artwork = |shapes: &[egui::epaint::ClippedShape]| {
+        shapes.iter().any(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) => rect.brush.is_some(),
+            egui::Shape::Mesh(mesh) => mesh.texture_id != egui::TextureId::default(),
+            _ => false,
+        })
+    };
+    assert!(artwork(&draw("")), "the user agent's artwork");
+    assert!(
+        artwork(&draw("#control-stop { background-color: #FF0000; border-radius: 4px; border-width: 1px; }")),
+        "a fill, a radius and a border keep it"
+    );
+    let shape = draw("#control-stop { image: none; background-color: #FF0000; }");
+    assert!(!artwork(&shape), "image: none draws no artwork");
+    assert!(rects(&shape).iter().any(|r| r.fill == egui::Color32::RED), "its CSS fill instead");
+}
+
 #[test]
 fn a_round_button_s_shadow_is_round() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(24.0, 24.0));
-    let shapes = painted("#control-stop { border-radius: 50%; background-color: #FF0000; }", |ui| {
+    let shapes = painted("#control-stop { image: none; border-radius: 50%; background-color: #FF0000; }", |ui| {
         let response = ui.interact(field, egui::Id::unique("stop"), egui::Sense::click());
         let stop = test_el("button").id("stop").response(&response).enter();
         crate::kit::widgets::button_surface(ui.painter(), field, &stop, &response, false, egui::Color32::GRAY, 0.0);

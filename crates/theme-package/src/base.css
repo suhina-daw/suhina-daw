@@ -74,9 +74,11 @@ label[kind="value"] { color: var(--text-value); }
 label[kind="error"] { color: var(--recording); }
 separator[kind="row"] { color: var(--border); }
 
-/* A button: its fill, its text, its edge and the color of the ring it shows while it has the keys. */
+/* A button: its fill, its text, its edge and the color of the ring it shows while it has the keys;
+   dim words while it cannot be pressed. */
 button { background-color: var(--control-background); color: var(--text-primary); border-color: var(--border-strong); accent-color: var(--accent); }
 button:hover { background-color: var(--control-hoverBackground); }
+button:disabled { color: var(--text-hint); }
 
 /* A toggle (mute, cue, a view's switch): dim words, a step brighter under the pointer; lit, the
    chosen fill and the text on it. Solo is lit in the accent, arm in the recording colors. The
@@ -154,6 +156,10 @@ list-row[selected] { color: var(--text-primary); }
    the button's. */
 button[kind="record"] { color: var(--text-primary); }
 button[kind="record"][checked] { background-color: var(--recording-background); color: var(--recording); }
+/* The Arrangement's button that shows or hides the return tracks: caption words. */
+button[kind="returns"] { color: var(--text-secondary); }
+/* The record button's dot, in the recording color at rest too. */
+button[kind="record"] icon[kind="record"] { color: var(--recording); }
 button[kind="metronome"] { color: var(--text-primary); }
 button[kind="metronome"][checked] { background-color: var(--control-activeBackground); color: var(--accent); }
 button[kind="monitor"] { color: var(--text-secondary); }
@@ -526,6 +532,8 @@ list-row[kind="plugin"][selected] { background-color: var(--control-activeBackgr
 list-row[kind="plugin"]:hover { background-color: var(--panel-hoverBackground); }
 list-row[kind="missing-file"][selected] { background-color: var(--control-activeBackground); }
 list-row[kind="missing-file"]:hover { background-color: var(--panel-hoverBackground); }
+list-row[kind="floating"][selected] { background-color: var(--control-activeBackground); }
+list-row[kind="floating"]:hover { background-color: var(--control-hoverBackground); }
 list-row[kind="picker"] { background-color: var(--panel-hoverBackground); color: var(--text-secondary); }
 color-swatch { border-color: var(--text-primary); }
 color-swatch[kind="square"] { border-color: var(--border); }

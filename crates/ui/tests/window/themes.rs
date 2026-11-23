@@ -784,7 +784,7 @@ fn the_arrangement_track_on_toggle_is_control_track_on() {
     let orange = egui::Color32::from_rgb(0xFF, 0x88, 0x00);
     let blue = egui::Color32::from_rgb(0x00, 0x88, 0xFF);
     suhina_ui::kit::native_css::set_user_sheet(Some(
-        "#control-track-on { background-color: #ff8800; } #control-track-on[checked] { background-color: #0088ff; }"
+        "button { image: none; } #control-track-on { background-color: #ff8800; } #control-track-on[checked] { background-color: #0088ff; }"
             .into(),
     ));
     let mut h = window(demo_app());

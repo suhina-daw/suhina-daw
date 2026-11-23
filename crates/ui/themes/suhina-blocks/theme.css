@@ -172,7 +172,7 @@ knob-body { image: url("assets/knob.body.svg"); }
 knob-pointer { image: url("assets/knob.pointer.svg"); }
 meter { image: url("assets/meter.svg"); }
 icon[kind="play"] { image: url("assets/play.svg"); }
-icon[kind="record"] { image: url("assets/record.svg"); }
+icon[kind="record"] { image: url("assets/record.svg"); color: inherit; }
 icon[kind="solo"] { image: url("assets/solo.svg"); }
 icon[kind="stop"] { image: url("assets/stop.svg"); }
 icon[kind="audio"] { image: url("assets/track.audio.svg"); }

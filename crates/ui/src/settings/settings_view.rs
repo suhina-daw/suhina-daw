@@ -8,6 +8,7 @@
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2, pos2};
 
 use crate::interaction::pick::PickField;
+use crate::kit::controls;
 use crate::kit::motion;
 use crate::kit::theme::{self, Colors, PAD};
 use crate::kit::widgets;
@@ -1124,7 +1125,9 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     // Undock or dock, left of Help.
     let toggle = Rect::from_min_max(pos2(help.left() - 116.0, title.top()), pos2(help.left() - 6.0, title.bottom()));
     let label = if state.window { "Dock" } else { "Open in window" };
-    if ui.put(toggle, egui::Button::new(label)).clicked() {
+    if widgets::button_with_id(ui, &painter, toggle, Id::unique("settings-window-toggle"), label, label, false)
+        .clicked()
+    {
         state.window = !state.window;
     }
     let top = title.bottom() + 16.0;
@@ -1247,8 +1250,7 @@ fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome:
         ui.label(egui::RichText::new(text).font(theme::ui_font(theme::TEXT_SMALL)).color(ink().caption));
         ui.add_space(6.0);
         for (choice, label) in DESCRIPTION_CHOICES {
-            let text = egui::RichText::new(label).font(theme::ui_font(theme::TEXT_SMALL));
-            if ui.radio(settings.setting_descriptions == choice, text).clicked()
+            if controls::choice(ui, label, settings.setting_descriptions == choice).clicked()
                 && settings.setting_descriptions != choice
             {
                 settings.setting_descriptions = choice;
@@ -1256,7 +1258,7 @@ fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome:
             }
         }
         ui.add_space(8.0);
-        ui.button(egui::RichText::new("Close").font(theme::ui_font(theme::TEXT))).clicked()
+        controls::button(ui, "Close").clicked()
     });
     if modal.inner || modal.should_close() {
         state.help_open = false;
@@ -1721,7 +1723,9 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
             dialog_field(ui, "Name", "Theme name", &mut new.info.name);
             dialog_field(ui, "Author", "Theme author", &mut new.info.author);
             dialog_field(ui, "Description", "Theme description", &mut new.info.description);
-            ui.checkbox(&mut new.artwork, "Include the default artwork");
+            if controls::check_box(ui, "Include the default artwork", new.artwork).clicked() {
+                new.artwork = !new.artwork;
+            }
             ui.label(
                 egui::RichText::new(
                     "Copies the built-in control images into the theme's assets folder, with a rule for each in its \
@@ -1731,11 +1735,11 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
                 .color(ink().caption),
             );
             ui.horizontal(|ui| {
-                if ui.button("Create theme").clicked() {
+                if controls::button(ui, "Create theme").clicked() {
                     request = Some(ThemeRequest::NewTheme(new.clone()));
                     done = true;
                 }
-                done |= ui.button("Cancel").clicked();
+                done |= controls::button(ui, "Cancel").clicked();
             });
         }
         ThemeDialog::Info { id, info } => {
@@ -1745,11 +1749,11 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
             dialog_field(ui, "Description", "Theme description", &mut info.description);
             dialog_field(ui, "Default variant", "Default variant name", &mut info.default_variant);
             ui.horizontal(|ui| {
-                if ui.add_enabled(!info.name.trim().is_empty(), egui::Button::new("Save")).clicked() {
+                if controls::button_if(ui, "Save", !info.name.trim().is_empty()).clicked() {
                     request = Some(ThemeRequest::EditInfo { id: id.clone(), info: info.clone() });
                     done = true;
                 }
-                done |= ui.button("Cancel").clicked();
+                done |= controls::button(ui, "Cancel").clicked();
             });
         }
         ThemeDialog::Delete { id, name, revert } => {
@@ -1762,12 +1766,11 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
             dialog_title(ui, &question);
             ui.label(format!("{what} will be moved to the Trash."));
             ui.horizontal(|ui| {
-                let button = egui::Button::new(egui::RichText::new(action).color(crate::kit::element::error_ink()));
-                if ui.add(button).clicked() {
+                if controls::danger_button(ui, action).clicked() {
                     request = Some(ThemeRequest::Delete(id.clone()));
                     done = true;
                 }
-                done |= ui.button("Cancel").clicked();
+                done |= controls::button(ui, "Cancel").clicked();
             });
         }
     })
@@ -2068,20 +2071,17 @@ fn theme_card(
                 state.scrolled = None;
             }
             if ui.is_rect_visible(area) {
-                // Drawn as the theme's buttons are: their fill, edge and text, lighter under the
-                // pointer and pressed, faded when grayed.
-                let visuals = if enabled { *ui.style().interact(&plus) } else { ui.visuals().widgets.inactive };
-                let fade = |color: egui::Color32| if enabled { color } else { ui.visuals().disable(color) };
+                // A `button`: its fill, edge and words, under the pointer and pressed too, and
+                // `:disabled` when grayed.
+                let look = crate::kit::element::BUTTON
+                    .builder()
+                    .pointer(enabled && plus.hovered(), enabled && plus.is_pointer_button_down_on(), !enabled)
+                    .look();
                 let corner = 6.0_f32.min(area.height() / 2.0);
                 let painter = ui.painter();
-                painter.rect_filled(area, corner, fade(visuals.weak_bg_fill));
-                painter.rect_stroke(
-                    area,
-                    corner,
-                    egui::Stroke::new(visuals.bg_stroke.width.max(1.0), fade(visuals.bg_stroke.color)),
-                    egui::StrokeKind::Inside,
-                );
-                let text = fade(visuals.fg_stroke.color);
+                painter.rect_filled(area, corner, look.background());
+                painter.rect_stroke(area, corner, theme::hairline(look.border()), egui::StrokeKind::Inside);
+                let text = look.color();
                 widgets::text_in(painter, area, Align2::CENTER_CENTER, "+", theme::ui_font(theme::TEXT + 4.0), text);
             }
         }
@@ -2125,7 +2125,7 @@ fn paint_swatch(painter: &egui::Painter, rect: Rect, color: egui::Color32) -> f3
 fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Option<ThemeRequest>, bool) {
     let mut request = None;
     let mut close = false;
-    if ui.button("Back to themes").clicked() {
+    if controls::button(ui, "Back to themes").clicked() {
         if themes.edited {
             state.theme_leave = Some(Leave::Back);
         } else {
@@ -2148,11 +2148,11 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
     ui.horizontal(|ui| {
         if themes.new_variant {
             // Nothing is written yet: Save makes the variant, Cancel leaves nothing behind.
-            if ui.button("Save").clicked() {
+            if controls::button(ui, "Save").clicked() {
                 request = Some(ThemeRequest::SaveAsNew);
                 state.skin_editor.forget_drafts();
             }
-            if ui.button("Cancel").clicked() {
+            if controls::button(ui, "Cancel").clicked() {
                 request = Some(ThemeRequest::Discard);
                 state.skin_editor.forget_drafts();
                 state.theme_editor = false;
@@ -2165,17 +2165,17 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
         } else {
             "The default variant is the theme's own values; save your changes as a new variant"
         });
-        let save = ui.add_enabled(themes.saveable && themes.edited, egui::Button::new("Save"));
+        let save = controls::button_if(ui, "Save", themes.saveable && themes.edited);
         if let Some(reason) = refused {
             save.on_disabled_hover_text(reason);
         } else if save.clicked() {
             request = Some(ThemeRequest::Save);
         }
-        if ui.button("Save as new variant").clicked() {
+        if controls::button(ui, "Save as new variant").clicked() {
             request = Some(ThemeRequest::SaveAsNew);
             state.skin_editor.forget_drafts();
         }
-        if ui.add_enabled(themes.edited, egui::Button::new("Discard changes")).clicked() {
+        if controls::button_if(ui, "Discard changes", themes.edited).clicked() {
             state.theme_discard = true;
         }
     });
@@ -2229,11 +2229,11 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
                     } else {
                         ("Save as new variant", ThemeRequest::SaveAsNew)
                     };
-                    if ui.button(label).clicked() {
+                    if controls::button(ui, label).clicked() {
                         Some(Some(save))
-                    } else if ui.button("Don't save").clicked() {
+                    } else if controls::button(ui, "Don't save").clicked() {
                         Some(Some(ThemeRequest::Discard))
-                    } else if ui.button("Cancel").clicked() {
+                    } else if controls::button(ui, "Cancel").clicked() {
                         Some(None)
                     } else {
                         None
@@ -2261,10 +2261,9 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
             dialog_title(ui, &format!("Discard your changes to {}?", themes.variant_name));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                let button = egui::Button::new(egui::RichText::new("Discard").color(crate::kit::element::error_ink()));
-                if ui.add(button).clicked() {
+                if controls::danger_button(ui, "Discard").clicked() {
                     Some(true)
-                } else if ui.button("Cancel").clicked() {
+                } else if controls::button(ui, "Cancel").clicked() {
                     Some(false)
                 } else {
                     None
@@ -2465,15 +2464,11 @@ fn shortcuts_page(
                         let text = egui::RichText::new(shown).font(theme::mono_font(theme::TEXT_SMALL)).color(color);
                         ui.add(egui::Label::new(text).truncate());
                     });
-                    let change = ui.add(egui::Button::new(egui::RichText::new("Change").font(small.clone())));
-                    let label = format!("Change keys of {}", action.id);
-                    change.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+                    let change = controls::button_named(ui, "Change", &format!("Change keys of {}", action.id));
                     if change.clicked() {
                         state.capture = Some(action.id.clone());
                     }
-                    let clear = ui.add(egui::Button::new(egui::RichText::new("Clear").font(small.clone())));
-                    let label = format!("Clear keys of {}", action.id);
-                    clear.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+                    let clear = controls::button_named(ui, "Clear", &format!("Clear keys of {}", action.id));
                     if clear.clicked() && !keys.is_empty() {
                         keymap.set(&action.id, Vec::new());
                         changed = true;
@@ -2528,15 +2523,17 @@ pub(crate) fn plugin_folders(
     for folder in &plugins.folders {
         let r = line(y, 18.0);
         let check = Rect::from_min_size(Pos2::new(r.left(), r.top() + 1.0), Vec2::splat(16.0));
-        let mut enabled = folder.enabled;
         // Off while a scan runs: its result replaces the library, switches too.
-        let response = ui.put(check, |ui: &mut egui::Ui| {
-            ui.add_enabled(!plugins.scanning, egui::Checkbox::without_text(&mut enabled))
-        });
         let label = format!("Scan {}", folder.path);
-        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, folder.enabled, &label));
-        if response.changed() {
-            request = Some(PluginRequest::SetFolderEnabled(folder.path.clone(), enabled));
+        let id = Id::unique(("plugin-folder-scan", &folder.path));
+        let response = ui.put(check, |ui: &mut egui::Ui| {
+            ui.add_enabled_ui(!plugins.scanning, |ui| {
+                widgets::check_box_named(ui, ui.painter(), check, id, ("", &label), folder.enabled)
+            })
+            .inner
+        });
+        if response.clicked() {
+            request = Some(PluginRequest::SetFolderEnabled(folder.path.clone(), !folder.enabled));
         }
         let right = if folder.standard { r.right() } else { r.right() - 68.0 };
         let text = Rect::from_min_max(Pos2::new(check.right() + 6.0, r.top()), Pos2::new(right - 96.0, r.bottom()));
