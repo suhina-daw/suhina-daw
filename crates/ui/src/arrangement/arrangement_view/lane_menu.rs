@@ -4,6 +4,7 @@
 //! The right-click menu of an empty spot on a lane.
 
 use super::*;
+use crate::kit::menu;
 
 /// The Arrangement's grid, in a menu itself, as its toolbar offers it.
 pub(super) fn grid_section(ui: &mut Ui, state: &mut ArrangementViewState) {
@@ -27,51 +28,42 @@ pub(super) fn empty_lane_menu(
     // The take lanes under the track fold away and back (`docs/spec/recording.md` › Take lanes).
     if has_takes {
         let hidden = state.takes_hidden.contains(&track);
-        if ui.button(if hidden { "Show take lanes" } else { "Hide take lanes" }).clicked() {
+        if menu::entry(ui, if hidden { "Show take lanes" } else { "Hide take lanes" }, None, true).clicked() {
             if !state.takes_hidden.remove(&track) {
                 state.takes_hidden.insert(track);
             }
             ui.close();
         }
     }
-    if ui.button("Add take").clicked() {
+    if menu::entry(ui, "Add take", None, true).clicked() {
         state.takes_hidden.remove(&track);
         actions.push(Action::new("take.add", json!({ "track": track.0 })));
         ui.close();
     }
-    if has_takes && ui.button("Delete unused takes").clicked() {
+    if has_takes && menu::entry(ui, "Delete unused takes", None, true).clicked() {
         actions.push(Action::new("take.deleteUnused", json!({ "track": track.0 })));
         ui.close();
     }
-    ui.separator();
+    menu::separator(ui);
     grid_section(ui, state);
-    ui.separator();
+    menu::separator(ui);
     let beat = state.menu_beat.unwrap_or(0.0);
-    if ui.add_enabled(notes, egui::Button::new("Insert empty MIDI clip")).clicked() {
+    if menu::entry(ui, "Insert empty MIDI clip", None, notes).clicked() {
         let stack = state.stack_midi;
         actions.push(Action::new("clip.create", json!({ "track": track.0, "start": beat, "stack": stack })));
         ui.close();
     }
     let selection = state.time_selection.as_ref();
-    ui.separator();
-    if ui
-        .add_enabled(
-            selection.is_some(),
-            egui::Button::new("Loop selection").shortcut_text(crate::settings::keymap::shown("Ctrl+L")),
-        )
-        .clicked()
+    menu::separator(ui);
+    if menu::entry(ui, "Loop selection", Some(&crate::settings::keymap::shown("Ctrl+L")), selection.is_some()).clicked()
         && let Some(s) = selection
     {
         actions.push(Action::new("transport.setLoop", json!({ "start": s.start, "end": s.end, "enabled": true })));
         ui.close();
     }
     let here = selection.filter(|s| s.tracks.contains(&track));
-    if ui
-        .add_enabled(
-            here.is_some(),
-            egui::Button::new("Consolidate selection").shortcut_text(crate::settings::keymap::shown("Ctrl+J")),
-        )
-        .clicked()
+    let key = crate::settings::keymap::shown("Ctrl+J");
+    if menu::entry(ui, "Consolidate selection", Some(&key), here.is_some()).clicked()
         && let Some(s) = here
     {
         actions.push(Action::new("clip.consolidate", json!({ "track": track.0, "start": s.start, "end": s.end })));

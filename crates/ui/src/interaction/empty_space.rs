@@ -7,6 +7,7 @@ use egui::{Align2, Id, Pos2, Rect, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::TrackId;
 
+use crate::kit::menu;
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, Action};
 
@@ -24,21 +25,21 @@ pub(crate) fn empty_space_menu(space: &egui::Response, menu: &EmptyMenu<'_>, act
     space.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Empty space"));
     space.context_menu(|ui| {
         crate::interaction::menus::insert_items(ui, None, actions);
-        ui.separator();
+        menu::separator(ui);
         let tracks: Vec<u32> = menu.selection.iter().map(|t| t.0).collect();
         for (label, keys, command) in [
             ("Cut", "Ctrl+X", "track.cut"),
             ("Copy", "Ctrl+C", "track.copy"),
             ("Duplicate", "Ctrl+D", "track.duplicate"),
         ] {
-            let button = egui::Button::new(label).shortcut_text(crate::settings::keymap::shown(keys));
-            if ui.add_enabled(!tracks.is_empty(), button).clicked() {
+            let key = crate::settings::keymap::shown(keys);
+            if menu::entry(ui, label, Some(&key), !tracks.is_empty()).clicked() {
                 actions.push(Action::new(command, json!({ "tracks": tracks })));
                 ui.close();
             }
         }
-        let paste = egui::Button::new("Paste").shortcut_text(crate::settings::keymap::shown("Ctrl+V"));
-        if ui.add_enabled(menu.tracks_copied, paste).clicked() {
+        let key = crate::settings::keymap::shown("Ctrl+V");
+        if menu::entry(ui, "Paste", Some(&key), menu.tracks_copied).clicked() {
             actions.push(Action::new("track.paste", json!({ "after": null })));
             ui.close();
         }
@@ -54,16 +55,16 @@ fn insert_multiple_menu(response: &egui::Response, kind: &str, actions: &mut Vec
     response.context_menu(|ui| {
         let id = Id::unique(("insert-multiple", kind));
         let mut count: u32 = ui.data(|d| d.get_temp(id)).unwrap_or(INSERT_MULTIPLE);
-        ui.label("Insert multiple");
+        menu::heading(ui, "Insert multiple");
         ui.horizontal(|ui| {
-            let value = ui.add(egui::DragValue::new(&mut count).range(1..=64).speed(0.2));
+            let value = widgets::number_input(ui, None, egui::DragValue::new(&mut count).range(1..=64).speed(0.2));
             let what = if kind == "midi" { "MIDI tracks" } else { "audio tracks" };
             // The words after the number name it for screen readers.
-            let name = ui.label(what);
+            let name = crate::kit::controls::text(ui, what);
             value.labelled_by(name.id);
         });
         ui.data_mut(|d| d.insert_temp(id, count));
-        if ui.button("Insert").clicked() {
+        if menu::entry(ui, "Insert", None, true).clicked() {
             actions.push(Action::new("track.add", json!({ "kind": kind, "count": count })));
             ui.close();
         }

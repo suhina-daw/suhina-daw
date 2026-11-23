@@ -941,7 +941,7 @@ pub(super) fn clip_box<'a>(
             let shape = shown.curve(edge).shape;
             response.context_menu(|ui| {
                 for choice in FadeShape::ALL {
-                    if ui.radio(choice == shape, shape_label(choice)).clicked() {
+                    if crate::kit::menu::item(ui, shape_label(choice), choice == shape).clicked() {
                         let param = if edge == FadeEdge::In { "inShape" } else { "outShape" };
                         let mut params = json!({ "clip": clip.id.0 });
                         params[param] = json!(choice.name());
@@ -949,9 +949,9 @@ pub(super) fn clip_box<'a>(
                         ui.close();
                     }
                 }
-                ui.separator();
+                crate::kit::menu::separator(ui);
                 // Back to no fade, its shape and curve the defaults.
-                if ui.button("Reset fade").clicked() {
+                if crate::kit::menu::entry(ui, "Reset fade", None, true).clicked() {
                     let (length, shape, bend) = if edge == FadeEdge::In {
                         ("in", "inShape", "inCurve")
                     } else {
@@ -2832,34 +2832,33 @@ fn take_menu(
     state: &mut ArrangementViewState,
     actions: &mut Vec<Action>,
 ) {
-    ui.menu_button("Recolor lane", |ui| {
+    use crate::kit::menu;
+    menu::submenu(ui, "Recolor lane", false, |ui| {
         if let Some(picked) = crate::interaction::color_picker::swatch_row(ui, Some(take.color)) {
             let hex = crate::interaction::color_picker::hex(picked.color);
             actions.push(Action::new("take.setColor", json!({ "track": track.0, "take": take.number, "color": hex })));
             picked.close_menu(ui);
         }
     });
-    ui.add_enabled_ui(piece.is_some(), |ui| {
-        ui.menu_button("Recolor", |ui| {
-            let current = piece.and_then(|p| take.clips.get(p)).map(|c| c.color);
-            if let (Some(picked), Some(piece)) = (crate::interaction::color_picker::swatch_row(ui, current), piece) {
-                let hex = crate::interaction::color_picker::hex(picked.color);
-                let params = json!({ "track": track.0, "take": take.number, "color": hex, "piece": piece });
-                actions.push(Action::new("take.setColor", params));
-                picked.close_menu(ui);
-            }
-        });
+    menu::Entry::new("Recolor").enabled(piece.is_some()).submenu(ui, |ui| {
+        let current = piece.and_then(|p| take.clips.get(p)).map(|c| c.color);
+        if let (Some(picked), Some(piece)) = (crate::interaction::color_picker::swatch_row(ui, current), piece) {
+            let hex = crate::interaction::color_picker::hex(picked.color);
+            let params = json!({ "track": track.0, "take": take.number, "color": hex, "piece": piece });
+            actions.push(Action::new("take.setColor", params));
+            picked.close_menu(ui);
+        }
     });
-    ui.separator();
-    if ui.button("Add take").clicked() {
+    menu::separator(ui);
+    if menu::entry(ui, "Add take", None, true).clicked() {
         actions.push(Action::new("take.add", json!({ "track": track.0 })));
         ui.close();
     }
-    if ui.button("Delete take").clicked() {
+    if menu::entry(ui, "Delete take", None, true).clicked() {
         actions.push(Action::new("take.delete", json!({ "track": params["track"], "take": params["take"] })));
         ui.close();
     }
-    ui.separator();
+    menu::separator(ui);
     super::lane_menu::grid_section(ui, state);
 }
 

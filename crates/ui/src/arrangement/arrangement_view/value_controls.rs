@@ -56,7 +56,7 @@ pub(super) fn send_knob(
     }
     response.context_menu(|ui| {
         for (pre, label) in [(true, "Before the fader (pre)"), (false, "After the fader (post)")] {
-            if ui.radio(send.pre_fader == pre, label).clicked() {
+            if crate::kit::menu::item(ui, label, send.pre_fader == pre).clicked() {
                 let mode = if pre { "pre" } else { "post" };
                 actions.push(Action::new(
                     "track.setSendMode",

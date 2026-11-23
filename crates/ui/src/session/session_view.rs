@@ -1313,7 +1313,7 @@ fn column_body(
                         let clip = slot.clip.filter(|_| has_clip).map(|id| (id, slot.color));
                         menus::slot_menu(ui, column.track, scene, &slot.name, clip, can_paste, actions);
                         if let Some(launch) = slot.launch {
-                            ui.separator();
+                            crate::kit::menu::separator(ui);
                             crate::session::slot_launch::launch_menu(ui, column.track, scene, launch, actions);
                         }
                     },

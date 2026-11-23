@@ -772,22 +772,17 @@ fn draw_type_menus(
             Stroke::NONE,
         ));
         let mut picked = None;
-        egui::Popup::menu(&response)
-            .frame(
-                egui::Frame::popup(ui.style())
-                    .corner_radius(0)
-                    .fill(colors.panel_background)
-                    .stroke(Stroke::new(1.0, colors.accent)),
-            )
-            .show(|ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                ui.spacing_mut().interact_size.y = 14.0;
-                for (i, name) in TYPE_NAMES.iter().enumerate() {
-                    if ui.selectable_label(band.kind == i, *name).clicked() {
-                        picked = Some(i);
-                    }
+        // The standard popup frame and the kit's compact rows, as every menu's.
+        egui::Popup::menu(&response).show(|ui| {
+            // Compact rows, as low as the band's own field.
+            ui.spacing_mut().interact_size.y = 14.0;
+            for (i, name) in TYPE_NAMES.iter().enumerate() {
+                if crate::kit::menu::Entry::new(name).chosen(band.kind == i).compact().show(ui).clicked() {
+                    picked = Some(i);
+                    ui.close();
                 }
-            });
+            }
+        });
         if let Some(kind) = picked.filter(|kind| *kind != band.kind)
             && let Some(parameter) = parameter_by_field(parameters, selection.0, index, "Type")
         {

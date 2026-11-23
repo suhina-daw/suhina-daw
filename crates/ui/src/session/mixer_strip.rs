@@ -620,12 +620,12 @@ fn output_row(
     widgets::dropdown(ui, painter, field, &response, current);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
-        let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
-        if ui.selectable_label(column.output_name.is_none(), text("Main")).clicked() && column.output_name.is_some() {
+        if crate::kit::menu::item(ui, "Main", column.output_name.is_none()).clicked() && column.output_name.is_some() {
             picked = Some(serde_json::Value::from("main"));
         }
         for (group, name) in groups.iter().filter(|(g, _)| *g != column.track) {
-            if ui.selectable_label(column.output == Some(*group), text(name)).clicked() && column.output != Some(*group)
+            if crate::kit::menu::item(ui, name, column.output == Some(*group)).clicked()
+                && column.output != Some(*group)
             {
                 picked = Some(serde_json::Value::from(group.0));
             }
@@ -829,17 +829,15 @@ fn audio_block(
     egui::Popup::menu(&response).show(|ui| {
         for (label, params) in menus::audio_input_picks(&column.audio_input, input_channels) {
             let on = menus::audio_is(&column.audio_input, &params);
-            if ui.selectable_label(on, egui::RichText::new(label).font(theme::ui_font(theme::TEXT_SMALL))).clicked()
-                && !on
-            {
-                picked = Some(params);
+            if crate::kit::menu::item(ui, &label, on).clicked() {
+                if !on {
+                    picked = Some(params);
+                }
+                ui.close();
             }
         }
         if input_channels == 0 {
-            ui.label(
-                egui::RichText::new("No input device: choose one in Settings \u{203a} Audio")
-                    .font(theme::ui_font(theme::TEXT_SMALL)),
-            );
+            crate::kit::menu::hint(ui, "No input device: choose one in Settings \u{203a} Audio");
         }
     });
     if let Some(mut params) = picked {
@@ -1458,7 +1456,7 @@ fn send_knobs(
         }
         response.context_menu(|ui| {
             for (pre, label) in [(true, "Before the fader (pre)"), (false, "After the fader (post)")] {
-                if ui.radio(send.pre_fader == pre, label).clicked() {
+                if crate::kit::menu::item(ui, label, send.pre_fader == pre).clicked() {
                     let mode = if pre { "pre" } else { "post" };
                     actions.push(Action::new(
                         "track.setSendMode",

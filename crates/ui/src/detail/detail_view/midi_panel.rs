@@ -521,12 +521,12 @@ fn notes_tab(
 /// sets the clip's scale (`clip.setScale`) and fits the notes to it (`note.fitToScale`).
 fn fit_to_a_new_scale(response: &egui::Response, tools: &Tools<'_>, actions: &mut Vec<Action>) {
     egui::Popup::menu(response).show(|ui| {
-        ui.label(egui::RichText::new("Set the clip's scale").font(theme::ui_font(theme::TEXT_TINY)));
+        crate::kit::menu::heading(ui, "Set the clip's scale");
         for mode in ScaleMode::ALL {
-            ui.menu_button(mode.label(), |ui| {
+            crate::kit::menu::submenu(ui, mode.label(), false, |ui| {
                 for (index, name) in ROOT_NAMES.iter().enumerate() {
                     let root = crate::detail::piano_roll::pitch_class_name(u8::try_from(index).unwrap_or(0));
-                    if ui.button(root).clicked() {
+                    if crate::kit::menu::entry(ui, root, None, true).clicked() {
                         let mut scale = tools.address.clone();
                         scale["root"] = json!(name);
                         scale["mode"] = json!(mode.name());

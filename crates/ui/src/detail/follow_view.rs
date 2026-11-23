@@ -308,10 +308,13 @@ fn action_field(
     widgets::dropdown(ui, painter, rect, &response, &shown);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
-        let text = |t: String| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
         for kind in action_choices(scenes) {
-            if ui.selectable_label(kind == current, text(action_label(kind))).clicked() && kind != current {
-                picked = Some(kind);
+            let text = action_label(kind);
+            if crate::kit::menu::Entry::new(&text).chosen(kind == current).compact().show(ui).clicked() {
+                if kind != current {
+                    picked = Some(kind);
+                }
+                ui.close();
             }
         }
     });

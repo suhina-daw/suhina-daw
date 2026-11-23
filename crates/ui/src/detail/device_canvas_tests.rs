@@ -1287,15 +1287,18 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     let actions = click(&canvas, &time_parameters, Pos2::new(35., 59.));
     assert!(actions.iter().any(|a| a.params["param"] == "sync_left" && a.params["value"] == 1.0));
 }
-/// A canvas dropdown has the standard popup frame, as every other dropdown, and `popup` styles
-/// its rows (#1239).
+/// A canvas dropdown has the standard popup frame, as every other dropdown, and its rows are the
+/// kit's menu rows, which `button[kind="entry"]` styles (#1239, #1688).
 #[test]
-fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
+fn a_canvas_dropdown_has_the_standard_popup_frame_and_entry_rules_reach_its_rows() {
     use egui_kittest::kittest::Queryable;
     let graph = super::delay_example::build().unwrap();
     let parameters: Vec<_> = graph.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
     let canvas = Arc::new(graph.ui.unwrap());
-    let skin = crate::kit::skin::Skin { css: Some(Arc::from("popup { color: #00ff00; }")), ..Default::default() };
+    let skin = crate::kit::skin::Skin {
+        css: Some(Arc::from("button[kind=\"entry\"] { color: #00ff00; }")),
+        ..Default::default()
+    };
     crate::kit::skin::configure(&skin);
     let mut harness =
         egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 300.)).build_ui(move |ui| {
@@ -1344,7 +1347,7 @@ fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
         }
         _ => None,
     });
-    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), "popup's color reaches a row");
+    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), "the entry's color reaches a row");
 }
 #[test]
 fn delay_menus_open_choose_and_cancel_without_spurious_edits() {

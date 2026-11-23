@@ -934,7 +934,8 @@ fn groups_nest_fold_and_take_tracks_from_the_menu_and_by_dragging() {
     harness.run();
     harness.get_by_label_contains("Move into group").click();
     harness.run();
-    harness.get_all_by_label("Group").next().unwrap().click();
+    // The submenu's first entry, the outer group; the menu's own Group (Ctrl+G) comes before it.
+    harness.get_all_by_label("Group").nth(1).unwrap().click();
     harness.run();
     assert!(parent_name(&harness, "Keys").is_some());
 
@@ -3706,4 +3707,43 @@ fn a_clicked_header_s_outline_does_not_flicker() {
     let settled = outlines(&h, rect);
     assert!(!settled.is_empty(), "the selected header is outlined");
     assert_eq!(first, settled, "the frame of the click outlines it as the frames after do");
+}
+
+/// The loop brace's right-click menu, drawn with the kit's rows, turns looping off and on (#1688).
+#[test]
+fn the_loop_braces_menu_turns_looping_off_and_on() {
+    let mut harness = arrangement_with_a_clicked_loop_brace();
+    let enabled = |h: &Harness<'static, App>| h.state().session().is_some_and(|s| s.project().transport.loop_enabled);
+    assert!(enabled(&harness));
+    harness.get_by_label("Loop brace").click_secondary();
+    harness.run();
+    harness.get_by_label("Turn loop off").click();
+    harness.run();
+    assert!(!enabled(&harness));
+    harness.get_by_label("Loop brace").click_secondary();
+    harness.run();
+    harness.get_by_label("Turn loop on").click();
+    harness.run();
+    assert!(enabled(&harness));
+}
+
+/// The Arrangement toolbar's grid button opens the grid's entries, drawn with the kit's rows; a
+/// pick changes the grid the button shows (#1688).
+#[test]
+fn the_arrangement_toolbars_grid_button_opens_the_grid_entries() {
+    use egui_kittest::kittest::NodeT;
+    let mut harness = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.arrangement_toolbar = true;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    let shown = |h: &Harness<'static, App>| h.get_by_label_contains("Arrangement grid").accesskit_node().label();
+    let before = shown(&harness);
+    harness.get_by_label_contains("Arrangement grid").click();
+    harness.run();
+    harness.get_by_label("Narrow grid").click();
+    harness.run();
+    assert!(harness.query_by_label("Narrow grid").is_none(), "the pick closed the menu");
+    assert_ne!(shown(&harness), before, "the grid changed");
 }

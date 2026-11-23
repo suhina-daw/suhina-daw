@@ -171,26 +171,28 @@ fn the_menu_ticks_the_chosen_entries_and_changes_the_grid() {
     h.run();
     let toggled =
         |h: &Harness<'static, App>, label: &str| format!("{:?}", h.get_by_label(label).accesskit_node().toggled());
-    assert_eq!(toggled(&h, &format!("Snap to grid ({})", shown("Ctrl+4"))), "Some(True)");
+    assert_eq!(toggled(&h, "Snap to grid"), "Some(True)");
     assert_eq!(toggled(&h, "1/16"), "Some(True)");
     assert_eq!(toggled(&h, "1/8"), "Some(False)");
     assert_eq!(toggled(&h, "Adaptive medium"), "Some(False)");
-    assert_eq!(toggled(&h, &format!("Triplet grid ({})", shown("Ctrl+3"))), "Some(False)");
-    // Each entry with a key shows it, and its label carries it.
-    let narrow = format!("Narrow grid ({})", shown("Ctrl+1"));
-    let widen = format!("Widen grid ({})", shown("Ctrl+2"));
-    for entry in [narrow.as_str(), widen.as_str(), "Adaptive widest", "Adaptive narrowest", "8 bars", "1/32"] {
+    assert_eq!(toggled(&h, "Triplet grid"), "Some(False)");
+    // Each entry with a key shows it, and a screen reader reads it as its shortcut.
+    for (entry, key) in [("Narrow grid", "Ctrl+1"), ("Widen grid", "Ctrl+2"), ("Triplet grid", "Ctrl+3")] {
+        let shortcut = h.get_by_label(entry).accesskit_node().data().keyboard_shortcut().map(str::to_owned);
+        assert_eq!(shortcut, Some(shown(key)), "{entry}'s key");
+    }
+    for entry in ["Adaptive widest", "Adaptive narrowest", "8 bars", "1/32"] {
         assert!(h.query_by_label(entry).is_some(), "{entry} is in the menu");
     }
     h.get_by_label("1/8").click_accesskit();
     h.run();
     assert_eq!(grid_label(&h), "Grid value 1/8");
-    pick(&mut h, &format!("Triplet grid ({})", shown("Ctrl+3")));
+    pick(&mut h, "Triplet grid");
     assert_eq!(grid_label(&h), "Grid value 1/8T");
     pick(&mut h, "Adaptive wide");
     assert_eq!(grid_label(&h), "Grid value Adaptive T");
-    pick(&mut h, &format!("Triplet grid ({})", shown("Ctrl+3")));
-    pick(&mut h, &format!("Snap to grid ({})", shown("Ctrl+4")));
+    pick(&mut h, "Triplet grid");
+    pick(&mut h, "Snap to grid");
     assert_eq!(grid_label(&h), "Grid value Adaptive off");
 }
 
@@ -230,7 +232,7 @@ fn a_drawn_note_follows_the_chosen_value() {
 fn snap_off_lets_a_drawn_note_start_off_the_grid() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    pick(&mut h, &format!("Snap to grid ({})", shown("Ctrl+4")));
+    pick(&mut h, "Snap to grid");
     assert_eq!(grid_label(&h), "Grid value 1/16 off");
     let keys = empty_keys(&h);
     let start = notes(&h)[1].time.floor() + 1.0;

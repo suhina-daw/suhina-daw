@@ -1400,25 +1400,25 @@ fn row_view(
         asked.locate = Some(row.file.clone());
     }
     response.context_menu(|ui| {
-        if ui.button("Copy file name").clicked() {
+        if crate::kit::menu::entry(ui, "Copy file name", None, true).clicked() {
             asked.copy = Some(name.clone());
             ui.close();
         }
-        if ui.button("Copy original path").clicked() {
+        if crate::kit::menu::entry(ui, "Copy original path", None, true).clicked() {
             asked.copy = Some(row.last_path.display().to_string());
             ui.close();
         }
-        ui.separator();
-        if ui.button("Locate…").clicked() {
+        crate::kit::menu::separator(ui);
+        if crate::kit::menu::entry(ui, "Locate…", None, true).clicked() {
             asked.locate = Some(row.file.clone());
             ui.close();
         }
         if let Some(chosen) = &row.chosen {
-            if ui.button(show_in_folder_label()).clicked() {
+            if crate::kit::menu::entry(ui, show_in_folder_label(), None, true).clicked() {
                 asked.reveal = Some(chosen.clone());
                 ui.close();
             }
-            if ui.button("Leave it missing").clicked() {
+            if crate::kit::menu::entry(ui, "Leave it missing", None, true).clicked() {
                 asked.leave = Some(row.file.clone());
                 ui.close();
             }
