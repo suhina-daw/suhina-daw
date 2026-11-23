@@ -418,7 +418,7 @@ specific selector to win over Suhina's.
   Suhina Studio as in any theme.
 - **Shared controls.** The base sheet gives Suhina's own controls their looks: a `button` (its
   fill, text, edge and the ring while it has the keys, a step brighter under the pointer), the
-  toggles (`button[kind="toggle"]`, and `toggle` for a switch a view draws itself: dim words, and
+  toggles (`button[kind="toggle"]`, and `toggle` for a switch a view draws itself: off, a button's look, and
   when `[checked]` the chosen fill and the text on it; solo, `button[kind="solo"]`, is lit in the
   accent, arm, `button[kind="arm"]`, in the recording colors), `knob`, the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) and their
   `value-fill` and `value-handle`, the pan field and its `pan-center`, `send`, the line under a
@@ -471,7 +471,7 @@ specific selector to win over Suhina's.
   did not fit `button[kind="more"]`, and the fills it paints itself, `browser-fill`), the detail
   panels (their fills `detail-fill`, a device's header, nodes, outline, lines, parameters and
   canvas colors `device-canvas`, a group's branches `device-row[kind="branch"]`, the fields
-  `value[kind="field"]`, the buttons `button[kind="panel"]`, switches `button[kind="toggle"]`
+  `value[kind="field"]`, the buttons push buttons `button[kind="push"]`, switches `button[kind="toggle"]`
   and lists `dropdown[kind="panel"]`, the Clip and Devices switch `editor-tab[kind="switch"]`) and
   the piano roll (its grid, rows, notes, velocities, ruler, loop bar, keys, strips, tools and
   toolbar menus). **A rule for every `button` hides their lit looks too**: state

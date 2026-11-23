@@ -8,8 +8,8 @@
 //! whole clip; `midi-tools` styles the tools part.
 
 use super::clip_panel::{
-    CLIP_PART, Change, FIELD, Field, GAP, NAME, TOGGLE, Text, bar_of, button_face, clip_part, disabled_face, drop_down,
-    name_over, number_field, plain_number, set_button, small_button, switch_face, toggle, whole,
+    CLIP_PART, Change, FIELD, Field, GAP, NAME, TOGGLE, Text, bar_of, clip_part, drop_down, name_over, number_field,
+    plain_number, push_button, set_button, small_button, toggle, whole,
 };
 use super::*;
 use crate::detail::midi_tools::{Tools, ToolsTab, Transform, tools_width};
@@ -38,8 +38,6 @@ const BUTTON_GAP: f32 = 4.0;
 /// The quantise amount's id to the theme, and its knob's height where the theme sets none.
 const QUANTISE_AMOUNT: &str = "quantise-amount";
 const KNOB: f32 = 32.0;
-/// A check box's side.
-const CHECK: f32 = 12.0;
 
 /// The tools part's spacing: the room between its rows, between the rows of the Notes tab's
 /// buttons, and the height of its fields and buttons and of its switches and Apply.
@@ -350,17 +348,10 @@ fn tab_row_of(ui: &Ui, painter: &egui::Painter, row: Rect, state: &mut PianoRoll
     }
 }
 
-/// A button of the tools, drawn as the panel's small buttons are; returns its response.
+/// A button of the tools, a push button as the panel's others are; returns its response.
 fn tool_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: &str, enabled: bool) -> egui::Response {
-    let response = widgets::button_area(ui, rect, Id::unique(("midi-tools-button", label)), label);
-    // A `button` to the theme, as the column's buttons were.
-    let ink = if enabled {
-        button_face(ui, crate::kit::element::BUTTON, painter, rect, &response)
-    } else {
-        disabled_face(painter, rect, &response)
-    };
-    widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
-    response
+    let id = Id::unique(("midi-tools-button", label));
+    push_button(ui, painter, rect, id, (text, label), enabled, theme::TEXT_SMALL)
 }
 
 /// A whole number with its sign: `+3`, `0`, `-12`.
@@ -392,34 +383,19 @@ fn explain(ui: &Ui, rect: Rect, id: &str, text: &str) {
     let _ = ui.interact(rect, Id::unique(("midi-tools-hint", id)), Sense::hover()).on_hover_text(text);
 }
 
-/// A setting of a transformation that is on or off: a check box and its name after it, so it
-/// does not read as a button beside Apply under it. The box is a `button` to the theme
-/// (`[checked]` while on); the whole row takes the click. Named "`name`: On" or "Off", and
-/// showing `name`, or `short` where the part is too narrow for it, so the name is not cut.
-/// Returns whether it was clicked.
+/// A setting of a transformation that is on or off: the kit's tick box and its name after it
+/// ([`widgets::check_box_named`], `button[kind="check"]`), so it does not read as a button beside
+/// Apply under it; the whole row takes the click. Named "`name`: On" or "Off", and showing `name`,
+/// or `short` where the part is too narrow for it, so the name is not cut. Returns whether it was
+/// clicked.
 fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, short: &str, on: bool) -> bool {
     let state = if on { "On" } else { "Off" };
-    let response = widgets::button_area(ui, row, Id::unique(("midi-tools-check", name)), format!("{name}: {state}"));
-    let side = CHECK.min(row.height());
-    let mark = Rect::from_min_size(Pos2::new(row.left(), row.center().y - side / 2.0), Vec2::splat(side));
-    let ink = switch_face(ui, painter, mark, &response, on);
-    if on {
-        let at = |x: f32, y: f32| Pos2::new(mark.left() + side * x, mark.top() + side * y);
-        let line = egui::Stroke::new(1.5, ink);
-        painter.line_segment([at(0.24, 0.52), at(0.42, 0.7)], line);
-        painter.line_segment([at(0.42, 0.7), at(0.76, 0.3)], line);
-    }
-    let text = Rect::from_min_max(Pos2::new(mark.right() + 6.0, row.top()), row.max);
-    // Its words: `label`'s own `color` where a rule gives one, else brightening under the pointer.
-    let color = crate::kit::element::LABEL
-        .attribute("kind", "check")
-        .response(&response)
-        .enter()
-        .hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::color);
+    // The words start past the kit's 11-point mark and its gap.
     let font = theme::ui_font(theme::TEXT_SMALL);
-    let shown = check_text(name, short, text.width(), |t| widgets::text_width(ui, t, font.clone()));
-    widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, font, color);
-    response.clicked()
+    let room = row.width() - 17.5;
+    let shown = check_text(name, short, room, |t| widgets::text_width(ui, t, font.clone()));
+    let id = Id::unique(("midi-tools-check", name));
+    widgets::check_box_named(ui, painter, row, id, (shown, &format!("{name}: {state}")), on).clicked()
 }
 
 /// The text a check box shows in `room` points: its name, or the short one where the name is
@@ -849,15 +825,11 @@ fn transform_tab(
     let apply_text = format!("{} {}", chosen.verb(), tools.target());
     let apply = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
     let enabled = tools.count() > 0;
-    let response =
-        widgets::button_area(ui, apply, Id::unique("midi-tools-apply"), &apply_text).on_hover_text(chosen.hint());
-    let ink = if enabled {
-        // The tools' one action, in the panels' highlight.
-        switch_face(ui, painter, apply, &response, true)
-    } else {
-        disabled_face(painter, apply, &response)
-    };
-    widgets::text_in(painter, apply, Align2::CENTER_CENTER, &apply_text, theme::ui_font(theme::TEXT_SMALL), ink);
+    // A push button, `:disabled` while there are no notes to change.
+    let id = Id::unique("midi-tools-apply");
+    let response = push_button(ui, painter, apply, id, (&apply_text, &apply_text), enabled, theme::TEXT_SMALL)
+        .on_hover_text(chosen.hint())
+        .on_disabled_hover_text(chosen.hint());
     if enabled && response.clicked() {
         // No seed for Humanise and Randomise: a fresh draw each press.
         let id = match chosen {

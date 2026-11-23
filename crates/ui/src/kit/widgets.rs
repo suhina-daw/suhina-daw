@@ -1843,6 +1843,20 @@ pub(crate) fn push_face(
     (text, push): (&str, Push),
     id: Option<&str>,
 ) {
+    push_face_sized(ui, painter, rect, response, (text, push), id, theme::TEXT_SMALL);
+}
+
+/// [`push_face`] with its words `size` points high: a button too small for the small font (a
+/// clip panel's Set and Find).
+pub(crate) fn push_face_sized(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    response: &Response,
+    (text, push): (&str, Push),
+    id: Option<&str>,
+    size: f32,
+) {
     let primary = push == Push::Primary;
     let kind = match push {
         Push::Primary => "primary",
@@ -1868,7 +1882,7 @@ pub(crate) fn push_face(
         Push::Danger => super::element::LABEL.attribute("kind", "error").look().color(),
         Push::Plain | Push::Secondary => el.color(),
     };
-    text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
+    text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(size), ink);
 }
 
 /// A horizontal slider of a percentage, 0 to 100 (swing, #1221): a click puts the handle there, a

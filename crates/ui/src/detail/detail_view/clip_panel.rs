@@ -199,26 +199,14 @@ fn field_surface(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::
     el.color()
 }
 
-/// The face of a panel's button (`button[kind="panel"]`) or list (`dropdown[kind="panel"]`) in
-/// `rect`: its fill and ink fading to the ones it has under the pointer. A button is drawn as every
-/// button is ([`widgets::button_surface`]: its artwork, or its CSS shape, and its border, which the
-/// base sheet gives a panel's buttons), a list as its CSS box. Returns its ink.
-pub(super) fn button_face(
-    ui: &Ui,
-    element: crate::kit::element::Name,
-    painter: &egui::Painter,
-    rect: Rect,
-    response: &egui::Response,
-) -> egui::Color32 {
+/// The face of a panel's list (`dropdown[kind="panel"]`) in `rect`: its CSS box, its fill and ink
+/// fading to the ones it has under the pointer. Returns its ink.
+pub(super) fn list_face(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response) -> egui::Color32 {
     use crate::kit::element::{Look, Native};
-    let el = element.attribute("kind", "panel").response(response).enter();
+    let el = crate::kit::element::DROPDOWN.attribute("kind", "panel").response(response).enter();
     let hovered = widgets::hover(ui, response);
     let fill = el.hover_fade(hovered, Look::background);
-    if element == crate::kit::element::BUTTON {
-        widgets::button_surface(painter, rect, &el, response, false, fill, 3.0);
-    } else {
-        el.paint_with(painter, rect, Native { radius: 3.0, fill });
-    }
+    el.paint_with(painter, rect, Native { radius: 3.0, fill });
     el.hover_fade(hovered, Look::color)
 }
 
@@ -239,12 +227,29 @@ pub(super) fn switch_face(
     ink
 }
 
-/// A panel's button that cannot be pressed now: `button[kind="panel"]:disabled`, drawn as every
-/// button is ([`widgets::button_surface`]). Returns its ink.
-pub(super) fn disabled_face(painter: &egui::Painter, rect: Rect, response: &egui::Response) -> egui::Color32 {
-    let el = crate::kit::element::BUTTON.attribute("kind", "panel").pointer(false, false, true).enter();
-    widgets::button_surface(painter, rect, &el, response, false, el.background(), 3.0);
-    el.color()
+/// A panel's button: a push button as every view's is (`button[kind="push"]`, [`widgets::push_face`]),
+/// `:disabled` while it cannot be pressed, its words `size` points high. Returns its response; a
+/// disabled one is never clicked.
+pub(super) fn push_button(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    id: Id,
+    (text, label): (&str, &str),
+    enabled: bool,
+    size: f32,
+) -> egui::Response {
+    // Pressed or not, it is the same button on the same layer; disabled, its response says so.
+    let response = if enabled {
+        widgets::button_area(ui, rect, id, label)
+    } else {
+        let builder = egui::UiBuilder::new().layer_id(ui.layer_id()).max_rect(rect).disabled();
+        let mut child = Ui::new(ui.ctx().clone(), id.with("disabled"), builder);
+        child.set_clip_rect(ui.clip_rect());
+        widgets::button_area(&child, rect, id, label)
+    };
+    widgets::push_face_sized(ui, painter, rect, &response, (text, widgets::Push::Plain), None, size);
+    response
 }
 
 /// The places of a text a drag steps: each a range of characters and its step.
@@ -482,7 +487,7 @@ pub(super) fn clip_name(
     }
 }
 
-/// A small button, as the kit draws one; returns whether it was clicked.
+/// A small push button ([`push_button`]); returns whether it was clicked.
 pub(super) fn small_button(
     ui: &Ui,
     painter: &egui::Painter,
@@ -491,15 +496,9 @@ pub(super) fn small_button(
     label: &str,
     enabled: bool,
 ) -> bool {
-    let response = widgets::button_area(ui, rect, Id::unique(("clip-panel-button", label)), label);
-    let ink = if enabled {
-        button_face(ui, crate::kit::element::BUTTON, painter, rect, &response)
-    } else {
-        disabled_face(painter, rect, &response)
-    };
     let size = if rect.height() < 15.0 { theme::TEXT_TINY } else { theme::TEXT_SMALL };
-    widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(size), ink);
-    enabled && response.clicked()
+    let id = Id::unique(("clip-panel-button", label));
+    push_button(ui, painter, rect, id, (text, label), enabled, size).clicked()
 }
 
 /// A switch the width of its part, showing `text`, lit while on; named "`name`: On" or "Off".
@@ -554,7 +553,7 @@ pub(super) fn drop_down(
     list_width: f32,
 ) -> Option<usize> {
     let response = widgets::button_area(ui, rect, id, format!("{name}: {shown}"));
-    let ink = button_face(ui, crate::kit::element::DROPDOWN, painter, rect, &response);
+    let ink = list_face(ui, painter, rect, &response);
     let text = Rect::from_min_max(rect.min + Vec2::new(6.0, 0.0), rect.max - Vec2::new(14.0, 0.0));
     widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, theme::ui_font(theme::TEXT_SMALL), ink);
     // The chevron is the list's own color, unless a theme colors the list's text.
@@ -1191,10 +1190,9 @@ fn audio_part(
     let name = row(y, NAME);
     name_over(painter, name, "Tempo", Align2::LEFT_BOTTOM);
     let find = set_button(name);
-    let response = widgets::button_area(ui, find, Id::unique(("clip-panel-find", panel.clip.0)), "Find tempo");
-    // A `button`, as the panel's other buttons.
-    let ink = button_face(ui, crate::kit::element::BUTTON, painter, find, &response);
-    widgets::text_in(painter, find, Align2::CENTER_CENTER, "Find", theme::ui_font(theme::TEXT_TINY), ink);
+    // A push button, as the panel's other buttons.
+    let id = Id::unique(("clip-panel-find", panel.clip.0));
+    let response = push_button(ui, painter, find, id, ("Find", "Find tempo"), true, theme::TEXT_TINY);
     let mut set: Option<(f64, TempoSource, bool)> = None;
     let open = egui::Popup::menu(&response).show(|ui| {
         // Wide enough for "File name: 120.00" on one line: the menu took the button's narrow

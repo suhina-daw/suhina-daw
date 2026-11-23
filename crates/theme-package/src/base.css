@@ -83,11 +83,11 @@ button:disabled { color: var(--text-hint); }
 button[kind="push"] { border-width: 1px; }
 button[kind="primary"] { border-width: 1px; border-color: var(--accent); }
 
-/* A toggle (mute, cue, a view's switch): dim words, a step brighter under the pointer; lit, the
-   chosen fill and the text on it. Solo is lit in the accent, arm in the recording colors. The
-   `toggle` element holds the same colors for a view that draws its switch itself. */
-toggle, button[kind="toggle"] { color: var(--text-hint); }
-toggle:hover, button[kind="toggle"]:hover { color: var(--text-secondary); }
+/* A toggle (mute, cue, a view's switch): off, a button like any other (dim words are for one
+   that cannot be pressed); lit, the chosen fill and the text on it. Solo is lit in the accent, arm
+   in the recording colors. The `toggle` element holds the same colors for a view that draws its
+   switch itself. */
+toggle { color: var(--text-primary); }
 toggle[checked], button[kind="toggle"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
 toggle[checked]:hover, button[kind="toggle"][checked]:hover { background-color: color-mix(in srgb, var(--control-selectedBackground), white 20%); }
 toggle { background-color: var(--control-background); }
@@ -374,11 +374,8 @@ slider[kind="quantise"] { accent-color: var(--text-primary); color: var(--text-s
 fader-scale[kind="clip"] { color: var(--text-hint); }
 fader-rail[kind="clip"] { background-color: var(--control-background); }
 
-/* The panels' buttons: a push button, a switch (dim words, the chosen fill and its text when on),
-   the one that does the panel's work (lit), the Clip and Devices switch, the entries of a list
-   and its field, the MIDI tools' tabs. */
-button[kind="panel"] { color: var(--text-primary); border-color: var(--border); border-width: 1px; }
-button[kind="panel"]:disabled { background-color: var(--panel-background); }
+/* The panels' buttons are push buttons and their switches toggles, as every view's; here the
+   entries of a list and its field, and the MIDI tools' tabs. */
 list-row[kind="menu"], button[kind="entry"] { background-color: transparent; color: var(--text-primary); }
 list-row[kind="menu"]:hover, button[kind="entry"]:hover { background-color: var(--control-hoverBackground); }
 list-row[kind="menu"][selected], button[kind="entry"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }

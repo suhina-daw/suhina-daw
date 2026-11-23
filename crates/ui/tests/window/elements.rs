@@ -1734,10 +1734,10 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_monitor_
 }
 
 /// Coloring a region goes through its variables: `window { --text-hint: … }` reaches the hint
-/// words inside it (an empty detail panel's note) and a switch's dim words, which the base sheet
-/// colors with the same variable: a track that is off, its number (#1449).
+/// words inside it (an empty detail panel's note) (#1449), and `--text-primary` the words of a
+/// switch that is off, which reads as any button does: a track that is off, its number.
 #[test]
-fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
+fn a_region_s_text_variables_reach_the_hints_and_toggles_inside_it() {
     let mut h = lit_drums();
     h.get_by_label("Turn Keys off").click();
     h.run();
@@ -1745,7 +1745,7 @@ fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
     h.event(egui::Event::PointerGone);
     h.run();
     let switch = h.get_by_label("Turn Keys on").rect();
-    let css = format!("window {{ --text-hint: {}; }}", hex(odd(151)));
+    let css = format!("window {{ --text-hint: {}; --text-primary: {}; }}", hex(odd(151)), hex(odd(152)));
     suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
     for _ in 0..4 {
         h.step();
@@ -1767,7 +1767,7 @@ fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
         .iter()
         .for_each(|shape| colors_of(&shape.shape, "Select a track or a clip to see it here", &mut hint));
     suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(!toggle.is_empty() && toggle.iter().all(|c| *c == odd(151)), "the off switch's number: {toggle:?}");
+    assert!(!toggle.is_empty() && toggle.iter().all(|c| *c == odd(152)), "the off switch's number: {toggle:?}");
     assert!(!hint.is_empty() && hint.iter().all(|c| *c == odd(151)), "the hint's words: {hint:?}");
 }
 

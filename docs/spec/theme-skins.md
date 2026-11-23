@@ -529,7 +529,7 @@ page's (ADR 0031, amendment of 2026-11-15).
   `device[selected]`, `separator[kind="column"]`, `label`/`value[kind="parameter"]`,
   `device-control[kind]`, `slider[kind="parameter"]`), a device canvas's colors
   (`device-canvas` and its kinds), a device group's branches (`device-row[kind="branch"]`), the
-  panels' fields, buttons, switches and lists (`value[kind="field"]`, `button[kind="panel"]`,
+  panels' fields, buttons, switches and lists (`value[kind="field"]`, `button[kind="push"]`,
   `[kind="toggle"]`, `"entry"`, their lists' rows `list-row[kind="menu"]`, `dropdown[kind="panel"]`, `editor-tab[kind]`); the piano roll's grid,
   rows, notes, velocities, slices, markers, ruler, loop bar, keys, strips, ranges and tools
   (`piano-grid`, `piano-row`, `piano-note[kind]`, `velocity`, `piano-slice`, `start-marker`,

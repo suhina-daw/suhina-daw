@@ -184,3 +184,23 @@ fn ctrl_u_does_nothing_while_the_piano_roll_is_hidden() {
     quantise(&mut h);
     assert_eq!(notes(&h), late);
 }
+
+/// With no notes in the clip, Apply is an ordinary push button that cannot be pressed: it says
+/// so to a reader, and a click quantizes nothing.
+#[test]
+fn apply_is_a_disabled_push_button_while_the_clip_has_no_notes() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let mut params = address(&h);
+    params["notes"] = json!((0..notes(&h).len()).collect::<Vec<_>>());
+    h.state_mut().run(&Action::new("note.delete", params));
+    h.run();
+    assert!(notes(&h).is_empty());
+    h.get_by_label("Quantise").click();
+    h.run();
+    let apply = h.get_by_label("Quantise clip");
+    assert!(egui_kittest::kittest::NodeT::accesskit_node(&apply).is_disabled(), "Apply cannot be pressed");
+    apply.click();
+    h.run();
+    assert!(notes(&h).is_empty());
+}
