@@ -480,12 +480,17 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     painter.rect_filled(rect, 1.0, colors.window_background);
     // Lit from its foot as a hardware meter is: the theme's level color up to -12 dB, warming to
     // amber by -3 dB and red past 0 dB. The unlit rest shows the same colors faintly.
+    // The colors toned down toward the meter's ground, so the fill reads as light behind the
+    // scale rather than a block of paint; only the last few dB warm, and only past 0 dB is red.
+    let ground = colors.window_background;
+    let level = blend(ground, palette.level, 0.6);
     let stops = [
-        (rect.bottom(), palette.level),
-        (level_y(-12.0, rect), palette.level),
-        (level_y(-3.0, rect), METER_AMBER),
-        (level_y(0.0, rect), METER_HOT),
-        (rect.top(), METER_HOT),
+        (rect.bottom(), blend(ground, palette.level, 0.45)),
+        (level_y(-18.0, rect), level),
+        (level_y(-6.0, rect), level),
+        (level_y(-1.0, rect), blend(ground, METER_AMBER, 0.6)),
+        (level_y(0.0, rect), blend(ground, METER_HOT, 0.7)),
+        (rect.top(), blend(ground, METER_HOT, 0.7)),
     ];
     gradient(painter, rect, rect.bottom(), rect.top(), &stops, METER_UNLIT);
     let top = level_y(db, rect);
@@ -506,7 +511,9 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
                 _ => None,
             })
             .unwrap_or(METER_HOT);
-        painter.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(1.5, color));
+        // The peak line brighter than the fill under it: the same color, lifted toward white.
+        let color = blend(color, Color32::WHITE, 0.35);
+        painter.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(1.0, color));
     }
     let tick = colors.text_secondary.gamma_multiply(0.3);
     for mark in [-12.0, -24.0, -36.0, -48.0] {
@@ -520,9 +527,9 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     );
 }
 
-/// How strongly a meter's lit part shows, and its unlit part.
-const METER_LIT: f32 = 0.6;
-const METER_UNLIT: f32 = 0.07;
+/// How strongly a meter's lit part shows, and its unlit part (its colors are toned down already).
+const METER_LIT: f32 = 1.0;
+const METER_UNLIT: f32 = 0.12;
 /// How long a meter's peak line holds, in seconds, and how fast it falls after, in dB a second.
 const PEAK_HOLD: f64 = 1.5;
 const PEAK_FALL: f64 = 20.0;
@@ -624,7 +631,9 @@ fn meter_scales(painter: &egui::Painter, areas: &Areas, palette: Palette) {
 fn reduction_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     let colors = super::device_canvas::colors();
     painter.rect_filled(rect, 1.0, colors.window_background);
-    let stops = [(rect.top(), palette.reduction), (rect.bottom(), palette.reduction)];
+    let ground = colors.window_background;
+    let reduction = blend(ground, palette.reduction, 0.55);
+    let stops = [(rect.top(), reduction), (rect.bottom(), blend(ground, palette.reduction, 0.4))];
     gradient(painter, rect, rect.top(), rect.bottom(), &stops, METER_UNLIT);
     let bottom = reduction_y(db, rect);
     if bottom > rect.top() + 0.5 {
