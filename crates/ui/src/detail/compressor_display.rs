@@ -861,17 +861,20 @@ fn threshold_arrow(
         .on_hover_cursor(egui::CursorIcon::ResizeVertical);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &caption));
     let active = response.hovered() || response.dragged();
-    let tip = areas.input.right() + 1.0;
-    let size = if active { 5.5 } else { 4.5 };
+    // A light line with a dark edge, so it reads over the meter's fill whatever level it shows,
+    // and a handle beside the meter in the same light, brighter while it is held or pointed at.
+    let light = if active { Color32::WHITE } else { colors.text_primary };
+    let edge = Color32::from_black_alpha(160);
+    let (left, right) = (areas.input.left() - 2.0, areas.input.right() + 2.0);
+    painter.line_segment([Pos2::new(left, y), Pos2::new(right, y)], Stroke::new(3.5, edge));
+    painter.line_segment([Pos2::new(left, y), Pos2::new(right, y)], Stroke::new(1.5, light));
+    let tip = areas.input.right() + 2.0;
+    let size = if active { 6.5 } else { 5.5 };
     painter.add(Shape::convex_polygon(
         vec![Pos2::new(tip, y), Pos2::new(tip + size * 1.5, y - size), Pos2::new(tip + size * 1.5, y + size)],
-        colors.accent,
-        Stroke::NONE,
+        light,
+        Stroke::new(1.0, edge),
     ));
-    painter.line_segment(
-        [Pos2::new(areas.input.left(), y), Pos2::new(areas.input.right(), y)],
-        Stroke::new(1.0, colors.accent),
-    );
     let Some(threshold) = parameter(parameters, "threshold") else {
         return;
     };
