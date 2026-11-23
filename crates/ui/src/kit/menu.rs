@@ -201,6 +201,13 @@ impl<'a> Entry<'a> {
         response
     }
 
+    /// How wide the entry is drawn at least: its words, its key or value and its insets. A
+    /// table of entries makes every cell this wide, so no row of it is wider than the menu egui
+    /// measured.
+    pub fn width(&self, ui: &Ui) -> f32 {
+        natural_width(ui, self.text, 0.0, self.face(ui)).0
+    }
+
     fn face(&self, ui: &Ui) -> Face<'a> {
         // A compact row is as tall as the menu's rows are set (lower than a full row).
         let height = if self.small { ui.spacing().interact_size.y.max(1.0) } else { theme::ROW };
@@ -289,12 +296,8 @@ const KEY_GAP: f32 = 16.0;
 /// the entry's disabled color (the hint ink unless the theme gives one).
 fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32, face: Face<'_>) -> Response {
     let font = theme::ui_font(if face.small { theme::TEXT_SMALL } else { theme::TEXT });
-    let key_font = match face.trailing {
-        Some((_, true)) => theme::mono_font(theme::TEXT_SMALL),
-        _ => font.clone(),
-    };
-    let key_width = face.trailing.map_or(0.0, |(key, _)| widgets::text_width(ui, key, key_font.clone()) + KEY_GAP);
-    let width = widgets::text_width(ui, text, font.clone()) + key_width + 2.0 * INSET + extra;
+    let key_font = key_font(face, &font);
+    let (width, key_width) = natural_width(ui, text, extra, face);
     let sense = if face.enabled { Sense::click() } else { Sense::hover() };
     let (rect, response) = ui.allocate_exact_size(Vec2::new(across(ui, width), face.height), sense);
     let entry = BUTTON.attribute("kind", "entry");
@@ -326,6 +329,23 @@ fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32, face: Face<'_>) -> Re
     let words = Rect::from_min_max(inside.min, inside.max - Vec2::new(key_width, 0.0));
     widgets::text_in(ui.painter(), words, Align2::LEFT_CENTER, text, font, ink);
     response
+}
+
+/// The font of a row's key (the mono font) or value (the row's own).
+fn key_font(face: Face<'_>, font: &egui::FontId) -> egui::FontId {
+    match face.trailing {
+        Some((_, true)) => theme::mono_font(theme::TEXT_SMALL),
+        _ => font.clone(),
+    }
+}
+
+/// How wide a row of `text` is at least, `extra` more at its right end, and how much of that its
+/// key or value takes.
+fn natural_width(ui: &Ui, text: &str, extra: f32, face: Face<'_>) -> (f32, f32) {
+    let font = theme::ui_font(if face.small { theme::TEXT_SMALL } else { theme::TEXT });
+    let key_font = key_font(face, &font);
+    let key_width = face.trailing.map_or(0.0, |(key, _)| widgets::text_width(ui, key, key_font) + KEY_GAP);
+    (widgets::text_width(ui, text, font) + key_width + 2.0 * INSET + extra, key_width)
 }
 
 /// One line of `text` in `ink` that takes no click, as wide as it needs.

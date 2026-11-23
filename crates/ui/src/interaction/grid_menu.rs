@@ -34,13 +34,22 @@ pub fn grid_entries(
     let table = |ui: &mut Ui, title: &str, columns: usize, cells: Vec<(String, bool, PianoGrid, String)>| {
         menu::heading(ui, title);
         let gap = 2.0;
-        let width = ((ui.available_width() - gap * (columns as f32 - 1.0)) / columns as f32).max(36.0);
+        // Every cell as wide as the widest, so egui measures the menu as wide as its widest line
+        // will be drawn; once measured, an equal share of the menu when that is more.
+        let widest = cells.iter().map(|(name, ..)| menu::Entry::new(name).compact().width(ui)).fold(0.0, f32::max);
+        let share = (ui.available_width() - gap * (columns as f32 - 1.0)) / columns as f32;
+        let width = if ui.is_sizing_pass() { widest } else { widest.max(share) };
         for line in cells.chunks(columns) {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = gap;
                 for (name, on, result, label) in line {
                     let cell = egui::vec2(width, ui.spacing().interact_size.y);
-                    ui.allocate_ui(cell, |ui| pick(ui, menu::Entry::new(name).chosen(*on).named(label), *result));
+                    ui.allocate_ui(cell, |ui| {
+                        // The whole cell, also while egui measures the menu (an entry asks then only
+                        // for its own words' width).
+                        ui.set_min_width(width);
+                        pick(ui, menu::Entry::new(name).chosen(*on).named(label), *result);
+                    });
                 }
             });
         }
@@ -79,3 +88,7 @@ pub fn grid_entries(
 pub fn grid_key_labels(keymap: &crate::settings::keymap::Keymap, actions: &[&str; 4]) -> [String; 4] {
     actions.map(|a| keymap.label(a).unwrap_or_default())
 }
+
+#[cfg(test)]
+#[path = "grid_menu_tests.rs"]
+mod tests;
