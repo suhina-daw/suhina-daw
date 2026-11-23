@@ -21,6 +21,7 @@ impl App {
                 self.arrangement.selected_tracks = vec![track];
             }
             self.show_devices();
+            self.track_devices = true;
         }
         if let Some(track) = self.view.open_devices.take() {
             self.view.selected = Some(track);
@@ -28,6 +29,7 @@ impl App {
                 self.view.selected_slot = None;
             }
             self.show_devices();
+            self.track_devices = true;
         }
         // A click anywhere on a track that is not a clip shows its devices too, the selection
         // as the click left it (#950). A hidden detail area stays hidden: opening it under the
@@ -42,6 +44,12 @@ impl App {
         }
         if clicked && self.detail_open {
             self.detail_showing = detail_view::Showing::Devices;
+            self.track_devices = true;
+        }
+        // The editor shown (a double-click on a clip, the Clip part of the switch, a menu's Show
+        // editor): the clip is in the detail area again.
+        if self.detail_showing == detail_view::Showing::Clip {
+            self.track_devices = false;
         }
     }
 
@@ -182,7 +190,8 @@ impl App {
         {
             self.arrangement.focus_clip(first);
         }
-        // What it shows: the selected clip, or the selected track's devices.
+        // What it shows: the selected clip, or the selected track's devices; a track's devices on
+        // their own (`track_devices`) stay so with a clip selected, those of the clip's track.
         let (track, clip) = match self.shown {
             View::Session => (self.view.selected, self.view.selected_slot.map(|(t, s)| ClipRef::Slot(t, s))),
             View::Arrangement => (
@@ -190,6 +199,7 @@ impl App {
                 self.arrangement.selected_clip().map(|(t, i)| ClipRef::Arrangement(t, i)),
             ),
         };
+        let (track, clip) = if self.track_devices { (clip.map(ClipRef::track).or(track), None) } else { (track, clip) };
         // Where each plug-in on the shown track stands, read first: reading it needs the session
         // itself, building the detail only the project; and an editor embedded in the panel
         // decides how tall the panel is.
@@ -1201,9 +1211,10 @@ impl App {
     /// Whether a MIDI clip's piano roll is on show: with the switch on Clip, or with the devices
     /// stacked, where Devices opens them beside it and it stays open.
     pub(super) fn piano_roll_on_show(&self) -> bool {
-        self.detail_showing == detail_view::Showing::Clip
-            || self.settings.device_layout == DeviceLayout::Stack
-            || self.settings.view.stack_in_piano_roll
+        !self.track_devices
+            && (self.detail_showing == detail_view::Showing::Clip
+                || self.settings.device_layout == DeviceLayout::Stack
+                || self.settings.view.stack_in_piano_roll)
     }
 
     /// The params that name the clip the piano roll shows in a `note.*` command, if it shows one.

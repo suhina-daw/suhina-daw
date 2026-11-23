@@ -513,6 +513,10 @@ pub struct App {
     /// The detail area's Clip / Devices switch: for a clip with an editor, the editor or its
     /// track's devices (`docs/spec/ui-clip-editor.md` › Where it opens). Window state.
     detail_showing: detail_view::Showing,
+    /// The detail area shows a track's devices on their own, as a click on the track asked: a
+    /// clip then selected with one click leaves it so (no clip column), and only a double-click,
+    /// or the editor shown some other way, brings the clip in. Window state.
+    track_devices: bool,
     /// The arrangement clip the plug-ins that edit clips (ARA) on its track were last told is
     /// selected, and the one whose ARA editor was last opened on its own when it was selected:
     /// once per clip, so an editor the user closes stays closed.
@@ -851,6 +855,7 @@ impl App {
             keymap: Keymap::default(),
             keymap_changed: false,
             detail_showing: detail_view::Showing::Clip,
+            track_devices: false,
             ara_told: None,
             ara_opened: None,
             ara_was_open: None,
