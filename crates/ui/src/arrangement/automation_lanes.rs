@@ -3833,6 +3833,7 @@ fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static
                 let el = crate::kit::element::BUTTON
                     .attribute("kind", "shape")
                     .attr(crate::kit::element::Checked, chosen == Some(name))
+                    .response(&response)
                     .enter();
                 let fill = if chosen == Some(name) {
                     el.background()
@@ -3843,7 +3844,7 @@ fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static
                         widgets::hover(ui, &response),
                     )
                 };
-                painter.rect_filled(rect, 2.0, fill);
+                widgets::button_surface(painter, rect, &el, &response, chosen == Some(name), fill, 2.0);
                 let line = shape_icon(name, rect.shrink2(Vec2::new(5.0, 4.0)));
                 painter.add(Shape::line(line, Stroke::new(1.3, el.color())));
                 drop(el);
@@ -3977,9 +3978,15 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
         let painter = ui.painter();
         // A `button[kind="entry"]`, as the menu's rows are: the pointer's fill under the pointer.
         let entry = crate::kit::element::BUTTON.attribute("kind", "entry");
-        if toggles && (response.hovered() || response.has_focus()) {
-            painter.rect_filled(rect, 2.0, entry.clone().pointer(true, false, false).look().background());
-        }
+        let hot = toggles && (response.hovered() || response.has_focus());
+        let fill = if hot {
+            entry.clone().pointer(true, false, false).look().background()
+        } else {
+            egui::Color32::TRANSPARENT
+        };
+        let el = entry.clone().response(&response).enter();
+        widgets::button_surface(painter, rect, &el, &response, false, fill, 2.0);
+        drop(el);
         widgets::chevron(painter, Pos2::new(rect.left() + 6.0, rect.center().y), open, crate::kit::element::hint_ink());
         let font = theme::ui_font(theme::TEXT);
         let text = Pos2::new(rect.left() + 14.0, rect.center().y);
@@ -4385,12 +4392,7 @@ fn lane_header(
             param.enabled,
         );
         let (fill, ink) = lit.colors();
-        lit.el.paint_over(
-            &painter,
-            toggle,
-            crate::kit::element::Native { radius: 0.0, fill },
-            lit.toggle.image(lit.lit),
-        );
+        widgets::toggle_surface(&painter, toggle, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         if !param.enabled {
             painter.rect_stroke(toggle, 0.0, theme::hairline(lit.el.accent()), StrokeKind::Inside);
         }
@@ -4487,9 +4489,10 @@ const PIN_NEEDLE: [(f32, f32); 2] = [(8.0, 8.7), (8.0, 13.5)];
 /// pointer is on it, a filled pin in the accent color.
 fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response, glyph: Glyph) {
     let hover = widgets::hover(ui, response);
-    if hover > 0.0 {
+    {
         let hot = crate::kit::element::BUTTON.builder().pointer(true, false, false).probe().background();
-        painter.rect_filled(rect, 3.0, hot.gamma_multiply(hover));
+        let el = crate::kit::element::BUTTON.attribute("kind", "entry").response(response).enter();
+        widgets::button_surface(painter, rect, &el, response, false, hot.gamma_multiply(hover), 3.0);
     }
     let ink = match glyph {
         Glyph::Pinned => crate::kit::element::AUTOMATION_PIN.look().color(),

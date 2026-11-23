@@ -328,6 +328,25 @@ pub fn button_surface(
     surface(painter, rect, el, response, on, fill, radius, None);
 }
 
+/// The face of the button `el`, entered with `response`, in `rect`: its fill fading to the one it
+/// has under the pointer, drawn as every button's is ([`button_surface`]: its artwork, or its CSS
+/// shape with `image: none`, and its border), `on` for its lit artwork, `radius` where the sheet
+/// gives none. Returns its words' or glyph's ink, fading the same way: for a button whose glyph
+/// or words its caller draws (a close cross, a back arrow, a take's buttons).
+pub fn hover_face(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    el: &Entered,
+    response: &Response,
+    on: bool,
+    radius: f32,
+) -> Color32 {
+    let hovered = hover(ui, response);
+    button_surface(painter, rect, el, response, on, el.hover_fade(hovered, Look::background), radius);
+    el.hover_fade(hovered, Look::color)
+}
+
 /// [`button_surface`]; with `decided`, `fill` is the button's whole fill, its caller's from the
 /// element already, painted over the sheet's `background-color`, with that much (0 to 1) of the
 /// sheet's background image.
@@ -2071,7 +2090,7 @@ pub fn option_face(
 ) -> (Color32, Color32) {
     let lit = lit_toggle_kind(ui, response, BUTTON.builder(), &[Checked], chosen, kind);
     let (fill, color) = lit.colors();
-    lit.el.paint_over(painter, rect, super::element::Native { radius: 0.0, fill }, lit.toggle.image(lit.lit));
+    toggle_surface(painter, rect, &lit.el, response, fill, lit.toggle.image(lit.lit), 0.0);
     if response.has_focus() {
         painter.rect_stroke(rect, 0.0, Stroke::new(1.0, lit.el.accent()), egui::StrokeKind::Inside);
     }

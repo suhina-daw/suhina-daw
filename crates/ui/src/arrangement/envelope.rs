@@ -1058,8 +1058,8 @@ pub fn edit_button(
         "envelope",
     );
     let (fill, ink) = toggle.at(lit);
+    crate::kit::widgets::toggle_surface(painter, rect, &el, &response, fill, toggle.image(lit), 2.0);
     drop(el);
-    painter.rect_filled(rect, 2.0, fill);
     // A line with a peak: an envelope.
     let r = rect.shrink(3.0);
     let line = vec![
@@ -1090,9 +1090,9 @@ pub fn free_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, f
         "envelope",
     );
     let (fill, ink) = toggle.at(lit);
-    drop(el);
     painter.rect_filled(rect, 2.0, crate::arrangement::arrangement_view::panel_surface().gamma_multiply(0.85));
-    painter.rect_filled(rect, 2.0, fill);
+    crate::kit::widgets::toggle_surface(painter, rect, &el, &response, fill, toggle.image(lit), 2.0);
+    drop(el);
     let r = rect.shrink(3.0);
     if free {
         // Arrows up and down: moves anywhere.

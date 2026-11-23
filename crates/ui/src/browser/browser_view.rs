@@ -2700,9 +2700,9 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
                 .unwrap_or_else(|| hot.background().gamma_multiply(hover)),
         );
     }
-    let check = BUTTON.attribute("kind", "tag-check").response(&response).attr(Checked, on).look();
+    let check = BUTTON.attribute("kind", "tag-check").response(&response).attr(Checked, on).enter();
     let box_rect = Rect::from_min_size(Pos2::new(rect.left() + 6.0, rect.center().y - BOX / 2.0), Vec2::splat(BOX));
-    painter.rect_filled(box_rect, 3.0, check.background());
+    widgets::button_surface(painter, box_rect, &check, &response, on, check.background(), 3.0);
     if on {
         let r = box_rect.shrink(2.5);
         let tick = [
@@ -2712,6 +2712,7 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
         ];
         painter.add(egui::Shape::line(tick.to_vec(), Stroke::new(1.5, check.color())));
     }
+    drop(check);
     let swatch = Pos2::new(box_rect.right() + 6.0 + SWATCH / 2.0, rect.center().y);
     painter.circle_filled(swatch, SWATCH / 2.0, tag_color(&tag.color));
     let text_rect = Rect::from_min_max(Pos2::new(rect.left() + text_left, rect.top()), rect.right_bottom());
@@ -3390,7 +3391,10 @@ fn footer_overflow(
     let fill = widgets::hover(ui, &response);
     // `button[kind="more"]`: its `background-color` under the pointer, fading in with it.
     let hot = BUTTON.attribute("kind", "more").hover_ends(fill).1;
-    painter.rect_filled(clipped, 0.0, hot.background().gamma_multiply(fill));
+    {
+        let el = BUTTON.attribute("kind", "more").response(&response).enter();
+        widgets::button_surface(painter, clipped, &el, &response, false, hot.background().gamma_multiply(fill), 0.0);
+    }
     painter.text(clipped.center(), Align2::CENTER_CENTER, "…", theme::ui_font(theme::TEXT_SMALL), tier.secondary);
     if tags.iter().any(|t| state.tag_filter.contains(&t.id)) {
         painter.circle_stroke(clipped.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, tier.primary));

@@ -813,7 +813,7 @@ fn a_clip_panel_s_words_lines_and_menus_take_their_own_rules() {
         ("label[kind=\"caption\"]", "color", odd(72)),
         ("label[kind=\"hint\"]", "color", odd(73)),
         ("separator[kind=\"row\"]", "color", odd(75)),
-        ("dropdown[kind=\"subtle\"]", "color", odd(76)),
+        ("piano-tool[kind=\"menu\"]", "color", odd(76)),
         ("piano-tool#piano-more", "color", odd(78)),
     ];
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
@@ -847,7 +847,7 @@ fn a_rule_for_every_button_needs_a_lit_rule_to_keep_the_follow_action_s_switch_l
     let mut h = walk_picked();
     let general = format!("button {{ background-color: {}; }}", hex(odd(80)));
     let lit_and_unlit = |h: &mut Harness<'static, App>, css: &str| {
-        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
         for _ in 0..4 {
             h.step();
         }
@@ -1277,7 +1277,7 @@ fn inks_in(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
 
 /// Shows `h` under `css` for a few frames, runs `read`, and puts the user's sheet away again.
 fn under<R>(h: &mut Harness<'static, App>, css: String, read: impl FnOnce(&Harness<'static, App>) -> R) -> R {
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
     for _ in 0..4 {
         h.step();
     }
@@ -1576,7 +1576,7 @@ fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
             "clip panel",
             walk_picked(),
             vec![
-                ("toggle", "background-color"),
+                ("button[kind=\"toggle\"]", "background-color"),
                 ("button[kind=\"toggle\"][checked]", "background-color"),
                 ("dropdown-arrow", "color"),
             ],
@@ -1590,7 +1590,7 @@ fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
                 ("knob", "background-color"),
                 ("knob-ring", "background-color"),
                 ("label[kind=\"value\"]", "color"),
-                ("toggle[checked]", "background-color"),
+                ("button[kind=\"toggle\"][checked]", "background-color"),
             ],
         ),
     ];
@@ -1708,7 +1708,7 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_monitor_
         let mut h = window(app);
         let ctx = h.ctx.clone();
         h.state_mut().use_theme(&ctx, id);
-        suhina_ui::kit::native_css::set_user_sheet(example.map(|css| css.to_owned().into()));
+        suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{}", example.unwrap_or("")).into()));
         for _ in 0..4 {
             h.step();
         }
@@ -2211,7 +2211,7 @@ fn a_rule_for_every_button_reaches_a_device_s_on_switch() {
 fn a_rule_scoped_to_the_menu_bar_reaches_its_entries() {
     let css = format!("menu-bar button[kind=\"entry\"]:hover {{ background-color: {}; }}", hex(odd(53)));
     let mut window = window(demo_app());
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
     window.run_steps(4);
     window.get_by_label("File").click();
     window.run_steps(3);

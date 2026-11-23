@@ -9,7 +9,7 @@
 
 use super::clip_panel::{
     CLIP_PART, Change, FIELD, Field, GAP, NAME, TOGGLE, Text, bar_of, button_face, clip_part, disabled_face, drop_down,
-    name_over, number_field, plain_number, set_button, small_button, toggle, whole,
+    name_over, number_field, plain_number, set_button, small_button, switch_face, toggle, whole,
 };
 use super::*;
 use crate::detail::midi_tools::{Tools, ToolsTab, Transform, tools_width};
@@ -355,10 +355,9 @@ fn tool_button(ui: &Ui, painter: &egui::Painter, rect: Rect, text: &str, label: 
     let response = widgets::button_area(ui, rect, Id::unique(("midi-tools-button", label)), label);
     // A `button` to the theme, as the column's buttons were.
     let ink = if enabled {
-        button_face(ui, crate::kit::element::BUTTON, "panel", painter, rect, &response, false, None, true)
+        button_face(ui, crate::kit::element::BUTTON, painter, rect, &response)
     } else {
-        disabled_face(painter, rect);
-        super::hint_ink()
+        disabled_face(painter, rect, &response)
     };
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
     response
@@ -403,9 +402,7 @@ fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, short: &st
     let response = widgets::button_area(ui, row, Id::unique(("midi-tools-check", name)), format!("{name}: {state}"));
     let side = CHECK.min(row.height());
     let mark = Rect::from_min_size(Pos2::new(row.left(), row.center().y - side / 2.0), Vec2::splat(side));
-    let colors = widgets::toggle_colors(ui, &response, on);
-    let ink =
-        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, mark, &response, on, Some(colors), !on);
+    let ink = switch_face(ui, painter, mark, &response, on);
     if on {
         let at = |x: f32, y: f32| Pos2::new(mark.left() + side * x, mark.top() + side * y);
         let line = egui::Stroke::new(1.5, ink);
@@ -855,11 +852,10 @@ fn transform_tab(
     let response =
         widgets::button_area(ui, apply, Id::unique("midi-tools-apply"), &apply_text).on_hover_text(chosen.hint());
     let ink = if enabled {
-        let colors = widgets::toggle_colors(ui, &response, true);
-        button_face(ui, crate::kit::element::BUTTON, "panel", painter, apply, &response, false, Some(colors), false)
+        // The tools' one action, in the panels' highlight.
+        switch_face(ui, painter, apply, &response, true)
     } else {
-        disabled_face(painter, apply);
-        super::hint_ink()
+        disabled_face(painter, apply, &response)
     };
     widgets::text_in(painter, apply, Align2::CENTER_CENTER, &apply_text, theme::ui_font(theme::TEXT_SMALL), ink);
     if enabled && response.clicked() {

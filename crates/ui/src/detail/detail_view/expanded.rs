@@ -165,8 +165,12 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
             // `button[kind="close"]`: only a rule for that kind reaches it, not one for every `button`.
             let plain = crate::kit::element::BUTTON.response(&response).probe();
             let own = crate::kit::element::BUTTON.attribute("kind", "close").response(&response).look();
-            painter.rect_filled(close, 0.0, own.unlike(&plain, crate::kit::element::Paint::Background, fill));
             let cross = own.unlike(&plain, crate::kit::element::Paint::Color, ink);
+            {
+                let el = crate::kit::element::BUTTON.attribute("kind", "close").response(&response).enter();
+                let fill = own.unlike(&plain, crate::kit::element::Paint::Background, fill);
+                crate::kit::widgets::button_surface(&painter, close, &el, &response, false, fill, 0.0);
+            }
             for (from, to) in
                 [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
             {

@@ -471,7 +471,7 @@ specific selector to win over Suhina's.
   did not fit `button[kind="more"]`, and the fills it paints itself, `browser-fill`), the detail
   panels (their fills `detail-fill`, a device's header, nodes, outline, lines, parameters and
   canvas colors `device-canvas`, a group's branches `device-row[kind="branch"]`, the fields
-  `value[kind="field"]`, the buttons `button[kind="panel"]`, switches `button[kind="panel-toggle"]`
+  `value[kind="field"]`, the buttons `button[kind="panel"]`, switches `button[kind="toggle"]`
   and lists `dropdown[kind="panel"]`, the Clip and Devices switch `editor-tab[kind="switch"]`) and
   the piano roll (its grid, rows, notes, velocities, ruler, loop bar, keys, strips, tools and
   toolbar menus). **A rule for every `button` hides their lit looks too**: state
@@ -485,9 +485,7 @@ specific selector to win over Suhina's.
   the toolbar's words and switches (the time signature `toolbar-module[kind="signature"]`, the
   launch quantisation `[kind="grid"]`, Map `button[kind="map"]`, Play `button[kind="play"]`, the
   browser's switch `button[kind="browser"]`, a connected agent `button[kind="agent"]`), a menu's
-  title on the menu bar (`bar-item[kind="menu"]`, which also names the words of the piano roll
-  toolbar's Grid, Workflow and Ghosts menus: scope a rule with `menu-bar` or
-  `piano-roll-toolbar` to reach one of them), the status bar's counts
+  title on the menu bar (`bar-item[kind="menu"]`), the status bar's counts
   (`bar-item[kind="status-counts"]`), Settings' pages' list (`settings-nav`, `[checked]` for the page
   shown), its switches, choices and presets (`button[kind="switch"]`, `"option"`, `"preset"`), a tick
   box (`button[kind="check"]`; the track color window's choices, tick boxes, buttons and sliders

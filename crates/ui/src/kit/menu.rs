@@ -325,8 +325,11 @@ fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32, face: Face<'_>) -> Re
     } else {
         egui::Color32::TRANSPARENT
     };
-    if fill != egui::Color32::TRANSPARENT {
-        ui.painter().rect_filled(rect, 2.0, fill);
+    // Drawn as every button is ([`super::widgets::button_surface`]), unlit rows too, so a theme's
+    // shape or artwork for its entries reaches each.
+    {
+        let el = BUTTON.attribute("kind", "entry").response(&response).attr(Checked, checked).enter();
+        super::widgets::button_surface(ui.painter(), rect, &el, &response, checked, fill, 2.0);
     }
     let hint = crate::kit::element::hint_ink();
     let ink = if !face.enabled {

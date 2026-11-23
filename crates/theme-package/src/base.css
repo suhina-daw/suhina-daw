@@ -318,6 +318,7 @@ button[kind="chip"][checked] { background-color: var(--control-selectedBackgroun
 button[kind="tag-check"][checked] { background-color: var(--text-value); color: var(--window-background); }
 button[kind="preview"] { color: var(--browser-text-primary); }
 button[kind="preview"][checked] { color: var(--accent); }
+button[kind="more"] { background-color: transparent; }
 button[kind="more"]:hover { background-color: var(--panel-hoverBackground); }
 
 /* The browser's splitter: the border color, stronger under the pointer. */
@@ -376,9 +377,10 @@ fader-rail[kind="clip"] { background-color: var(--control-background); }
 /* The panels' buttons: a push button, a switch (dim words, the chosen fill and its text when on),
    the one that does the panel's work (lit), the Clip and Devices switch, the entries of a list
    and its field, the MIDI tools' tabs. */
-button[kind="panel"] { color: var(--text-primary); border-color: var(--border); }
-button[kind="panel-toggle"] { border-color: var(--border); }
-button[kind="entry"] { color: var(--text-primary); }
+button[kind="panel"] { color: var(--text-primary); border-color: var(--border); border-width: 1px; }
+button[kind="panel"]:disabled { background-color: var(--panel-background); }
+button[kind="entry"] { background-color: transparent; color: var(--text-primary); }
+button[kind="entry"]:hover { background-color: var(--control-hoverBackground); }
 button[kind="entry"][checked] { background-color: var(--control-selectedBackground); }
 dropdown[kind="panel"] { background-color: var(--control-background); color: var(--text-value); }
 dropdown[kind="panel"]:hover { background-color: var(--control-hoverBackground); }
@@ -452,9 +454,7 @@ piano-tool { color: var(--text-secondary); }
 piano-tool[checked] { color: var(--text-primary); background-color: var(--control-activeBackground); }
 piano-tool:hover { background-color: var(--control-hoverBackground); }
 piano-tool:disabled { color: var(--text-hint); }
-piano-roll-toolbar bar-item[kind="menu"] { color: var(--text-secondary); }
-piano-roll-toolbar bar-item[kind="menu"][muted] { color: var(--text-hint); }
-piano-roll-toolbar bar-item[kind="menu"][checked] { color: var(--text-primary); }
+piano-tool[muted] { color: var(--text-hint); }
 button[kind="focus"] { background-color: transparent; color: var(--text-secondary); }
 button[kind="focus"]:hover { background-color: transparent; }
 button[kind="focus"][checked], button[kind="focus"][checked]:hover { background-color: var(--accent); color: var(--text-inverse); }

@@ -133,7 +133,7 @@ fn choice_in(ui: &Ui, rect: Rect, (text, name): (&str, &str), on: bool, ink: Opt
     response.widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), on, name));
     let el = BUTTON.attribute("kind", "entry").attr(crate::kit::element::Checked, on).response(&response).enter();
     let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
-    ui.painter().rect_filled(rect, 2.0, fill);
+    widgets::button_surface(ui.painter(), rect, &el, &response, on, fill, 2.0);
     let words = rect.shrink2(Vec2::new(INSET, 0.0));
     widgets::text_in(ui.painter(), words, Align2::LEFT_CENTER, text, font(), ink.unwrap_or_else(|| el.color()));
     response
@@ -171,10 +171,11 @@ pub fn disclosure(ui: &mut Ui, text: &str, open: bool) -> Response {
     let response = ui.interact(rect, ui.scope_id().with(("kit-disclosure", text)), Sense::click());
     response.widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), open, text));
     let entry = BUTTON.attribute("kind", "entry");
-    if response.hovered() || response.has_focus() {
-        let fill = entry.clone().pointer(true, false, false).look().background();
-        ui.painter().rect_filled(rect, 2.0, fill);
-    }
+    let hot = response.hovered() || response.has_focus();
+    let fill = if hot { entry.clone().pointer(true, false, false).look().background() } else { Color32::TRANSPARENT };
+    let el = entry.clone().response(&response).enter();
+    widgets::button_surface(ui.painter(), rect, &el, &response, open, fill, 2.0);
+    drop(el);
     let ink = entry.response(&response).look().color();
     widgets::chevron(ui.painter(), Pos2::new(rect.left() + 6.0, rect.center().y), open, ink);
     let words = Rect::from_min_max(Pos2::new(rect.left() + 16.0, rect.top()), rect.max);
@@ -189,10 +190,11 @@ pub fn arrow_button(ui: &mut Ui, name: &str, left: bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(LINE), Sense::click());
     response.widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), name));
     let entry = BUTTON.attribute("kind", "entry");
-    if response.hovered() || response.has_focus() {
-        let fill = entry.clone().pointer(true, false, false).look().background();
-        ui.painter().rect_filled(rect, 2.0, fill);
-    }
+    let hot = response.hovered() || response.has_focus();
+    let fill = if hot { entry.clone().pointer(true, false, false).look().background() } else { Color32::TRANSPARENT };
+    let el = entry.clone().response(&response).enter();
+    widgets::button_surface(ui.painter(), rect, &el, &response, false, fill, 2.0);
+    drop(el);
     let ink = entry.response(&response).look().color();
     let c = rect.center();
     let x = if left { 1.5 } else { -1.5 };

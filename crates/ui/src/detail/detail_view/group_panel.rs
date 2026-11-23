@@ -403,8 +403,8 @@ pub(super) fn group_panel(
             branch.mute,
         );
         let (fill, text) = lit.colors();
+        widgets::toggle_surface(painter, mute, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         drop(lit);
-        painter.rect_filled(mute, 0.0, fill);
         widgets::text_in(painter, mute, Align2::CENTER_CENTER, "M", theme::ui_font(theme::TEXT_SMALL), text);
         if response.clicked() {
             actions.push(Action::new(
@@ -433,8 +433,8 @@ pub(super) fn group_panel(
             "solo",
         );
         let (fill, text) = lit.colors();
+        widgets::toggle_surface(painter, solo, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         drop(lit);
-        painter.rect_filled(solo, 0.0, fill);
         widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", theme::ui_font(theme::TEXT_SMALL), text);
         if response.clicked() {
             actions.push(Action::new(

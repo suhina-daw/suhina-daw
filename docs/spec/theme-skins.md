@@ -530,12 +530,12 @@ page's (ADR 0031, amendment of 2026-11-15).
   `device-control[kind]`, `slider[kind="parameter"]`), a device canvas's colors
   (`device-canvas` and its kinds), a device group's branches (`device-row[kind="branch"]`), the
   panels' fields, buttons, switches and lists (`value[kind="field"]`, `button[kind="panel"]`,
-  `"panel-toggle"`, `"entry"`, `dropdown[kind="panel"]`, `editor-tab[kind]`); the piano roll's grid,
+  `[kind="toggle"]`, `"entry"`, `dropdown[kind="panel"]`, `editor-tab[kind]`); the piano roll's grid,
   rows, notes, velocities, slices, markers, ruler, loop bar, keys, strips, ranges and tools
   (`piano-grid`, `piano-row`, `piano-note[kind]`, `velocity`, `piano-slice`, `start-marker`,
   `playhead`, `ruler-number`, `loop-region[kind="clip"]`, `piano-key`, `piano-scale-strip`,
-  `piano-clip-strip`, `piano-tool` with `[checked]`, `:hover` and `:disabled`, `bar-item[kind="menu"]`
-  and the Focus switch, `button[kind="focus"]`); the app's bars', Settings' and the dialogs' section
+  `piano-clip-strip`, `piano-tool` with `[checked]`, `:hover` and `:disabled`, the toolbar's menus
+  `piano-tool[kind="menu"]` (`[muted]` while what they name is off) and the Focus switch, `button[kind="focus"]`); the app's bars', Settings' and the dialogs' section
   (#1452): the window's own background (`window`), the fills the bars, Settings, the dialogs and
   menus paint for themselves (`app-fill` by kind: `window`, `panel`, `panel-hover`, `control`,
   `control-hover`, `control-active`, `knob`), the lines over and under the views
@@ -1673,9 +1673,8 @@ of bars, and a slider id per parameter.
   `[kind="tag-check"][checked]`, `[kind="focus"][checked]`, `button[kind="more"]:hover`), as
   Suhina Meadow, Blocks, Sheet and Dark Gloss do. A device's on switch
   (`button#control-device-on`, `[checked]` while it runs) is one of them: a theme's rule for every
-  `button` reaches it as it does any button. An expanded panel's × (`button[kind="close"]`) and
-  the piano roll's toolbar menus (`dropdown[kind="subtle"]`) still take only a rule for
-  themselves. A device's own
+  `button` reaches it as it does any button. An expanded panel's × (`button[kind="close"]`) still takes only a rule for itself, and the
+  piano roll's toolbar draws every button, its menus too, as `piano-tool`. A device's own
   drawings (its canvas, the EQ's display, a sampler's waveform and envelope) take the colors of
   `device-canvas` in the device's scope, read once a frame. A region's plain `color` no longer
   reaches what the base sheet colors with `--text-value` or a border variable (the piano roll's

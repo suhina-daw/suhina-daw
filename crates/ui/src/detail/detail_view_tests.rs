@@ -2090,19 +2090,19 @@ fn switch_fills(css: &str, on: bool) -> Vec<egui::Color32> {
         .collect()
 }
 
+/// A clip panel's switch is a toggle as every view's is: `button[kind="toggle"]`, lit by its
+/// `[checked]` rule.
 #[test]
-fn a_clip_panel_switch_takes_the_theme_s_button_and_stays_lit_while_on() {
+fn a_clip_panel_switch_is_a_toggle_lit_by_its_checked_rule() {
     let red = egui::Color32::from_rgb(0xFF, 0, 0);
     let green = egui::Color32::from_rgb(0, 0xFF, 0);
-    // A rule for every button paints a switch that is off.
-    let every = "button { background-color: #FF0000; }";
-    assert!(switch_fills(every, false).contains(&red), "off takes the button's background");
-    // One that is on keeps its lit fill, so it still shows it is on.
-    assert!(!switch_fills(every, true).contains(&red), "on keeps its lit fill");
-    // Unless the sheet gives `[checked]` a background of its own.
-    let checked = "button { background-color: #FF0000; } button[checked] { background-color: #00FF00; }";
-    let fills = switch_fills(checked, true);
-    assert!(fills.contains(&green) && !fills.contains(&red), "{fills:?}");
+    // Drawn as CSS shapes (`image: none`), so a fill is a rectangle's color.
+    let sheet = "button { image: none; } button[kind=\"toggle\"] { background-color: #FF0000; } \
+                 button[kind=\"toggle\"][checked] { background-color: #00FF00; }";
+    let off = switch_fills(sheet, false);
+    assert!(off.contains(&red) && !off.contains(&green), "off: {off:?}");
+    let on = switch_fills(sheet, true);
+    assert!(on.contains(&green) && !on.contains(&red), "on: {on:?}");
 }
 
 /// A check box shows its whole name where it fits and its short one where it does not, so a
