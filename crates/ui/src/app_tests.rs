@@ -705,6 +705,51 @@ fn a_header_click_lets_go_of_a_clip_on_another_track() {
     }
 }
 
+/// The quick-add palette adds to the track worked on: a clip picked on another track after a
+/// header click (the clip the piano roll shows) is that track, a header clicked after it its own
+/// (#1356).
+#[test]
+fn the_quick_add_palette_targets_the_track_of_the_clip_worked_on() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let project = app.session().unwrap().project().clone();
+    let keys = project.tracks.iter().find(|t| t.name == "Keys").map(|t| t.id).expect("the demo has Keys");
+    let other = project
+        .arrangement
+        .lanes
+        .iter()
+        .filter_map(|l| Some((l.track?, l.clips.first()?.id)))
+        .find(|(t, _)| *t != keys)
+        .expect("a clip on another track");
+    app.shown = View::Arrangement;
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    harness.get_by_label("Track Keys").click();
+    harness.run();
+    harness.state_mut().arrangement.select_clip(other.0, other.1);
+    harness.run();
+    assert_eq!(harness.state().arrangement.selected_tracks, vec![keys], "the header stays selected");
+    harness.state_mut().do_action("view.quickAdd", &mut Vec::new());
+    harness.run();
+    assert_eq!(
+        harness.state().quick_add_target().and_then(|(track, _)| track),
+        Some(other.0),
+        "the clip's track, not the selected header's"
+    );
+
+    harness.state_mut().quick_add = None;
+    harness.run();
+    harness.get_by_label("Track Keys").click();
+    harness.run();
+    harness.state_mut().do_action("view.quickAdd", &mut Vec::new());
+    harness.run();
+    assert_eq!(harness.state().quick_add_target().and_then(|(track, _)| track), Some(keys), "a header clicked last");
+}
+
 /// The ARA edits prompt and the missing files panel are drawn over the window: plug-in
 /// editors hide, and the keys that edit the project wait until they close.
 #[test]

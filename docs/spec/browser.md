@@ -453,6 +453,9 @@ A shortcut (`view.quickAdd`, Ctrl+P by default, rebindable as every other key) o
 quick-add palette in the middle of the window, placed as the project switcher (Ctrl+Tab) is:
 a search field over one list of what `library.search` finds, with a small header above it naming
 where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no track selected.
+The track is the one worked on, the same one copied devices are pasted on: the track of the clip
+or slot clicked last (so the clip shown in the piano roll takes what is added), else the
+selected track header's.
 
 - **The list:** the built-in instruments, effects and MIDI effects, the installed plug-ins, the
   samples and MIDI files in the browser's folders, and presets, best matches first, at most 200

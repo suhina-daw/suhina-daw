@@ -1411,8 +1411,8 @@ impl App {
         }
     }
 
-    /// The track copied devices are pasted on: the track of the clip or slot clicked last, else
-    /// the selected track.
+    /// The track worked on, which copied devices are pasted on and the quick-add palette adds
+    /// to: the track of the clip or slot clicked last, else the selected track.
     pub(super) fn paste_track(&self) -> Option<TrackId> {
         match self.shown {
             View::Session if !self.view.track_focus => {

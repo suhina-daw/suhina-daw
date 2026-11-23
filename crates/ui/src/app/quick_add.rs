@@ -246,12 +246,15 @@ impl App {
         self.quick_add.as_ref().map(|p| (p.track, p.beat))
     }
 
-    /// Opens the palette for the selected track and the place: the beat under the pointer over
-    /// the Arrangement, the play start marker elsewhere.
+    /// Opens the palette for the track worked on and the place: the beat under the pointer over
+    /// the Arrangement, the play start marker elsewhere. The track worked on is the one copied
+    /// devices are pasted on (`App::paste_track`): the clip's or slot's clicked last, so a clip
+    /// shown in the piano roll takes what is added, else the selected header's (#1356).
     pub(super) fn open_quick_add(&mut self) {
+        let track = self.paste_track();
         let Some(session) = self.session() else { return };
         let project = session.project();
-        let track = self.selected_track().filter(|t| *t != TrackId::MAIN && project.track(*t).is_some());
+        let track = track.filter(|t| *t != TrackId::MAIN && project.track(*t).is_some());
         let pointer = if self.shown == View::Arrangement { self.arrangement.pointer_beat } else { None };
         let beat = pointer.unwrap_or_else(|| session.player().map_or(0.0, |p| p.monitor().start_beat())).max(0.0);
         self.quick_add = Some(QuickAdd {
