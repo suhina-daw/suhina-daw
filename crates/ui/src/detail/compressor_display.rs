@@ -50,6 +50,9 @@ const ARROW_WIDTH: f32 = 9.0;
 /// The room the Meters view keeps on each side of a meter: its scale's numbers, or the input's
 /// threshold arrow.
 const METER_SIDE: f32 = 24.0;
+/// The widest a Meters view column grows, and the strip above its meter that holds its value.
+const METER_COLUMN: f32 = 110.0;
+const READOUT_HEIGHT: f32 = 18.0;
 /// The curve's points across the display.
 const POINTS: usize = 120;
 /// The ratio's range, which a vertical drag on the curve's ring moves through.
@@ -271,17 +274,15 @@ fn areas(display: Rect, view: View) -> Areas {
     let values =
         Rect::from_min_max(Pos2::new(body.left(), body.bottom() + 1.0), Pos2::new(body.right(), display.bottom()));
     if view == View::Meters {
-        // Three large meters side by side in the middle of the body, the input's arrow beside it:
-        // as wide as a third of the body leaves room for a scale's numbers (or the arrow) on each
-        // side, and only that room apart, so they read as one group.
-        let third = body.width() / 3.0;
-        // Slim, as level meters are: a bar wide enough to read, the room round it the scale's.
-        let width = (third - 2.0 * METER_SIDE).clamp(12.0, 20.0);
-        let gap = METER_SIDE + 6.0;
-        let left = body.center().x - (3.0 * width + 2.0 * gap) / 2.0;
+        // Three meters in columns across the middle of the body, each under its value read large,
+        // the input's arrow beside it; a column is a third of the body, at most a meter and its
+        // scale's room wide, so the group keeps together on a wide panel.
+        let column = (body.width() / 3.0).min(METER_COLUMN);
+        let width = (column - 2.0 * METER_SIDE).clamp(12.0, 26.0);
+        let top = body.top() + READOUT_HEIGHT;
         let meter = |i: f32| {
-            let x = left + i * (width + gap);
-            Rect::from_min_max(Pos2::new(x, body.top()), Pos2::new(x + width, body.bottom()))
+            let center = body.center().x + (i - 1.0) * column;
+            Rect::from_min_max(Pos2::new(center - width / 2.0, top), Pos2::new(center + width / 2.0, body.bottom()))
         };
         let input = meter(0.0);
         let arrow = Rect::from_min_max(
@@ -360,13 +361,23 @@ pub(crate) fn show(
         painter.text(Pos2::new(x, areas.values.center().y), Align2::CENTER_CENTER, text, font.clone(), color);
     };
     if view == View::Meters {
-        row(
-            areas.input,
-            format!("{} {}", if live.keyed { "Key" } else { "In" }, level_text(live.detector)),
-            colors.text_secondary,
-        );
-        row(areas.reduction, format!("GR {}", fixed(-live.reduction, 1)), palette.reduction);
-        row(areas.output, format!("Out {}", level_text(live.output)), colors.text_secondary);
+        // Each meter's value read large above it, its name under it.
+        let big = theme::ui_font(13.0);
+        let readout = |rect: Rect, text: String, color: Color32| {
+            painter.text(
+                Pos2::new(rect.center().x, rect.top() - READOUT_HEIGHT / 2.0),
+                Align2::CENTER_CENTER,
+                text,
+                big.clone(),
+                color,
+            );
+        };
+        readout(areas.input, level_text(live.detector), colors.text_primary);
+        readout(areas.reduction, fixed(-live.reduction, 1), palette.reduction);
+        readout(areas.output, level_text(live.output), colors.text_primary);
+        row(areas.input, (if live.keyed { "Key" } else { "In" }).to_string(), colors.text_secondary);
+        row(areas.reduction, "GR".to_string(), colors.text_secondary);
+        row(areas.output, "Out".to_string(), colors.text_secondary);
     } else {
         painter.text(
             Pos2::new(areas.input.left(), areas.values.center().y),
@@ -478,19 +489,20 @@ fn tabs(ui: &mut egui::Ui, display: Rect, id: egui::Id, values: &Values, palette
 /// A level meter filling from the bottom, with a line at 0 dB.
 fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     let colors = super::device_canvas::colors();
-    painter.rect_filled(rect, 1.0, colors.window_background);
+    track(painter, rect, colors.window_background, colors.text_secondary);
     // Three zones, as level meters have them: the theme's level color up to -6 dB, amber from
     // there to full scale, red only past 0 dB. Each a solid band, toned toward the meter's ground
     // so the fill reads as light behind the scale; the unlit rest shows the zones faintly.
     let ground = colors.window_background;
     let (level, amber, hot) =
-        (blend(ground, palette.level, 0.62), blend(ground, METER_AMBER, 0.62), blend(ground, METER_HOT, 0.75));
+        (blend(ground, palette.level, 0.85), blend(ground, METER_AMBER, 0.85), blend(ground, METER_HOT, 0.9));
     let (caution, full) = (level_y(-6.0, rect), level_y(0.0, rect));
     let stops =
         [(rect.bottom(), level), (caution, level), (caution, amber), (full, amber), (full, hot), (rect.top(), hot)];
     let top = level_y(db, rect);
     if top < rect.bottom() {
         gradient(painter, rect, rect.bottom(), top, &stops, METER_LIT);
+        lit_edges(painter, Rect::from_min_max(Pos2::new(rect.left(), top), rect.max), true);
     }
     // The highest level lately, held a moment and then falling, as a line in the color lit there.
     let held = peak_hold(painter.ctx(), rect, db);
@@ -581,6 +593,37 @@ fn gradient(painter: &egui::Painter, rect: Rect, from: f32, to: f32, stops: &[(f
     painter.add(Shape::mesh(mesh));
 }
 
+/// A meter's groove: a little darker than the display's ground, rounded, with a faint rim, so the
+/// bar sits in it rather than on it.
+fn track(painter: &egui::Painter, rect: Rect, ground: Color32, rim: Color32) {
+    painter.rect_filled(rect, 2.0, blend(ground, Color32::BLACK, 0.35));
+    painter.rect_stroke(rect, 2.0, Stroke::new(1.0, rim.gamma_multiply(0.14)), egui::StrokeKind::Inside);
+}
+
+/// Light on a lit bar: its sides shaded so it reads round, and a bright edge where it ends (its
+/// top for a level, its foot for a reduction hanging from the top).
+fn lit_edges(painter: &egui::Painter, rect: Rect, top: bool) {
+    if rect.height() < 1.0 || rect.width() < 2.0 {
+        return;
+    }
+    let shade = Color32::from_black_alpha(70);
+    let clear = Color32::TRANSPARENT;
+    let mut mesh = egui::Mesh::default();
+    let (l, c, r) = (rect.left(), rect.center().x, rect.right());
+    for (x0, x1, c0, c1) in [(l, c, shade, clear), (c, r, clear, shade)] {
+        let base = mesh.vertices.len() as u32;
+        mesh.colored_vertex(Pos2::new(x0, rect.top()), c0);
+        mesh.colored_vertex(Pos2::new(x1, rect.top()), c1);
+        mesh.colored_vertex(Pos2::new(x1, rect.bottom()), c1);
+        mesh.colored_vertex(Pos2::new(x0, rect.bottom()), c0);
+        mesh.add_triangle(base, base + 1, base + 2);
+        mesh.add_triangle(base, base + 2, base + 3);
+    }
+    painter.add(Shape::mesh(mesh));
+    let y = if top { rect.top() + 0.5 } else { rect.bottom() - 0.5 };
+    painter.line_segment([Pos2::new(l, y), Pos2::new(r, y)], Stroke::new(1.0, Color32::from_white_alpha(90)));
+}
+
 /// The color `t` of the way from `a` to `b`.
 fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
     let mix = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round().clamp(0.0, 255.0) as u8;
@@ -624,13 +667,14 @@ fn meter_scales(painter: &egui::Painter, areas: &Areas, palette: Palette) {
 /// The gain-reduction meter hanging from the top.
 fn reduction_meter(painter: &egui::Painter, rect: Rect, db: f64, palette: Palette) {
     let colors = super::device_canvas::colors();
-    painter.rect_filled(rect, 1.0, colors.window_background);
+    track(painter, rect, colors.window_background, colors.text_secondary);
     let ground = colors.window_background;
-    let reduction = blend(ground, palette.reduction, 0.55);
-    let stops = [(rect.top(), reduction), (rect.bottom(), blend(ground, palette.reduction, 0.4))];
+    let reduction = blend(ground, palette.reduction, 0.9);
+    let stops = [(rect.top(), reduction), (rect.bottom(), reduction)];
     let bottom = reduction_y(db, rect);
     if bottom > rect.top() + 0.5 {
         gradient(painter, rect, rect.top(), bottom, &stops, METER_LIT);
+        lit_edges(painter, Rect::from_min_max(rect.min, Pos2::new(rect.right(), bottom)), false);
     }
     let tick = colors.text_secondary.gamma_multiply(0.3);
     for mark in [6.0, 12.0, 18.0] {
