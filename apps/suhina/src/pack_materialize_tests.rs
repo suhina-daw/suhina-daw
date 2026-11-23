@@ -86,6 +86,32 @@ fn an_old_folder_a_setting_names_stays() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A setting that names a folder inside an old folder keeps the whole old folder: the move would
+/// carry the subfolder into the library and remove the folder the setting names, and the panels
+/// would list nothing (#1369). The case of the setting's text does not matter.
+#[test]
+fn an_old_folder_holding_a_folder_a_setting_names_stays() {
+    let dir = std::env::temp_dir().join(format!("suhina-pack-migrate-keep-inside-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let captures = dir.join("NAM models").join("My captures");
+    std::fs::create_dir_all(&captures).unwrap();
+    std::fs::write(captures.join("Mine.nam"), b"mine").unwrap();
+    std::fs::write(dir.join("NAM models").join("Loose.nam"), b"loose").unwrap();
+
+    for keep in [dir.join("NAM models").join("My captures"), dir.join("nam MODELS").join("my CAPTURES")] {
+        let warnings = migrate_old_folders(&dir, &dir, &[keep]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(std::fs::read(captures.join("Mine.nam")).unwrap(), b"mine", "the setting's folder keeps its file");
+        assert_eq!(
+            std::fs::read(dir.join("NAM models").join("Loose.nam")).unwrap(),
+            b"loose",
+            "the old folder stays whole"
+        );
+        assert!(!dir.join("Amp models").join("My captures").exists(), "nothing moved out of it");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A name the new tree already holds is never overwritten: that file stays in the old
 /// folder, the old folder stays, and the warning says what was kept — once. A folder whose
 /// names the new tree holds never empties, so its warning is a start-up record, not a nag

@@ -240,8 +240,9 @@ Projects folder row (a field on the right, the default shown when the setting is
   *old* defaults `Suhina/NAM models` and `Suhina/IRs` move into these folders at start — a
   pack carried whole, a name moved only where it is missing, a moved-empty old folder
   removed, leftovers kept, and the move told in the start-up warnings. An old folder a
-  setting names stays as it is: the panels list from it, and a move would empty and remove a
-  folder the lists go on reading.
+  setting names, or one holding a folder a setting names (`NAM models/My captures`), stays as
+  it is: the panels list from it, and a move would empty and remove a folder the lists go on
+  reading.
 - The pick bridge gets two fields (`PickField::NamModelsFolder`, `PickField::IrFolder`) so the
   system dialog opens for them like for the Projects folder (macOS waits on the main thread, as
   those already do).

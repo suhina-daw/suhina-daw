@@ -111,15 +111,17 @@ fn migrate_reported(base: &Path, old_name: &str) -> PathBuf {
     base.join(format!(".suhina-migrate-{}-reported", old_name.to_lowercase().replace(' ', "-")))
 }
 
-/// Whether `folder` is one of `keep`, the folders the settings name: compared by their
-/// components, case-insensitively, so a settings text that names the folder in another
-/// spelling of its case still keeps it.
+/// Whether `folder` is one of `keep`, the folders the settings name, or holds one of them: a
+/// setting that names a folder inside the old folder (`NAM models/My captures`) keeps the whole
+/// old folder, since the move would carry its subfolder away and remove the folder the setting
+/// names (#1369). Compared by their components, case-insensitively, so a settings text that
+/// names the folder in another spelling of its case still keeps it.
 fn is_kept(folder: &Path, keep: &[PathBuf]) -> bool {
     let components = |path: &Path| -> Vec<String> {
         path.components().map(|component| component.as_os_str().to_string_lossy().to_lowercase()).collect()
     };
     let folder = components(folder);
-    keep.iter().any(|kept| components(kept) == folder)
+    keep.iter().any(|kept| components(kept).starts_with(&folder))
 }
 
 /// Moves the old defaults' contents into the library's device folders before the pack unpacks:
@@ -130,7 +132,7 @@ fn is_kept(folder: &Path, keep: &[PathBuf]) -> bool {
 /// A pack subfolder moves as a pack, a file moves by its name, and a name the new tree already
 /// holds stays where it is, so nothing is ever overwritten ([issue 1279]). Each moved-empty
 /// old folder is removed; the returned lines go to the start-up warnings. An old folder of
-/// `keep` — the folders the Settings name — is left alone: its files are where the user's
+/// `keep` — the folders the Settings name, or one holding such a folder — is left alone: its files are where the user's
 /// panels list them, and a move would empty and remove a folder the panels go on reading,
 /// their files gone from the lists.
 pub fn migrate_old_folders(base: &Path, sounds: &Path, keep: &[PathBuf]) -> Vec<String> {
