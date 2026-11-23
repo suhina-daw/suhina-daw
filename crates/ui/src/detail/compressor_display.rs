@@ -271,16 +271,16 @@ fn areas(display: Rect, view: View) -> Areas {
     let values =
         Rect::from_min_max(Pos2::new(body.left(), body.bottom() + 1.0), Pos2::new(body.right(), display.bottom()));
     if view == View::Meters {
-        // Three large meters, each in a third of the body, the input's arrow beside it: as wide as
-        // the third leaves room for a scale's numbers (or the arrow) on each side.
+        // Three large meters side by side in the middle of the body, the input's arrow beside it:
+        // as wide as a third of the body leaves room for a scale's numbers (or the arrow) on each
+        // side, and only that room apart, so they read as one group.
         let third = body.width() / 3.0;
         let width = (third - 2.0 * METER_SIDE).clamp(12.0, 64.0);
+        let gap = METER_SIDE + 6.0;
+        let left = body.center().x - (3.0 * width + 2.0 * gap) / 2.0;
         let meter = |i: f32| {
-            let center = body.left() + third * (i + 0.5);
-            Rect::from_min_max(
-                Pos2::new(center - width / 2.0, body.top()),
-                Pos2::new(center + width / 2.0, body.bottom()),
-            )
+            let x = left + i * (width + gap);
+            Rect::from_min_max(Pos2::new(x, body.top()), Pos2::new(x + width, body.bottom()))
         };
         let input = meter(0.0);
         let arrow = Rect::from_min_max(
