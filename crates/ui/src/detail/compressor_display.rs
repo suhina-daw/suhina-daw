@@ -456,7 +456,10 @@ fn tabs(ui: &mut egui::Ui, display: Rect, id: egui::Id, values: &Values, palette
             galley,
             palette.reduction,
         );
-        right -= width + 6.0;
+        // The readout's room is as wide as its widest usual value, so the badge beside it stays put
+        // while the number changes.
+        let room = painter.layout_no_wrap("GR -88.8 dB".to_string(), font.clone(), palette.reduction).size().x;
+        right -= width.max(room) + 6.0;
         if live.keyed {
             let rect = Rect::from_min_max(
                 Pos2::new(right - 24.0, display.top() + 4.0),
