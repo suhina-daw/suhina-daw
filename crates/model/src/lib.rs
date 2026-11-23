@@ -402,6 +402,9 @@ pub struct DeviceInput {
     pub source: SignalPoint,
     /// The key's level before the device reads it, linear: 1 leaves it as the source has it.
     pub gain: f64,
+    /// Whether the device reads it: off, the device hears its own input again, and the source,
+    /// tap and gain stay for when it is switched back on.
+    pub enabled: bool,
 }
 
 impl DeviceInput {
@@ -412,7 +415,7 @@ impl DeviceInput {
 
     /// A key from `channel` at `tap`, at unity gain, on the default port.
     pub fn key(channel: ChannelId, tap: TapPoint) -> Self {
-        Self { port: Self::KEY.into(), source: SignalPoint::Channel { channel, tap }, gain: 1.0 }
+        Self { port: Self::KEY.into(), source: SignalPoint::Channel { channel, tap }, gain: 1.0, enabled: true }
     }
 }
 

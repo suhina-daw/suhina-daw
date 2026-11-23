@@ -1873,6 +1873,31 @@ fn a_key_survives_a_round_trip_and_a_bad_one_is_refused() {
     let read = from_json(&plain.to_string()).unwrap();
     let key = &read.channels[0].devices[0].inputs[0];
     assert_eq!((key.source.tap(), key.gain), (TapPoint::PostFx, 1.0));
+    assert!(key.enabled, "a key that says nothing is read");
+}
+
+/// A key switched off is written with `enabled: false` (and a key that is read with nothing), is
+/// read back off with its source kept, and a value that is not a boolean refuses the file.
+#[test]
+fn a_key_switched_off_round_trips_and_a_bad_switch_is_refused() {
+    let mut project = everything();
+    let source = project.channels.iter().map(|c| c.id).find(|id| *id != project.channels[0].id).unwrap();
+    project.channels[0].devices.insert(0, Device::new("Compressor", DeviceKind::Builtin("compressor".into())));
+    project.channels[0].devices[0].inputs =
+        vec![DeviceInput { enabled: false, ..DeviceInput::key(source, TapPoint::PreFx) }];
+    let text = to_json(&project);
+    let written: Value = serde_json::from_str(&text).unwrap();
+    let key = &written["project"]["channels"][0]["devices"][0]["inputs"][0];
+    assert_eq!(key["enabled"], json!(false));
+    let read = from_json(&text).unwrap();
+    assert_eq!(read.channels[0].devices[0].inputs, project.channels[0].devices[0].inputs);
+    // Switched on, the field is not written.
+    project.channels[0].devices[0].inputs[0].enabled = true;
+    let on: Value = serde_json::from_str(&to_json(&project)).unwrap();
+    assert!(on["project"]["channels"][0]["devices"][0]["inputs"][0].get("enabled").is_none());
+    let mut wrong = written;
+    wrong["project"]["channels"][0]["devices"][0]["inputs"][0]["enabled"] = json!("no");
+    assert!(from_json(&wrong.to_string()).is_err());
 }
 
 /// A note's velocity range is written only when it is not 0, read back as it was, and a value out

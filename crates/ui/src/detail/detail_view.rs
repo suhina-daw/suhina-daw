@@ -94,6 +94,7 @@ pub fn show_row(
     let area = el.paint(&painter, area).content;
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip to see it here"),
+        Detail::NoClip => hint(&painter, area, "No clip selected"),
         Detail::Devices(chain) => return chain_row(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
             let (column, picked) = clip_properties(ui, &painter, area, info, false, None, actions);
@@ -550,6 +551,7 @@ pub fn show_stack(
     let area = el.paint(&painter, area).content;
     match detail {
         Detail::Nothing => hint(&painter, area, "Select a track or a clip"),
+        Detail::NoClip => hint(&painter, area, "No clip selected"),
         Detail::Devices(chain) => return chain_stack(ui, &painter, area, chain, selected, actions, places),
         Detail::Clip(info, chain) => {
             let (column, picked) = clip_properties(ui, &painter, area, info, true, None, actions);
@@ -1155,19 +1157,26 @@ fn device_panel(
             painter.line_segment([corner, corner + Vec2::new(0.0, 4.0 * y)], egui::Stroke::new(1.2, ink));
         }
     }
-    // A device that reads a key (sidechain) has a button for it beside its X: lit while it reads
-    // one, it opens the same choices as Sidechain in its menu (`docs/spec/sidechain.md` ›
-    // Choosing a source).
+    // A device that reads a key (sidechain) has a Sidechain button beside its X, and a chevron
+    // beside that with the same choices as Sidechain in its menu (`docs/spec/sidechain.md` ›
+    // Choosing a source). With a source chosen, the button switches the key on and off, keeping
+    // the source; lit while the device reads it. Without one, it opens the choices too.
     if let Some(side) = &device.sidechain {
         let font = theme::ui_font(theme::TEXT_TINY);
-        let width = widgets::text_width(ui, "SC", font.clone()) + 6.0;
+        let at = device.at.value();
+        let chevron = Rect::from_center_size(Pos2::new(kind_right - 5.0, header.center().y), Vec2::new(10.0, 12.0));
+        // A dot before the word says whether the key is read: filled while on, a ring while off.
+        const DOT: f32 = 8.0;
+        let width = widgets::text_width(ui, "Sidechain", font.clone()) + 6.0 + DOT;
         let button =
-            Rect::from_center_size(Pos2::new(kind_right - width / 2.0, header.center().y), Vec2::new(width, 12.0));
+            Rect::from_center_size(Pos2::new(chevron.left() - width / 2.0, header.center().y), Vec2::new(width, 12.0));
         kind_right = button.left() - 4.0;
+        let on = side.key.as_ref().is_some_and(|k| k.enabled);
         let label = match &side.key {
             Some(key) => format!(
-                "{} sidechain: {}, {}, {:+.1} dB",
+                "{} sidechain {}: {}, {}, {:+.1} dB",
                 device.name,
+                if key.enabled { "on" } else { "off" },
                 key.name,
                 menus::tap_label(key.tap).to_lowercase(),
                 key.gain_db
@@ -1176,16 +1185,47 @@ fn device_panel(
         };
         let response = widgets::button_area(ui, button, Id::unique(("device-sidechain", track.0, &device.at)), &label)
             .on_hover_text(&label);
-        let ink = if side.key.is_some() {
+        let choices_label = format!("{} sidechain source", device.name);
+        let choices = widgets::button_area(
+            ui,
+            chevron,
+            Id::unique(("device-sidechain-source", track.0, &device.at)),
+            &choices_label,
+        )
+        .on_hover_text(&choices_label);
+        let ink = if on {
             header_el.accent()
         } else if response.hovered() {
             bright
         } else {
             dim
         };
-        painter.text(button.center(), egui::Align2::CENTER_CENTER, "SC", font, ink);
-        let at = device.at.value();
-        egui::Popup::menu(&response).show(|ui| menus::sidechain_choices(ui, track, &at, side, actions));
+        let dot = Pos2::new(button.left() + 3.0 + 2.5, button.center().y);
+        if on {
+            painter.circle_filled(dot, 2.5, ink);
+        } else {
+            painter.circle_stroke(dot, 2.5, egui::Stroke::new(1.0, ink));
+        }
+        painter.text(
+            Pos2::new(button.center().x + DOT / 2.0, button.center().y),
+            egui::Align2::CENTER_CENTER,
+            "Sidechain",
+            font,
+            ink,
+        );
+        widgets::chevron(painter, chevron.center(), true, if choices.hovered() { bright } else { dim });
+        if let Some(key) = &side.key
+            && response.clicked()
+        {
+            actions.push(Action::new(
+                "device.setKeyEnabled",
+                json!({ "track": track.0, "device": at, "enabled": !key.enabled }),
+            ));
+        }
+        egui::Popup::menu(&choices).show(|ui| menus::sidechain_choices(ui, track, &at, side, actions));
+        if side.key.is_none() {
+            egui::Popup::menu(&response).show(|ui| menus::sidechain_choices(ui, track, &at, side, actions));
+        }
     }
     let kind_width = widgets::text_width(ui, &device.kind, theme::ui_font(theme::TEXT_TINY));
     // What a canvas's device widgets read: the device's own state (its name, whether it
@@ -1201,19 +1241,31 @@ fn device_panel(
     // A built-in's header controls sit left of its maker, and the name gives way to them.
     let strip = device.graph.as_ref().and_then(|graph| graph.header.as_ref().map(|strip| (graph, strip)));
     let mut name_right = kind_right - PAD - kind_width;
+    // How far right a centered maker may reach: up to the controls beside the X, or up to a
+    // built-in's header controls.
+    let mut kind_limit = kind_right;
     if let Some((graph, strip)) = strip {
         let size = Vec2::new(strip.size[0], strip.size[1]);
         let left = (name_right - size.x).max(name_left + 120.0);
         let place = Rect::from_min_size(Pos2::new(left, header.center().y - size.y / 2.0), size);
         crate::detail::device_canvas::show(ui, place, strip, &state, &graph.parameters, track, &device.at, actions);
         name_right = place.left() - PAD;
+        kind_limit = name_right;
     }
+    // The maker in the middle of the header, where there is room for it beside the name and the
+    // controls; at its right end, before them, where there is not.
+    let centered = header.center().x - kind_width / 2.0;
+    let (kind_left, name_right) = if centered >= name_left + PAD && centered + kind_width <= kind_limit {
+        (centered, name_right.min(centered - PAD))
+    } else {
+        (kind_right - kind_width, name_right)
+    };
     let name =
         Rect::from_min_max(Pos2::new(name_left, header.top()), Pos2::new(name_right.max(name_left), header.bottom()));
     widgets::text_in(painter, name, Align2::LEFT_CENTER, &device.name, theme::ui_font(theme::TEXT), name_color);
     widgets::text_in(
         painter,
-        Rect::from_min_max(Pos2::new(kind_right - kind_width, header.top()), Pos2::new(kind_right, header.bottom())),
+        Rect::from_min_max(Pos2::new(kind_left, header.top()), Pos2::new(kind_left + kind_width, header.bottom())),
         Align2::RIGHT_CENTER,
         &device.kind,
         theme::ui_font(theme::TEXT_TINY),

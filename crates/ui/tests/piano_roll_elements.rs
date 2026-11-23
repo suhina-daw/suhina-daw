@@ -30,7 +30,7 @@ fn engine() -> suhina_engine::Renderer {
     .unwrap()
 }
 
-/// The demo project in the Arrangement view with the clip selected, so the piano roll shows it.
+/// The demo project in the Arrangement view with the clip opened (a double-click), so the piano roll shows it.
 fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     let mut session = Session::new(demo_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
@@ -47,8 +47,7 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness
 }
 

@@ -380,6 +380,17 @@ pub(super) fn double_click_at(harness: &mut Harness<'static, App>, at: egui::Pos
     harness.run();
 }
 
+/// Opens the clip labelled `label` in the detail area: a click selects it (one click only selects
+/// a clip, `docs/spec/ui-clip-editor.md` › Where it opens), then it is opened as a double-click
+/// opens it (`App::open_selected_clip`); the fixtures' frames lie too far apart for egui to take two
+/// clicks as a double-click.
+pub(super) fn open_clip(harness: &mut Harness<'static, App>, label: &str) {
+    harness.get_by_label(label).click();
+    harness.run();
+    harness.state_mut().open_selected_clip();
+    harness.run();
+}
+
 /// Picks `value` in the control bar's grid box, as a user does: open it, click the value.
 pub(super) fn choose_grid(harness: &mut Harness<'static, App>, value: &str) {
     harness.get_by_label("Launch quantisation").click();

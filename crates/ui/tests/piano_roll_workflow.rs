@@ -44,8 +44,7 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness
 }
 
@@ -479,8 +478,7 @@ fn render_the_workflow_menu_and_settings() {
     h.run();
     h.get_by_label("Arrangement view").click();
     h.run();
-    h.get_by_label(CLIP).click();
-    h.run();
+    crate::window::open_clip(&mut h, CLIP);
     h.get_by_label("Workflow Select-first").click();
     h.run();
     h.get_by_label("Double-click on a note: Deletes it").hover();

@@ -15,6 +15,8 @@ use suhina_session::Session;
 use suhina_ui::demo::demo_project;
 use suhina_ui::{App, kit::theme};
 
+use crate::window::{double_click_at, open_clip};
+
 const SIZE: (f32, f32) = (1280.0, 900.0);
 /// A MIDI clip on Drums in the Arrangement view, and one in a Launcher slot.
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
@@ -68,23 +70,6 @@ fn arrangement() -> Harness<'static, App> {
     harness
 }
 
-/// A double-click at `at`, after a second without clicks.
-fn double_click_at(harness: &mut Harness<'static, App>, at: Pos2) {
-    harness.hover_at(at);
-    harness.run();
-    let ready = harness.ctx.input(|i| i.time) + 1.0;
-    while harness.ctx.input(|i| i.time) < ready {
-        harness.step();
-    }
-    for _ in 0..2 {
-        harness.hover_at(at);
-        harness.drag_at(at);
-        harness.drop_at(at);
-        harness.step();
-    }
-    harness.run();
-}
-
 /// A spot below the ordinary track's compact-height button, clear of the meter,
 /// color strip and splitter on either side of the header.
 fn header_spot(harness: &Harness<'static, App>, track: &str) -> Pos2 {
@@ -127,8 +112,7 @@ fn a_midi_effect_shows_before_the_instrument_in_the_chain() {
     let mut harness = arrangement();
     harness.state_mut().set_session(Session::new(project), &[]);
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    open_clip(&mut harness, CLIP);
     harness.get_by_label("Show Devices").click();
     harness.run();
     // A device past the area's right edge is not drawn: a wide panel can push the last one out.
@@ -142,8 +126,7 @@ fn a_midi_effect_shows_before_the_instrument_in_the_chain() {
 fn the_switch_goes_from_the_clip_to_its_tracks_devices_and_back() {
     let mut harness = arrangement();
     let before = project_now(&harness);
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    open_clip(&mut harness, CLIP);
     assert!(piano(&harness) && switch(&harness), "a MIDI clip shows its piano roll and the switch");
     assert!(!shows_device(&harness, "Utility"));
 
@@ -166,13 +149,16 @@ fn the_switch_goes_from_the_clip_to_its_tracks_devices_and_back() {
     harness.run();
     assert!(piano(&harness) && !shows_device(&harness, "Utility"));
 
-    // On the devices, a click on the selected clip shows its editor again.
+    // On the devices, a click on the selected clip only selects it: the devices stay. A
+    // double-click shows its editor again.
     harness.get_by_label("Show Devices").click();
     harness.run();
     assert!(!piano(&harness));
     harness.get_by_label(CLIP).click();
     harness.run();
-    assert!(piano(&harness), "a click on a clip edits it");
+    assert!(!piano(&harness) && shows_device(&harness, "Utility"), "a click on a clip keeps the devices");
+    open_clip(&mut harness, CLIP);
+    assert!(piano(&harness) && !shows_device(&harness, "Utility"), "a double-click on a clip edits it");
 
     // Window state only: the project never changed, and there is nothing to undo.
     assert_eq!(project_now(&harness), before);
@@ -199,15 +185,15 @@ fn the_key_opens_a_hidden_detail_area_on_the_devices_and_needs_a_clip_with_an_ed
 fn a_double_click_on_an_arrangement_header_shows_that_tracks_devices() {
     let mut harness = arrangement();
     let before = project_now(&harness);
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    open_clip(&mut harness, CLIP);
     assert!(piano(&harness));
 
-    // Drums' own header: the clip stays selected, the switch goes to Devices.
+    // Drums' own header: the clip stays selected, and the track's devices show on their own,
+    // without the clip's column and its switch (`docs/spec/ui-clip-editor.md` › Where it opens).
     let spot = header_spot(&harness, "Drums");
     double_click_at(&mut harness, spot);
     assert!(!piano(&harness) && shows_device(&harness, "Utility"), "Drums' devices in place of the notes");
-    assert!(switch(&harness));
+    assert!(!switch(&harness), "the track's devices on their own");
     assert!(harness.state().selected_clip().is_some(), "the clip on that track stays selected");
     assert_eq!(harness.state().arrangement().selected_tracks.first(), Some(&TrackId(1)));
 
@@ -218,10 +204,14 @@ fn a_double_click_on_an_arrangement_header_shows_that_tracks_devices() {
     assert_eq!(harness.state().selected_clip(), None);
     assert!(!switch(&harness), "no clip, no switch");
 
-    // A single click keeps its meaning: selecting a clip edits it.
+    // A single click on a clip only selects it: the devices stay, those of the clip's track. A
+    // double-click edits it.
     harness.get_by_label(CLIP).click();
     harness.run();
-    assert!(piano(&harness));
+    assert!(!piano(&harness) && shows_device(&harness, "Utility"), "a click keeps Drums' devices in view");
+    assert!(harness.state().selected_clip().is_some(), "the click selected the clip");
+    open_clip(&mut harness, CLIP);
+    assert!(piano(&harness), "a double-click edits the clip");
     assert_eq!(project_now(&harness), before);
 }
 
@@ -238,8 +228,7 @@ fn a_double_click_on_a_header_opens_the_hidden_detail_area() {
 #[test]
 fn a_double_click_on_a_session_column_name_shows_its_devices() {
     let mut harness = window();
-    harness.get_by_label(SLOT).click();
-    harness.run();
+    open_clip(&mut harness, SLOT);
     assert!(piano(&harness), "the slot's MIDI clip shows its piano roll");
     hide_detail_area(&mut harness);
 
@@ -253,18 +242,16 @@ fn a_double_click_on_a_session_column_name_shows_its_devices() {
 fn a_double_click_on_the_channel_strip_shows_its_devices_and_keeps_the_slot_on_that_track() {
     let mut harness = window();
     let before = project_now(&harness);
-    harness.get_by_label(SLOT).click();
-    harness.run();
+    open_clip(&mut harness, SLOT);
     assert!(piano(&harness));
 
     // The strip's name row is its own background for clicks.
     let strip = harness.get_by_label("Drums strip").rect().center();
     double_click_at(&mut harness, strip);
     assert!(!piano(&harness) && shows_device(&harness, "Utility"), "Drums' devices");
-    assert!(switch(&harness), "the slot on Drums stays selected, with the switch");
-    harness.get_by_label("Show Clip").click();
-    harness.run();
-    assert!(piano(&harness), "and the switch brings its notes back");
+    assert!(!switch(&harness), "the track's devices on their own, without the slot's column");
+    open_clip(&mut harness, SLOT);
+    assert!(piano(&harness), "and opening the slot's clip brings its notes back");
 
     // Bass' strip, with the detail area hidden: it opens, and the slot on Drums is let go.
     hide_detail_area(&mut harness);
@@ -532,6 +519,41 @@ fn a_nam_panels_render_for_the_hand_check() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Renders the Compressor's panel in each of its display's views to
+/// `target/ui-snapshots/compressor-<view>.png`, for looking at:
+/// `cargo test -p suhina-ui --test main -- --ignored the_compressor_views_render_for_the_hand_check`.
+#[test]
+#[ignore = "needs a GPU adapter; run with --ignored"]
+fn the_compressor_views_render_for_the_hand_check() {
+    let mut project = demo_project();
+    let params = suhina_device_registry::info("compressor")
+        .map(|info| info.params.iter().map(|p| DeviceParam::new(&*p.id, p.default)).collect())
+        .unwrap_or_default();
+    project.channels[0].devices.push(Device { params, ..device("Compressor") });
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project), &[]);
+    let mut harness = Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(SIZE)
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .wgpu()
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    theme::install(&harness.ctx);
+    harness.get_by_label("Launcher view").click();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
+    std::fs::create_dir_all(&out).unwrap_or_else(|e| panic!("{e}"));
+    for view in ["Curve", "Activity", "Meters"] {
+        harness.get_by_label(view).click();
+        harness.run();
+        let image = harness.render().unwrap_or_else(|e| panic!("render failed: {e}"));
+        image.save(out.join(format!("compressor-{}.png", view.to_lowercase()))).unwrap_or_else(|e| panic!("{e}"));
+    }
+}
+
 /// A channel device's state as the project holds it, by its index.
 fn channel_device_state(harness: &Harness<'static, App>, index: usize) -> String {
     harness.state().session().unwrap().project().channels[0]
@@ -550,8 +572,7 @@ fn a_built_in_devices_generated_panel_edits_its_parameters() {
     let mut harness = arrangement();
     harness.state_mut().set_session(Session::new(project), &[]);
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    open_clip(&mut harness, CLIP);
     harness.get_by_label("Show Devices").click();
     harness.run();
     let value = |harness: &Harness<'static, App>, device: usize, id: &str| {
@@ -607,8 +628,7 @@ fn an_expanded_panel_opens_from_the_header_and_edits_the_same_parameters() {
     let mut harness = arrangement();
     harness.state_mut().set_session(Session::new(project), &[]);
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    open_clip(&mut harness, CLIP);
     harness.get_by_label("Show Devices").click();
     harness.run();
     assert!(harness.query_by_label("Expand Utility").is_none(), "a device without one has no button");
@@ -649,8 +669,7 @@ fn a_dial_in_the_expanded_panel_drags_though_the_compact_panel_has_one_of_the_sa
     let mut harness = arrangement();
     harness.state_mut().set_session(Session::new(project), &[]);
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    open_clip(&mut harness, CLIP);
     harness.get_by_label("Show Devices").click();
     harness.run();
     harness.get_by_label("Expand FM Synth").click();

@@ -24,7 +24,7 @@ const SIZE: (f32, f32) = (1280.0, 800.0);
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const CLIP_START: f64 = 64.0;
 
-/// The demo project with `renderer` as its engine, in the Arrangement view, the clip selected.
+/// The demo project with `renderer` as its engine, in the Arrangement view, the clip opened (a double-click).
 fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     let mut session = Session::new(demo_project());
     session.attach_player(suhina_session::Player::new(renderer.controller(), None));
@@ -42,8 +42,7 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness
 }
 

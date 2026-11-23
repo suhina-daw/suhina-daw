@@ -23,7 +23,7 @@ const SIZE: (f32, f32) = (1280.0, 800.0);
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const CLIP_START: f64 = 64.0;
 
-/// The demo project in the Arrangement view with the clip selected, so the piano roll shows it,
+/// The demo project in the Arrangement view with the clip opened (a double-click), so the piano roll shows it,
 /// and every note of the clip moved a tenth of a beat late, off the grid.
 fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     let mut session = Session::new(demo_project());
@@ -42,8 +42,7 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     let mut params = address(&harness);
     params["notes"] = json!((0..notes(&harness).len()).collect::<Vec<_>>());
     params["beats"] = json!(0.1);

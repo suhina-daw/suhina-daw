@@ -48,7 +48,8 @@ fn window() -> Harness<'static, App> {
     window_with(project())
 }
 
-/// The window with `project`'s selected clip's device chain showing in the detail area.
+/// The window with `project`'s clip opened (a double-click) and its device chain showing in the
+/// detail area.
 fn window_with(project: Project) -> Harness<'static, App> {
     let mut app = App::new();
     app.set_browser_open(false);
@@ -63,8 +64,7 @@ fn window_with(project: Project) -> Harness<'static, App> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness.get_by_label("Show Devices").click();
     harness.run();
     harness
@@ -128,8 +128,7 @@ fn the_eq_panels_analyser_receives_the_playing_output() {
     theme::install(&harness.ctx);
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness.get_by_label("Show Devices").click();
     harness.run();
     // The panel is drawn: it claims its watch row through the frame's monitor.
@@ -211,8 +210,7 @@ fn a_grouped_eqs_panel_claims_no_watch() {
     theme::install(&harness.ctx);
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness.get_by_label("Show Devices").click();
     harness.run();
     assert!(harness.query_by_label("EQ response display").is_some(), "the grouped EQ's panel is drawn");
@@ -446,8 +444,7 @@ fn render_the_panel() {
     theme::install(&harness.ctx);
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness.get_by_label("Show Devices").click();
     harness.run();
     save(&mut harness, "eq-panel-idle.png");

@@ -1874,6 +1874,7 @@ fn paint_scaled(
                         TextFormat::Seconds => format!("{text}{} s", fixed(p.value, 2)),
                         TextFormat::Percent => format!("{text}{}%", fixed(p.value * 100., 0)),
                         TextFormat::Decibels => format!("{text}{} dB", fixed(p.value, 1)),
+                        TextFormat::Ratio => format!("{text}{}:1", fixed(p.value, *decimals)),
                         TextFormat::Balance if p.value.abs() < 0.005 => format!("{text}C"),
                         TextFormat::Balance => {
                             format!("{text}{} {}", fixed(p.value.abs() * 100., 0), if p.value < 0. { "L" } else { "R" })
@@ -2487,6 +2488,17 @@ pub(crate) fn show(
         if matches!(control.widget, Some(Widget::EqCurve)) {
             // `eq-curve` is no element of the registry, so it is drawn in the control's scope.
             super::eq_curve::show(ui, bounds, parameters, track, at, actions);
+            continue;
+        }
+        // The CompressorDisplay is host-drawn as well: only the built-in Compressor's own
+        // parameter set may claim it. Its ground, reduction and level colors are theme tokens.
+        if matches!(control.widget, Some(Widget::CompressorDisplay)) {
+            let palette = super::compressor_display::Palette {
+                display: tokens.color([3, 0, 1, 255]),
+                reduction: tokens.color([3, 0, 2, 255]),
+                level: tokens.color([3, 0, 3, 255]),
+            };
+            super::compressor_display::show(ui, bounds, parameters, palette, track, at, actions);
             continue;
         }
         if let Some(Widget::Handle { color: line_color, span, offset, dot, relative, hollow }) = &control.widget {

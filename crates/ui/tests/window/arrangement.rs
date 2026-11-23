@@ -2479,8 +2479,8 @@ fn a_click_on_the_piano_rolls_ruler_sets_where_playback_starts() {
     .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
-    // The clip at bar 17 (beat 64), its piano roll in the detail area.
-    harness.get_by_label("Clip Beat B on Drums at bar 17").click();
+    // The clip at bar 17 (beat 64), opened (a double-click): its piano roll in the detail area.
+    open_clip(&mut harness, "Clip Beat B on Drums at bar 17");
     harness.run_steps(2);
     let ruler = harness.get_by_label("Piano roll ruler").rect();
     // Low on the ruler, under the loop row, a little in from the clip's start.
@@ -3382,7 +3382,8 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     harness.get_by_label("Arrangement view").click();
     harness.run();
     let clip = harness.get_by_label("Clip Loop on Loop at bar 1").rect();
-    click_name_bar(&mut harness, "Clip Loop on Loop at bar 1");
+    // Opened with a double-click on its name bar, so the clip panel shows its Envelope switch.
+    double_click_at(&mut harness, clip.center_top() + egui::vec2(0.0, 6.0));
     harness.get_by_label("Edit gain envelope of Loop").click();
     harness.run();
     assert!(harness.query_by_label("Envelope: On").is_some(), "the panel's switch follows the button");

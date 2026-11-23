@@ -249,6 +249,14 @@ pub enum Widget {
     /// them. The host finds the band parameters by their ids (`a1Frequency` … `b8Q`); which
     /// band is selected is panel state, never a parameter (docs/spec/eq.md › The panel).
     EqCurve,
+    /// Host-drawn display of the built-in Compressor, in three views a row of tabs picks: the
+    /// transfer curve with the detector's level on it, the activity history (the level the
+    /// detector reads and the gain reduction scrolling by) and the meters alone; the input,
+    /// gain-reduction and output meters beside each, and the threshold dragged on the curve
+    /// or the input meter. Which view shows is panel state, never a parameter. The host finds
+    /// the parameters by their ids (`threshold`, `ratio`, `knee`, `output`, `mix`;
+    /// docs/spec/compressor.md › The panel) and reads the device's readouts.
+    CompressorDisplay,
 }
 
 /// What a [`Widget::DeviceFiles`] control places: the pack row's or file row's dropdown on
@@ -528,7 +536,11 @@ impl Widget {
                     value,
                 ];
             }
-            Self::SampleWaveform | Self::SampleRecording | Self::Envelope { .. } | Self::EqCurve => {}
+            Self::SampleWaveform
+            | Self::SampleRecording
+            | Self::Envelope { .. }
+            | Self::EqCurve
+            | Self::CompressorDisplay => {}
             // Host-rendered: the host draws them from its own state.
             Self::DeviceSwitch | Self::DeviceFiles { .. } | Self::DeviceNote => {}
             Self::Knob { label } => {

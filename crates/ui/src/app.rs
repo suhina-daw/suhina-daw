@@ -513,6 +513,13 @@ pub struct App {
     /// The detail area's Clip / Devices switch: for a clip with an editor, the editor or its
     /// track's devices (`docs/spec/ui-clip-editor.md` › Where it opens). Window state.
     detail_showing: detail_view::Showing,
+    /// The detail area shows a track's devices on their own, as a click on the track asked: a
+    /// clip then selected with one click leaves it so (no clip column), and only a double-click,
+    /// or the editor shown some other way, brings the clip in. Window state.
+    track_devices: bool,
+    /// The detail area's view changed after it was drawn this frame (`App::devices_asked`): the
+    /// frame asks for another, so the change shows without waiting for input.
+    detail_redraw: bool,
     /// The arrangement clip the plug-ins that edit clips (ARA) on its track were last told is
     /// selected, and the one whose ARA editor was last opened on its own when it was selected:
     /// once per clip, so an editor the user closes stays closed.
@@ -615,10 +622,9 @@ pub struct App {
     /// The main window was asked to be see-through, which its windows of their own follow.
     see_through_asked: bool,
     /// The detail area was closed as an editor (the splitter dragged down, the toolbar's ×, View ›
-    /// Hide editor): selecting a clip opens it again. And the clip shown last frame, to tell when
-    /// another is selected (`docs/spec/ui-clip-editor.md` › Least height and closing).
+    /// Hide editor): selecting a clip opens it again (`docs/spec/ui-clip-editor.md` › Least height
+    /// and closing).
     editor_closed: bool,
-    last_clip: Option<ClipRef>,
     /// The piano roll's own grid value, used unless Settings has it follow the control bar's.
     piano_grid: crate::detail::piano_roll_grid::PianoGrid,
     detail_width: f32,
@@ -851,7 +857,9 @@ impl App {
             scan: None,
             keymap: Keymap::default(),
             keymap_changed: false,
-            detail_showing: detail_view::Showing::Clip,
+            detail_showing: detail_view::Showing::Devices,
+            track_devices: true,
+            detail_redraw: false,
             ara_told: None,
             ara_opened: None,
             ara_was_open: None,
@@ -892,7 +900,6 @@ impl App {
             window_corner: 0,
             see_through_asked: true,
             editor_closed: false,
-            last_clip: None,
             piano_grid: crate::detail::piano_roll_grid::PianoGrid::default(),
             detail_width: detail_view::STACK_WIDTH,
             page: PageState::default(),
@@ -3122,16 +3129,23 @@ impl App {
                     });
                     self.select_tracks(next.into_iter().collect());
                 }
-                // A clip made by a double-click is selected, ready to edit: in the Arrangement
-                // the clip, in the Launcher its slot, so the detail area shows it.
+                // A clip made by a double-click is selected and opened, ready to edit: in the
+                // Arrangement the clip, in the Launcher its slot, so the detail area shows its editor.
                 if action.id == "clip.create"
                     && let Some(track) = result["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId)
                 {
                     let at = |key: &str| result[key].as_u64().and_then(|i| usize::try_from(i).ok());
                     let clip = result["clip"].as_u64().and_then(|c| u32::try_from(c).ok()).map(ClipId);
                     match (clip.filter(|_| at("scene").is_none()), at("scene")) {
-                        (Some(clip), _) => self.arrangement.select_clip(track, clip),
-                        (None, Some(scene)) => self.view.select_slot(track, scene),
+                        (Some(clip), _) => {
+                            self.arrangement.select_clip(track, clip);
+                            // Opened, as a double-click on a clip opens it.
+                            self.arrangement.clip_opened = true;
+                        }
+                        (None, Some(scene)) => {
+                            self.view.select_slot(track, scene);
+                            self.view.clip_opened = true;
+                        }
                         (None, None) => self.view.selected = Some(track),
                     }
                 }
@@ -3710,11 +3724,14 @@ impl App {
                     self.show_editor();
                 }
                 self.detail_showing = detail_view::Showing::Clip;
+                // The clip view at once, in the detail area drawn this frame: the end of the frame
+                // (`devices_asked`) would only see to it after the area was drawn.
+                self.track_devices = false;
                 self.clip_opened = true;
-            } else if self.detail_open && shown_clip.is_some() && (clicked || shown_clip != self.last_clip) {
-                self.detail_showing = detail_view::Showing::Clip;
             }
-            self.last_clip = shown_clip;
+            // One click on a clip only selects it: the detail area keeps what it shows, a track's
+            // devices staying in view while clips are picked, and the clip editor showing the clip
+            // clicked when it was the editor that showed. A double-click opens the editor.
             self.expanded_panel = None;
             // The EQ panel's analyser reads the meter monitor's spectrum rings; the monitor's
             // arc goes to the panels through the frame's temp data, published here, before
@@ -4282,6 +4299,9 @@ impl App {
         if grid.is_some_and(|g| {
             g.running || g.columns.iter().any(|c| c.stop_queued || c.slots.iter().any(|s| s.state == SlotState::Queued))
         }) {
+            ui.ctx().request_repaint();
+        }
+        if std::mem::take(&mut self.detail_redraw) {
             ui.ctx().request_repaint();
         }
         self.frame_trace.finish();
