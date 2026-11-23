@@ -680,7 +680,7 @@ control is dragged or shows the arrow of the drag's direction; `auto` keeps the 
 |---|---|
 | Toolbar `toolbar` | `toolbar-module`, modules `#browser`, `#tempo`, `#position`, `#signature`, `#grid`, `#count-in`, `#metronome`, `#views`, `#performance`, `#mapping`, `#agents`; `#control-play`, `#control-stop`, `#control-record`, `#control-metronome-toggle`, `#control-browser-toggle` |
 | Arrangement header `arrangement track-header` | `track-name`, `track-number`, `#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-automation`, `#control-monitor`, `fold`, `#arrangement-volume`, `#arrangement-pan`, `send`, `value-fill`, `value-handle` |
-| Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `tempo-mark`, `loop-region`, `loop-line`, `marker`, `playhead`, `start-marker`, `grid-line`, `time-selection`, `marquee`, `track-lane`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade`, `clip-fade-handle`, `clip-envelope`, `take-header`, `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `arrangement-tool`, `add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
+| Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `tempo-mark`, `loop-region`, `loop-line`, `marker`, `playhead`, `start-marker`, `grid-line`, `time-selection`, `marquee`, `track-lane`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade`, `clip-fade-handle`, `clip-envelope`, `take-header`, `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `arrangement-tool`, `#control-add-midi-track`, `#control-add-audio-track`, `#control-add-return-track` |
 | Launcher and mixer `session`, `mixer` | `track-column`, `slot`, `slot-mark`, `slot-record`, `scene`, `scene-column`, `mapping-overlay`, `#mixer-volume`, `#mixer-pan`, `pan-center`, `#mixer-send-N`, `fader`, `fader-cap`, `fader-rail`, `fader-scale`, `meter`, `meter-level`, `meter-clip`, `device-list`, `device-row`, `scroll-bar`, `#mixer-divider`, `#mixer-splitter` |
 | Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-slice`, `start-marker`, `loop-region`, `ruler-number`, `ruler-tick`, `piano-tool` with `#piano-<tool>`, `midi-tools` (with `slider#quantise-amount`), `clip-info`, `editor-tab` (`#tab-clip`, `#tab-devices`, `#tab-notes`, `#tab-transform`) |
 | Browser `browser` | `browser-place`, `browser-row`, `browser-play`, `browser-tag-dot`, `browser-preview-wave`, `#browser-search`, `#browser-new-folder` (`text-input`) |
@@ -731,14 +731,14 @@ Elements, by name:
 | `device-canvas` | the colors a device's own drawings take, read in the device's scope: `color` the text, `background-color` the controls, `border-color` the lines, `accent-color` the accent; `kind="secondary"`, `"value"`, `"inverse"` (`color`) and `"panel"`, `"window"`, `"active"` (`background-color`) the others |
 | `#control-device-on` | a device's on switch (`[checked]` while it runs): a rule for every `button` reaches it, as it does any button, so a theme with one states `#control-device-on[checked]` |
 | `button[kind="close"]`, `button[kind="more"]` | an expanded panel's × and the browser's more tags: buttons like any other, so a rule for every `button` reaches them too; the base sheet draws the … with no fill until the pointer is on it |
-| `device[kind="group"]`, `device-row` | a device group's panel, and its branches (`[selected]` while shown, `[muted]` while muted); its `+ Branch` is `add-track[kind="branch"]`; a device's `accent-color` outlines it while selected |
+| `device[kind="group"]`, `device-row` | a device group's panel, and its branches (`[selected]` while shown, `[muted]` while muted); its `+ Branch` is a push button, `#control-add-branch`; a device's `accent-color` outlines it while selected |
 | `icon[kind]` in the piano roll | its tool pointer (`pointer`, the ring its `background-color`) and the strip's magnifier (`magnifier`); a clip's color swatch is `icon[kind="swatch"]` |
 | `start-page`, `plugin-manager` | the page with no project open, the Plug-in manager |
 | `dialog-title`, `dialog-actions`, `list-row`, `theme-card` | a dialog's title row (`background-color`; its words `label[kind="title"]`); a dialog's row of buttons (a flex row: `justify-content`, `gap`); a row of a list a click picks, in a dialog, on the start page, in the quick-add and project switcher lists and the Plug-in manager (`[selected]` for the picked one); a theme's card in the picker (`[selected]` for the theme in use: `border-color`, `background-color` for its tint, `accent-color` for the word *Active*) |
 | `color-swatch`, `color-field`, `slider[kind="band"]` | the color picker's: a swatch of the palette, the saved colors or the Steps grid, in a menu or the color window (`border-color` of `:hover` outlines the one under the pointer, of `[selected]` the chosen one just outside it, with a black line inside its edge; `accent-color` of `:focus` rings the one with the keys; `[kind="add"]` is the + that saves the current color, its `color` for its outline and +, `:hover` and `:disabled`; `[kind="square"]` the square beside a picker's name, its `border-color`); Field's saturation/value plane (`border-color`, `border-width`, `:focus`); the Hue slider's band (its `slider-rail`'s `background-color` for the hairline round and between its steps, its `slider-handle`'s for the handle's edge, `accent-color` for the ring while it has the keys) |
 | Control bar, tabs, Settings and dialogs | their words are `label` by kind (`hint` for headings and notes, `caption`, `title`, `value`, `error`), their rules, and the outlines of the start page's cards, `separator[kind="row"]`, their buttons `button` (lit ones `[checked]`: a rule for every `button` leaves them lit), the start page's tabs `editor-tab#tab-recent` and `#tab-templates`, the toolbar's RAM and CPU bars `meter` and `meter-level` (`[kind="hot"]`); `divider#detail-splitter[closed]` while the detail area is closed |
 | `send` | a send, in a mixer strip and in a track header |
-| `add-track` | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons after the last track |
+| `button[kind="push"]` after the last track | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons, push buttons as every view's |
 | `ruler`, `loop-region`, `playhead` | the Arrangement view's ruler, its loop bar and the play position line (also the piano roll's and the browser preview strip's) |
 | `divider` | the line between a strip's device list and its controls (`#mixer-divider`), the Launcher mixer's top line (`#mixer-splitter`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) and the Arrangement's track header edge (`#arrangement-header-splitter`, painted only where a theme gives it a `background-color`) |
 | `separator[kind]` | the views' lines: the Launcher's between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's under its rows (`row`), between its bands (`band`) and under each lane (`lane`), in their `color` |
@@ -772,7 +772,7 @@ Ids:
 | `#panel-browser`, `#panel-main`, `#panel-detail` | the window's panels |
 | `#views-top`, `#views-bottom` | the lines over and under the views (`separator`) |
 | `#mixer-send-1`, `#mixer-send-2`, … | a mixer strip's sends, from the left |
-| `#add-midi-track`, `#add-audio-track`, `#add-return-track` | the three add-track buttons |
+| `#control-add-midi-track`, `#control-add-audio-track`, `#control-add-return-track` | the three add-track buttons |
 | `#mixer-divider` | a strip's divider |
 | `#mixer-splitter` | the Launcher mixer's top line, which a drag resizes |
 | `#control-main-metronome`, `#control-mixer-monitor-in`, `#control-mixer-monitor-auto`, `#control-mixer-monitor-off` | the metronome in Main's strip and a strip's monitor buttons; while on, they take a color only from a rule for `[checked]`, so a rule for every `button` does not hide which one is on |
@@ -924,8 +924,9 @@ position line's color and thickness; `width: 0` hides it.
 
 `send` styles every send, in the mixer and in the Arrangement header, and `#mixer-send-1`
 one of them. `send { appearance: knob; }` draws the mixer's sends as knobs. `send` is
-a send's artwork and `send.fill` its level. `add-track` and `#add-midi-track` (and the two
-others) style the add-track buttons, `add-track` is their artwork.
+a send's artwork and `send.fill` its level. The add-track buttons are push buttons
+(`button[kind="push"]`, with the button artwork), each with an id of its own: `#control-add-midi-track`,
+`#control-add-audio-track` and `#control-add-return-track`.
 
 ### Level bars: the value and a handle
 

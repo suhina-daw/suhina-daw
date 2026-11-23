@@ -551,7 +551,7 @@ page's (ADR 0031, amendment of 2026-11-15).
   (`list-row[kind="dialog"]`, `"plugin"`, `"missing-file"`, `"picker"`), every menu's rows
   (`list-row[kind="menu"]`, `[selected]` for the chosen one),
   the swatches, the theme picker's cards, the drag pill (`tooltip`), the buttons that add a track
-  (`add-track`), the buttons of Settings and the dialogs (`button[kind="secondary"]`, `"check"`,
+  (push buttons, `#control-add-midi-track` and the others), the buttons of Settings and the dialogs (`button[kind="secondary"]`, `"check"`,
   `"option"`, `"preset"`, `"switch"`, lit with `[checked]`) and egui's own widgets (`widget`, below).
   The views move onto it area by
   area (#1449 – #1452), each in a section of its own. Worked-out colors stay worked out from the
@@ -759,8 +759,8 @@ shows the desktop through 25%; a theme that wants a panel's own alpha at the des
 registry, `suhina_theme_package::elements`) is that view's own, painted once; it writes no
 token. A part drawn in it that takes its region's color (the launcher's stop buttons, the
 Arrangement's ruler rows, the toolbar's fields) reads it with `style_class::surface_or`, and
-the controls on it keep their own fill. The add-track buttons under the last track keep their
-own fill.
+the controls on it keep their own fill. The add-track buttons under the last track are push buttons
+and keep their own fill.
 
 **Level bars.** Volume and pan fields of the track headers and the mixer are one level
 bar (`mixer_controls::level_bar`): the field's element is the track and `value-fill` the
@@ -1469,8 +1469,8 @@ These native parts take the sheet (the [theme author guide](../guide/theme-autho
 - **Sends:** `send` in the mixer and the Arrangement header; `#mixer-send-N` by place from
   the left; `appearance: knob` draws mixer sends as knobs; artwork `send` and
   `send.fill`.
-- **Add-track buttons:** `add-track`, `#add-midi-track`, `#add-audio-track`,
-  `#add-return-track`, artwork `add-track`.
+- **Add-track buttons:** push buttons (`button[kind="push"]`), `#control-add-midi-track`,
+  `#control-add-audio-track`, `#control-add-return-track`, a device group's `#control-add-branch`.
 - **Ruler, loop region, play position:** `ruler` (background, `color`, `border-color`;
   artwork `ruler`), `loop-region` (`[checked]` while looping; `height`; artwork `loop-region`,
   `.on`), `playhead` (`color`, `width`; `width: 0` hides it; the piano roll and the browser's preview strip draw it too).

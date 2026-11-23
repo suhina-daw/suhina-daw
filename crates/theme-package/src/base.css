@@ -353,7 +353,6 @@ value[kind="parameter"] { color: var(--text-value); }
 device-row[kind="branch"] { color: var(--text-secondary); }
 device-row[kind="branch"]:hover { background-color: var(--control-hoverBackground); }
 device-row[kind="branch"][selected] { background-color: var(--control-activeBackground); }
-add-track[kind="branch"]:hover { background-color: var(--control-hoverBackground); }
 
 /* The clip and MIDI panels' fields (a value's text, tinted under the pointer, stronger while it is
    dragged, its share lit in the playing color), the line under the place of a number a drag
@@ -547,8 +546,6 @@ theme-card { border-color: var(--border); }
 theme-card:hover { border-color: var(--border-strong); }
 theme-card[selected] { border-color: var(--accent); accent-color: var(--accent); }
 tooltip { background-color: var(--control-activeBackground); border-color: var(--border-strong); accent-color: var(--accent); }
-add-track { background-color: var(--control-background); color: var(--text-secondary); }
-add-track:hover { background-color: var(--control-hoverBackground); }
 
 /* The buttons of Settings and the dialogs: one that stands back (Remove), a tick box (its edge, a
    step stronger under the pointer, and its mark), a part of a row of choices (`option`: the chosen

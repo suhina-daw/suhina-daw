@@ -1076,7 +1076,6 @@ names! {
     TRACK_NUMBER = "track-number";
     TRACK_COLOR = "track-color";
     FOLD = "fold";
-    ADD_TRACK = "add-track";
     TRACK_LANE = "track-lane";
     CLIP = "clip";
     CLIP_NAME = "clip-name";

@@ -883,7 +883,7 @@ fn a_device_group_s_panel_takes_its_own_rules() {
     h.run();
     let rules = [
         ("device-row[selected]", "background-color", odd(81)),
-        ("add-track[kind=\"branch\"]", "color", odd(82)),
+        ("button#control-add-branch", "color", odd(82)),
         ("button#control-device-on", "background-color", odd(83)),
         ("device-header", "background-color", odd(84)),
     ];

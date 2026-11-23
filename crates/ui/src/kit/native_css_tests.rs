@@ -1210,9 +1210,11 @@ fn the_fader_cap_and_rail_take_their_size_from_the_sheet() {
     assert_eq!(sizes, (Vec2::new(30.0, 12.0), 2.0));
 }
 
+/// The buttons that add a track are push buttons, as every view's, each with an id of its own.
 #[test]
-fn the_add_track_buttons_take_their_class_and_ids() {
-    let css = "add-track { background-color: #00FF00; } #add-return-track { background-color: #FF0000; }";
+fn the_add_track_buttons_are_push_buttons_with_ids_of_their_own() {
+    let css = "button[kind=\"push\"] { image: none; background-color: #00FF00; } \
+               #control-add-return-track { background-color: #FF0000; }";
     let fills: Vec<_> = rects(&painted(css, |ui| {
         let area = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(300.0, 300.0));
         crate::interaction::empty_space::empty_space(ui, &ui.painter().clone(), area, &mut Vec::new());

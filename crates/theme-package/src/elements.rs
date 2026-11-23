@@ -183,6 +183,10 @@ const CONTROL_IDS: &[&str] = &[
     "track-on",
     "automation",
     "monitor",
+    "add-midi-track",
+    "add-audio-track",
+    "add-return-track",
+    "add-branch",
 ];
 
 /// The level fields of the track headers and the mixer, by their placement names.
@@ -339,7 +343,6 @@ pub const ELEMENTS: &[Element] = &[
             "ruler",
             "loop-region",
             "playhead",
-            "add-track",
             "grid-line",
             "time-selection",
             "marquee",
@@ -368,10 +371,6 @@ pub const ELEMENTS: &[Element] = &[
     element("fold", Control, "The triangle that folds a track or a group.")
         .attributes(&["checked"])
         .artwork(&[own("fold")]),
-    element("add-track", Control, "The buttons that add a track, after the last one; a device group's `+ Branch` is `add-track[kind=\"branch\"]`.")
-        .ids(Ids::Prefixed("add-"))
-        .attributes(&["kind"])
-        .artwork(&[own("add-track")]),
     element(
         "track-lane",
         Container,
