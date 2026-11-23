@@ -13,6 +13,7 @@ impl App {
     /// strip) selects it and shows its devices, opening the detail area; a clip selected on
     /// another track is no longer selected (`docs/spec/ui-clip-editor.md` › Where it opens).
     pub(super) fn devices_asked(&mut self) {
+        let before = (self.track_devices, self.detail_showing, self.detail_open);
         if let Some(track) = self.arrangement.open_devices.take() {
             if self.arrangement.selected_clip().is_some_and(|(t, _)| t != track) {
                 self.arrangement.clear_selected_clip();
@@ -50,6 +51,11 @@ impl App {
         // editor): the clip is in the detail area again.
         if self.detail_showing == detail_view::Showing::Clip {
             self.track_devices = false;
+        }
+        // This runs after the frame's detail area was drawn: what it changed is drawn next frame,
+        // asked for at once rather than left to the next input.
+        if (self.track_devices, self.detail_showing, self.detail_open) != before {
+            self.detail_redraw = true;
         }
     }
 

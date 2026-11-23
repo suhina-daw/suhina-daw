@@ -517,6 +517,9 @@ pub struct App {
     /// clip then selected with one click leaves it so (no clip column), and only a double-click,
     /// or the editor shown some other way, brings the clip in. Window state.
     track_devices: bool,
+    /// The detail area's view changed after it was drawn this frame (`App::devices_asked`): the
+    /// frame asks for another, so the change shows without waiting for input.
+    detail_redraw: bool,
     /// The arrangement clip the plug-ins that edit clips (ARA) on its track were last told is
     /// selected, and the one whose ARA editor was last opened on its own when it was selected:
     /// once per clip, so an editor the user closes stays closed.
@@ -856,6 +859,7 @@ impl App {
             keymap_changed: false,
             detail_showing: detail_view::Showing::Devices,
             track_devices: true,
+            detail_redraw: false,
             ara_told: None,
             ara_opened: None,
             ara_was_open: None,
@@ -3720,6 +3724,9 @@ impl App {
                     self.show_editor();
                 }
                 self.detail_showing = detail_view::Showing::Clip;
+                // The clip view at once, in the detail area drawn this frame: the end of the frame
+                // (`devices_asked`) would only see to it after the area was drawn.
+                self.track_devices = false;
                 self.clip_opened = true;
             }
             // One click on a clip only selects it: the detail area keeps what it shows, a track's
@@ -4292,6 +4299,9 @@ impl App {
         if grid.is_some_and(|g| {
             g.running || g.columns.iter().any(|c| c.stop_queued || c.slots.iter().any(|s| s.state == SlotState::Queued))
         }) {
+            ui.ctx().request_repaint();
+        }
+        if std::mem::take(&mut self.detail_redraw) {
             ui.ctx().request_repaint();
         }
         self.frame_trace.finish();
