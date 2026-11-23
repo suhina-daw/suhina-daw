@@ -2,9 +2,8 @@
 # "text"`, under the first scene that shows it. Written by
 # `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` (tests/cut.rs).
 suhina-studio devices: clipped "-60"
-suhina-studio devices: clipped "4"
+suhina-studio detail-beside: clipped "3.0 : 1   knee 6.0 dB"
 suhina-studio devices: clipped "Analog Clip"
-suhina-studio devices: clipped "Right"
 suhina-studio devices: clipped "Slope"
 suhina-studio quick-add: clipped "Test Sampler\nPlug-in instrument"
 suhina-studio quick-add: clipped "VST3"
@@ -18,7 +17,6 @@ suhina-studio device-group: shortened "Bass Mono Listen" as "Bass Mono Lis…"
 suhina-studio devices: shortened "Color Frequency" as "Color Freque…"
 suhina-studio project-dialog: shortened "Path to a .suhina, .als or .flp file, or a zip holding one" as "Path to a .suhina, .als or .flp …"
 suhina-studio agent-dialog: shortened "Quantize" as "Qu…"
-suhina-studio detail-beside: shortened "Side-Chain High-Pass" as "Side-Cha…"
 suhina-studio project-dialog: shortened "Templates in ; the folder is set in Settings › Projects and backups" as "Templates in ; the folder is set in Settings › Projects and …"
 suhina-studio settings-midi: shortened "no MIDI inputs here; the desktop app has them, and suhina-cli mcp with --audio" as "no MIDI inputs here; the desktop app has them, and suhina-cli mcp with --…"
 suhina-studio new-theme-dialog: wrapped "Copies the built-in control images into the theme's assets folder, with a rule for each in its theme.css, so you can edit them."

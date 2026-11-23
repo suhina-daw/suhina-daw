@@ -3,7 +3,7 @@ description: The built-in Compressor's panel - its display with the Curve, Activ
 read_when: compressor, compressor panel, compressor display, transfer curve, gain reduction meter, gain reduction history, activity view, sidechain display, key level, CompressorDisplay, compressor readouts
 type: spec
 status: current
-last_verified: 2026-11-19
+last_verified: 2026-11-23
 covers:
   - devices/compressor/src/panel.rs
   - crates/ui/src/detail/compressor_display.rs

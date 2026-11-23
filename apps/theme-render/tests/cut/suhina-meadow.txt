@@ -2,9 +2,8 @@
 # "text"`, under the first scene that shows it. Written by
 # `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` (tests/cut.rs).
 suhina-meadow devices: clipped "-60"
-suhina-meadow devices: clipped "4"
+suhina-meadow detail-beside: clipped "3.0 : 1   knee 6.0 dB"
 suhina-meadow devices: clipped "Analog Clip"
-suhina-meadow devices: clipped "Right"
 suhina-meadow devices: clipped "Slope"
 suhina-meadow quick-add: clipped "Test Sampler\nPlug-in instrument"
 suhina-meadow quick-add: clipped "VST3"
@@ -19,7 +18,6 @@ suhina-meadow device-group: shortened "Bass Mono Listen" as "Bass Mono Lis…"
 suhina-meadow devices: shortened "Color Frequency" as "Color Freque…"
 suhina-meadow project-dialog: shortened "Path to a .suhina, .als or .flp file, or a zip holding one" as "Path to a .suhina, .als or .flp …"
 suhina-meadow agent-dialog: shortened "Quantize" as "Qu…"
-suhina-meadow detail-beside: shortened "Side-Chain High-Pass" as "Side-Cha…"
 suhina-meadow project-dialog: shortened "Templates in ; the folder is set in Settings › Projects and backups" as "Templates in ; the folder is set in Settings › Projects and …"
 suhina-meadow settings-midi: shortened "no MIDI inputs here; the desktop app has them, and suhina-cli mcp with --audio" as "no MIDI inputs here; the desktop app has them, and suhina-cli mcp with --…"
 suhina-meadow new-theme-dialog: wrapped "Copies the built-in control images into the theme's assets folder, with a rule for each in its theme.css, so you can edit them."
