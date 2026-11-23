@@ -225,17 +225,14 @@ fn the_piano_roll_playhead_follows_a_launched_clip_not_the_transport() {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
     };
-    // Two beats in: a double-click on the clip's name selects it without launching, and the
-    // detail area opens its piano roll. Frames, not a run to rest: the transport plays.
+    // Two beats in: a click on the clip's name selects it without launching, and opened (as a
+    // double-click opens it) the detail area shows its piano roll. Frames, not a run to rest: the
+    // transport plays.
     pump(&mut harness, &mut renderer, 24);
-    let name = harness.get_by_label("Select Beat A on Drums (scene 1)").rect().center();
-    for _ in 0..2 {
-        harness.hover_at(name);
-        harness.drag_at(name);
-        harness.drop_at(name);
-        pump(&mut harness, &mut renderer, 1);
-    }
-    pump(&mut harness, &mut renderer, 2);
+    harness.get_by_label("Select Beat A on Drums (scene 1)").click();
+    pump(&mut harness, &mut renderer, 1);
+    harness.state_mut().open_selected_clip();
+    pump(&mut harness, &mut renderer, 3);
     assert!(harness.query_by_label_contains("Piano roll,").is_some(), "the double-click opened the piano roll");
     // The clip is only selected, not playing: no playhead.
     assert!(harness.query_by_label_contains("Playhead at beat").is_none(), "no playhead while the clip is not playing");

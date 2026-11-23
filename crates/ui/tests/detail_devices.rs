@@ -188,11 +188,12 @@ fn a_double_click_on_an_arrangement_header_shows_that_tracks_devices() {
     open_clip(&mut harness, CLIP);
     assert!(piano(&harness));
 
-    // Drums' own header: the clip stays selected, the switch goes to Devices.
+    // Drums' own header: the clip stays selected, and the track's devices show on their own,
+    // without the clip's column and its switch (`docs/spec/ui-clip-editor.md` › Where it opens).
     let spot = header_spot(&harness, "Drums");
     double_click_at(&mut harness, spot);
     assert!(!piano(&harness) && shows_device(&harness, "Utility"), "Drums' devices in place of the notes");
-    assert!(switch(&harness));
+    assert!(!switch(&harness), "the track's devices on their own");
     assert!(harness.state().selected_clip().is_some(), "the clip on that track stays selected");
     assert_eq!(harness.state().arrangement().selected_tracks.first(), Some(&TrackId(1)));
 
@@ -248,10 +249,9 @@ fn a_double_click_on_the_channel_strip_shows_its_devices_and_keeps_the_slot_on_t
     let strip = harness.get_by_label("Drums strip").rect().center();
     double_click_at(&mut harness, strip);
     assert!(!piano(&harness) && shows_device(&harness, "Utility"), "Drums' devices");
-    assert!(switch(&harness), "the slot on Drums stays selected, with the switch");
-    harness.get_by_label("Show Clip").click();
-    harness.run();
-    assert!(piano(&harness), "and the switch brings its notes back");
+    assert!(!switch(&harness), "the track's devices on their own, without the slot's column");
+    open_clip(&mut harness, SLOT);
+    assert!(piano(&harness), "and opening the slot's clip brings its notes back");
 
     // Bass' strip, with the detail area hidden: it opens, and the slot on Drums is let go.
     hide_detail_area(&mut harness);

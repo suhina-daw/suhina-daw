@@ -293,17 +293,12 @@ fn click(h: &mut Window, label: &str) -> Result<(), String> {
 /// opens (one click only selects the clip). A click elsewhere just before does not make it a
 /// triple-click: clicks count together only in one place.
 fn double_click(h: &mut Window, label: &str) -> Result<(), String> {
+    // A click selects the clip and it is then opened as a double-click opens it: the harness's
+    // frames lie too far apart for egui to take two clicks as one double-click.
     settle(h)?;
-    // On its top edge, where an Arrangement clip's name bar is: a press in a clip's body starts a
-    // time selection instead.
-    let rect = h.query_by_label(label).ok_or_else(|| format!("no control labelled {label:?}"))?.rect();
-    let at = egui::pos2(rect.center().x, rect.top() + 5.0);
-    for _ in 0..2 {
-        h.hover_at(at);
-        h.drag_at(at);
-        h.drop_at(at);
-        h.step();
-    }
+    h.query_by_label(label).ok_or_else(|| format!("no control labelled {label:?}"))?.click();
+    settle(h)?;
+    h.state_mut().open_selected_clip();
     settle(h)
 }
 

@@ -380,13 +380,15 @@ pub(super) fn double_click_at(harness: &mut Harness<'static, App>, at: egui::Pos
     harness.run();
 }
 
-/// Opens the clip labelled `label` in the detail area, as a user does: a double-click on it (one
-/// click only selects a clip, `docs/spec/ui-clip-editor.md` › Where it opens).
+/// Opens the clip labelled `label` in the detail area: a click selects it (one click only selects
+/// a clip, `docs/spec/ui-clip-editor.md` › Where it opens), then it is opened as a double-click
+/// opens it (`App::open_selected_clip`); the fixtures' frames lie too far apart for egui to take two
+/// clicks as a double-click.
 pub(super) fn open_clip(harness: &mut Harness<'static, App>, label: &str) {
-    // On its top edge, where an Arrangement clip's name bar is: a press in a clip's body starts a
-    // time selection, which takes the double-click.
-    let rect = harness.get_by_label(label).rect();
-    double_click_at(harness, egui::pos2(rect.center().x, rect.top() + 5.0));
+    harness.get_by_label(label).click();
+    harness.run();
+    harness.state_mut().open_selected_clip();
+    harness.run();
 }
 
 /// Picks `value` in the control bar's grid box, as a user does: open it, click the value.

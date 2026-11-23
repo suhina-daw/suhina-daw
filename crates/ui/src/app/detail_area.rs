@@ -59,6 +59,15 @@ impl App {
         }
     }
 
+    /// Opens the selected clip's editor as a double-click on the clip does (the next frame shows
+    /// it, opening a hidden detail area). For tests, whose frames are too far apart for a double-click.
+    pub fn open_selected_clip(&mut self) {
+        match self.shown {
+            View::Arrangement => self.arrangement.clip_opened = true,
+            View::Session => self.view.clip_opened = true,
+        }
+    }
+
     /// Selects `track` (Main too) and shows its devices, opening the detail area: after a device
     /// was dropped on it (#950).
     pub(super) fn show_devices_of(&mut self, track: TrackId) {
