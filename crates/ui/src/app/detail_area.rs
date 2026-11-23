@@ -421,8 +421,9 @@ impl App {
                 self.detail_height = detail_height_in(self.detail_height, area.height(), editor_needs, least);
                 // A track's devices, reached by clicking the track, are open at one height or
                 // closed; the height the user drags is the clip's, its editor's and the devices
-                // reached from it.
-                let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
+                // reached from it. The clip view without a clip ("No clip selected") keeps the
+                // clip's height, so the area does not jump as clips are picked.
+                let track_devices = !stacked && clip.is_none() && self.track_devices && !edits && !self.editor_in_chain;
                 if pulled {
                     // Above it only the edited track, or nothing.
                     let above = focus.map_or(0.0, |t| self.arrangement.focus_height(t));
@@ -1087,7 +1088,8 @@ impl App {
             } else {
                 let least = self.least_detail_height();
                 // A track's devices open at their one height, at the point a drag down closes them.
-                let track_devices = self.shown_clip().is_none();
+                let track_devices = self.track_devices
+                    || self.shown_clip().is_none() && self.detail_showing == detail_view::Showing::Devices;
                 let opens_at = if track_devices { self.device_row_height() } else { least };
                 if size >= opens_at / 2.0 {
                     self.show_editor();
