@@ -295,7 +295,15 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                 }
                 _ if property == "image" => {
                     let role = artwork_role(control_selector);
-                    if !skin::valid_role(&role) {
+                    if !skin::valid_role(&role)
+                        && value == "none"
+                        && suhina_style::selector::Selector::parse_list(selector).is_ok()
+                    {
+                        // `image: none` on elements that name no artwork of their own
+                        // (`button[kind="entry"]`, `#browser button`): the cascade reads it, and
+                        // those buttons take their CSS look (`skin::no_artwork`).
+                        Ok(())
+                    } else if !skin::valid_role(&role) {
                         Err("unsupported control selector")
                     } else if value == "none" {
                         theme.skin.assets.remove(&role);

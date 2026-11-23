@@ -271,7 +271,7 @@ pub const ELEMENTS: &[Element] = &[
     element("flexible-space", Drawn, "A gap in a bar that takes the room left over."),
     element("bar-item", Part, "An item of the status bar, the application bar or the piano roll's toolbar, by id; a menu's title on the menu bar is `bar-item[kind=\"menu\"]`, its `background-color` the fill behind it while `[checked]`, and the status bar's counts `[kind=\"status-counts\"]`.")
         .ids(Ids::Listed { prefix: "", names: BAR_ITEM_IDS })
-        .attributes(&["kind", "muted", "checked"]),
+        .attributes(&["kind", "checked"]),
     element("status-bar", Region, "The bar at the bottom of the window.").parts(&["bar-item"]),
     element("notice-bar", Region, "The strip over the views that asks about an opened project or names missing files."),
     element("workspace-panel", Region, "A panel of the window: the browser, the main view, the detail area.")
@@ -482,7 +482,7 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["kind"]),
     element("piano-tool", Control, "A button of the piano roll's toolbar, `[checked]` while chosen or on, `:disabled` while it cannot be used; `kind` is its id without `#` (`piano-fold`). Every one has the same look: no fill until hovered, and the `[checked]` fill while on. The toolbar's menus (Grid, Workflow, Ghosts) are `piano-tool[kind=\"menu\"]`, `[checked]` while open and `[muted]` while what they name is off.")
         .ids(Ids::Prefixed("piano-"))
-        .attributes(&["checked", "kind"])
+        .attributes(&["checked", "kind", "muted"])
         .artwork(&[
             own("piano.select"),
             own("piano.draw"),

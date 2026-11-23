@@ -1139,3 +1139,34 @@ fn the_inspector_clips_a_child_by_an_overflow_box_only_while_it_is_open() {
     assert_eq!(painted(1), Some(area), "cut by the open box: {boxes:?}");
     assert_eq!(painted(2), Some(wide), "past a closed box, whole");
 }
+
+/// Each built-in theme dims a push button that cannot be pressed now (Settings' Scan during a
+/// scan), and Suhina Sheet draws none of its button artwork on the buttons drawn as a menu's rows:
+/// the sheet decides both, and a theme's rule for every `button` hides the base sheet's (#1696).
+#[test]
+fn built_in_themes_dim_a_disabled_button_and_sheet_s_row_buttons_have_no_artwork() {
+    let themes = [
+        ("suhina-studio", include_str!("../../themes/suhina-studio/theme.css")),
+        ("suhina-light", include_str!("../../themes/suhina-light/theme.css")),
+        ("suhina-glass", include_str!("../../themes/suhina-glass/theme.css")),
+        ("suhina-sheet", include_str!("../../themes/suhina-sheet/theme.css")),
+        ("suhina-blocks", include_str!("../../themes/suhina-blocks/theme.css")),
+        ("suhina-meadow", include_str!("../../themes/suhina-meadow/theme.css")),
+    ];
+    for (name, css) in themes {
+        let (enabled, disabled) = frames(css, || {
+            (
+                BUTTON.attribute("kind", "push").pointer(false, false, false).enter().color(),
+                BUTTON.attribute("kind", "push").pointer(false, false, true).enter().color(),
+            )
+        });
+        assert_ne!(enabled, disabled, "{name}: a disabled push button is dimmed");
+    }
+    let sheet = include_str!("../../themes/suhina-sheet/theme.css");
+    let (entry, more, push) = frames(sheet, || {
+        let none = |kind| super::super::skin::no_artwork(&BUTTON.attribute("kind", kind).enter());
+        (none("entry"), none("more"), none("push"))
+    });
+    assert!(entry && more, "Sheet's row buttons take their CSS look");
+    assert!(!push, "Sheet's push buttons keep its artwork");
+}

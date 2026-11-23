@@ -175,7 +175,10 @@ pub(super) fn parameter_widget(
     match parameter.control {
         ParameterControl::Toggle => {
             let checked = *value >= 0.5;
-            let response = crate::kit::controls::check_box(ui, "", checked);
+            // The tick box in the middle of its cell (its mark is 6 points in from its left edge).
+            let cell = Rect::from_center_size(rect.center(), egui::Vec2::new(12.0, rect.height().min(18.0)));
+            let id = ui.scope_id().with("kit-check");
+            let response = widgets::check_box(ui, ui.painter(), cell, id, "", checked);
             // Only a click writes: a value automation plays between off and on stays as it is.
             if response.clicked() {
                 *value = f64::from(!checked);

@@ -2371,3 +2371,44 @@ fn sidechain_to_searches_the_keyed_devices() {
     assert_eq!(set.len(), 1, "{:?}", harness.state());
     assert_eq!((&set[0].params["track"], &set[0].params["source"]), (&json!(17), &json!(1)));
 }
+
+/// A device's on/off parameter draws its tick box in the middle of its cell, as the device's
+/// panel places it.
+#[test]
+fn a_toggle_parameter_s_tick_box_is_in_the_middle_of_its_cell() {
+    use super::parameters::parameter_widget;
+    use suhina_device_sdk::{ParameterControl, ParameterUi};
+    let parameter = GraphParameter {
+        text: String::new(),
+        default: 0.0,
+        control: ParameterControl::Toggle,
+        unit: String::new(),
+        id: "on".into(),
+        name: "On".into(),
+        min: 0.0,
+        max: 1.0,
+        value: 1.0,
+        ui: ParameterUi::default(),
+    };
+    let cell = egui::Rect::from_min_size(Pos2::new(40.0, 20.0), egui::Vec2::new(120.0, 30.0));
+    let ctx = egui::Context::default();
+    theme::install(&ctx);
+    let mut value = 1.0;
+    let mut hit = None;
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        hit = Some(parameter_widget(ui, &parameter, cell, None, &mut value).rect);
+    });
+    output.textures_delta.clear();
+    // The mark: the 11-point square drawn for it.
+    let mark = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if (rect.rect.width() - 11.0).abs() < 0.01 => Some(rect.rect),
+            _ => None,
+        })
+        .unwrap();
+    assert!((mark.center().x - cell.center().x).abs() < 0.5, "{mark:?} in {cell:?}");
+    assert!((mark.center().y - cell.center().y).abs() < 0.5, "{mark:?} in {cell:?}");
+    assert!(hit.unwrap().contains(mark.center()));
+}

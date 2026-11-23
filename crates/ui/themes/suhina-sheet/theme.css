@@ -174,8 +174,8 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   button[kind="preset"][checked]:hover { background-color: var(--control-hoverBackground); }
   button[kind="switch"][checked], button[kind="check"][checked] { background-color: var(--text-value); }
   /* The buttons drawn as a menu's rows (a choice in a list, a section's row, a grid's widths) and
-     the browser's "…": no fill until hovered, the chosen one lit (this theme's rule for every
-     `button` overrides the base sheet's: state them again). */
+     the browser's "…": no fill until hovered (and none of this theme's button artwork, said beside
+     it below the layer), the chosen one lit (this theme's rule for every `button` overrides the base sheet's: state them again). */
   button[kind="entry"], button[kind="more"] { background-color: transparent; }
   button[kind="entry"]:hover { background-color: var(--control-hoverBackground); }
   /* A dialog's main action keeps its accent edge. */
@@ -206,6 +206,8 @@ pan { appearance: knob; }
 /* Artwork. */
 icon[kind="arm"] { image: url("assets/arm.svg"); }
 button { image: url("assets/button.svg"); }
+/* The buttons drawn as a menu's rows and the browser's "…" take their CSS look alone. */
+button[kind="entry"], button[kind="more"] { image: none; }
 icon[kind="cue"] { image: url("assets/cue.svg"); }
 icon[kind="folder"] { image: url("assets/folder.svg"); }
 fader-cap { image: url("assets/fader.cap.svg"); }
