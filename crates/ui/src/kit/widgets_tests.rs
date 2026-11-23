@@ -405,8 +405,8 @@ fn a_lit_toggle_is_the_palette_s_where_no_rule_reaches_it() {
 
 /// A push face paints its fill, its words and its edge in the base sheet's colors where no theme's
 /// rule reaches it, and the colors of a rule for `button` where one does. Drawn as its CSS shape
-/// (`image: none`), so its fill is a rectangle's color; its edge is its border, 1px from the base
-/// sheet's `button[kind="push"]`.
+/// (`image: none`), so its fill is a rectangle's color, its corners rounded 4px by the base sheet's
+/// `button[kind="push"]`, with no edge unless a rule gives it a border.
 #[test]
 fn a_push_face_takes_the_buttons_rule_and_else_the_base_sheet() {
     let rgb = egui::Color32::from_rgb;
@@ -416,7 +416,7 @@ fn a_push_face_takes_the_buttons_rule_and_else_the_base_sheet() {
             ..Default::default()
         });
         let ctx = egui::Context::default();
-        let mut found = (Color32::TRANSPARENT, Color32::TRANSPARENT, None);
+        let mut found = (Color32::TRANSPARENT, Color32::TRANSPARENT, None, 0.0);
         for _ in 0..3 {
             let mut output = ctx.run_ui(Default::default(), |ui| {
                 let _frame = crate::kit::native_css::frame_with_motion(ui, false);
@@ -426,7 +426,10 @@ fn a_push_face_takes_the_buttons_rule_and_else_the_base_sheet() {
             });
             for shape in &output.shapes {
                 match &shape.shape {
-                    egui::Shape::Rect(rect) if rect.fill.a() > 0 => found.0 = rect.fill,
+                    egui::Shape::Rect(rect) if rect.fill.a() > 0 => {
+                        found.0 = rect.fill;
+                        found.3 = f32::from(rect.corner_radius.nw);
+                    }
                     egui::Shape::Rect(rect) if rect.stroke.width > 0.0 => found.2 = Some(rect.stroke),
                     egui::Shape::Text(text) => found.1 = text.fallback_color,
                     _ => {}
@@ -438,15 +441,13 @@ fn a_push_face_takes_the_buttons_rule_and_else_the_base_sheet() {
         found
     };
     let studio = crate::kit::theme::studio;
+    assert_eq!(colors("button { image: none; }"), (studio("control-background"), studio("text-primary"), None, 4.0));
     assert_eq!(
-        colors("button { image: none; }"),
-        (studio("control-background"), studio("text-primary"), Some(egui::Stroke::new(1.0, studio("border-strong"))))
+        colors(
+            "button { image: none; background-color: #102030; color: #405060; border-color: #708090; border-width: 1px; }"
+        ),
+        (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60), Some(egui::Stroke::new(1.0, rgb(0x70, 0x80, 0x90))), 4.0)
     );
-    assert_eq!(
-        colors("button { image: none; background-color: #102030; color: #405060; border-color: #708090; }"),
-        (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60), Some(egui::Stroke::new(1.0, rgb(0x70, 0x80, 0x90))))
-    );
-    assert_eq!(colors("button { image: none; border-width: 0; }").2, None, "no border, no edge");
 }
 
 /// A drop-down draws its arrow in `dropdown-arrow { color }` as its scope sees it, as the painted

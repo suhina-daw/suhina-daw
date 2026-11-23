@@ -79,8 +79,9 @@ separator[kind="row"] { color: var(--border); }
 button { background-color: var(--control-background); color: var(--text-primary); border-color: var(--border-strong); accent-color: var(--accent); }
 button:hover { background-color: var(--control-hoverBackground); }
 button:disabled { color: var(--text-hint); }
-/* A push button with words (Save, Cancel): a hairline edge; the dialog's main action's in the accent. */
-button[kind="push"] { border-width: 1px; }
+/* A push button with words (Save, Cancel): rounded corners and no edge; the dialog's main action
+   keeps a hairline edge in the accent. */
+button[kind="push"], button[kind="primary"], button[kind="secondary"] { border-radius: 4px; }
 button[kind="primary"] { border-width: 1px; border-color: var(--accent); }
 
 /* A toggle (mute, cue, a view's switch): off, a button like any other (dim words are for one

@@ -1833,7 +1833,8 @@ pub(crate) fn labeled_button(
 /// A push button's face in `rect` for `response`, with `text` on it: `button[kind="push"]`
 /// (`[kind="primary"]` for the dialog's main action, `[kind="secondary"]` for one that stands
 /// back), with `id` when it has one. Its artwork or CSS box as the sheet says ([`button_surface`]),
-/// its edge its CSS border (the base sheet's `border-width: 1px`), its words in its `color` (an
+/// rounded and edged as its CSS says (the base sheet: `border-radius: 4px`, an edge only on the
+/// primary one), its words in its `color` (an
 /// inverse label's on the primary one, an error label's on a danger one), small.
 pub(crate) fn push_face(
     ui: &Ui,
@@ -1875,7 +1876,8 @@ pub(crate) fn push_face_sized(
     } else {
         el.hover_fade(hovered, Look::background)
     };
-    let radius = el.radius_or(0.0);
+    // The sheet's radius, the base sheet's too (4px): square where nothing gives one.
+    let radius = el.style().map_or(0.0, |style| style.radius);
     button_surface(painter, rect, &el, response, primary, fill, radius);
     let ink = match push {
         Push::Primary => super::element::LABEL.attribute("kind", "inverse").look().color(),
