@@ -28,8 +28,8 @@ use suhina_device_sdk::ui::READOUT_IDS;
 use suhina_engine::model::TrackId;
 
 use crate::detail::detail_view::{DeviceAt, GraphParameter};
-use crate::kit::theme;
 use crate::kit::widgets::{Action, fixed};
+use crate::kit::{menu, theme};
 
 /// The level range the curve, the activity and the level meters span, in dB: bottom and top.
 const RANGE: (f64, f64) = (-60.0, 6.0);
@@ -372,14 +372,57 @@ pub(crate) fn show(
         let readout = |rect: Rect, text: String, color: Color32| {
             painter.text(Pos2::new(rect.center().x, rect.top() - 9.0), Align2::CENTER_CENTER, text, big.clone(), color);
         };
-        // A level meter's number is its peak, held as its peak line is (the bar shows the level
-        // now): red once past 0 dB.
-        let peak = |rect: Rect, db: f64| {
-            let held = peak_hold(ui.ctx(), rect, db);
-            readout(rect, level_text(held), if held > 0.0 { METER_HOT } else { colors.text_primary });
+        // A level meter's number shows what its right-click menu chose (the bar shows the level
+        // now): the highest peak until reset (the default; a click resets it too), the peak held
+        // a moment as the peak line is, or the level now. Red once past 0 dB.
+        let mode_key = id.with("readout-mode");
+        let mode = ui.ctx().data(|d| d.get_temp::<Readout>(mode_key)).unwrap_or_default();
+        let mut peak = |rect: Rect, db: f64, name: &str| {
+            let area = Rect::from_center_size(
+                Pos2::new(rect.center().x, rect.top() - READOUT_HEIGHT / 2.0),
+                Vec2::new(rect.width().max(40.0), READOUT_HEIGHT),
+            );
+            let key = id.with(("peak-max", name));
+            let response = ui.interact(area, key.with("reset"), Sense::click()).on_hover_text(format!(
+                "{name}: {}. Right-click to choose what it shows{}.",
+                mode.label().to_lowercase(),
+                if mode == Readout::Highest { "; click to reset" } else { "" }
+            ));
+            let mut reset = response.clicked() && mode == Readout::Highest;
+            let mut chosen = None;
+            egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(
+                |ui| {
+                    for option in Readout::ALL {
+                        if menu::item(ui, option.label(), mode == option).clicked() {
+                            chosen = Some(option);
+                            ui.close();
+                        }
+                    }
+                    menu::separator(ui);
+                    if menu::item(ui, "Reset peak", false).clicked() {
+                        reset = true;
+                        ui.close();
+                    }
+                },
+            );
+            if let Some(option) = chosen {
+                ui.ctx().data_mut(|d| d.insert_temp(mode_key, option));
+            }
+            let highest = ui.ctx().data_mut(|d| {
+                let before = if reset { RANGE.0 } else { d.get_temp::<f64>(key).unwrap_or(RANGE.0) };
+                let highest = before.max(db);
+                d.insert_temp(key, highest);
+                highest
+            });
+            let shown = match mode {
+                Readout::Highest => highest,
+                Readout::Held => peak_hold(ui.ctx(), rect, db),
+                Readout::Now => db,
+            };
+            readout(rect, level_text(shown), if shown > 0.0 { METER_HOT } else { colors.text_primary });
         };
-        peak(areas.input, live.detector);
-        peak(areas.output, live.output);
+        peak(areas.input, live.detector, if live.keyed { "Sidechain" } else { "In" });
+        peak(areas.output, live.output, "Out");
         readout(areas.reduction, fixed(-live.reduction, 1), METER_REDUCTION);
         row(areas.input, (if live.keyed { "Sidechain" } else { "In" }).to_string(), colors.text_secondary);
         row(areas.reduction, "GR".to_string(), colors.text_secondary);
@@ -560,6 +603,30 @@ const METER_UNLIT: f32 = 0.06;
 /// The corner radius of a meter's groove, and how much darker than the display it is.
 const METER_ROUND: f32 = 4.0;
 const METER_GROOVE: f32 = 0.4;
+/// What a level meter's number shows in the Meters view, chosen from its right-click menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Readout {
+    /// The highest peak since it was last reset.
+    #[default]
+    Highest,
+    /// The peak held a moment and then falling, as the peak line does.
+    Held,
+    /// The level now.
+    Now,
+}
+
+impl Readout {
+    const ALL: [Self; 3] = [Self::Highest, Self::Held, Self::Now];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Highest => "Highest peak",
+            Self::Held => "Peak, held a moment",
+            Self::Now => "Level now",
+        }
+    }
+}
+
 /// How long a meter's peak line holds, in seconds, and how fast it falls after, in dB a second.
 const PEAK_HOLD: f64 = 0.8;
 const PEAK_FALL: f64 = 12.0;
