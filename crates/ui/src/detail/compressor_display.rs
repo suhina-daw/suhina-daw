@@ -532,18 +532,19 @@ fn tabs(ui: &mut egui::Ui, display: Rect, id: egui::Id, values: &Values, palette
     let font = theme::ui_font(9.0);
     let mut right = display.right() - 4.0;
     if let Some(live) = values.live {
+        // In figures of one width, from the left of a room as wide as its widest usual value: "GR"
+        // and the badge beside it stay put, and only the number's last figures change.
+        let mono = theme::mono_font(9.0);
+        let room = painter.layout_no_wrap("GR -88.8 dB".to_string(), mono.clone(), palette.reduction).size().x;
         let galley =
-            painter.layout_no_wrap(format!("GR {} dB", fixed(-live.reduction, 1)), font.clone(), palette.reduction);
-        let width = galley.size().x;
+            painter.layout_no_wrap(format!("GR {} dB", fixed(-live.reduction, 1)), mono.clone(), palette.reduction);
+        let width = galley.size().x.max(room);
         painter.galley(
             Pos2::new(right - width, display.top() + (TABS_HEIGHT - galley.size().y) / 2.0 + 1.0),
             galley,
             palette.reduction,
         );
-        // The readout's room is as wide as its widest usual value, so the badge beside it stays put
-        // while the number changes.
-        let room = painter.layout_no_wrap("GR -88.8 dB".to_string(), font.clone(), palette.reduction).size().x;
-        right -= width.max(room) + 6.0;
+        right -= width + 6.0;
         if live.keyed {
             let rect = Rect::from_min_max(
                 Pos2::new(right - 24.0, display.top() + 4.0),
