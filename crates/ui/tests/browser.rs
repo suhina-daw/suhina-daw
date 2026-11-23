@@ -546,6 +546,54 @@ fn ctrl_f_searches_ctrl_b_hides_and_rows_never_take_the_keyboard() {
     let _ = std::fs::remove_dir_all(&folder);
 }
 
+/// Enter on a search result adds it and takes the keyboard from the search field, so Ctrl+Z
+/// undoes the add, not the typing; while typing, Ctrl+Z stays the field's own (#1357).
+#[test]
+fn adding_from_the_search_gives_ctrl_z_back_to_the_project() {
+    let (settings, folder) = (temp("search-undo-settings"), temp("search-undo"));
+    pack(&folder);
+    let mut harness = window(&settings, &folder);
+    // How many FM Synths the project holds, on whichever track the add puts one.
+    let synths = |harness: &Harness<'static, App>| {
+        let project = harness.state().session().unwrap().project();
+        project.channels.iter().flat_map(|c| &c.devices).filter(|d| d.name == "FM Synth").count()
+    };
+    let search_focused =
+        |harness: &Harness<'static, App>| harness.ctx.memory(|m| m.has_focus(egui::Id::unique("browser-search")));
+    let before = synths(&harness);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+    harness.run();
+    harness.input_mut().events.push(egui::Event::Text("fm synth".into()));
+    harness.run();
+    assert!(search_focused(&harness), "the field takes the typing");
+
+    // Ctrl+Z while typing is the field's: the project does not change and the field keeps the keys.
+    let project = harness.state().session().unwrap().project().clone();
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(harness.state().session().unwrap().project(), &project, "nothing in the project undone");
+    assert!(search_focused(&harness), "the field keeps the keyboard");
+
+    // egui's own undo of the typing goes by time, so what it left is not asserted: set it again.
+    harness.state_mut().browser.search = "fm synth".into();
+    harness.run();
+    harness.key_press(Key::ArrowDown);
+    harness.run();
+    assert_eq!(harness.state().browser.selected().first().map(|s| s.name.as_str()), Some("FM Synth"));
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(synths(&harness), before + 1, "Enter adds the instrument");
+    assert!(!search_focused(&harness), "adding lets go of the keyboard");
+
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(synths(&harness), before, "Ctrl+Z undoes the add");
+    assert_eq!(harness.state().browser.search, "fm synth", "and leaves the search as it was");
+    let _ = std::fs::remove_dir_all(&settings);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 /// Ctrl+F always searches everything: All is chosen and the search kept, selected, so typing
 /// replaces it; a kind chosen afterwards keeps the search and narrows it to that kind.
 #[test]

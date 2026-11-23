@@ -206,7 +206,10 @@ from disk).
 
 While the search field has the cursor: Up and Down move the selection in the results; Enter
 adds the selected item(s) to the selected track; Escape clears the search, a second Escape
-gives the keyboard back to the window.
+gives the keyboard back to the window. Adding with Enter, or pressing a row (to click it or to
+drag it onto a track), also gives the keyboard back, and the arrow keys go on moving through the
+list: the next Ctrl+Z undoes the change just made, not the search's text. While typing, Ctrl+Z
+stays the field's own.
 
 After a click on a row of the list (and until a click outside the browser), the arrow keys move
 through it before the window's shortcuts see them: Up and Down select the row above or below
