@@ -400,6 +400,7 @@ Formats `seconds`, `percent`, `decibels` and `balance` display milliseconds/seco
 fractional percentages, dB and centre/L/R respectively. Existing Dial definitions
 keep their previous readouts. The sampler uses these formats without changing
 the saved parameter units.
+Format `ratio` displays a ratio as `n:1` with the dial's decimals (the Compressor's Ratio).
 
 `SampleWaveform` is a host-backed source view for the native sampler. It has no
 parameter axis bindings. The host supplies decoded audio; start/end and loop
