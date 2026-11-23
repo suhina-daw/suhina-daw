@@ -85,6 +85,8 @@ pub struct KeyBox {
     pub name: String,
     pub tap: suhina_engine::model::TapPoint,
     pub gain_db: f64,
+    /// Whether the device reads it (`device.setKeyEnabled`): off, the source stays chosen.
+    pub enabled: bool,
 }
 
 pub use crate::interaction::device_at::DeviceAt;
@@ -893,7 +895,13 @@ fn key_box(project: &Project, device: &suhina_engine::model::Device) -> Option<K
     let channel = input.source.channel();
     let track = project.tracks.iter().find(|t| t.channel == Some(channel))?.id;
     let gain_db = if input.gain > 0.0 { 20.0 * input.gain.log10() } else { -150.0 };
-    Some(KeyBox { track, name: project.shown_track_name(track), tap: input.source.tap(), gain_db })
+    Some(KeyBox {
+        track,
+        name: project.shown_track_name(track),
+        tap: input.source.tap(),
+        gain_db,
+        enabled: input.enabled,
+    })
 }
 
 /// One device as the detail area shows it, at `path` on track `id`; a group with its branches.

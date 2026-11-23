@@ -522,11 +522,16 @@ fn device_value(d: &Device) -> Value {
                 .inputs
                 .iter()
                 .map(|i| {
-                    json!({
+                    let mut input = json!({
                         "port": i.port,
                         "source": { "channel": i.source.channel().0, "tap": i.source.tap().name() },
                         "gain": number(i.gain),
-                    })
+                    });
+                    // Written only when off: a key is read unless it says otherwise.
+                    if !i.enabled {
+                        input["enabled"] = Value::Bool(false);
+                    }
+                    input
                 })
                 .collect();
             map.insert("inputs".into(), Value::Array(inputs));
@@ -1574,6 +1579,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
             port: text(input, "port", &at)?,
             source: SignalPoint::Channel { channel: ChannelId(whole(source, "channel", &source_at)?), tap },
             gain: float_or(input, "gain", 1.0, &at)?,
+            enabled: flag(input, "enabled", true, &at)?,
         });
     }
     // An instrument whatever its plug-in is now, from version 15 (#1416); before it the
