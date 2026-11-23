@@ -527,7 +527,9 @@ impl App {
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
         // double-click takes it there and back.
         if splitter.is_positive() {
-            let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
+            // A track's devices open at one height or close; the clip view, with or without a clip
+            // ("No clip selected"), takes the height dragged.
+            let open_or_closed = !stacked && clip.is_none() && self.track_devices && !edits && !self.editor_in_chain;
             let divider = crate::kit::divider::show(
                 ui,
                 crate::kit::divider::Divider {
