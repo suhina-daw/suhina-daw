@@ -37,7 +37,10 @@ pub(crate) fn mcp(args: &[String]) -> Result<(), String> {
     }
     let workspace = Workspace::new(read_root.as_deref(), write_root.as_deref())?;
     let library = suhina_library::Library::new(suhina_plugins::library::settings_folder());
-    let mut server = SuhinaMcp::new(workspace).with_file_library(library);
+    // The library's root as the window and `render` use it, so library-relative device files
+    // load (#1368).
+    let mut server =
+        SuhinaMcp::new(workspace).with_file_library(library).with_library_base(suhina_session::documents_base());
     if audio {
         server = server
             .with_audio_output(std::sync::Arc::new(suhina_output::DeviceOutput::new()))

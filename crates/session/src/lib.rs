@@ -1337,6 +1337,12 @@ impl Session {
     /// the session and the importer's warnings. Any other file is refused by its extension.
     /// The NAM devices' files are read here, so the session is ready for the planned audio
     /// before a player is attached.
+    ///
+    /// The session has no library root ([`Session::set_library_base`]), so a device file the
+    /// project names relative to the library does not load. Callers that play or render the
+    /// project open it through `Projects` with the root set, as the window, `suhina-cli render`
+    /// and `suhina-cli mcp` do; the remaining caller, `suhina-cli plugins check`, only lists the
+    /// plug-ins a project uses and runs no device files (#1368).
     pub fn open(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
         Self::open_with_base(path, None)
     }

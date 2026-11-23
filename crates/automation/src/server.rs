@@ -232,6 +232,15 @@ impl SuhinaMcp {
         self
     }
 
+    /// The library's root (ADR 0036 › 4), handed to every project the server opens, so a device
+    /// file a project names relative to the library loads as it does in the window (#1368).
+    pub fn with_library_base(self, base: std::path::PathBuf) -> Self {
+        if let Some(mut projects) = self.own() {
+            projects.set_library_base(base);
+        }
+        self
+    }
+
     /// Plays each opened project on `system`'s devices, so transport and launcher commands are
     /// heard and the `audio.*` commands choose the output.
     pub fn with_audio_output(mut self, system: Arc<dyn AudioSystem>) -> Self {
@@ -896,6 +905,47 @@ mod attached_files_tests {
         let unsaved = Workspace::attached(None, &[dir.join("library")]);
         assert!(unsaved.writable("mix.wav", false).is_err());
         assert!(unsaved.readable(dir.join("library/drums/kick.wav").to_str().unwrap()).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod library_base_tests {
+    use super::*;
+
+    /// A project whose Amp Modeler runs the user's own model, saved by a session that knows the
+    /// library's root (so the file is stored relative to it), opens through the standalone server
+    /// with the model loaded and no note (#1368).
+    #[test]
+    fn the_standalone_server_loads_a_library_relative_model() {
+        let dir = std::env::temp_dir().join(format!("suhina-mcp-library-base-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let base = dir.join("library");
+        let model = base.join("Sounds/NAM/Amp models/Mine/X.nam");
+        std::fs::create_dir_all(model.parent().unwrap()).unwrap();
+        std::fs::write(&model, include_bytes!("../../../packs/nam-amp-modeler/Suhina Overdrive.nam")).unwrap();
+        let mut session = suhina_session::Session::new(suhina_session::blank_project());
+        session.set_library_base(base.clone());
+        session.execute("track.add", &json!({ "kind": "audio" })).unwrap();
+        session.execute("device.add", &json!({ "track": 1, "id": "nam-amp-modeler" })).unwrap();
+        session
+            .execute("device.setNamFile", &json!({ "track": 1, "device": 0, "path": model.display().to_string() }))
+            .unwrap();
+        session.save(&dir.join("song.suhina"), false).unwrap();
+
+        let server = SuhinaMcp::new(Workspace::new(Some(&dir), Some(&dir)).unwrap()).with_library_base(base.clone());
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let opened = runtime.block_on(server.project_open(Parameters(OpenParams { path: "song.suhina".into() })));
+        assert_ne!(opened.unwrap().is_error, Some(true), "the project opens");
+        let Host::Own(projects) = &server.host else { panic!("the standalone server has projects of its own") };
+        let mut projects = projects.lock().unwrap();
+        assert_eq!(projects.library_base(), Some(base.as_path()));
+        let session = projects.session_mut(None).unwrap();
+        let file = session.execute("device.file", &json!({ "track": 1, "device": 0 })).unwrap();
+        let path = file["file"].as_str().unwrap().to_owned();
+        assert!(!std::path::Path::new(&path).is_absolute(), "stored relative to the library: {path}");
+        assert!(session.device_asset(&path).is_some(), "the model runs");
+        assert_eq!(session.device_asset_note(&path), None, "with no note");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
