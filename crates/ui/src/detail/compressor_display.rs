@@ -345,6 +345,13 @@ pub(crate) fn show(
     if view == View::Meters {
         meter_scales(&painter, &areas, palette);
     }
+    // The meters move smoothly: they rise quickly and settle slowly, as meters with ballistics do.
+    let live = Live {
+        detector: smoothed(ui.ctx(), areas.input, live.detector, RANGE.0),
+        output: smoothed(ui.ctx(), areas.output, live.output, RANGE.0),
+        reduction: smoothed(ui.ctx(), areas.reduction, live.reduction, 0.0),
+        keyed: live.keyed,
+    };
     level_meter(&painter, areas.input, live.detector, palette);
     reduction_meter(&painter, areas.reduction, live.reduction, palette);
     level_meter(&painter, areas.output, live.output, palette);
@@ -383,7 +390,7 @@ pub(crate) fn show(
         readout(areas.input, level_text(live.detector), colors.text_primary);
         readout(areas.reduction, fixed(-live.reduction, 1), METER_REDUCTION);
         readout(areas.output, level_text(live.output), colors.text_primary);
-        row(areas.input, (if live.keyed { "Key" } else { "In" }).to_string(), colors.text_secondary);
+        row(areas.input, (if live.keyed { "Sidechain" } else { "In" }).to_string(), colors.text_secondary);
         row(areas.reduction, "GR".to_string(), colors.text_secondary);
         row(areas.output, "Out".to_string(), colors.text_secondary);
     } else {
@@ -540,8 +547,31 @@ const METER_UNLIT: f32 = 0.06;
 const METER_ROUND: f32 = 4.0;
 const METER_GROOVE: f32 = 0.4;
 /// How long a meter's peak line holds, in seconds, and how fast it falls after, in dB a second.
-const PEAK_HOLD: f64 = 2.0;
-const PEAK_FALL: f64 = 20.0;
+const PEAK_HOLD: f64 = 0.8;
+const PEAK_FALL: f64 = 12.0;
+/// How fast a meter follows its level: the time constants (seconds) of its rise and of its fall.
+const METER_RISE: f64 = 0.012;
+const METER_SETTLE: f64 = 0.18;
+
+/// `target` as the meter at `rect` shows it: moving toward it by the frame's time, quickly when
+/// it rises and slowly when it falls, from `floor` the first time. Drawn again until it settles.
+fn smoothed(ctx: &egui::Context, rect: Rect, target: f64, floor: f64) -> f64 {
+    let now = ctx.input(|i| i.time);
+    let id = egui::Id::unique(("compressor-meter-shown", rect.left().round() as i32, rect.top().round() as i32));
+    let shown = ctx.data_mut(|d| {
+        let (value, at) = d.get_temp::<(f64, f64)>(id).unwrap_or((floor, now));
+        let dt = (now - at).clamp(0.0, 0.25);
+        let tau = if target > value { METER_RISE } else { METER_SETTLE };
+        let next = value + (target - value) * (1.0 - (-dt / tau).exp());
+        let next = if next.is_finite() { next } else { target };
+        d.insert_temp(id, (next, now));
+        next
+    });
+    if (shown - target).abs() > 0.05 {
+        ctx.request_repaint();
+    }
+    shown
+}
 
 /// The level a meter's peak line shows: the highest `db` seen in the last [`PEAK_HOLD`] seconds,
 /// then falling [`PEAK_FALL`] dB a second. Kept by the meter's place on screen; the window is drawn
