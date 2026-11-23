@@ -96,6 +96,11 @@ fn a_grayed_entry_takes_no_click_and_an_enabled_one_does() {
     harness.run();
     assert!(harness.get_by_label("Paste").accesskit_node().is_disabled(), "grayed while it does nothing");
     assert!(!harness.get_by_label("Copy").accesskit_node().is_disabled());
+    assert_eq!(
+        harness.get_by_label("Copy").accesskit_node().data().keyboard_shortcut(),
+        Some("Ctrl+C"),
+        "read out with it"
+    );
     harness.get_by_label("Paste").click();
     harness.run();
     assert!(harness.state().is_empty(), "a grayed entry does nothing");
@@ -132,4 +137,20 @@ fn a_menu_is_as_wide_as_its_widest_entry_not_the_room_it_is_offered() {
     let entry = harness.get_by_label("Post-fader").rect().width();
     assert!(widest < 320.0, "the window offers 640: {widest}");
     assert!((entry - widest).abs() < 0.5, "every row across the menu: {entry} and {widest}");
+}
+
+#[test]
+fn a_toggle_reads_as_a_check_box() {
+    let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(640.0, 480.0)).build_ui(|ui| {
+        crate::kit::theme::install(ui.ctx());
+        ui.button("Open").context_menu(|ui| {
+            super::toggle(ui, "Legato", true);
+        });
+    });
+    harness.run();
+    harness.get_by_label("Open").click_secondary();
+    harness.run();
+    let legato = harness.get_by_label("Legato");
+    assert_eq!(legato.accesskit_node().role(), egui::accesskit::Role::CheckBox);
+    assert_eq!(legato.accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
 }

@@ -37,6 +37,18 @@ pub fn entry(ui: &mut Ui, text: &str, key: Option<&str>, enabled: bool) -> Respo
     let face = Face { shortcut: key, enabled, ..ENTRY };
     let response = row(ui, text, false, 0.0, face);
     response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
+    // A screen reader says the key after the name, as it does for any menu entry.
+    if let Some(key) = key {
+        ui.ctx().accesskit_node_builder(response.id, |node| node.set_keyboard_shortcut(key));
+    }
+    response
+}
+
+/// An entry that turns something on or off (a check box in a menu), checked while `on`: the
+/// response, which the caller reads (`clicked()` turns it the other way).
+pub fn toggle(ui: &mut Ui, text: &str, on: bool) -> Response {
+    let response = row(ui, text, on, 0.0, ENTRY);
+    response.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, on, text));
     response
 }
 
@@ -87,7 +99,8 @@ pub fn hint(ui: &mut Ui, text: &str) {
 /// room the menu has), taking no click.
 pub fn note(ui: &mut Ui, text: &str, width: Option<f32>) {
     let ink = LABEL.attribute("kind", "hint").look().color();
-    let width = width.unwrap_or_else(|| across(ui, 0.0));
+    // While egui measures the menu, the room it offers: a note given no width wraps at most there.
+    let width = width.unwrap_or_else(|| if ui.is_sizing_pass() { ui.available_width() } else { across(ui, 0.0) });
     let wrap = (width - 2.0 * INSET).max(1.0);
     let galley = ui.painter().layout(text.to_owned(), theme::ui_font(theme::TEXT_SMALL), ink, wrap);
     let size = Vec2::new(width, galley.size().y.max(theme::ROW));

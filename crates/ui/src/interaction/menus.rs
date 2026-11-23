@@ -328,7 +328,10 @@ pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actio
     }
     menu::separator(ui);
     // Two lines' room whichever is explained, so the menu keeps its height as the pointer moves.
-    ui.allocate_ui(egui::vec2(280.0, 30.0), |ui| menu::note(ui, midi_monitor_explanation(explained), Some(280.0)));
+    let (room, _) = ui.allocate_exact_size(egui::vec2(280.0, 30.0), egui::Sense::hover());
+    ui.scope_builder(egui::UiBuilder::new().max_rect(room), |ui| {
+        menu::note(ui, midi_monitor_explanation(explained), Some(280.0));
+    });
 }
 
 /// The choices of a track's MIDI input (ADR 0017): every port, each port there is (and the one
@@ -376,7 +379,6 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     let track = menu.track.0;
     // A compact menu: as wide as its widest item needs, never the window's width.
     ui.set_min_width(180.0);
-    ui.set_max_width(220.0);
     ui.spacing_mut().item_spacing.y = 2.0;
     ui.spacing_mut().button_padding.y = 2.0;
 
@@ -668,7 +670,9 @@ pub fn clip_menu(
         field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename clip {}", name)));
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         // An empty draft clears the name: the command takes it.
-        if (enter || menu::entry(ui, "Rename", None, true).clicked()) && draft.trim() != name.trim() {
+        // Drawn every frame, Enter or not, so the rows under it keep their place.
+        let clicked = menu::entry(ui, "Rename", None, true).clicked();
+        if (enter || clicked) && draft.trim() != name.trim() {
             actions.push(Action::new("clip.rename", json!({ "clip": clip.0, "name": draft.trim() })));
             ui.ctx().data_mut(|d| d.remove::<String>(id));
             ui.close();
@@ -1016,7 +1020,9 @@ pub fn device_menu(
         ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
         field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Preset name for {name}")));
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        if (enter || menu::entry(ui, "Save as preset…", None, true).clicked()) && !draft.trim().is_empty() {
+        // Drawn every frame, Enter or not, so the rows under it keep their place.
+        let clicked = menu::entry(ui, "Save as preset…", None, true).clicked();
+        if (enter || clicked) && !draft.trim().is_empty() {
             actions.push(Action::new(
                 "device.savePreset",
                 json!({ "track": track.0, "device": device, "name": draft.trim() }),
@@ -1085,7 +1091,9 @@ pub fn slot_menu(
         field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename clip {}", name)));
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         // An empty draft clears the name: the command takes it.
-        if (enter || menu::entry(ui, "Rename", None, true).clicked()) && draft.trim() != name.trim() {
+        // Drawn every frame, Enter or not, so the rows under it keep their place.
+        let clicked = menu::entry(ui, "Rename", None, true).clicked();
+        if (enter || clicked) && draft.trim() != name.trim() {
             actions.push(Action::new("clip.rename", json!({ "track": track.0, "scene": scene, "name": draft.trim() })));
             ui.ctx().data_mut(|d| d.remove::<String>(id));
             ui.close();
@@ -1109,6 +1117,48 @@ pub fn slot_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A track's menu is as wide as its widest row, a long MIDI input's here, and every row
+    /// reaches its right edge: none stops short at a width of its own.
+    #[test]
+    fn every_row_of_a_track_menu_reaches_its_edge() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+        let input = MidiInput {
+            port: MidiPort::Named("A very long name for a MIDI keyboard port".into()),
+            ..MidiInput::default()
+        };
+        let ports = vec!["A very long name for a MIDI keyboard port".to_string()];
+        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(900.0, 700.0)).build_ui_state(
+            |ui, actions: &mut Vec<Action>| {
+                crate::kit::theme::install(ui.ctx());
+                let menu = TrackMenu {
+                    track: TrackId(1),
+                    name: "Keys",
+                    color: Rgb(200, 100, 50),
+                    is_group: false,
+                    is_return: false,
+                    selection: &[],
+                    into: &[],
+                    out: None,
+                    midi: Some((&input, &ports)),
+                    audio: None,
+                    tracks_copied: false,
+                    key_readers: &[],
+                };
+                ui.button("Keys").context_menu(|ui| track_menu(ui, &menu, actions));
+            },
+            Vec::new(),
+        );
+        harness.run();
+        harness.get_by_label("Keys").click_secondary();
+        harness.run();
+        harness.run();
+        let long = harness.get_by_label_contains("MIDI input: A very long name").rect();
+        let delete = harness.get_by_label("Delete track").rect();
+        assert!(long.width() > 220.0, "wider than the old cap: {}", long.width());
+        assert!((delete.right() - long.right()).abs() < 0.5, "{delete:?} reaches {long:?}");
+    }
 
     /// The strip's dropdown and the track's menu both offer the same list, pairs included: with
     /// no device open, the first eight channels, mono and one pair each, are there to set a

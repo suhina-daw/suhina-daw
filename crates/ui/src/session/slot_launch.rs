@@ -108,7 +108,7 @@ pub fn launch_menu(ui: &mut Ui, track: TrackId, scene: usize, launch: LaunchSett
         }
     });
     // Checked while on; a click turns it the other way.
-    if menu::item(ui, "Legato", launch.legato).clicked() {
+    if menu::toggle(ui, "Legato", launch.legato).clicked() {
         actions.push(Action::new("clip.setLegato", slot(json!({ "on": !launch.legato }))));
         ui.close();
     }
