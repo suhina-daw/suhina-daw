@@ -1057,7 +1057,9 @@ fn sample_recording(ui: &mut egui::Ui, bounds: Rect, track: TrackId, device: usi
     let text = format!("Input: {}", crate::interaction::menus::audio_input_text(&input));
     let id = sample_source_id(track, device).with("input-menu");
     let response = crate::kit::widgets::button_area(ui, menu, id, &text);
-    crate::kit::widgets::subtle_dropdown(ui, ui.painter(), menu, &response, &text, Color32::TRANSPARENT);
+    // Its ink is picked against the device panel's surface it sits on.
+    let surface = crate::kit::style_class::surface_or(colors().panel_background);
+    crate::kit::widgets::subtle_dropdown(ui, ui.painter(), menu, &response, &text, surface);
     egui::Popup::menu(&response).show(|ui| {
         if menu::toggle(ui, "Arm track", armed).clicked() {
             actions.push(Action::new("track.setArm", json!({"track":track.0, "armed":!armed})));
@@ -2871,8 +2873,6 @@ pub(crate) fn show(
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
                 let mut picked = None;
-                // The standard popup frame, as every other dropdown's; `popup` styles its rows and
-                // `button[checked]` the chosen one (#1239).
                 // The kit's compact menu rows (`kit::menu`), styled as every menu's are.
                 popup.show(|ui| {
                     ui.spacing_mut().item_spacing.y = 0.;
@@ -2932,7 +2932,7 @@ pub(crate) fn show(
                                     points,
                                     Stroke::new(
                                         1.,
-                                        if selected { ui.visuals().selection.stroke.color } else { colors().accent },
+                                        if selected { menu::chosen_ink(&response) } else { colors().accent },
                                     ),
                                 ));
                                 response.clicked()

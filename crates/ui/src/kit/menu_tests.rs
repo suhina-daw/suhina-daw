@@ -179,6 +179,9 @@ fn built() -> Harness<'static, (Vec<String>, f32)> {
                         picked.push("4".to_string());
                     }
                 });
+                super::Entry::new("Source").marked(true).submenu(ui, |ui| {
+                    super::item(ui, "Clip", true);
+                });
                 super::slider(ui, "Depth", level, 0.0..=100.0, 1.0, |v| format!("{v:.0} %"));
             });
         },
@@ -198,6 +201,8 @@ fn a_built_entry_reads_its_name_its_state_and_its_key() {
     let snap = harness.get_by_label("Snap");
     assert_eq!(snap.accesskit_node().role(), egui::accesskit::Role::CheckBox);
     assert_eq!(snap.accesskit_node().data().keyboard_shortcut(), Some("Ctrl+4"));
+    let source = harness.get_by_label("Source").accesskit_node();
+    assert_eq!(source.toggled(), Some(egui::accesskit::Toggled::True), "a marked submenu reads as chosen");
     let mode = harness.get_by_label("Mode");
     assert_eq!(mode.accesskit_node().data().keyboard_shortcut(), None, "a value is not a key");
     harness.get_by_label("Sound: Wood").click();
@@ -264,4 +269,27 @@ fn a_slider_in_a_menu_moves_and_keeps_the_menu_narrow() {
     harness.key_press(egui::Key::ArrowRight);
     harness.run();
     assert_eq!(*harness.state(), 51.0, "the click took the keys and the arrow moved it a step");
+}
+
+#[test]
+fn a_slider_in_a_menu_lands_on_whole_steps() {
+    let mut harness = slider();
+    harness.run();
+    harness.get_by_label("Open").click_secondary();
+    harness.run();
+    harness.run();
+    // The rail's handle runs 4 points in from each end; a click 37.3 % along it.
+    let rail = harness.get_by_label_contains("Depth").rect();
+    let at = egui::pos2(rail.left() + 4.0 + 0.373 * (rail.width() - 8.0), rail.center().y);
+    harness.event(egui::Event::PointerMoved(at));
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run();
+    assert_eq!(*harness.state(), 37.0, "the click set the step it shows");
 }

@@ -70,8 +70,9 @@ finishing, the checks of [`working-on-suhina`](../working-on-suhina/SKILL.md) ap
   `submenu`, `heading`, `hint`, `note`, `separator`, `slider`) inside the menu egui opens; a row
   that needs more (a grayed choice, a key beside a check box, a value at its right end, a name
   read out apart from its words, a compact row, a submenu a click inside keeps open) is built
-  with `menu::Entry`. Every menu is drawn this way (`interaction/menus.rs` is the example); a
-  menu's button is a `widgets::button_area` with a dropdown face, not egui's `menu_button`. A
+  with `menu::Entry`. A new or changed menu is drawn this way (`interaction/menus.rs` is the
+  example); the menu bar and a few view menus still use egui's rows until they move (#1487 › P8).
+  A menu's button is a `widgets::button_area` with a dropdown face, not egui's `menu_button`. A
   panel laid out in egui's flow (a column
   of rows, as the track color window) takes `kit::controls` (`button`, `check_box`, `options`,
   `disclosure`, `slider`, `heading`, `note`, `text`, `separator`); a view with a fixed geometry

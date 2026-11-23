@@ -176,8 +176,15 @@ impl<'a> Entry<'a> {
     /// end. The row's response.
     pub fn submenu(self, ui: &mut Ui, content: impl FnOnce(&mut Ui)) -> Response {
         let response = row(ui, self.text, false, ARROW, self.face(ui));
-        let (name, enabled) = (self.name.unwrap_or(self.text), self.enabled);
-        response.widget_info(|| WidgetInfo::labeled(Role::MenuItem, enabled, name));
+        let (name, enabled, marked) = (self.name.unwrap_or(self.text), self.enabled, self.marked);
+        // A marked submenu reads as selected (a chosen source behind it), as its dot shows.
+        response.widget_info(|| {
+            if marked {
+                WidgetInfo::selected(Role::MenuItem, enabled, true, name)
+            } else {
+                WidgetInfo::labeled(Role::MenuItem, enabled, name)
+            }
+        });
         let mut ink = BUTTON.attribute("kind", "entry").response(&response).look().color();
         if !enabled {
             ink = crate::kit::element::hint_ink();
@@ -244,7 +251,8 @@ pub fn note(ui: &mut Ui, text: &str, width: Option<f32>) {
 
 /// A slider in a menu ([`controls::slider`]): `name` at its left, `shown(value)` at its right.
 /// [`SLIDER`] wide while egui measures the menu, so it does not grow the menu to all the room
-/// around it, and across the menu after. The response, `changed()` when `value` changed.
+/// around it, and across the menu after. It moves in whole `step`s from the range's start. The
+/// response, `changed()` when `value` changed.
 pub fn slider(
     ui: &mut Ui,
     name: &str,
@@ -254,7 +262,27 @@ pub fn slider(
     shown: impl Fn(f32) -> String,
 ) -> Response {
     let width = across(ui, SLIDER);
-    ui.allocate_ui(Vec2::new(width, theme::ROW), |ui| controls::slider(ui, name, value, range, step, shown)).inner
+    let (start, low, high) = (*value, *range.start(), *range.end());
+    let mut response =
+        ui.allocate_ui(Vec2::new(width, theme::ROW), |ui| controls::slider(ui, name, value, range, step, shown)).inner;
+    // A menu's slider moves in whole steps, so a value it shows is the value it sets, and a held
+    // drag between two steps changes nothing (each change may put something in again).
+    if response.changed() && step > 0.0 {
+        let snap = |v: f32| (low + ((v - low) / step).round() * step).clamp(low, high);
+        *value = snap(*value);
+        if *value == snap(start) {
+            *value = start;
+            response.flags.set(egui::response::Flags::CHANGED, false);
+        }
+    }
+    response
+}
+
+/// The ink of the chosen entry's words, on its chosen fill: for what a caller draws on a chosen
+/// row besides them (a waveform's picture).
+pub fn chosen_ink(response: &Response) -> egui::Color32 {
+    let look = BUTTON.attribute("kind", "entry").response(response).attr(Checked, true).look();
+    look.own_color_or(theme::text_on(look.background()))
 }
 
 /// How wide a slider in a menu is at least.
@@ -317,7 +345,7 @@ fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32, face: Face<'_>) -> Re
         let disabled = BUTTON.attribute("kind", "entry").pointer(false, false, true).look().color();
         if disabled == look.color() { hint } else { disabled }
     } else if checked {
-        look.own_color_or(theme::text_on(look.background()))
+        chosen_ink(&response)
     } else {
         look.color()
     };
