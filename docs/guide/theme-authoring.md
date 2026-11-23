@@ -982,7 +982,9 @@ fields in Settings, in dialogs (Export audio, Save, the loading and closing dial
 page, in the browser, the sample map, the Plug-in manager and in popups. A tick box is
 `button[kind="check"]` with its words `label[kind="check"]`, a choice in a list (Settings' help,
 the sample map's layouts and its list, quick add's filters, a device's radio parameter)
-`button[kind="entry"]`, `[checked]` for the chosen one, and a button that removes or discards
+`button[kind="entry"]`, `[checked]` for the chosen one (drawn as a menu's rows are: a row of a
+menu or of a drop-down's list is `list-row[kind="menu"]`, `[selected]` for the chosen one, which a
+rule for every `button` does not reach), and a button that removes or discards
 something has its words in `label[kind="error"]`'s `color`. Scope them to one place with its element: `settings button`, `dialog text-input`.
 `border-width: 0` removes egui's own outline. egui draws one outline all round, so sides of
 different widths (`border-width: 0 0 2px`) give these widgets only the `border-color`; the

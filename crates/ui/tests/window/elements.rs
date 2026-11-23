@@ -2206,10 +2206,10 @@ fn a_rule_for_every_button_reaches_a_device_s_on_switch() {
 }
 
 /// The menu bar's menus are drawn with the kit's rows, so a rule scoped to the bar reaches their
-/// entries (`menu-bar button[kind="entry"]`).
+/// entries (`menu-bar list-row[kind="menu"]`).
 #[test]
 fn a_rule_scoped_to_the_menu_bar_reaches_its_entries() {
-    let css = format!("menu-bar button[kind=\"entry\"]:hover {{ background-color: {}; }}", hex(odd(53)));
+    let css = format!("menu-bar list-row[kind=\"menu\"]:hover {{ background-color: {}; }}", hex(odd(53)));
     let mut window = window(demo_app());
     suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
     window.run_steps(4);

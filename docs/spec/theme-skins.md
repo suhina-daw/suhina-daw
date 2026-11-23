@@ -530,7 +530,7 @@ page's (ADR 0031, amendment of 2026-11-15).
   `device-control[kind]`, `slider[kind="parameter"]`), a device canvas's colors
   (`device-canvas` and its kinds), a device group's branches (`device-row[kind="branch"]`), the
   panels' fields, buttons, switches and lists (`value[kind="field"]`, `button[kind="panel"]`,
-  `[kind="toggle"]`, `"entry"`, `dropdown[kind="panel"]`, `editor-tab[kind]`); the piano roll's grid,
+  `[kind="toggle"]`, `"entry"`, their lists' rows `list-row[kind="menu"]`, `dropdown[kind="panel"]`, `editor-tab[kind]`); the piano roll's grid,
   rows, notes, velocities, slices, markers, ruler, loop bar, keys, strips, ranges and tools
   (`piano-grid`, `piano-row`, `piano-note[kind]`, `velocity`, `piano-slice`, `start-marker`,
   `playhead`, `ruler-number`, `loop-region[kind="clip"]`, `piano-key`, `piano-scale-strip`,
@@ -548,7 +548,8 @@ page's (ADR 0031, amendment of 2026-11-15).
   `"browser"`), Settings' edge and its pages' list (`settings`, `settings-nav[checked]`), the start
   page's tabs (`editor-tab[kind="start"]`), a dialog's title row, the rows of a dialog's list, the
   Plug-in manager's table, the missing files panel's table and the color picker
-  (`list-row[kind="dialog"]`, `"plugin"`, `"missing-file"`, `"picker"`),
+  (`list-row[kind="dialog"]`, `"plugin"`, `"missing-file"`, `"picker"`), every menu's rows
+  (`list-row[kind="menu"]`, `[selected]` for the chosen one),
   the swatches, the theme picker's cards, the drag pill (`tooltip`), the buttons that add a track
   (`add-track`), the buttons of Settings and the dialogs (`button[kind="secondary"]`, `"check"`,
   `"option"`, `"preset"`, `"switch"`, lit with `[checked]`) and egui's own widgets (`widget`, below).

@@ -605,29 +605,10 @@ pub(super) fn drop_down(
             };
             let (row, item) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::click());
             item.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, *selected, *label));
-            let lit = *selected || item.hovered() || lit_entry == Some(index);
-            // A row is a `button[kind="entry"]`, `[checked]` while chosen: as egui's own lists in a
-            // menu are, lit with the pointer's fill and the chosen one's.
-            let entry = crate::kit::element::BUTTON.attribute("kind", "entry");
-            let look = entry.response(&item).attr(crate::kit::element::Checked, *selected).look();
-            if lit {
-                let fill = if *selected {
-                    look.background()
-                } else {
-                    crate::kit::element::BUTTON
-                        .attribute("kind", "entry")
-                        .pointer(true, false, false)
-                        .look()
-                        .background()
-                };
-                let el = crate::kit::element::BUTTON
-                    .attribute("kind", "entry")
-                    .response(&item)
-                    .attr(crate::kit::element::Checked, *selected)
-                    .enter();
-                widgets::button_surface(ui.painter(), row, &el, &item, *selected, fill, 2.0);
-            }
-            let ink = if *selected { look.own_color_or(theme::text_on(look.background())) } else { look.color() };
+            // A row is a `list-row[kind="menu"]`, `[selected]` while chosen, as a menu's rows are;
+            // the one the keys are on is lit as the one under the pointer is.
+            let hot = item.hovered() || lit_entry == Some(index);
+            let ink = crate::kit::menu::row_face(ui.painter(), row, *selected, hot, true);
             let inset = row.shrink2(Vec2::new(6.0, 0.0));
             widgets::text_in(ui.painter(), inset, Align2::LEFT_CENTER, label, theme::ui_font(theme::TEXT_SMALL), ink);
             if item.clicked() {

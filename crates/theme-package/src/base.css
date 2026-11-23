@@ -379,9 +379,10 @@ fader-rail[kind="clip"] { background-color: var(--control-background); }
    and its field, the MIDI tools' tabs. */
 button[kind="panel"] { color: var(--text-primary); border-color: var(--border); border-width: 1px; }
 button[kind="panel"]:disabled { background-color: var(--panel-background); }
-button[kind="entry"] { background-color: transparent; color: var(--text-primary); }
-button[kind="entry"]:hover { background-color: var(--control-hoverBackground); }
-button[kind="entry"][checked] { background-color: var(--control-selectedBackground); }
+list-row[kind="menu"], button[kind="entry"] { background-color: transparent; color: var(--text-primary); }
+list-row[kind="menu"]:hover, button[kind="entry"]:hover { background-color: var(--control-hoverBackground); }
+list-row[kind="menu"][selected], button[kind="entry"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
+list-row[kind="menu"]:disabled, button[kind="entry"]:disabled { color: var(--text-hint); }
 dropdown[kind="panel"] { background-color: var(--control-background); color: var(--text-value); }
 dropdown[kind="panel"]:hover { background-color: var(--control-hoverBackground); }
 dropdown-arrow[kind="panel"] { color: var(--text-secondary); }
