@@ -2894,6 +2894,29 @@ impl App {
     /// A device clicked in a strip's list or the chain, on the track or inside a group: picked
     /// alone, added or taken out with Ctrl (Cmd), or with Shift the run from the device picked
     /// last, in the same chain or branch of the same track.
+    /// A press anywhere in a device panel, its knobs and buttons included: the panel's device
+    /// takes the edit keys (Ctrl+D, Delete, Ctrl+C), as a click on its background does, so a
+    /// device the user is working on is the one they act on (#1355). A device not picked yet is
+    /// picked alone; one already among the picks (a group holding one included) keeps them. With
+    /// Ctrl or Shift held, the click that follows picks, adding or ranging as it does, and a
+    /// press on a control alone changes nothing.
+    fn press_device(
+        &mut self,
+        track: TrackId,
+        at: detail_view::DeviceAt,
+        picks: &[(TrackId, detail_view::DeviceAt)],
+        modifiers: bool,
+    ) {
+        let picked = picks.iter().any(|(t, p)| *t == track && p.0.starts_with(&at.0));
+        if picked {
+            self.device_focus = true;
+            self.arrangement.automation.let_go();
+        } else if !modifiers {
+            self.pick_device(track, at, false, false);
+            self.pending_device_remove = None;
+        }
+    }
+
     fn pick_device(&mut self, track: TrackId, at: detail_view::DeviceAt, add: bool, run: bool) {
         let mut picks = self.device_picks();
         let same_track = picks.first().is_some_and(|(t, _)| *t == track);

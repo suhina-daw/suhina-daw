@@ -107,7 +107,12 @@ pub fn show_row(
             } else {
                 Picked::default()
             };
-            return Picked { showing: picked, clicked: chain_picked.clicked, content_height: None };
+            return Picked {
+                showing: picked,
+                clicked: chain_picked.clicked,
+                pressed: chain_picked.pressed,
+                content_height: None,
+            };
         }
     }
     Picked::default()
@@ -272,6 +277,9 @@ fn chain_row(
         // Keep a device an earlier iteration clicked: the later panels were not clicked.
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
+        }
+        if pressed_in(ui, rect.intersect(area)) {
+            picked.pressed = Some((chain.track, device.at.clone()));
         }
         if let Some(editor) = editor {
             let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
@@ -564,7 +572,12 @@ pub fn show_stack(
             } else {
                 Picked::default()
             };
-            return Picked { showing: picked, clicked: chain_picked.clicked, content_height: None };
+            return Picked {
+                showing: picked,
+                clicked: chain_picked.clicked,
+                pressed: chain_picked.pressed,
+                content_height: None,
+            };
         }
     }
     Picked::default()
@@ -701,6 +714,9 @@ fn chain_stack_in(
             if clicked {
                 picked.clicked = Some((chain.track, device.at.clone()));
             }
+            if pressed_in(ui, rect.intersect(visible)) {
+                picked.pressed = Some((chain.track, device.at.clone()));
+            }
             continue;
         }
         let editor = device.plugin.as_ref().and_then(|p| p.editor_size(scale)).filter(|_| device.at.top());
@@ -728,6 +744,10 @@ fn chain_stack_in(
         // Keep a device an earlier iteration clicked: the later panels were not clicked.
         if clicked {
             picked.clicked = Some((chain.track, device.at.clone()));
+        }
+        // A panel inside a group's comes after the group's: the innermost pressed one wins.
+        if pressed_in(ui, rect.intersect(visible)) {
+            picked.pressed = Some((chain.track, device.at.clone()));
         }
         if let Some(editor) = editor {
             let origin = Pos2::new(content.left() + PAD, content.top() + EDITOR_TOP);
@@ -997,6 +1017,12 @@ pub(crate) fn device_switch(
 /// One device: a header with its on switch and name, then its parameters, one per row. Returns
 /// whether it was clicked, and its content box (inside its border and padding, #1336), where a
 /// plug-in's embedded editor goes.
+/// Whether the primary button went down this frame inside `rect` (a device panel's, as shown),
+/// whatever control under it takes the press.
+fn pressed_in(ui: &Ui, rect: Rect) -> bool {
+    ui.input(|i| i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|p| rect.contains(p)))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn device_panel(
     ui: &mut Ui,
