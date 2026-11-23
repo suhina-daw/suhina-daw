@@ -1737,12 +1737,12 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
     }
 }
 
-/// A plain push button's face: `button` with `id` (none: any button), entered with its `response`.
-/// Its fill fades from its `background-color` to the one it has under the pointer; its edge is its
-/// `border-color`; its label its `color`.
+/// A plain push button's face: `button[kind="push"]` with `id` (none: any button), entered with its
+/// `response`. Its fill fades from its `background-color` to the one it has under the pointer; its
+/// edge is its border (the base sheet's `border-width: 1px`); its label its `color`.
 pub(crate) fn push_button(ui: &Ui, painter: &Painter, rect: Rect, id: &str, response: &Response, label: &str) {
     let hover = hover(ui, response);
-    let el = BUTTON.id(id).response(response).enter();
+    let el = BUTTON.id(id).attribute("kind", "push").response(response).enter();
     push_face(painter, rect, &el, hover, label);
 }
 
@@ -1750,16 +1750,13 @@ pub(crate) fn push_button(ui: &Ui, painter: &Painter, rect: Rect, id: &str, resp
 pub(crate) fn push_face(painter: &Painter, rect: Rect, el: &Entered, hover: f32, label: &str) {
     let fill = el.hover_fade(hover, Look::background);
     el.paint_with(painter, rect, super::element::Native { radius: 0.0, fill });
-    if !el.style().is_some_and(|s| s.authored.border || s.authored.border_width) {
-        painter.rect_stroke(rect, 0.0, theme::hairline(el.border()), egui::StrokeKind::Inside);
-    }
     text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(theme::TEXT_SMALL), el.color());
 }
 
-/// A button the view paints itself, in a flat fill: `button` entered with its `response` (of its
-/// `kind`, when it has one: `button[kind="secondary"]` for one that stands back), its fill its
-/// `background-color`, fading to the one it has under the pointer; its text its `color`, in a font
-/// of `size`.
+/// A button the view paints itself, with no artwork: `button` entered with its `response` (of its
+/// `kind`, when it has one: `button[kind="secondary"]` for one that stands back), its CSS box
+/// (corners, border, background image, shadows) with its fill its `background-color`, fading to
+/// the one it has under the pointer; its text its `color`, in a font of `size`.
 pub(crate) fn flat_button(
     ui: &Ui,
     painter: &Painter,
@@ -1774,8 +1771,9 @@ pub(crate) fn flat_button(
         None => builder,
     }
     .enter();
+    // Its CSS box (corners, border, background image, shadows) with no artwork: a flat button.
     let fill = el.hover_fade(hover(ui, response), Look::background);
-    painter.rect_filled(rect, 0.0, fill);
+    el.paint_over(painter, rect, super::element::Native { radius: 0.0, fill }, 1.0);
     text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(size), el.color());
 }
 
