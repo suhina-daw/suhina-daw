@@ -794,8 +794,9 @@ A button keeps its artwork (Suhina's `button.svg`, or your own `button` artwork)
 background, radius or border you give it: the `background-color` colors the artwork (it is its
 `currentColor`), the radius rounds it, and your `background-image` and border are drawn over it.
 To draw a button as its CSS shape alone, say `image: none` on it. A push button with words (Save,
-Cancel) is `button[kind="push"]`, a dialog's main action `button[kind="primary"]`; their edge is
-their border, `border-width: 1px` unless you give another (`0` for none). For example, a toolbar as one surface with recessed
+Cancel, Settings' Help and Close, a dialog's Close) is `button[kind="push"]`, a dialog's main
+action `button[kind="primary"]` and one that stands back (a folder's Remove) `button[kind="secondary"]`;
+their edge is their border, `border-width: 1px` unless you give another (`0` for none). For example, a toolbar as one surface with recessed
 displays:
 
 ```css

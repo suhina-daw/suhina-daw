@@ -403,10 +403,12 @@ fn a_lit_toggle_is_the_palette_s_where_no_rule_reaches_it() {
     output.textures_delta.clear();
 }
 
-/// A flat button paints its fill and its words in the palette's colors where no rule reaches it,
-/// and the colors of a rule for `button` where one does.
+/// A push face paints its fill, its words and its edge in the base sheet's colors where no theme's
+/// rule reaches it, and the colors of a rule for `button` where one does. Drawn as its CSS shape
+/// (`image: none`), so its fill is a rectangle's color; its edge is its border, 1px from the base
+/// sheet's `button[kind="push"]`.
 #[test]
-fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
+fn a_push_face_takes_the_buttons_rule_and_else_the_base_sheet() {
     let rgb = egui::Color32::from_rgb;
     let colors = |css: &str| {
         crate::kit::skin::configure(&crate::kit::skin::Skin {
@@ -414,17 +416,18 @@ fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
             ..Default::default()
         });
         let ctx = egui::Context::default();
-        let mut found = (Color32::TRANSPARENT, Color32::TRANSPARENT);
+        let mut found = (Color32::TRANSPARENT, Color32::TRANSPARENT, None);
         for _ in 0..3 {
             let mut output = ctx.run_ui(Default::default(), |ui| {
                 let _frame = crate::kit::native_css::frame_with_motion(ui, false);
                 let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(60.0, 20.0));
-                let response = button_area(ui, rect, Id::unique("flat"), "Flat");
-                flat_button(ui, ui.painter(), rect, &response, "Flat", (theme::TEXT_SMALL, None));
+                let response = button_area(ui, rect, Id::unique("push"), "Push");
+                push_face(ui, ui.painter(), rect, &response, ("Push", Push::Plain), None);
             });
             for shape in &output.shapes {
                 match &shape.shape {
                     egui::Shape::Rect(rect) if rect.fill.a() > 0 => found.0 = rect.fill,
+                    egui::Shape::Rect(rect) if rect.stroke.width > 0.0 => found.2 = Some(rect.stroke),
                     egui::Shape::Text(text) => found.1 = text.fallback_color,
                     _ => {}
                 }
@@ -434,14 +437,16 @@ fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
         crate::kit::skin::configure(&crate::kit::skin::Skin::default());
         found
     };
+    let studio = crate::kit::theme::studio;
     assert_eq!(
-        colors(""),
-        (crate::kit::theme::studio("control-background"), crate::kit::theme::studio("text-primary"))
+        colors("button { image: none; }"),
+        (studio("control-background"), studio("text-primary"), Some(egui::Stroke::new(1.0, studio("border-strong"))))
     );
     assert_eq!(
-        colors("button { background-color: #102030; color: #405060; }"),
-        (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60))
+        colors("button { image: none; background-color: #102030; color: #405060; border-color: #708090; }"),
+        (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60), Some(egui::Stroke::new(1.0, rgb(0x70, 0x80, 0x90))))
     );
+    assert_eq!(colors("button { image: none; border-width: 0; }").2, None, "no border, no edge");
 }
 
 /// A drop-down draws its arrow in `dropdown-arrow { color }` as its scope sees it, as the painted

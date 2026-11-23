@@ -555,7 +555,7 @@ add-track:hover { background-color: var(--control-hoverBackground); }
 /* The buttons of Settings and the dialogs: one that stands back (Remove), a tick box (its edge, a
    step stronger under the pointer, and its mark), a part of a row of choices (`option`: the chosen
    fill and its text; `preset`: the pressed fill) and a yes/no switch's track. */
-button[kind="secondary"] { color: var(--text-secondary); }
+button[kind="secondary"] { color: var(--text-secondary); border-width: 1px; }
 button[kind="check"] { border-color: var(--border); }
 button[kind="check"]:hover { border-color: var(--border-strong); }
 button[kind="check"][checked] { background-color: var(--text-value); }

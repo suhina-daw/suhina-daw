@@ -1737,44 +1737,10 @@ pub(crate) fn play_glyph(painter: &egui::Painter, center: Pos2, playing: bool, c
     }
 }
 
-/// A plain push button's face: `button[kind="push"]` with `id` (none: any button), entered with its
-/// `response`. Its fill fades from its `background-color` to the one it has under the pointer; its
-/// edge is its border (the base sheet's `border-width: 1px`); its label its `color`.
+/// A push button the caller made `response` for (with [`button_area`]): [`push_face`] of the
+/// button with `id`, named `label`.
 pub(crate) fn push_button(ui: &Ui, painter: &Painter, rect: Rect, id: &str, response: &Response, label: &str) {
-    let hover = hover(ui, response);
-    let el = BUTTON.id(id).attribute("kind", "push").response(response).enter();
-    push_face(painter, rect, &el, hover, label);
-}
-
-/// [`push_button`] of the button `el`, its caller entered.
-pub(crate) fn push_face(painter: &Painter, rect: Rect, el: &Entered, hover: f32, label: &str) {
-    let fill = el.hover_fade(hover, Look::background);
-    el.paint_with(painter, rect, super::element::Native { radius: 0.0, fill });
-    text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(theme::TEXT_SMALL), el.color());
-}
-
-/// A button the view paints itself, with no artwork: `button` entered with its `response` (of its
-/// `kind`, when it has one: `button[kind="secondary"]` for one that stands back), its CSS box
-/// (corners, border, background image, shadows) with its fill its `background-color`, fading to
-/// the one it has under the pointer; its text its `color`, in a font of `size`.
-pub(crate) fn flat_button(
-    ui: &Ui,
-    painter: &Painter,
-    rect: Rect,
-    response: &Response,
-    label: &str,
-    (size, kind): (f32, Option<&str>),
-) {
-    let builder = BUTTON.response(response);
-    let el = match kind {
-        Some(kind) => builder.attribute("kind", kind),
-        None => builder,
-    }
-    .enter();
-    // Its CSS box (corners, border, background image, shadows) with no artwork: a flat button.
-    let fill = el.hover_fade(hover(ui, response), Look::background);
-    el.paint_over(painter, rect, super::element::Native { radius: 0.0, fill }, 1.0);
-    text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(size), el.color());
+    push_face(ui, painter, rect, response, (label, Push::Plain), Some(id));
 }
 
 /// A button with `text` on it, `label` for screen readers and tests; true when clicked. Its id is
@@ -1812,6 +1778,8 @@ pub enum Push {
     /// An action that removes or discards something: `button`'s fill and edge, its words in
     /// `label[kind="error"]`'s `color`.
     Danger,
+    /// A button that stands back (a row's Remove): `button[kind="secondary"]`, its words dimmer.
+    Secondary,
 }
 
 /// A push button in `rect` with `text` on it, named `label` ([`button_with_id`]), as `push` says.
@@ -1823,27 +1791,50 @@ pub(crate) fn labeled_button(
     (text, label): (&str, &str),
     push: Push,
 ) -> Response {
-    let primary = push == Push::Primary;
     let response = button_area(ui, rect, id, label);
-    // `button[kind="push"]`, `[kind="primary"]` for the dialog's main action: its edge is its
-    // CSS border, which the base sheet gives.
-    let el = BUTTON.attribute("kind", if primary { "primary" } else { "push" }).response(&response).enter();
-    let hovered = hover(ui, &response);
+    push_face(ui, painter, rect, &response, (text, push), None);
+    response
+}
+
+/// A push button's face in `rect` for `response`, with `text` on it: `button[kind="push"]`
+/// (`[kind="primary"]` for the dialog's main action, `[kind="secondary"]` for one that stands
+/// back), with `id` when it has one. Its artwork or CSS box as the sheet says ([`button_surface`]),
+/// its edge its CSS border (the base sheet's `border-width: 1px`), its words in its `color` (an
+/// inverse label's on the primary one, an error label's on a danger one), small.
+pub(crate) fn push_face(
+    ui: &Ui,
+    painter: &Painter,
+    rect: Rect,
+    response: &Response,
+    (text, push): (&str, Push),
+    id: Option<&str>,
+) {
+    let primary = push == Push::Primary;
+    let kind = match push {
+        Push::Primary => "primary",
+        Push::Secondary => "secondary",
+        Push::Plain | Push::Danger => "push",
+    };
+    let builder = BUTTON.attribute("kind", kind);
+    let builder = match id {
+        Some(id) => builder.id(id),
+        None => builder,
+    };
+    let el = builder.response(response).enter();
+    let hovered = hover(ui, response);
     let fill = if primary {
         motion::mix(el.accent(), el.hover_fade(1.0, Look::background), hovered * 0.25)
     } else {
         el.hover_fade(hovered, Look::background)
     };
     let radius = el.radius_or(0.0);
-    button_surface(painter, rect, &el, &response, primary, fill, radius);
-    let small = theme::ui_font(theme::TEXT_SMALL);
+    button_surface(painter, rect, &el, response, primary, fill, radius);
     let ink = match push {
         Push::Primary => super::element::LABEL.attribute("kind", "inverse").look().color(),
         Push::Danger => super::element::LABEL.attribute("kind", "error").look().color(),
-        Push::Plain => el.color(),
+        Push::Plain | Push::Secondary => el.color(),
     };
-    text_in(painter, rect, Align2::CENTER_CENTER, text, small, ink);
-    response
+    text_in(painter, rect, Align2::CENTER_CENTER, text, theme::ui_font(theme::TEXT_SMALL), ink);
 }
 
 /// A horizontal slider of a percentage, 0 to 100 (swing, #1221): a click puts the handle there, a

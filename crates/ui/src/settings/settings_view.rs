@@ -1116,12 +1116,12 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     // Help, beside Close: how each setting's description is shown.
     let help = Rect::from_min_size(Pos2::new(close.left() - 58.0, close.top()), Vec2::new(52.0, close.height()));
     let help_response = widgets::button_area(ui, help, Id::unique("settings-help"), "Settings help");
-    widgets::flat_button(ui, &painter, help, &help_response, "Help", (theme::TEXT, None));
+    widgets::push_face(ui, &painter, help, &help_response, ("Help", widgets::Push::Plain), None);
     if help_response.clicked() {
         state.help_open = true;
     }
     let response = widgets::button_area(ui, close, Id::unique("settings-close"), "Close settings");
-    widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT, None));
+    widgets::push_face(ui, &painter, close, &response, ("Close", widgets::Push::Plain), None);
     // Undock or dock, left of Help.
     let toggle = Rect::from_min_max(pos2(help.left() - 116.0, title.top()), pos2(help.left() - 6.0, title.bottom()));
     let label = if state.window { "Dock" } else { "Open in window" };
@@ -2381,7 +2381,7 @@ fn shortcuts_page(
         Pos2::new(head.right(), head.top() + 1.0 + SEGMENT),
     );
     let response = widgets::button_area(ui, reset, Id::unique("reset-keys"), "Reset all keys");
-    widgets::flat_button(ui, painter, reset, &response, "Reset all", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, reset, &response, ("Reset all", widgets::Push::Plain), None);
     if response.clicked() {
         *keymap = Keymap::default();
         state.capture = None;
@@ -2551,7 +2551,7 @@ pub(crate) fn plugin_folders(
                 Id::unique(("remove-folder", &folder.path)),
                 format!("Remove {}", folder.path),
             );
-            widgets::flat_button(ui, painter, remove, &response, "Remove", (theme::TEXT_SMALL, Some("secondary")));
+            widgets::push_face(ui, painter, remove, &response, ("Remove", widgets::Push::Secondary), None);
             if response.clicked() {
                 request = Some(PluginRequest::RemoveFolder(folder.path.clone()));
             }
@@ -2605,7 +2605,7 @@ pub(crate) fn plugin_folders(
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
-    widgets::flat_button(ui, painter, add, &response, "Add", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, add, &response, ("Add", widgets::Push::Plain), None);
     let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     if response.clicked() || entered {
         // Nothing typed: the system's folder picker, so Add always does something.
@@ -2681,7 +2681,7 @@ fn plugin_actions(
     label(painter, r, "Plug-in manager", "Every plug-in found, switched on or off, and why files failed");
     let open = control_rect(r, 2);
     let response = widgets::button_area(ui, open, Id::unique("open-plugin-manager"), "Open the plug-in manager");
-    widgets::flat_button(ui, painter, open, &response, "Manage plug-ins", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, open, &response, ("Manage plug-ins", widgets::Push::Plain), None);
     if response.clicked() {
         plugins.manager.open = true;
     }
@@ -2832,7 +2832,7 @@ fn driver_panel_row(ui: &Ui, painter: &egui::Painter, r: Rect) -> bool {
     let rect = Rect::from_min_size(Pos2::new(r.right() - 150.0, r.top() + 1.0), Vec2::new(150.0, SEGMENT));
     let response =
         widgets::button_area(ui, rect, Id::unique("asio-control-panel"), "Open the active ASIO driver's control panel");
-    widgets::flat_button(ui, painter, rect, &response, "Control panel…", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, rect, &response, ("Control panel…", widgets::Push::Plain), None);
     response.clicked()
 }
 
@@ -3225,7 +3225,7 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
     label(painter, r, "Playing on", &output);
     let refresh = Rect::from_min_size(Pos2::new(r.right() - 120.0, r.top() + 1.0), Vec2::new(120.0, SEGMENT));
     let response = widgets::button_area(ui, refresh, Id::unique("audio-refresh"), "List the audio devices again");
-    widgets::flat_button(ui, painter, refresh, &response, "List devices again", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, refresh, &response, ("List devices again", widgets::Push::Plain), None);
     let r = row(y);
     label(painter, r, "Delay to the speakers", &format!("Measured from the engine to the speakers: {latency}"));
     let r = row(y);
