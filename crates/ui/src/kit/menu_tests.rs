@@ -329,3 +329,13 @@ fn a_slider_in_a_menu_reaches_the_end_of_an_uneven_range() {
     click_rail(&mut harness, 0.4);
     assert_eq!(*harness.state(), 3.0, "a click inside the range still lands on a step");
 }
+
+#[test]
+fn a_slider_in_a_menu_registers_the_step_it_draws() {
+    // 0.4 along 0 to 10 is 4; in steps of 3 the slider takes 3 before it draws or registers it.
+    let mut harness = slider_over(10.0, 3.0);
+    click_rail(&mut harness, 0.4);
+    assert_eq!(*harness.state(), 3.0);
+    let node = harness.get_by_label_contains("Depth");
+    assert_eq!(node.accesskit_node().numeric_value(), Some(3.0), "the registered value is the set one");
+}

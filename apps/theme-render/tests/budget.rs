@@ -95,12 +95,15 @@ use suhina_theme_render::{Subject, scenes};
 /// Fold, Scale and Highlight buttons (ordinary tool buttons) raised the node counts by 4 in the
 /// Launcher and 1 in the FM synth (469 and 716; 481 and 728 on Windows, where the FM synth did not move), while the identities
 /// went down (452 and 698).
+///
+/// The menu bar's titles (#1487 › P8) are elements a theme styles (`menu-bar bar-item[kind="menu"]`),
+/// 5 more nodes in each scene and no identity (474 and 721; 486 and 733 on Windows).
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 469,
+            nodes: 474,
             identities: 459,
             unstyled: 0,
             fresh: 0,
@@ -118,7 +121,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 716,
+            nodes: 721,
             identities: 709,
             unstyled: 0,
             fresh: 0,
@@ -142,7 +145,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 481,
+            nodes: 486,
             identities: 472,
             unstyled: 0,
             fresh: 0,
@@ -160,7 +163,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 728,
+            nodes: 733,
             identities: 722,
             unstyled: 0,
             fresh: 0,

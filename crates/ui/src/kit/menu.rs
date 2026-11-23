@@ -262,24 +262,8 @@ pub fn slider(
     shown: impl Fn(f32) -> String,
 ) -> Response {
     let width = across(ui, SLIDER);
-    let (start, low, high) = (*value, *range.start(), *range.end());
-    let mut response =
-        ui.allocate_ui(Vec2::new(width, theme::ROW), |ui| controls::slider(ui, name, value, range, step, shown)).inner;
-    // A menu's slider moves in whole steps, so a value it shows is the value it sets, and a held
-    // drag between two steps changes nothing (each change may put something in again).
-    if response.changed() && step > 0.0 {
-        // The range's end stays reachable when the span is not a whole number of steps.
-        let snap = |v: f32| {
-            let near = (low + ((v - low) / step).round() * step).clamp(low, high);
-            if high - v < (near - v).abs() { high } else { near }
-        };
-        *value = snap(*value);
-        if *value == snap(start) {
-            *value = start;
-            response.flags.set(egui::response::Flags::CHANGED, false);
-        }
-    }
-    response
+    ui.allocate_ui(Vec2::new(width, theme::ROW), |ui| controls::stepped_slider(ui, name, value, range, step, shown))
+        .inner
 }
 
 /// The ink of the chosen entry's words, on its chosen fill: for what a caller draws on a chosen

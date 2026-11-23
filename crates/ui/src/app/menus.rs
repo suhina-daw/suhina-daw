@@ -150,7 +150,12 @@ fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> 
     let response = widgets::button_area(ui, rect, egui::Id::unique(("menu-bar", title)), title);
     let popup = egui::Popup::menu(&response);
     let id = popup.get_id();
-    if response.hovered() && !egui::Popup::is_id_open(ui.ctx(), id) && egui::Popup::is_any_open(ui.ctx()) {
+    // Not on a click: the popup would take the click's pending toggle and close again.
+    if response.hovered()
+        && !response.clicked()
+        && !egui::Popup::is_id_open(ui.ctx(), id)
+        && egui::Popup::is_any_open(ui.ctx())
+    {
         egui::Popup::open_id(ui.ctx(), id);
     }
     let lit = response.hovered() || egui::Popup::is_id_open(ui.ctx(), id);
