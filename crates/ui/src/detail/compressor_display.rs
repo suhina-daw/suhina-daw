@@ -369,31 +369,18 @@ pub(crate) fn show(
     if view == View::Meters {
         // Each meter's value read large above it, its name under it.
         let big = theme::ui_font(13.0);
-        let small = theme::ui_font(9.0);
         let readout = |rect: Rect, text: String, color: Color32| {
             painter.text(Pos2::new(rect.center().x, rect.top() - 9.0), Align2::CENTER_CENTER, text, big.clone(), color);
         };
-        // In the top of each level meter its peak, held as its peak line is, in a small box that
-        // turns red once the peak is past 0 dB.
+        // A level meter's number is its peak, held as its peak line is (the bar shows the level
+        // now): red once past 0 dB.
         let peak = |rect: Rect, db: f64| {
             let held = peak_hold(ui.ctx(), rect, db);
-            let over = held > 0.0;
-            let tag =
-                Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::new((rect.width() - 4.0).max(0.0), 13.0));
-            painter.rect_filled(tag, 3.0, if over { METER_HOT } else { Color32::from_black_alpha(170) });
-            painter.text(
-                tag.center(),
-                Align2::CENTER_CENTER,
-                level_text(held),
-                small.clone(),
-                if over { Color32::WHITE } else { colors.text_secondary },
-            );
+            readout(rect, level_text(held), if held > 0.0 { METER_HOT } else { colors.text_primary });
         };
         peak(areas.input, live.detector);
         peak(areas.output, live.output);
-        readout(areas.input, level_text(live.detector), colors.text_primary);
         readout(areas.reduction, fixed(-live.reduction, 1), METER_REDUCTION);
-        readout(areas.output, level_text(live.output), colors.text_primary);
         row(areas.input, (if live.keyed { "Sidechain" } else { "In" }).to_string(), colors.text_secondary);
         row(areas.reduction, "GR".to_string(), colors.text_secondary);
         row(areas.output, "Out".to_string(), colors.text_secondary);
