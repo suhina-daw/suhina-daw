@@ -373,6 +373,8 @@ fn surface(
         if let Some(style) = el.style() {
             super::native_css::border(painter, rect, artwork_radius, &style);
         }
+        // The outline and the overflow clip, as the sheet's box has them without artwork.
+        el.contain_artwork(painter, rect, artwork_radius);
         return;
     }
     let native = super::element::Native { radius, fill };
@@ -396,6 +398,22 @@ pub fn toggle_inks(
     let sides = plain.map(|plain| Sides { lit: el.look(), plain: plain.clone(), entered_lit: true });
     let toggle = Toggle::of(el, sides.as_ref(), UnlitInk::Own, (fills.1, inks.1), fills.0, |_| inks.0);
     if plain.is_some() { toggle.on } else { toggle.off }
+}
+
+/// How much of the sheet's background image a toggle drawn as `el` shows ([`Toggle::image`]) while
+/// it is `lit`, for a toggle whose fill its caller works out with [`toggle_inks`] (`plain` as
+/// there): a lit state's own image all of it, the plain button's none while lit.
+pub fn toggle_image(el: &Entered, plain: Option<&super::element::Look>, lit: bool) -> f32 {
+    let sides = plain.map(|plain| Sides { lit: el.look(), plain: plain.clone(), entered_lit: true });
+    let toggle = Toggle::of(
+        el,
+        sides.as_ref(),
+        UnlitInk::Own,
+        (Color32::TRANSPARENT, Color32::TRANSPARENT),
+        Color32::TRANSPARENT,
+        |_| Color32::TRANSPARENT,
+    );
+    toggle.image(if lit { 1.0 } else { 0.0 })
 }
 
 /// Which color a toggle's unlit ink takes from the sheet.

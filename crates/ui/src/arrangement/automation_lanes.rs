@@ -4489,14 +4489,17 @@ const PIN_NEEDLE: [(f32, f32); 2] = [(8.0, 8.7), (8.0, 13.5)];
 /// pointer is on it, a filled pin in the accent color.
 fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response, glyph: Glyph) {
     let hover = widgets::hover(ui, response);
-    {
+    let resting = crate::kit::motion::mix(crate::kit::element::hint_ink(), crate::kit::element::name_ink(), hover);
+    // The entry's own `color` (a theme that gives it a fill gives its ink too) over the dim inks.
+    let entry_ink = {
         let hot = crate::kit::element::BUTTON.builder().pointer(true, false, false).probe().background();
         let el = crate::kit::element::BUTTON.attribute("kind", "entry").response(response).enter();
         widgets::button_surface(painter, rect, &el, response, false, hot.gamma_multiply(hover), 3.0);
-    }
+        el.own_color_or(resting)
+    };
     let ink = match glyph {
         Glyph::Pinned => crate::kit::element::AUTOMATION_PIN.look().color(),
-        _ => crate::kit::motion::mix(crate::kit::element::hint_ink(), crate::kit::element::name_ink(), hover),
+        _ => entry_ink,
     };
     let stroke = Stroke::new(1.25, ink);
     let side = (rect.width().min(rect.height()) - 1.0).max(4.0);

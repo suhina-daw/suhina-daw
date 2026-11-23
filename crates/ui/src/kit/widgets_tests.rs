@@ -450,6 +450,37 @@ fn a_push_face_takes_the_buttons_rule_and_else_the_base_sheet() {
     );
 }
 
+/// A button drawn with artwork keeps the outline the sheet gives it, as one drawn as its CSS shape
+/// does.
+#[test]
+fn a_button_with_artwork_still_has_its_outline() {
+    let magenta = Color32::from_rgb(0xFF, 0x00, 0xFF);
+    let has_outline = |css: &str| {
+        crate::kit::skin::configure(&crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(css)),
+            ..Default::default()
+        });
+        let ctx = egui::Context::default();
+        let mut found = false;
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(60.0, 20.0));
+                let response = button_area(ui, rect, Id::unique("push"), "Push");
+                push_face(ui, ui.painter(), rect, &response, ("Push", Push::Plain), None);
+            });
+            found = output.shapes.iter().any(|shape| {
+                matches!(&shape.shape, egui::Shape::Rect(rect) if rect.stroke.width > 0.0 && rect.stroke.color == magenta)
+            });
+            output.textures_delta.clear();
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        found
+    };
+    assert!(has_outline("button { outline: 2px solid #FF00FF; }"), "with the artwork");
+    assert!(has_outline("button { image: none; outline: 2px solid #FF00FF; }"), "and without it");
+}
+
 /// A drop-down draws its arrow in `dropdown-arrow { color }` as its scope sees it, as the painted
 /// drop-downs do, not in the theme's widget color.
 #[test]

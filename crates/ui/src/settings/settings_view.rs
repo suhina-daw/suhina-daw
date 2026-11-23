@@ -2058,8 +2058,16 @@ fn theme_card(
             // + adds a variant: grayed when the theme has no settings a variant could hold.
             let area = place(variants.len());
             let enabled = !themes.declared.is_empty();
-            let plus = ui.interact(area, Id::unique(("theme-new-variant", base)), Sense::click());
-            plus.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, "New variant"));
+            let id = Id::unique(("theme-new-variant", base));
+            let plus = if enabled {
+                widgets::button_area(ui, area, id, "New variant")
+            } else {
+                // Disabled in a scope of its own, so the button's face takes `:disabled`.
+                ui.scope_builder(egui::UiBuilder::new().max_rect(area).disabled(), |ui| {
+                    widgets::button_area(ui, area, id, "New variant")
+                })
+                .inner
+            };
             let plus = if enabled {
                 plus.on_hover_text("New variant from the values in use")
             } else {
@@ -2071,18 +2079,17 @@ fn theme_card(
                 state.scrolled = None;
             }
             if ui.is_rect_visible(area) {
-                // A `button`: its fill, edge and words, under the pointer and pressed too, and
-                // `:disabled` when grayed.
-                let look = crate::kit::element::BUTTON
-                    .builder()
-                    .pointer(enabled && plus.hovered(), enabled && plus.is_pointer_button_down_on(), !enabled)
-                    .look();
-                let corner = 6.0_f32.min(area.height() / 2.0);
-                let painter = ui.painter();
-                painter.rect_filled(area, corner, look.background());
-                painter.rect_stroke(area, corner, theme::hairline(look.border()), egui::StrokeKind::Inside);
-                let text = look.color();
-                widgets::text_in(painter, area, Align2::CENTER_CENTER, "+", theme::ui_font(theme::TEXT + 4.0), text);
+                // A push `button`: its artwork or box, edge and words, under the pointer and
+                // pressed too, and `:disabled` when grayed.
+                widgets::push_face_sized(
+                    ui,
+                    ui.painter(),
+                    area,
+                    &plus,
+                    ("+", widgets::Push::Plain),
+                    None,
+                    theme::TEXT + 4.0,
+                );
             }
         }
     }

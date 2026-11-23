@@ -671,6 +671,17 @@ impl Entered {
         Boxed { content, radius }
     }
 
+    /// The element's box in `rect` as `rect` and `radius` after its artwork was painted (the
+    /// artwork its caller drew in place of [`Entered::paint_with`]'s box): its contents go in the
+    /// content box returned, are clipped to its padding box when it hides its overflow, and its
+    /// outline comes when it leaves scope.
+    pub fn contain_artwork(&self, painter: &Painter, rect: Rect, radius: f32) -> Rect {
+        self.finish();
+        let style = self.style();
+        let outer = super::native_css::outer_clip(self.scope.node);
+        self.contain(painter, rect, style, radius, outer)
+    }
+
     /// The element's border in `rect`, for a bar whose background its caller paints with the
     /// window's corners (and [`Entered::paint_background`] its gradients and inset shadows): then,
     /// as after [`Entered::paint`], its contents go in the content box returned, are clipped to

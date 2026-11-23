@@ -2296,7 +2296,7 @@ pub(super) fn take_lanes(
             let off = motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r));
             let (fill, _) = widgets::toggle_inks(&el, plain.as_ref(), (el.accent(), off), (ink, ink));
             let (_, text) = widgets::toggle_inks(&el, plain.as_ref(), (fill, fill), (ink_on(fill), ink));
-            widgets::toggle_face(painter, solo, &el, &r, fill, 1.0);
+            widgets::toggle_face(painter, solo, &el, &r, fill, widgets::toggle_image(&el, plain.as_ref(), soloed));
             widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", small.clone(), text);
             drop(el);
             if r.clicked() {

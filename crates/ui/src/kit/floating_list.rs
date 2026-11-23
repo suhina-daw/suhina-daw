@@ -93,10 +93,9 @@ pub fn show(
                 heading(ui);
                 let spacing = ui.spacing().item_spacing.y;
                 let height = (look.row_height + spacing) * look.visible_rows.max(1) as f32;
-                // `list-row` (`[selected]` for the picked one): its `color`, and the tags' hint.
+                // `list-row[kind="floating"]` (`[selected]` for the picked one): its fill and its
+                // `color`, and the tags' hint.
                 use super::element::{LIST_ROW, Selected};
-                let picked_ink = LIST_ROW.attr(Selected, true).look().color();
-                let other_ink = LIST_ROW.look().color();
                 let hint = super::element::hint_ink();
                 egui::ScrollArea::vertical()
                     .id_salt(id.with("rows"))
@@ -114,15 +113,12 @@ pub fn show(
                                 egui::WidgetInfo::selected(egui::Role::Button, true, lit, label.clone())
                             });
                             // `list-row[kind="floating"]`: its fill while picked and under the pointer.
-                            let fill = LIST_ROW
-                                .attribute("kind", "floating")
-                                .attr(Selected, lit)
-                                .response(&response)
-                                .look()
-                                .background();
+                            let row_look =
+                                LIST_ROW.attribute("kind", "floating").attr(Selected, lit).response(&response).look();
+                            let fill = row_look.background();
                             ui.painter().rect_filled(rect, 2.0, fill);
                             let words = rect.shrink2(Vec2::new(4.0, 0.0));
-                            let ink = if lit { picked_ink } else { other_ink };
+                            let ink = row_look.color();
                             super::widgets::text_in(
                                 ui.painter(),
                                 words,

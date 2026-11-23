@@ -329,7 +329,8 @@ classes and scoped color and text styling; see [custom panels](sdk-custom-ui.md#
 
 Asset roles include fader cap and rail, knob body and pointer, button surface and
 play/stop/record/solo/arm/cue icons. State suffixes `.hover`, `.active`, `.disabled`
-optionally override a base role. `currentColor` uses the control's foreground.
+optionally override a base role. `currentColor` uses the control's foreground; a button's artwork takes
+its `background-color` (see Control surfaces).
 The fader cap moves along the rail; the knob pointer rotates with its value.
 
 Meter intensity is an integer percentage (`meter { meter-intensity: 65; }`, default 100);
@@ -1509,7 +1510,7 @@ These native parts take the sheet (the [theme author guide](../guide/theme-autho
   the scope's own `color` and `font-size` reach its widgets as CSS inherits them. Its own
   `border-radius` and border reach them only where the scope is a control (a `dropdown`, a
   `text-input`, a `value`), whose egui widget it is; a region's or container's (`menu`,
-  `settings`, `dialog`) frame it alone, so `menu button` gives a menu's rows theirs. The rows of
+  `settings`, `dialog`) frame it alone, so `menu list-row[kind="menu"]` gives a menu's rows theirs. The rows of
   a drop-down's open list keep the field's words, not its radius, border or fill
   (`dropdown button` gives those, #1487);
   `button[checked]` the selection; `text-input` text fields' background.

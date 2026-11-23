@@ -1012,8 +1012,8 @@ egui's widgets at all; it does style Suhina's own buttons that cannot be pressed
 the base sheet gives them).
 
 A region's own `border-radius` and border (a `menu`'s, `settings`', a `dialog`'s) frame the region;
-the widgets inside take theirs from the `button` rules that reach them, so a round menu does not make
-its rows pills. Give the rows their own with a scoped rule: `menu button { border-radius: 4px; }`.
+the widgets inside take theirs from the rules that reach them, so a round menu does not make
+its rows pills. Give the rows their own with a scoped rule: `menu list-row[kind="menu"] { border-radius: 4px; }`.
 A drop-down's or a text field's own radius and border are its field's; the rows of a drop-down's
 open list keep the field's words but take their radius, border and fill from `dropdown button`.
 
