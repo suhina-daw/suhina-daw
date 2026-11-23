@@ -287,4 +287,82 @@ mod tests {
         );
         assert!(find(&menus[1].entries, "edit.undo").is_some_and(|item| !item.enabled));
     }
+
+    /// One frame of two titles side by side, with `events` as the frame's input: the menus
+    /// open afterwards.
+    fn titles_frame(ctx: &egui::Context, events: Vec<egui::Event>) -> Vec<&'static str> {
+        let mut open = Vec::new();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 100.0))),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                for title in ["First", "Second"] {
+                    bar_menu(ui, title, |ui| {
+                        open.push(title);
+                        ui.label(title);
+                    });
+                }
+            });
+        });
+        output.textures_delta.clear();
+        open
+    }
+
+    fn press_and_release(at: egui::Pos2) -> Vec<egui::Event> {
+        [true, false]
+            .into_iter()
+            .map(|pressed| egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            })
+            .collect()
+    }
+
+    /// With a later menu open, a click that reaches an earlier title in the frame the pointer
+    /// arrives (a press and a release with the move) opens that title's menu and leaves it
+    /// open: hover switching does not take the click's toggle.
+    #[test]
+    fn a_click_in_the_frame_the_pointer_arrives_leaves_the_earlier_menu_open() {
+        let ctx = egui::Context::default();
+        crate::kit::theme::install(&ctx);
+        titles_frame(&ctx, vec![]);
+        // Open the second title with a click on it: the pointer arrives a frame before.
+        let first_at = egui::pos2(15.0, 12.0);
+        let second_at = egui::pos2(80.0, 12.0);
+        titles_frame(&ctx, vec![egui::Event::PointerMoved(second_at)]);
+        titles_frame(&ctx, press_and_release(second_at));
+        let open = titles_frame(&ctx, vec![]);
+        assert_eq!(open, ["Second"], "the second title is open first");
+        // The pointer arrives at the first title and clicks in the same frame.
+        let mut events = vec![egui::Event::PointerMoved(first_at)];
+        events.extend(press_and_release(first_at));
+        titles_frame(&ctx, events);
+        let open = titles_frame(&ctx, vec![]);
+        assert_eq!(open, ["First"], "the first title's menu is open after its click, the second's is closed");
+    }
+
+    /// Moving onto another title while a menu is open switches to its menu with no click, and
+    /// a click on the open title closes it.
+    #[test]
+    fn hovering_another_title_switches_menus_and_a_click_on_the_open_one_closes_it() {
+        let ctx = egui::Context::default();
+        crate::kit::theme::install(&ctx);
+        let first_at = egui::pos2(15.0, 12.0);
+        let second_at = egui::pos2(80.0, 12.0);
+        titles_frame(&ctx, vec![]);
+        titles_frame(&ctx, vec![egui::Event::PointerMoved(second_at)]);
+        titles_frame(&ctx, press_and_release(second_at));
+        assert_eq!(titles_frame(&ctx, vec![]), ["Second"]);
+        titles_frame(&ctx, vec![egui::Event::PointerMoved(first_at)]);
+        titles_frame(&ctx, vec![]);
+        assert_eq!(titles_frame(&ctx, vec![]), ["First"], "the pointer alone switched the menu");
+        titles_frame(&ctx, press_and_release(first_at));
+        assert!(titles_frame(&ctx, vec![]).is_empty(), "a click on the open title closed it");
+    }
 }
