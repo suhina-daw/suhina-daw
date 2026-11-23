@@ -154,3 +154,114 @@ fn a_toggle_reads_as_a_check_box() {
     assert_eq!(legato.accesskit_node().role(), egui::accesskit::Role::CheckBox);
     assert_eq!(legato.accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
 }
+
+/// A button whose right-click menu has a grayed choice named apart from its words, a check box
+/// with a key, an entry with a value, a grayed submenu, a submenu a click inside keeps open and
+/// a slider; what was clicked is kept, and the slider's value.
+fn built() -> Harness<'static, (Vec<String>, f32)> {
+    Harness::builder().allow_missing_glyphs().with_size(egui::vec2(640.0, 480.0)).build_ui_state(
+        |ui, (picked, level): &mut (Vec<String>, f32)| {
+            crate::kit::theme::install(ui.ctx());
+            ui.button("Open").context_menu(|ui| {
+                let mut click = |ui: &mut egui::Ui, entry: super::Entry<'_>, name: &str| {
+                    if entry.show(ui).clicked() {
+                        picked.push(name.to_string());
+                    }
+                };
+                click(ui, super::Entry::new("Wood").chosen(false).enabled(false).named("Sound: Wood"), "Wood");
+                click(ui, super::Entry::new("Snap").check(true).key(Some("Ctrl+4")), "Snap");
+                click(ui, super::Entry::new("Mode").value("Draw"), "Mode");
+                super::Entry::new("Recolor").enabled(false).submenu(ui, |ui| {
+                    super::item(ui, "Red", false);
+                });
+                super::Entry::new("Meter").keep_open().submenu(ui, |ui| {
+                    if super::item(ui, "4", false).clicked() {
+                        picked.push("4".to_string());
+                    }
+                });
+                super::slider(ui, "Depth", level, 0.0..=100.0, 1.0, |v| format!("{v:.0} %"));
+            });
+        },
+        (Vec::new(), 50.0),
+    )
+}
+
+#[test]
+fn a_built_entry_reads_its_name_its_state_and_its_key() {
+    let mut harness = built();
+    harness.run();
+    harness.get_by_label("Open").click_secondary();
+    harness.run();
+    let wood = harness.get_by_label("Sound: Wood");
+    assert!(wood.accesskit_node().is_disabled(), "a grayed choice");
+    assert_eq!(wood.accesskit_node().toggled(), Some(egui::accesskit::Toggled::False));
+    let snap = harness.get_by_label("Snap");
+    assert_eq!(snap.accesskit_node().role(), egui::accesskit::Role::CheckBox);
+    assert_eq!(snap.accesskit_node().data().keyboard_shortcut(), Some("Ctrl+4"));
+    let mode = harness.get_by_label("Mode");
+    assert_eq!(mode.accesskit_node().data().keyboard_shortcut(), None, "a value is not a key");
+    harness.get_by_label("Sound: Wood").click();
+    harness.run();
+    assert!(harness.state().0.is_empty(), "a grayed choice takes no click");
+}
+
+#[test]
+fn a_grayed_submenu_does_not_open() {
+    let mut harness = built();
+    harness.run();
+    harness.get_by_label("Open").click_secondary();
+    harness.run();
+    assert!(harness.get_by_label("Recolor").accesskit_node().is_disabled());
+    harness.get_by_label("Recolor").hover();
+    harness.run();
+    assert!(harness.query_by_label("Red").is_none(), "its entries never show");
+}
+
+#[test]
+fn a_submenu_kept_open_stays_open_after_a_click_inside() {
+    let mut harness = built();
+    harness.run();
+    harness.get_by_label("Open").click_secondary();
+    harness.run();
+    harness.get_by_label("Meter").hover();
+    harness.run();
+    harness.get_by_label("4").click();
+    harness.run();
+    assert_eq!(harness.state().0, vec!["4".to_string()]);
+    assert!(harness.query_by_label("4").is_some(), "the click did not close it");
+}
+
+/// A button whose menu (closed only by a click outside, as the automation lanes' are) holds a
+/// slider; its value is kept.
+fn slider() -> Harness<'static, f32> {
+    Harness::builder().allow_missing_glyphs().with_size(egui::vec2(640.0, 480.0)).build_ui_state(
+        |ui, level: &mut f32| {
+            crate::kit::theme::install(ui.ctx());
+            let response = ui.button("Open");
+            egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(
+                |ui| {
+                    super::entry(ui, "Loop selection", None, true);
+                    super::slider(ui, "Depth", level, 0.0..=100.0, 1.0, |v| format!("{v:.0} %"));
+                },
+            );
+        },
+        50.0,
+    )
+}
+
+#[test]
+fn a_slider_in_a_menu_moves_and_keeps_the_menu_narrow() {
+    let mut harness = slider();
+    harness.run();
+    harness.get_by_label("Open").click_secondary();
+    harness.run();
+    harness.run();
+    // Every row spans the menu, so an entry's width is the menu's.
+    let menu = harness.get_by_label("Loop selection").rect().width();
+    assert!(menu < 320.0, "the window offers 640: {menu}");
+    harness.get_by_label_contains("Depth").click();
+    harness.run();
+    harness.key_press(egui::Key::ArrowRight);
+    harness.run();
+    assert_eq!(*harness.state(), 51.0, "the click took the keys and the arrow moved it a step");
+}
