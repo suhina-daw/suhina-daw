@@ -286,6 +286,14 @@ pub(super) fn loop_brace(
     let Some((start, end)) = shown else { return };
     let enabled = timeline.loop_brace.is_none_or(|b| b.enabled) || state.gesture.loop_brace().is_some();
     let (left, right) = (x_of(start).round(), x_of(end).round());
+    // Held to the row, a little past each side, so the ends cut off there lie outside it: zoomed
+    // in, the brace's ends are thousands of points away, and a bar drawn (and its artwork
+    // sliced) out to them lost precision and flickered as the view zoomed.
+    let reach = (row.left() - 8.0, row.right() + 8.0);
+    if right < reach.0 || left > reach.1 {
+        return;
+    }
+    let (left, right) = (left.max(reach.0), right.min(reach.1));
     // `loop-region` styles the bar, `[checked]` while looping is on; `height` is its thickness
     // and `loop-region` (`.on` while on) its artwork, nine-sliced when the SVG says so.
     let el = crate::kit::element::LOOP_REGION.attr(crate::kit::element::Checked, enabled).enter();
