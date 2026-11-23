@@ -30,15 +30,25 @@ high-pass) below. Every parameter has a dial;
 the display only adds ways to move the threshold and the ratio.
 
 The display has a row of tabs at its top, **Curve**, **Activity** and **Meters**, and at the right
-of that row the gain reduction now (`GR -4.5 dB`) and, while the device reads a key, an **SC**
-badge. Which view shows is panel state (kept while the app runs, per device), never a parameter:
+of that row the gain reduction now (`GR -4.5 dB`, in figures of one width from a fixed left, so
+it does not move as the number changes) and, while the device reads a key, an **SC** badge that
+stays put beside it. Which view shows is panel state (kept while the app runs, per device), never a parameter:
 it changes no sound and records nothing.
 
 The Curve and Activity views have three meters beside them: at the left the level the detector
-hears, with an arrow at the threshold that is dragged up and down for it; at the right the gain
-reduction, hanging from the top over 24 dB, and the output. The level meters span −60 to +6 dB with
-a line at 0 dB, and turn red above it. Under them: the threshold, the view's caption and the
-output's level.
+hears (the input, or the key while one is read), with a handle at the threshold that is dragged up
+and down for it; at the right the gain reduction, hanging from the top over 24 dB, and the output.
+Under them: the threshold, the view's caption and the output's level.
+
+Every meter sits in a rounded groove a little darker than the display. A level meter spans −60 to
++6 dB and is lit from its foot in three solid zones: green up to −6 dB, amber to 0 dB, red past it
+(the unlit zones show faintly), with lines at −12, −24, −36 and −48 dB. A line marks its highest
+level lately: held 0.8 s, then falling 12 dB a second. The meters move with ballistics: they rise
+within about 12 ms and settle with a 0.18 s time constant. The threshold is a light line with a dark
+edge across the input meter and a handle beside it, so it reads over the meter's fill. The meters'
+colors (green `#33c16a`, amber, red, the reduction's orange `#ea9c48`) are the display's own, not
+the theme's. A pane of glass lies over the display: a soft light from the top and hairlines round
+it.
 
 - **Curve**: the transfer curve, the detector's level across and the device's output level up,
   both −60 to +6 dB, drawn from the device's own gain computer (`gain_change`) with the mix and
@@ -55,14 +65,19 @@ output's level.
   line, and the gain reduction hanging from the top on its own 24 dB scale (marked −6, −12, −18 at
   the right edge), so the pumping a key causes is seen against what causes it. The threshold is a
   dashed line on the level scale, grabbed within 5 points and dragged up and down.
-- **Meters**: the three meters alone, large, with their scales, the input's threshold arrow, and
-  their values under them (`In` or `Key`, `GR`, `Out`).
+- **Meters**: the three meters alone, side by side in the middle, up to 64 points wide, with their
+  scales and the input's threshold handle. Above each its value, large, and its name under it
+  (`In`, or `Sidechain` while a key is read; `GR`; `Out`). A level meter's value is chosen from
+  its right-click menu: *Highest peak* (the default: the highest since it was reset; a click resets
+  it), *Peak, held a moment* (as its peak line) or *Level now*, with *Reset peak* under them; red
+  once past 0 dB. The choice is panel state, for both level meters of the device.
 
 Every drag is one gesture of `device.setParam` commands, so it is one undo step and records as
 automation like any other edit; Shift drags a quarter as far; a double-click resets what the
 handle moves. The SDK's validator lets only a parameter set with `threshold`, `ratio`, `knee`,
-`output` and `mix` claim the widget. The canvas repaints at about 30 frames per second while the
-device publishes readouts ([ADR 0032](../decisions/0032-device-readouts.md)), which it always does.
+`output` and `mix` claim the widget. The display asks to be drawn again about 30 times a second while
+it shows, so the Activity history scrolls on and the meters fall after the music stops; it reads the
+readouts the device publishes ([ADR 0032](../decisions/0032-device-readouts.md)).
 
 ### Readouts
 

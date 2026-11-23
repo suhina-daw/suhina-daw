@@ -326,6 +326,9 @@ pub(crate) fn show(
         }
         history.clone()
     });
+    // Drawn again about 30 times a second while it shows: the Activity history scrolls on, and the
+    // meters fall, after the music stops.
+    ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
     let view = tabs(ui, display, id, &values, palette);
     let areas = areas(display, view);
     let painter = ui.painter_at(display);
@@ -343,18 +346,18 @@ pub(crate) fn show(
         View::Meters => {}
     }
     if view == View::Meters {
-        meter_scales(&painter, &areas, palette);
+        meter_scales(&painter, &areas);
     }
     // The meters move smoothly: they rise quickly and settle slowly, as meters with ballistics do.
     let live = Live {
-        detector: smoothed(ui.ctx(), areas.input, live.detector, RANGE.0),
-        output: smoothed(ui.ctx(), areas.output, live.output, RANGE.0),
-        reduction: smoothed(ui.ctx(), areas.reduction, live.reduction, 0.0),
+        detector: smoothed(ui.ctx(), id.with("shown-input"), live.detector, RANGE.0),
+        output: smoothed(ui.ctx(), id.with("shown-output"), live.output, RANGE.0),
+        reduction: smoothed(ui.ctx(), id.with("shown-reduction"), live.reduction, 0.0),
         keyed: live.keyed,
     };
-    level_meter(&painter, areas.input, live.detector, palette);
-    reduction_meter(&painter, areas.reduction, live.reduction, palette);
-    level_meter(&painter, areas.output, live.output, palette);
+    level_meter(&painter, areas.input, live.detector, id.with("peak-input"));
+    reduction_meter(&painter, areas.reduction, live.reduction);
+    level_meter(&painter, areas.output, live.output, id.with("peak-output"));
 
     // The values row: under each meter its value, the input's named after what it hears.
     let font = theme::ui_font(9.0);
@@ -377,7 +380,7 @@ pub(crate) fn show(
         // a moment as the peak line is, or the level now. Red once past 0 dB.
         let mode_key = id.with("readout-mode");
         let mode = ui.ctx().data(|d| d.get_temp::<Readout>(mode_key)).unwrap_or_default();
-        let peak = |rect: Rect, db: f64, name: &str| {
+        let peak = |rect: Rect, db: f64, name: &str, held_key: egui::Id| {
             let area = Rect::from_center_size(
                 Pos2::new(rect.center().x, rect.top() - READOUT_HEIGHT / 2.0),
                 Vec2::new(rect.width().max(40.0), READOUT_HEIGHT),
@@ -416,13 +419,13 @@ pub(crate) fn show(
             });
             let shown = match mode {
                 Readout::Highest => highest,
-                Readout::Held => peak_hold(ui.ctx(), rect, db),
+                Readout::Held => peak_hold(ui.ctx(), held_key, db),
                 Readout::Now => db,
             };
             readout(rect, level_text(shown), if shown > 0.0 { METER_HOT } else { colors.text_primary });
         };
-        peak(areas.input, live.detector, if live.keyed { "Sidechain" } else { "In" });
-        peak(areas.output, live.output, "Out");
+        peak(areas.input, live.detector, if live.keyed { "Sidechain" } else { "In" }, id.with("peak-input"));
+        peak(areas.output, live.output, "Out", id.with("peak-output"));
         readout(areas.reduction, fixed(-live.reduction, 1), METER_REDUCTION);
         row(areas.input, (if live.keyed { "Sidechain" } else { "In" }).to_string(), colors.text_secondary);
         row(areas.reduction, "GR".to_string(), colors.text_secondary);
@@ -537,12 +540,12 @@ fn tabs(ui: &mut egui::Ui, display: Rect, id: egui::Id, values: &Values, palette
         let mono = theme::mono_font(9.0);
         let room = painter.layout_no_wrap("GR -88.8 dB".to_string(), mono.clone(), palette.reduction).size().x;
         let galley =
-            painter.layout_no_wrap(format!("GR {} dB", fixed(-live.reduction, 1)), mono.clone(), palette.reduction);
+            painter.layout_no_wrap(format!("GR {} dB", fixed(-live.reduction, 1)), mono.clone(), METER_REDUCTION);
         let width = galley.size().x.max(room);
         painter.galley(
             Pos2::new(right - width, display.top() + (TABS_HEIGHT - galley.size().y) / 2.0 + 1.0),
             galley,
-            palette.reduction,
+            METER_REDUCTION,
         );
         right -= width + 6.0;
         if live.keyed {
@@ -562,7 +565,7 @@ fn tabs(ui: &mut egui::Ui, display: Rect, id: egui::Id, values: &Values, palette
 /// A level meter filling from the bottom in three zones: the meter green up to -6 dB, amber to
 /// full scale and red past it, solid, in a rounded groove that shows the zones faintly. A line
 /// marks the highest level lately, and a cap at the top lights red while it is past 0 dB.
-fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, _palette: Palette) {
+fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, held_key: egui::Id) {
     let colors = super::device_canvas::colors();
     let ground = colors.window_background;
     track(painter, rect, ground);
@@ -575,7 +578,7 @@ fn level_meter(painter: &egui::Painter, rect: Rect, db: f64, _palette: Palette) 
             band(painter, rect, low, level_y(db.min(to), rect), blend(ground, color, METER_FILL), foot, false);
         }
     }
-    let held = peak_hold(painter.ctx(), rect, db);
+    let held = peak_hold(painter.ctx(), held_key, db);
     if held > RANGE.0 {
         let y = level_y(held, rect).round();
         let color = zones.iter().find(|(from, to, _)| held >= *from && held < *to).map_or(METER_HOT, |z| z.2);
@@ -635,11 +638,10 @@ const PEAK_FALL: f64 = 12.0;
 const METER_RISE: f64 = 0.012;
 const METER_SETTLE: f64 = 0.18;
 
-/// `target` as the meter at `rect` shows it: moving toward it by the frame's time, quickly when
+/// `target` as the meter kept under `id` shows it: moving toward it by the frame's time, quickly when
 /// it rises and slowly when it falls, from `floor` the first time. Drawn again until it settles.
-fn smoothed(ctx: &egui::Context, rect: Rect, target: f64, floor: f64) -> f64 {
+fn smoothed(ctx: &egui::Context, id: egui::Id, target: f64, floor: f64) -> f64 {
     let now = ctx.input(|i| i.time);
-    let id = egui::Id::unique(("compressor-meter-shown", rect.left().round() as i32, rect.top().round() as i32));
     let shown = ctx.data_mut(|d| {
         let (value, at) = d.get_temp::<(f64, f64)>(id).unwrap_or((floor, now));
         let dt = (now - at).clamp(0.0, 0.25);
@@ -656,11 +658,10 @@ fn smoothed(ctx: &egui::Context, rect: Rect, target: f64, floor: f64) -> f64 {
 }
 
 /// The level a meter's peak line shows: the highest `db` seen in the last [`PEAK_HOLD`] seconds,
-/// then falling [`PEAK_FALL`] dB a second. Kept by the meter's place on screen; the window is drawn
-/// again while it falls.
-fn peak_hold(ctx: &egui::Context, rect: Rect, db: f64) -> f64 {
+/// then falling [`PEAK_FALL`] dB a second, kept under `id` (the display's own, per meter); the window is
+/// drawn again while it falls.
+fn peak_hold(ctx: &egui::Context, id: egui::Id, db: f64) -> f64 {
     let now = ctx.input(|i| i.time);
-    let id = egui::Id::unique(("compressor-meter-peak", rect.left().round() as i32, rect.top().round() as i32));
     let held = ctx.data_mut(|d| {
         let (peak, at) = d.get_temp::<(f64, f64)>(id).unwrap_or((RANGE.0, now));
         let since = now - at;
@@ -708,7 +709,7 @@ fn blend(a: Color32, b: Color32, t: f32) -> Color32 {
 
 /// The large meters' scales: dB beside the input and output meters, the reduction's beside its
 /// own.
-fn meter_scales(painter: &egui::Painter, areas: &Areas, palette: Palette) {
+fn meter_scales(painter: &egui::Painter, areas: &Areas) {
     let colors = super::device_canvas::colors();
     let font = theme::ui_font(8.0);
     for db in [0.0, -12.0, -24.0, -36.0, -48.0] {
@@ -735,13 +736,13 @@ fn meter_scales(painter: &egui::Painter, areas: &Areas, palette: Palette) {
             Align2::LEFT_CENTER,
             fixed(-db, 0),
             font.clone(),
-            palette.reduction.gamma_multiply(0.8),
+            METER_REDUCTION.gamma_multiply(0.8),
         );
     }
 }
 
 /// The gain-reduction meter hanging from the top, in a groove as the level meters are.
-fn reduction_meter(painter: &egui::Painter, rect: Rect, db: f64, _palette: Palette) {
+fn reduction_meter(painter: &egui::Painter, rect: Rect, db: f64) {
     let colors = super::device_canvas::colors();
     let ground = colors.window_background;
     track(painter, rect, ground);
