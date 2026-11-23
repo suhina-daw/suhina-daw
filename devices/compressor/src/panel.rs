@@ -62,7 +62,7 @@ fn panel() -> DeviceUi {
         // What is compressed: the curve's threshold, ratio and knee, and the input driving into
         // them, beside the display's threshold arrow.
         dial("threshold", "Thresh", left(0), 0, false, TextFormat::Decibels, 1),
-        dial("ratio", "Ratio", left(1), 0, true, TextFormat::Number, 2),
+        dial("ratio", "Ratio", left(1), 0, true, TextFormat::Ratio, 1),
         dial("input", "Input", left(0), 1, false, TextFormat::Decibels, 1),
         dial("knee", "Knee", left(1), 1, false, TextFormat::Decibels, 1),
         display,

@@ -351,6 +351,8 @@ pub enum TextFormat {
     Percent,
     Decibels,
     Balance,
+    /// A ratio, written `n:1` (a compressor's ratio).
+    Ratio,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]

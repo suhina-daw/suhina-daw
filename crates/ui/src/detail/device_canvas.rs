@@ -1874,6 +1874,7 @@ fn paint_scaled(
                         TextFormat::Seconds => format!("{text}{} s", fixed(p.value, 2)),
                         TextFormat::Percent => format!("{text}{}%", fixed(p.value * 100., 0)),
                         TextFormat::Decibels => format!("{text}{} dB", fixed(p.value, 1)),
+                        TextFormat::Ratio => format!("{text}{}:1", fixed(p.value, *decimals)),
                         TextFormat::Balance if p.value.abs() < 0.005 => format!("{text}C"),
                         TextFormat::Balance => {
                             format!("{text}{} {}", fixed(p.value.abs() * 100., 0), if p.value < 0. { "L" } else { "R" })
