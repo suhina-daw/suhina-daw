@@ -7,7 +7,8 @@
 
 use super::*;
 
-/// The window with a MIDI clip open in the piano roll, under the user sheet `css`.
+/// The window with a MIDI clip open in the piano roll (a double-click on its slot), under the user
+/// sheet `css`.
 fn with_clip(css: &str) -> Harness<'static, App> {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
@@ -16,8 +17,7 @@ fn with_clip(css: &str) -> Harness<'static, App> {
     let mut h = window(app);
     h.get_by_label("Launcher view").click();
     h.run();
-    h.get_by_label("Select Beat B on Drums (scene 3)").click();
-    h.run();
+    open_clip(&mut h, "Select Beat B on Drums (scene 3)");
     h
 }
 

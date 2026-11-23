@@ -380,6 +380,13 @@ pub(super) fn double_click_at(harness: &mut Harness<'static, App>, at: egui::Pos
     harness.run();
 }
 
+/// Opens the clip labelled `label` in the detail area, as a user does: a double-click on it (one
+/// click only selects a clip, `docs/spec/ui-clip-editor.md` › Where it opens).
+pub(super) fn open_clip(harness: &mut Harness<'static, App>, label: &str) {
+    let at = harness.get_by_label(label).rect().center();
+    double_click_at(harness, at);
+}
+
 /// Picks `value` in the control bar's grid box, as a user does: open it, click the value.
 pub(super) fn choose_grid(harness: &mut Harness<'static, App>, value: &str) {
     harness.get_by_label("Launch quantisation").click();

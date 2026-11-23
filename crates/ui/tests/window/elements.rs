@@ -607,8 +607,7 @@ fn the_pitch_dial_and_a_typed_number_take_their_rules() {
     let mut h = window_with_step(audio_app(), 1.0 / 60.0);
     h.get_by_label("Arrangement view").click();
     h.run();
-    h.get_by_label("Clip Loop on Loop at bar 1").click();
-    h.run();
+    open_clip(&mut h, "Clip Loop on Loop at bar 1");
     let rules =
         [("knob", "border-color", odd(71)), ("knob", "background-color", odd(72)), ("knob", "accent-color", odd(73))];
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
@@ -741,8 +740,7 @@ fn a_rule_for_every_text_field_is_a_typed_number_s_until_it_has_its_own() {
     let mut h = window_with_step(audio_app(), 1.0 / 60.0);
     h.get_by_label("Arrangement view").click();
     h.run();
-    h.get_by_label("Clip Loop on Loop at bar 1").click();
-    h.run();
+    open_clip(&mut h, "Clip Loop on Loop at bar 1");
     h.get_by_label_contains("Pitch: ").click();
     h.run();
     h.event(egui::Event::Text("3".into()));
@@ -788,12 +786,11 @@ fn a_rule_for_every_slider_fill_needs_a_lit_rule_to_keep_the_swing_lit() {
     assert_eq!(count_with(&mut h, &lit, odd(95)), 0, "and it leaves the general rule");
 }
 
-/// The demo with Walk on Bass picked in the Launcher: its MIDI clip's panel, its follow action and
-/// its piano roll.
+/// The demo with Walk on Bass opened in the Launcher (a double-click on its slot): its MIDI clip's
+/// panel, its follow action and its piano roll.
 fn walk_picked() -> Harness<'static, App> {
     let mut h = window(demo_app());
-    h.get_by_label("Select Walk on Bass (scene 2)").click();
-    h.run();
+    open_clip(&mut h, "Select Walk on Bass (scene 2)");
     h
 }
 
@@ -1525,8 +1522,7 @@ fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
         let mut h = window_with_step(audio_app(), 1.0 / 60.0);
         h.get_by_label("Arrangement view").click();
         h.run();
-        h.get_by_label("Clip Loop on Loop at bar 1").click();
-        h.run();
+        open_clip(&mut h, "Clip Loop on Loop at bar 1");
         h
     }
     let mut dialog = window(demo_app());

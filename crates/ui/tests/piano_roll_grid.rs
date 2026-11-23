@@ -44,8 +44,7 @@ fn piano_app(renderer: &mut suhina_engine::Renderer, settings: Settings) -> Harn
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness
 }
 
@@ -311,8 +310,7 @@ fn render_the_grid_menu() {
     h.run();
     h.get_by_label("Arrangement view").click();
     h.run();
-    h.get_by_label(CLIP).click();
-    h.run();
+    crate::window::open_clip(&mut h, CLIP);
     h.get_by_label("Grid value 1/16").click();
     h.run();
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");

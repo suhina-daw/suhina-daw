@@ -3125,16 +3125,23 @@ impl App {
                     });
                     self.select_tracks(next.into_iter().collect());
                 }
-                // A clip made by a double-click is selected, ready to edit: in the Arrangement
-                // the clip, in the Launcher its slot, so the detail area shows it.
+                // A clip made by a double-click is selected and opened, ready to edit: in the
+                // Arrangement the clip, in the Launcher its slot, so the detail area shows its editor.
                 if action.id == "clip.create"
                     && let Some(track) = result["track"].as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId)
                 {
                     let at = |key: &str| result[key].as_u64().and_then(|i| usize::try_from(i).ok());
                     let clip = result["clip"].as_u64().and_then(|c| u32::try_from(c).ok()).map(ClipId);
                     match (clip.filter(|_| at("scene").is_none()), at("scene")) {
-                        (Some(clip), _) => self.arrangement.select_clip(track, clip),
-                        (None, Some(scene)) => self.view.select_slot(track, scene),
+                        (Some(clip), _) => {
+                            self.arrangement.select_clip(track, clip);
+                            // Opened, as a double-click on a clip opens it.
+                            self.arrangement.clip_opened = true;
+                        }
+                        (None, Some(scene)) => {
+                            self.view.select_slot(track, scene);
+                            self.view.clip_opened = true;
+                        }
                         (None, None) => self.view.selected = Some(track),
                     }
                 }

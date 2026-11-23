@@ -225,11 +225,18 @@ fn the_piano_roll_playhead_follows_a_launched_clip_not_the_transport() {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
     };
-    // Two beats in: the clip's name selects it without launching, and the detail area opens its
-    // piano roll.
+    // Two beats in: a double-click on the clip's name selects it without launching, and the
+    // detail area opens its piano roll. Frames, not a run to rest: the transport plays.
     pump(&mut harness, &mut renderer, 24);
-    harness.get_by_label("Select Beat A on Drums (scene 1)").click();
-    pump(&mut harness, &mut renderer, 3);
+    let name = harness.get_by_label("Select Beat A on Drums (scene 1)").rect().center();
+    for _ in 0..2 {
+        harness.hover_at(name);
+        harness.drag_at(name);
+        harness.drop_at(name);
+        pump(&mut harness, &mut renderer, 1);
+    }
+    pump(&mut harness, &mut renderer, 2);
+    assert!(harness.query_by_label_contains("Piano roll,").is_some(), "the double-click opened the piano roll");
     // The clip is only selected, not playing: no playhead.
     assert!(harness.query_by_label_contains("Playhead at beat").is_none(), "no playhead while the clip is not playing");
     // Launch it on the mark: queued until the next bar, then playing.
@@ -273,13 +280,18 @@ fn a_double_click_opens_the_new_clips_piano_roll() {
     assert!(harness.query_by_label("Piano roll, 0 notes").is_none(), "the piano roll closed");
 }
 
+/// One click on a slot only selects it, the detail area keeping the track's devices; a
+/// double-click opens it there, and the keys move the selection, the clip view following it, and
+/// launch it.
 #[test]
 fn a_selected_slot_shows_in_the_detail_area_and_keys_move_and_launch_it() {
     let mut harness = window(demo_app());
     assert!(harness.query_by_label("Clip Walk, scene 2").is_none());
     harness.get_by_label("Select Walk on Bass (scene 2)").click();
     harness.run();
-    assert!(harness.query_by_label("Clip Walk, scene 2").is_some());
+    assert!(harness.query_by_label("Clip Walk, scene 2").is_none(), "a click only selects the slot");
+    open_clip(&mut harness, "Select Walk on Bass (scene 2)");
+    assert!(harness.query_by_label("Clip Walk, scene 2").is_some(), "a double-click opens it");
 
     harness.key_press(Key::ArrowDown);
     harness.run();
@@ -302,9 +314,13 @@ fn a_selected_slot_shows_in_the_detail_area_and_keys_move_and_launch_it() {
     assert!(harness.query_by_label("Clip Chords 2, scene 3").is_none());
 }
 
+/// With the clip view showing (a slot opened with a double-click), a launch selects its slot and
+/// the view shows it; with Select on launch off, the selection stays.
 #[test]
 fn with_select_on_launch_off_a_launch_leaves_the_detail_area_alone() {
     let mut harness = window(demo_app());
+    open_clip(&mut harness, "Select Beat A on Drums (scene 1)");
+    assert!(harness.query_by_label("Clip Beat A, scene 1").is_some(), "the clip view shows");
     harness.get_by_label("Launch Walk on Bass (scene 2)").click();
     harness.run();
     assert!(harness.query_by_label("Clip Walk, scene 2").is_some(), "on by default: a launch selects");
@@ -326,10 +342,10 @@ fn a_device_selects_and_deletes_even_beside_a_shown_clip() {
     let mut app = App::new();
     app.set_session(Session::new(project_with_a_device()), &[]);
     let mut harness = window(app);
-    // A slot's clip selected: the detail shows its properties and its piano roll. The switch's
-    // Devices brings the track's chain up, whose panels pick as they do with the chain alone.
-    harness.get_by_label("Launch Beat A on Drums (scene 1)").click();
-    harness.run();
+    // A slot's clip opened (a double-click): the detail shows its properties and its piano roll.
+    // The switch's Devices brings the track's chain up, whose panels pick as they do with the
+    // chain alone.
+    open_clip(&mut harness, "Select Beat A on Drums (scene 1)");
     harness.get_by_label("Show Devices").click();
     harness.run();
     assert!(harness.query_by_label("Device Utility").is_some(), "the chain shows beside the clip");
@@ -343,6 +359,78 @@ fn a_device_selects_and_deletes_even_beside_a_shown_clip() {
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
     assert_eq!(devices(&harness), 1, "the device is back");
+}
+
+/// Whether the detail area paints `text` (a hint such as "No clip selected", which is painted, not
+/// a control with a label).
+fn paints_text(harness: &Harness<'static, App>, text: &str) -> bool {
+    fn has(shape: &egui::Shape, text: &str) -> bool {
+        match shape {
+            egui::Shape::Vec(inner) => inner.iter().any(|s| has(s, text)),
+            egui::Shape::Text(t) => t.galley.text() == text,
+            _ => false,
+        }
+    }
+    harness.output().shapes.iter().any(|clipped| has(&clipped.shape, text))
+}
+
+/// With a track's devices showing, one click on a clip only selects it: the devices stay, those of
+/// the clip's track, and no piano roll opens. A double-click opens the clip's piano roll
+/// (`docs/spec/ui-clip-editor.md` › Where it opens).
+#[test]
+fn one_click_on_a_clip_keeps_the_devices_and_a_double_click_opens_its_piano_roll() {
+    const CLIP: &str = "Clip Beat B on Drums at bar 17";
+    let mut app = App::new();
+    app.set_browser_open(false);
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    // Drums' devices, from a double-click on its header (clear of the header's buttons).
+    let header = harness.get_by_label("Track Drums").rect();
+    let fold = harness.get_by_label("Collapse Drums").rect();
+    double_click_at(&mut harness, egui::pos2(fold.center().x, header.center().y));
+    assert!(harness.query_by_label("Device Utility").is_some(), "Drums' devices show");
+    assert!(harness.query_by_label_contains("Piano roll,").is_none());
+
+    harness.get_by_label(CLIP).click();
+    harness.run();
+    assert!(harness.state().selected_clip().is_some(), "the click selected the clip");
+    assert!(harness.query_by_label("Device Utility").is_some(), "the devices stay");
+    assert!(harness.query_by_label_contains("Piano roll,").is_none(), "one click opens no piano roll");
+
+    open_clip(&mut harness, CLIP);
+    assert!(harness.query_by_label_contains("Piano roll,").is_some(), "a double-click opens the piano roll");
+    assert!(harness.query_by_label("Device Utility").is_none(), "in the devices' place");
+}
+
+/// With the clip view showing, a click on an empty lane lets the clip go and keeps the clip view,
+/// which says "No clip selected", at the height it had.
+#[test]
+fn a_click_on_an_empty_lane_keeps_the_clip_view_and_its_height() {
+    const CLIP: &str = "Clip Beat B on Drums at bar 17";
+    let mut harness = arrangement_app();
+    open_clip(&mut harness, CLIP);
+    assert!(harness.query_by_label_contains("Piano roll,").is_some(), "the clip view shows");
+    assert!(!paints_text(&harness, "No clip selected"));
+    let splitter = harness.get_by_label("Detail area splitter").rect();
+    // A spot of a lane no clip covers, above the detail area.
+    let clips: Vec<egui::Rect> = harness.query_all_by_label_contains("Clip ").map(|n| n.rect()).collect();
+    let empty = harness
+        .query_all_by_label_contains("Lane ")
+        .map(|n| n.rect())
+        .flat_map(|lane| {
+            (0..100)
+                .map(move |i| egui::pos2(lane.left() + 4.0 + i as f32 * (lane.width() - 8.0) / 100.0, lane.center().y))
+        })
+        .find(|p| !clips.iter().any(|c| c.expand(2.0).contains(*p)) && p.x < SIZE.0 - 8.0 && p.y < splitter.top() - 4.0)
+        .expect("an empty spot on some lane");
+    click_once_at(&mut harness, empty);
+    assert_eq!(harness.state().selected_clip(), None, "the click let the clip go");
+    assert!(harness.query_by_label_contains("Piano roll,").is_none(), "no clip to show");
+    assert!(paints_text(&harness, "No clip selected"), "the clip view stays and says so");
+    let kept = harness.get_by_label("Detail area splitter").rect();
+    assert!((kept.top() - splitter.top()).abs() < 0.5, "the detail area keeps its height: {splitter:?} then {kept:?}");
 }
 
 /// In the Launcher view too, a header clicked after a device was picked gives Delete to its

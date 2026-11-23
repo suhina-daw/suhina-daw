@@ -90,7 +90,7 @@ pub const FIXED: &[(&str, Step)] = &[
     ("empty-space-menu", empty_space_menu),
     ("grid-menu", |h| {
         click(h, "Arrangement view")?;
-        click(h, "Clip Beat B on Drums at bar 17")?;
+        double_click(h, "Clip Beat B on Drums at bar 17")?;
         click_containing(h, "Grid value")
     }),
     ("browser", browser),
@@ -104,7 +104,7 @@ pub const FIXED: &[(&str, Step)] = &[
         click(h, "Show Samples")?;
         click(h, "Show the samples laid out by how they sound")
     }),
-    ("clip-midi", |h| click(h, "Select Walk on Bass (scene 2)")),
+    ("clip-midi", |h| double_click(h, "Select Walk on Bass (scene 2)")),
     // The toolbar's menus open (#1549); the grid's is `grid-menu`.
     ("quantize-menu", |h| click(h, "Launch quantisation")),
     ("count-in-menu", |h| click(h, "Count-in")),
@@ -289,6 +289,21 @@ fn click(h: &mut Window, label: &str) -> Result<(), String> {
     settle(h)
 }
 
+/// A double-click on the control labelled `label`: two clicks a frame apart, as a clip's editor
+/// opens (one click only selects the clip). A click elsewhere just before does not make it a
+/// triple-click: clicks count together only in one place.
+fn double_click(h: &mut Window, label: &str) -> Result<(), String> {
+    settle(h)?;
+    let at = h.query_by_label(label).ok_or_else(|| format!("no control labelled {label:?}"))?.rect().center();
+    for _ in 0..2 {
+        h.hover_at(at);
+        h.drag_at(at);
+        h.drop_at(at);
+        h.step();
+    }
+    settle(h)
+}
+
 /// The first control with `contains` in its label.
 fn click_containing(h: &mut Window, contains: &str) -> Result<(), String> {
     settle(h)?;
@@ -356,7 +371,7 @@ fn arrangement(h: &mut Window) -> Result<(), String> {
 
 fn piano_roll(h: &mut Window) -> Result<(), String> {
     click(h, "Arrangement view")?;
-    click(h, "Clip Beat B on Drums at bar 17")?;
+    double_click(h, "Clip Beat B on Drums at bar 17")?;
     h.remove_cursor();
     settle(h)
 }
@@ -377,10 +392,10 @@ fn browser_search(h: &mut Window) -> Result<(), String> {
     settle(h)
 }
 
-/// An audio clip's panel: the clip of an audio track chosen in the Arrangement.
+/// An audio clip's panel: the clip of an audio track opened in the Arrangement.
 fn clip_audio(h: &mut Window) -> Result<(), String> {
     click(h, "Arrangement view")?;
-    click(h, "Clip Loop on Loop at bar 1")?;
+    double_click(h, "Clip Loop on Loop at bar 1")?;
     h.remove_cursor();
     settle(h)
 }
