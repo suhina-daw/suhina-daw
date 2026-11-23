@@ -47,6 +47,9 @@ const VALUES_HEIGHT: f32 = 13.0;
 const METER_WIDTH: f32 = 9.0;
 /// The room the threshold arrow takes right of the input meter.
 const ARROW_WIDTH: f32 = 9.0;
+/// The room the Meters view keeps on each side of a meter: its scale's numbers, or the input's
+/// threshold arrow.
+const METER_SIDE: f32 = 24.0;
 /// The curve's points across the display.
 const POINTS: usize = 120;
 /// The ratio's range, which a vertical drag on the curve's ring moves through.
@@ -268,9 +271,10 @@ fn areas(display: Rect, view: View) -> Areas {
     let values =
         Rect::from_min_max(Pos2::new(body.left(), body.bottom() + 1.0), Pos2::new(body.right(), display.bottom()));
     if view == View::Meters {
-        // Three large meters, each in a third of the body, the input's arrow beside it.
+        // Three large meters, each in a third of the body, the input's arrow beside it: as wide as
+        // the third leaves room for a scale's numbers (or the arrow) on each side.
         let third = body.width() / 3.0;
-        let width = (third * 0.38).clamp(12.0, 34.0);
+        let width = (third - 2.0 * METER_SIDE).clamp(12.0, 64.0);
         let meter = |i: f32| {
             let center = body.left() + third * (i + 0.5);
             Rect::from_min_max(
