@@ -437,8 +437,8 @@ pub(crate) fn show(
 }
 
 /// The display's glass, over all it shows: a soft light from the top fading out by its middle, a
-/// faint diagonal sheen, a bright hairline along the top edge and a dark one round the rest, so
-/// it reads as a pane set into the panel. Faint enough that what is under it reads as before.
+/// bright hairline along the top edge and a dark one round the rest, so it reads as a pane set
+/// into the panel. Faint enough that what is under it reads as before.
 fn glass(painter: &egui::Painter, display: Rect) {
     let mut mesh = egui::Mesh::default();
     let fade = display.top() + display.height() * 0.45;
@@ -449,16 +449,6 @@ fn glass(painter: &egui::Painter, display: Rect) {
     mesh.colored_vertex(Pos2::new(display.left(), fade), clear);
     mesh.add_triangle(0, 1, 2);
     mesh.add_triangle(0, 2, 3);
-    // The sheen: a band leaning across the upper left of the pane.
-    let sheen = Color32::from_white_alpha(7);
-    let w = display.width();
-    let base = mesh.vertices.len() as u32;
-    mesh.colored_vertex(Pos2::new(display.left() + w * 0.08, display.top()), sheen);
-    mesh.colored_vertex(Pos2::new(display.left() + w * 0.30, display.top()), sheen);
-    mesh.colored_vertex(Pos2::new(display.left() + w * 0.12, display.bottom()), clear);
-    mesh.colored_vertex(Pos2::new(display.left() - w * 0.10, display.bottom()), clear);
-    mesh.add_triangle(base, base + 1, base + 2);
-    mesh.add_triangle(base, base + 2, base + 3);
     painter.add(Shape::mesh(mesh));
     painter.rect_stroke(display, 3.0, Stroke::new(1.0, Color32::from_black_alpha(90)), egui::StrokeKind::Inside);
     let y = display.top() + 1.0;
