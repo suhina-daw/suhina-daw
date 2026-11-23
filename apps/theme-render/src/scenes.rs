@@ -294,7 +294,10 @@ fn click(h: &mut Window, label: &str) -> Result<(), String> {
 /// triple-click: clicks count together only in one place.
 fn double_click(h: &mut Window, label: &str) -> Result<(), String> {
     settle(h)?;
-    let at = h.query_by_label(label).ok_or_else(|| format!("no control labelled {label:?}"))?.rect().center();
+    // On its top edge, where an Arrangement clip's name bar is: a press in a clip's body starts a
+    // time selection instead.
+    let rect = h.query_by_label(label).ok_or_else(|| format!("no control labelled {label:?}"))?.rect();
+    let at = egui::pos2(rect.center().x, rect.top() + 5.0);
     for _ in 0..2 {
         h.hover_at(at);
         h.drag_at(at);
