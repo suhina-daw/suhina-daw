@@ -1230,15 +1230,18 @@ fn similar_strip(ui: &mut Ui, rect: Rect, view: &mut MapView, points: &[MapPoint
     egui::ScrollArea::vertical().show(&mut child, |ui| {
         for i in items {
             let Some(point) = points.get(i) else { continue };
-            ui.horizontal(|ui| {
-                if controls::button_named(ui, "▶", &format!("Preview {}", point.name)).clicked() {
-                    events.push(MapEvent::Preview(i));
-                }
-                let row = controls::choice_inked(ui, &point.name, point.selected, kind_color(point.kind));
-                if row.clicked() {
-                    events.push(MapEvent::Select { items: vec![i], add: false });
-                    events.push(MapEvent::Preview(i));
-                }
+            // A scope of the sample's own, so two samples of one name keep their ids apart.
+            ui.push_id(i, |ui| {
+                ui.horizontal(|ui| {
+                    if controls::button_named(ui, "▶", &format!("Preview {}", point.name)).clicked() {
+                        events.push(MapEvent::Preview(i));
+                    }
+                    let row = controls::choice_inked(ui, &point.name, point.selected, kind_color(point.kind));
+                    if row.clicked() {
+                        events.push(MapEvent::Select { items: vec![i], add: false });
+                        events.push(MapEvent::Preview(i));
+                    }
+                });
             });
         }
     });

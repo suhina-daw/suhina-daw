@@ -424,7 +424,7 @@ pub(super) fn group_panel(
         );
         // `button#solo[kind="solo"]`, `[checked]` while soloed, as a track's solo; the lit side is
         // looked up while it fades out too.
-        let lit = widgets::lit_toggle_kind(
+        let lit = widgets::lit_toggle_words(
             ui,
             &response,
             crate::kit::element::BUTTON.id("solo"),

@@ -191,7 +191,7 @@ fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, label: &str, on:
     let checked = [crate::kit::element::Checked];
     let builder = crate::kit::element::BUTTON.builder();
     let lit = if accent {
-        widgets::lit_toggle_kind(ui, &response, builder, &checked, on, "solo")
+        widgets::lit_toggle_words(ui, &response, builder, &checked, on, "solo")
     } else {
         widgets::lit_toggle(ui, &response, builder, &checked, on)
     };

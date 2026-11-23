@@ -634,6 +634,21 @@ pub fn lit_toggle_kind(
     lit_toggle_of(ui, response, builder, attrs, on, (Some(kind), Readable::Design))
 }
 
+/// [`lit_toggle_kind`] of a toggle that shows words or a letter (a part of a row of choices, a
+/// chip, In/Auto/Off, solo's S): its ink is moved off a fill it does not read on, whatever fill
+/// the sheet gives it lit, so a theme that lights it in a pale fill and gives no color still shows
+/// its words.
+pub fn lit_toggle_words(
+    ui: &Ui,
+    response: &Response,
+    builder: super::element::Builder<'_>,
+    attrs: &[super::element::Attr],
+    on: bool,
+    kind: &'static str,
+) -> Lit {
+    lit_toggle_of(ui, response, builder, attrs, on, (Some(kind), Readable::Always))
+}
+
 /// [`lit_toggle_kind`] of a toggle with no `kind` of its own, whose states `attrs` (`[playing]`) the
 /// sheet colors: a scene's launch button.
 pub fn lit_toggle_state(
@@ -2088,7 +2103,7 @@ pub fn option_face(
     chosen: bool,
     kind: &'static str,
 ) -> (Color32, Color32) {
-    let lit = lit_toggle_kind(ui, response, BUTTON.builder(), &[Checked], chosen, kind);
+    let lit = lit_toggle_words(ui, response, BUTTON.builder(), &[Checked], chosen, kind);
     let (fill, color) = lit.colors();
     toggle_surface(painter, rect, &lit.el, response, fill, lit.toggle.image(lit.lit), 0.0);
     if response.has_focus() {

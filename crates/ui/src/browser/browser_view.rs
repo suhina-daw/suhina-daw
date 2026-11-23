@@ -383,7 +383,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             Chip::List => !showing_map,
             Chip::Map => showing_map,
         };
-        let lit = widgets::lit_toggle_kind(ui, &response, BUTTON.builder(), &[Checked], chosen, "chip");
+        let lit = widgets::lit_toggle_words(ui, &response, BUTTON.builder(), &[Checked], chosen, "chip");
         if response.clicked() {
             match chip {
                 Chip::Recent(group) => {
@@ -2779,7 +2779,7 @@ fn plugins_view_switch(
         if response.clicked() && chosen != view {
             run(projects, "library.setPluginsView", json!({ "view": view.name() }), out);
         }
-        let lit = widgets::lit_toggle_kind(ui, &response, BUTTON.builder(), &[Checked], chosen == view, "chip");
+        let lit = widgets::lit_toggle_words(ui, &response, BUTTON.builder(), &[Checked], chosen == view, "chip");
         let (fill, text) = lit.colors();
         widgets::toggle_surface(&painter, rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, theme::ui_font(theme::TEXT_SMALL), text);
@@ -3388,12 +3388,10 @@ fn footer_overflow(
     });
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "More tags".to_string()));
-    let fill = widgets::hover(ui, &response);
-    // `button[kind="more"]`: its `background-color` under the pointer, fading in with it.
-    let hot = BUTTON.attribute("kind", "more").hover_ends(fill).1;
+    // `button[kind="more"]`: no fill until the pointer is on it (the base sheet's), fading in.
     {
         let el = BUTTON.attribute("kind", "more").response(&response).enter();
-        widgets::button_surface(painter, clipped, &el, &response, false, hot.background().gamma_multiply(fill), 0.0);
+        widgets::hover_face(ui, painter, clipped, &el, &response, false, 0.0);
     }
     painter.text(clipped.center(), Align2::CENTER_CENTER, "…", theme::ui_font(theme::TEXT_SMALL), tier.secondary);
     if tags.iter().any(|t| state.tag_filter.contains(&t.id)) {

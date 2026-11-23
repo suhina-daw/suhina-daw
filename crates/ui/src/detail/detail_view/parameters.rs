@@ -524,7 +524,7 @@ pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Show
         }
         // `editor-tab` (`[checked]` for the one shown), `#tab-clip` and `#tab-devices`.
         let tab = format!("tab-{}", text.to_ascii_lowercase());
-        let lit = widgets::lit_toggle_kind(
+        let lit = widgets::lit_toggle_words(
             ui,
             &response,
             crate::kit::element::EDITOR_TAB.id(&tab),

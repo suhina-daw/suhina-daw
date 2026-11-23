@@ -157,20 +157,11 @@ pub fn show_expanded(ui: &mut Ui, area: Rect, track: TrackId, device: &DeviceBox
                 Rect::from_min_size(Pos2::new(header.right() - 28.0, header.top() + 3.0), Vec2::new(24.0, 20.0));
             let response = widgets::button_area(ui, close, Id::unique("device-expanded-close"), "Close expanded panel")
                 .on_hover_text("Close the expanded panel (Esc)");
-            let fill = motion::mix(
-                crate::detail::fill_of("control"),
-                crate::detail::fill_of("hover"),
-                widgets::hover(ui, &response),
-            );
-            // `button[kind="close"]`: only a rule for that kind reaches it, not one for every `button`.
-            let plain = crate::kit::element::BUTTON.response(&response).probe();
-            let own = crate::kit::element::BUTTON.attribute("kind", "close").response(&response).look();
-            let cross = own.unlike(&plain, crate::kit::element::Paint::Color, ink);
-            {
+            // `button[kind="close"]`, drawn as every button is; its `color` is the ×'s.
+            let cross = {
                 let el = crate::kit::element::BUTTON.attribute("kind", "close").response(&response).enter();
-                let fill = own.unlike(&plain, crate::kit::element::Paint::Background, fill);
-                crate::kit::widgets::button_surface(&painter, close, &el, &response, false, fill, 0.0);
-            }
+                widgets::hover_face(ui, &painter, close, &el, &response, false, 0.0)
+            };
             for (from, to) in
                 [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
             {
