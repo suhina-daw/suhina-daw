@@ -381,7 +381,15 @@ fn setting_field(
     range: (f64, f64),
     shown: &dyn Fn(f64) -> String,
 ) -> Option<f64> {
-    let field = Field { range, per_point: 0.25, per_tick: 1.0, snap: whole, align: Align2::RIGHT_CENTER, dim: false };
+    let field = Field {
+        range,
+        per_point: 0.25,
+        per_tick: 1.0,
+        snap: whole,
+        align: Align2::RIGHT_CENTER,
+        dim: false,
+        semitones: false,
+    };
     let parse = |t: &str| plain_number(t);
     let text = Text { shown, parse: &parse, places: None };
     let id = Id::unique(("midi-tools-field", name));
