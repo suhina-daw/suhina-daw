@@ -1366,7 +1366,10 @@ impl Chain {
 
     /// The gains [`Chain::mix`] puts its output at on frame `frame` of the block: the track's
     /// gains, its mixer lanes, its fader's move and its live pan. For a click that follows the
-    /// main channel's fader past its devices ([`crate::ClickRoute::PostFader`]).
+    /// main channel's fader past its devices ([`crate::ClickRoute::PostFader`]). These are the
+    /// output's lane factors ([`MixLanes::gains`], after the compensation delay), not
+    /// [`MixLanes::fader_gains`]: the click meets the chain's sound where it leaves, and Main,
+    /// its one caller, has no compensation delay after its fader, so the two are the same there.
     pub(crate) fn fader_gains(&self, frame: usize) -> (f32, f32) {
         let (lanes_left, lanes_right) = self.mix.as_ref().map_or((1.0, 1.0), |mix| mix.gains(frame));
         let fader = self.live.at(frame);

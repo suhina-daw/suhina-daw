@@ -917,6 +917,8 @@ enum Fader {
     MainAfterTrack,
     /// Main's lane, the delay on Main itself.
     MainAfterMain,
+    /// Main's lane, the delay on a track that plays into a bus, which plays into Main.
+    MainAfterBus,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -957,8 +959,14 @@ fn render_mixer(lane: bool, latency: usize, block: usize, motion: Motion, fader:
     let mut project = crate::fade_tests::project(source, 4.0, 0.0, 0.0);
     let mut main = Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(2), "Main") };
     match fader {
-        Fader::Track | Fader::MainAfterTrack => project.channels[0].devices = vec![delay()],
+        Fader::Track | Fader::MainAfterTrack | Fader::MainAfterBus => project.channels[0].devices = vec![delay()],
         Fader::MainAfterMain => main.devices = vec![delay()],
+    }
+    if matches!(fader, Fader::MainAfterBus) {
+        project.channels.push(Channel::new(ChannelId(3), "Bus"));
+        project.tracks.push(Track { channel: Some(ChannelId(3)), ..Track::new(TrackId(3), "Bus") });
+        project.channels[0].output = Some(ChannelId(3));
+        project.tracks[0].parent = Some(TrackId(3));
     }
     if lane {
         let channel = if matches!(fader, Fader::Track) { &mut project.channels[0] } else { &mut main };
@@ -1019,12 +1027,13 @@ fn assert_muted(plain: &[f32], actual: &[f32], latency: usize, motion: Motion, c
 }
 
 /// Mixer lanes scale the audio they reach at its own place in the arrangement, however late the
-/// devices before them make it: on a track, and on Main after a track's or its own delay, across
+/// devices before them make it: on a track, and on Main after a track's, a bus's track's or its
+/// own delay, across
 /// a loop's wrap and a jump (#1703). The reference is written from the lane, not taken from
 /// another engine mode.
 #[test]
 fn pdc_mixer_lanes_follow_the_delayed_audio() {
-    for fader in [Fader::Track, Fader::MainAfterTrack, Fader::MainAfterMain] {
+    for fader in [Fader::Track, Fader::MainAfterTrack, Fader::MainAfterMain, Fader::MainAfterBus] {
         for motion in [Motion::Straight, Motion::Loop, Motion::Seek] {
             for latency in [0, 1, 257, 1500] {
                 for block in [1, 31, 257, 1024] {

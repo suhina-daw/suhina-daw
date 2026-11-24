@@ -158,7 +158,7 @@ fn mixer_gains_are_a_line_between_grid_values_in_any_block() {
 }
 
 /// Mixer gains are read at the time of the audio they scale, from the blocks played: a delayed
-/// loop wrap, a stop and the pre-roll before arrangement zero keep their places in the block,
+/// loop wrap, a stop, a start and the pre-roll before arrangement zero keep their places in the block,
 /// and the fader (before the compensation delay) and the output (after it) each get their own
 /// time (#1703).
 #[test]
@@ -204,6 +204,17 @@ fn mixer_gains_follow_the_delayed_audio_across_a_wrap_a_stop_and_the_pre_roll() 
         let fader = if f < 10 { at(490 + f, true) } else { at(600, false) };
         assert_eq!(mix.gains(f as usize), output, "stop, output frame {f}");
         assert_eq!(mix.fader_gains(f as usize), fader, "stop, fader frame {f}");
+    }
+
+    // A start from the play start marker 30 frames into the delayed block: the stopped value,
+    // then the lanes from the marker on.
+    let mut songs = SongHistory::new(8_000);
+    songs.record(crate::SongPosition { position: 600, ..Default::default() }, 100);
+    songs.record(playing(600), 100);
+    mix.plan(&songs, 70, 70, 100);
+    for f in 0..100u64 {
+        let want = if f < 70 { at(600, false) } else { at(600 + f - 70, true) };
+        assert_eq!(mix.gains(f as usize), want, "start, frame {f}");
     }
 }
 
