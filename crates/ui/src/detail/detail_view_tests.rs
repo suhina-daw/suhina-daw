@@ -1565,24 +1565,25 @@ fn the_pitch_knob_and_the_cents_field_set_the_transpose() {
 }
 
 /// The Pitch knob, clicked, steps a semitone with an arrow key and an octave with Shift, the
-/// cents kept; so does the Semitones field.
+/// cents kept; so does the Semitones field, opened by its click. Each key starts from +2: the
+/// harness sends the actions but does not apply them to the panel.
 #[test]
 fn shift_and_an_arrow_move_the_pitch_by_an_octave() {
     use egui_kittest::kittest::Queryable;
     for label in ["Pitch: +2 st", "Semitones: +2"] {
-        let (detail, _) = audio_detail(AudioPanel::default(), 0.0, 2.25);
-        let mut harness = panel_harness(detail);
-        harness.get_by_label(label).click();
-        harness.run();
-        harness.state_mut().clear();
-        harness.key_press(egui::Key::ArrowUp);
-        harness.run();
-        let transpose =
-            |h: &egui_kittest::Harness<'_, Vec<Action>>| h.state().last().and_then(|a| a.params["transpose"].as_f64());
-        assert_eq!(transpose(&harness), Some(3.25), "{label}: one semitone up");
-        harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowDown);
-        harness.run();
-        assert_eq!(transpose(&harness), Some(-9.75), "{label}: an octave down from +2");
+        for (modifiers, key, wanted) in
+            [(egui::Modifiers::NONE, egui::Key::ArrowUp, 3.25), (egui::Modifiers::SHIFT, egui::Key::ArrowDown, -9.75)]
+        {
+            let (detail, _) = audio_detail(AudioPanel::default(), 0.0, 2.25);
+            let mut harness = panel_harness(detail);
+            harness.get_by_label(label).click();
+            harness.run();
+            harness.state_mut().clear();
+            harness.key_press_modifiers(modifiers, key);
+            harness.run();
+            let transpose = harness.state().last().and_then(|a| a.params["transpose"].as_f64());
+            assert_eq!(transpose, Some(wanted), "{label}: {modifiers:?} {key:?} from +2");
+        }
     }
 }
 

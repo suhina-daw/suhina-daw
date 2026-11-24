@@ -298,10 +298,15 @@ pub(super) fn number_field(
             i32::from(up) - i32::from(down)
         });
         if steps != 0 {
-            let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
+            // Shift steps finer, except in whole semitones, where it steps an octave as the
+            // field does when it is not open (`widgets::drag_semitones`).
+            let step = match (ui.input(|i| i.modifiers.shift), field.semitones) {
+                (true, true) => widgets::OCTAVE,
+                (true, false) => field.per_tick * 0.1,
+                (false, _) => field.per_tick,
+            };
             let from = (text.parse)(&typed).unwrap_or(value);
-            let next =
-                (field.snap)(from + f64::from(steps) * field.per_tick * fine).clamp(field.range.0, field.range.1);
+            let next = (field.snap)(from + f64::from(steps) * step).clamp(field.range.0, field.range.1);
             let shown =
                 (text.shown)(next).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
             ui.data_mut(|d| d.insert_temp(edit_id, shown));

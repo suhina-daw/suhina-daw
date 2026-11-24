@@ -242,7 +242,7 @@ Projects folder row (a field on the right, the default shown when the setting is
   removed, leftovers kept, and the move told in the start-up warnings. An old folder a
   setting names, or one holding a folder a setting names (`NAM models/My captures`), stays as
   it is: the panels list from it, and a move would empty and remove a folder the lists go on
-  reading.
+  reading. A setting typed relative is read from the working folder, as the panels read it.
 - The pick bridge gets two fields (`PickField::NamModelsFolder`, `PickField::IrFolder`) so the
   system dialog opens for them like for the Projects folder (macOS waits on the main thread, as
   those already do).

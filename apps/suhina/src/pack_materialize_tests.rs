@@ -112,6 +112,20 @@ fn an_old_folder_holding_a_folder_a_setting_names_stays() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A setting typed relative (`NAM models/My captures`) names its folder from the working
+/// folder, as the panels read it, so it keeps the old folder holding it there and only there.
+#[test]
+fn a_relative_setting_keeps_the_old_folder_from_the_working_folder() {
+    let base = std::env::temp_dir().join("suhina-library");
+    let old = base.join("NAM models");
+    for setting in ["NAM models/My captures", "nam models/MY CAPTURES", "NAM models"] {
+        assert!(is_kept(&old, &[PathBuf::from(setting)], &base), "{setting} from the library's folder");
+    }
+    let elsewhere = std::env::temp_dir().join("somewhere-else");
+    assert!(!is_kept(&old, &[PathBuf::from("NAM models/My captures")], &elsewhere), "read from another folder");
+    assert!(!is_kept(&old, &[PathBuf::from("My captures")], &base), "a folder beside the old one");
+}
+
 /// A name the new tree already holds is never overwritten: that file stays in the old
 /// folder, the old folder stays, and the warning says what was kept — once. A folder whose
 /// names the new tree holds never empties, so its warning is a start-up record, not a nag

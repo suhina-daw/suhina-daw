@@ -1014,15 +1014,16 @@ pub(crate) fn device_switch(
     }
 }
 
+/// Whether the primary button went down this frame inside `rect` (a device panel's, as shown),
+/// whatever control under it takes the press. Only a press on the panel's own layer counts: one
+/// on a menu or popup over the panel leaves the picks alone.
+fn pressed_in(ui: &Ui, rect: Rect) -> bool {
+    ui.input(|i| i.pointer.primary_pressed()) && ui.rect_contains_pointer(rect)
+}
+
 /// One device: a header with its on switch and name, then its parameters, one per row. Returns
 /// whether it was clicked, and its content box (inside its border and padding, #1336), where a
 /// plug-in's embedded editor goes.
-/// Whether the primary button went down this frame inside `rect` (a device panel's, as shown),
-/// whatever control under it takes the press.
-fn pressed_in(ui: &Ui, rect: Rect) -> bool {
-    ui.input(|i| i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|p| rect.contains(p)))
-}
-
 #[allow(clippy::too_many_arguments)]
 fn device_panel(
     ui: &mut Ui,
