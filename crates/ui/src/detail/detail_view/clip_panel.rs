@@ -310,6 +310,9 @@ pub(super) fn number_field(
                 || i.consume_key(egui::Modifiers::SHIFT, egui::Key::ArrowDown);
             i32::from(up) - i32::from(down)
         });
+        // A step keeps the box drawn this frame, so it keeps the keyboard: a widget with the focus
+        // that is not drawn for a frame loses it, and the box would close after one step.
+        let mut stepped = None;
         if steps != 0 {
             // Shift steps finer, except in whole semitones, where it steps an octave as the
             // field does when it is not open (`widgets::drag_semitones`).
@@ -322,12 +325,9 @@ pub(super) fn number_field(
             // exactly its interval; from the number typed when the user typed one.
             let from = if unedited { value } else { (text.parse)(&typed).unwrap_or(value) };
             let next = (field.snap)(from + f64::from(steps) * step).clamp(field.range.0, field.range.1);
-            let shown = short(next);
-            ui.data_mut(|d| {
-                d.insert_temp(edit_id, shown.clone());
-                d.insert_temp(written_id, shown);
-            });
-            return Some(Change { value: next, more: false });
+            typed = short(next);
+            ui.data_mut(|d| d.insert_temp(written_id, typed.clone()));
+            stepped = Some(Change { value: next, more: false });
         }
         let edit = egui::TextEdit::singleline(&mut typed)
             .id(id.with("text"))
@@ -363,7 +363,7 @@ pub(super) fn number_field(
             return None;
         }
         ui.data_mut(|d| d.insert_temp(edit_id, typed));
-        return None;
+        return stepped;
     }
     let preview_id = id.with("preview");
     let grab_id = id.with("grab");
