@@ -59,3 +59,38 @@ fn the_clip_host_stays_first_in_the_chain() {
     assert!(devices[0].clip_host, "{:?}", devices.iter().map(|d| d.name.as_str()).collect::<Vec<_>>());
     assert_eq!(devices[1].name, "Utility");
 }
+
+/// A track whose ARA plug-in is an insert in its chain (ADR 0033, amendment) gets a clip host of
+/// its own when a clip is edited with it: the insert stays where it is, not bound to the clips.
+#[test]
+fn editing_a_clip_adds_a_clip_host_beside_an_insert_of_the_same_plug_in() {
+    use suhina_plugins::scan::{Catalog, PluginInfo};
+    let project = ProjectBuilder::new()
+        .audio_track(1, "Vox")
+        .audio(1, "Take", 8.0, AudioRegion::new("take.wav"))
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .build();
+    let mut s = Session::new(project);
+    let tune = PluginInfo {
+        path: "Tune.vst3".into(),
+        id: "00112233445566778899AABBCCDDEEFF".into(),
+        name: "Tune".into(),
+        vendor: "Vendor".into(),
+        version: "1.0".into(),
+        features: vec!["Fx|Pitch Shift".into()],
+        replaces: Vec::new(),
+        ara: true,
+    };
+    let mut catalog = Catalog::new();
+    catalog.insert(tune.path.clone(), vec![tune]);
+    s.rack_mut().set_env(std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into())));
+    run(&mut s, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    run(&mut s, "device.addPlugin", json!({ "track": 1, "plugin": "Tune" })).unwrap();
+    assert_eq!(flags(&s), [false], "an insert binds no clip");
+    run(&mut s, "clip.setAra", json!({ "clips": [{ "track": 1, "index": 0 }], "on": true, "plugin": "Tune" })).unwrap();
+    assert_eq!(flags(&s), [true]);
+    let channel = s.project().tracks[0].channel.unwrap();
+    let devices = &s.project().channels.iter().find(|c| c.id == channel).unwrap().devices;
+    let chain: Vec<(&str, bool)> = devices.iter().map(|d| (d.name.as_str(), d.clip_host)).collect();
+    assert_eq!(chain, [("Tune", true), ("Utility", false), ("Tune", false)]);
+}

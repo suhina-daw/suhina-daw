@@ -1,10 +1,11 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! A plug-in the scan marked as one that edits clips (ADR 0033) is loaded with an ARA document
-//! of its track's audio clips: the document crosses to the host process, which binds it, or
-//! refuses the load with why when the plug-in cannot be bound. Without audio clips it loads as
-//! any other plug-in.
+//! A clip host (ADR 0033 › 2, #990), or a device whose saved state holds an ARA archive, is loaded
+//! with an ARA document of its track's audio clips: the document crosses to the host process,
+//! which binds it, or refuses the load with why when the plug-in cannot be bound. Without audio
+//! clips it loads as any other plug-in, and so does a plug-in that supports ARA put in a chain as
+//! an insert (ADR 0033, amendment).
 #![allow(clippy::panic, clippy::unwrap_used)] // test helpers outside #[test] functions
 
 use std::path::PathBuf;
@@ -35,7 +36,8 @@ fn env() -> Arc<PluginEnv> {
     Arc::new(PluginEnv::new(catalog, PathBuf::from(env!("CARGO_BIN_EXE_suhina-plugin-host"))))
 }
 
-/// An audio track with the test plug-in on it and, when `clip`, one audio clip of `take.wav`.
+/// An audio track with the test plug-in on it as its clip host and, when `clip`, one audio clip
+/// of `take.wav` that plays through it.
 fn project(clip: bool) -> Project {
     let region = AudioRegion {
         file: "take.wav".into(),
@@ -56,7 +58,7 @@ fn project(clip: bool) -> Project {
         enabled: true,
         state: None,
         params: Vec::new(),
-        clip_host: false,
+        clip_host: true,
         extensions: Extensions::default(),
         automation: Vec::new(),
     });
@@ -65,6 +67,7 @@ fn project(clip: bool) -> Project {
     track.channel = Some(ChannelId(1));
     let mut clip_at = Clip::new(ContentId(1), 0.0, 2.0);
     clip_at.id = ClipId(7);
+    clip_at.ara = true;
     Project {
         tracks: vec![track],
         channels: vec![channel],
@@ -88,6 +91,17 @@ fn project(clip: bool) -> Project {
         },
         ..Project::default()
     }
+}
+
+/// [`project`] with the test plug-in an insert in the track's chain, as a plug-in put on a track
+/// or an imported project's is, and with `state` saved for it.
+fn inserted(state: Option<Vec<u8>>) -> Project {
+    let mut project = project(true);
+    let device = &mut project.channels[0].devices[0];
+    device.clip_host = false;
+    device.state = state;
+    project.arrangement.lanes[0].clips[0].ara = false;
+    project
 }
 
 fn audio() -> AudioPool {
@@ -115,4 +129,27 @@ fn without_audio_clips_it_loads_as_any_plug_in() {
     // A clip whose file has no samples is not in a document either.
     let started = start_offline(&project(true), &AudioPool::new(), &env(), SR);
     assert_eq!(started.running(), 1, "{:?}", started.notices);
+}
+
+/// The case a tester's imported project showed: a plug-in that supports ARA, an insert on a
+/// track with audio clips, runs as any plug-in, with no document to bind (it was loaded with
+/// one, and a crash in it took down every track that shared the document).
+#[test]
+fn an_ara_plug_in_in_a_chain_is_an_insert() {
+    let started = start_offline(&inserted(None), &audio(), &env(), SR);
+    assert_eq!(started.running(), 1, "{:?}", started.notices);
+    // A state of the plug-in's own, as an imported project carries, changes nothing.
+    let started = start_offline(&inserted(Some(vec![1, 2, 3])), &audio(), &env(), SR);
+    assert!(started.notices.iter().all(|n| !n.contains("does not support ARA")), "{:?}", started.notices);
+}
+
+/// A device bound to its track's clips before the rule changed keeps its edits: its saved state
+/// holds an ARA archive, so it is loaded with the document again (the test plug-in refuses it,
+/// which shows the document was sent).
+#[test]
+fn a_saved_ara_archive_keeps_a_device_bound() {
+    let state = suhina_plugins::protocol::wrap_ara_state(vec![1, 2, 3], Some(("com.example.doc".into(), vec![9; 4])));
+    let started = start_offline(&inserted(Some(state)), &audio(), &env(), SR);
+    assert_eq!(started.running(), 0);
+    assert!(started.notices.iter().any(|n| n.contains("does not support ARA")), "{:?}", started.notices);
 }

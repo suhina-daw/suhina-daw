@@ -51,9 +51,16 @@ track's, so the plug-in is no longer one of the track's effects:
   region, round robin. A disabled or missing host leaves the clips playing as they are.
 - **The editor** opens with a double-click on an ARA clip, the host's view selection set to it.
 - **Copies and moves** keep the clip's flag and its edits.
-- **Old projects:** a track's ARA device from before keeps editing every audio clip of its track;
-  the first **Edit with** or `clip.setAra` there makes it the clip host and names those clips. An
-  ARA plug-in dropped on a track becomes its clip host for all its audio clips, as before.
+- **In a chain it is an insert** ([ADR 0033](../decisions/0033-ara-hosting.md) › Amendment: an
+  ARA plug-in in a chain is an insert). An ARA plug-in dropped on a track, added with
+  `device.addPlugin`, or in an imported project is an ordinary effect where it was put, bound to no
+  clip. Only the clip host is bound (`device.addPlugin`'s `clip_host`, which `clip.setAra` passes);
+  a track with an insert of the plug-in gets a clip host of its own beside it. The session decides
+  it in one place for the live rack and the offline render (`ara::binds_clips`).
+- **Old projects:** a device whose saved state holds an ARA archive (it was bound when it was
+  saved) is loaded bound again, its edits kept, and keeps editing every audio clip of its track;
+  the first **Edit with** or `clip.setAra` there makes it the clip host and names those clips. A
+  device without an archive loads as an insert.
 
 ## What runs
 
@@ -217,9 +224,9 @@ the list below, in a first form). Where it differs from the decisions above it i
   question when the plug-in is removed, come with the overlap guard.
 - **Found when it loads, too.** The host tells the engine with `loaded` whether the plug-in
   answers `IPlugInEntryPoint` (`edits_clips`). One the scan did not mark (the module's ARA class
-  named differently, say, or a catalog from before the scan read ARA) is then loaded again with
-  its track's clips, with a notice, and is treated as an ARA plug-in from then on: the catalog
-  remembers it, so its next device, in any project, starts with its clips at once. The answer
+  named differently, say, or a catalog from before the scan read ARA) is then remembered by the
+  catalog as an ARA plug-in, in any project. The device is not loaded again: an insert stays an
+  insert, and only a clip host is bound to the clips. The answer
   counts only beside an ARA factory class in its module that can pair with it (by name, or any
   class when the factory names pair none; `scan::may_edit_clips`): a shell module whose components
   all answer `IPlugInEntryPoint` but that declares no ARA factory holds no ARA plug-in
@@ -230,9 +237,10 @@ the list below, in a first form). Where it differs from the decisions above it i
   and Alt+M work on any audio clip in the Arrangement: when the clip's track has no ARA plug-in
   running, the installed one (the scan's ARA plug-ins, Melodyne first, else Melodyne by name) is
   added to the track, and its editor opens in the clip's place once it runs with the clips.
-- **An ARA plug-in goes first in its chain**, wherever it is dropped or `device.addPlugin` puts
-  it (the result says `moved_first`): it plays the clips from their files, so a device before it
-  would not be heard. Observed in another host, which moves it there too.
+- **A clip host goes first in its chain**, wherever `device.addPlugin` with `clip_host` puts it
+  (the result says `moved_first`): it plays the clips from their files, so a device before it
+  would not be heard. Observed in another host, which moves it there too. An insert stays where
+  it was put (the result's `clip_host` is false).
 - **Other interim limits.** Warped clips are described at their file's speed (their start and end follow the song), and the overlap guard and suspension (ADR 0033 › 6) are not built: overlapping
   clips are both in the document. Offline renders load the plug-in with the same document. The
   `notifyDocumentDataChanged` flag is kept but not read yet: the edits are noticed when the

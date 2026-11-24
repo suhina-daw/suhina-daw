@@ -10,9 +10,19 @@
 //! each pass through its loop, all of the same modification, so an edit plays in every repeat.
 
 use suhina_engine::AudioPool;
-use suhina_model::{Clip, ClipAudio, LaneData, Project, TrackId};
-use suhina_plugins::AudioSource;
+use suhina_model::{Clip, ClipAudio, Device, LaneData, Project, TrackId};
 use suhina_plugins::protocol::{AraDocument, AraNote, AraRegion, AraSource, MAX_ARA_OBJECTS};
+use suhina_plugins::{AudioSource, SavedState};
+
+/// Whether the plug-in device is loaded bound to its track's audio clips: it is the channel's
+/// clip host (a clip's **Edit with**, `clip.setAra`), or its state, the saved one or the one
+/// kept over a restart, holds an ARA archive, as a device bound before this rule keeps its
+/// edits. Any other plug-in is an insert, even one that supports ARA (ADR 0033, amendment: an
+/// ARA plug-in in a chain is an insert): one that crashes while bound takes the document every
+/// track of it shares down with it.
+pub(crate) fn binds_clips(device: &Device, state: Option<&SavedState>) -> bool {
+    device.clip_host || state.is_some_and(|s| suhina_plugins::protocol::carries_ara_archive(&s.data))
+}
 
 /// The notes an ARA plug-in found in a clip (#720), for the arrangement to draw over its
 /// waveform: times in seconds from the clip's start, and the lowest and highest pitch.

@@ -690,15 +690,13 @@ pub struct Rack {
     rebinding: std::collections::HashSet<u64>,
     /// Of those, the ones whose editor was open: it opens again once the plug-in runs.
     reopen_after_rebind: std::collections::HashSet<u64>,
-    /// Plug-in devices the host found to support ARA when they loaded although the catalog did
-    /// not say so (a scan that missed it): they are loaded again with their track's clips, and
-    /// from then on as plug-ins that edit clips.
-    ara_found: std::collections::HashSet<u64>,
     /// The key of the ARA documents this rack's plug-ins share in their host processes: one a
     /// plug-in per project, each track a region sequence of it ([`suhina_plugins::protocol::AraDocument::document`]).
     ara_document: String,
-    /// The plug-ins (by spec) found that way: the next device of one starts with its clips at
-    /// once, rather than loading twice. Taken by [`Rack::take_ara_learned`] for the catalog.
+    /// The plug-ins (by spec) a host found to support ARA when they loaded although the catalog
+    /// did not say so (a scan that missed it). It only says what they can do: a device of one
+    /// stays an insert unless it is a clip host ([`crate::ara::binds_clips`]). Taken by
+    /// [`Rack::take_ara_learned`] for the catalog.
     ara_plugins: std::collections::HashSet<String>,
     ara_learned: Vec<String>,
     /// The region each plug-in that edits clips should show as selected (`clip-<id>`), by
@@ -746,7 +744,6 @@ impl Default for Rack {
             ara_selection: HashMap::new(),
             ara_notes: HashMap::new(),
             ara_notes_hidden: std::collections::HashSet::new(),
-            ara_found: std::collections::HashSet::new(),
             ara_document: next_ara_document(),
             ara_plugins: std::collections::HashSet::new(),
             ara_learned: Vec::new(),
@@ -1487,10 +1484,11 @@ impl Rack {
                 continue;
             };
             let state = self.kept.remove(&found.key).or_else(|| saved_state(device));
-            // A plug-in that edits clips gets its track's audio clips (ADR 0033).
+            // A clip host, or a device bound to its clips before (its state holds their edits),
+            // gets its track's audio clips; any other plug-in is an insert, whatever it supports
+            // (ADR 0033, amendment: an ARA plug-in in a chain is an insert).
             let spec = matched.plugin.spec();
-            let edits_clips =
-                matched.plugin.ara || self.ara_found.contains(&found.key) || self.ara_plugins.contains(&spec);
+            let edits_clips = crate::ara::binds_clips(device, state.as_ref());
             let layout = found.track.filter(|_| edits_clips).map(|t| crate::ara::Layout::of(project, audio, t));
             let ara = layout.as_ref().and_then(|l| l.document(audio)).map(|(mut document, sources)| {
                 document.document.clone_from(&self.ara_document);
@@ -1688,22 +1686,6 @@ impl Rack {
         let mut updates = Vec::new();
         for found in devices {
             let Some(instance) = self.instances.get_mut(&found.key) else { continue };
-            // Found to support ARA when it loaded: on a track with audio clips it loads again
-            // with them.
-            if instance.ara_layout.is_none()
-                && self.ara_found.contains(&found.key)
-                && instance.status == PluginStatus::Running
-                && instance.control.is_some()
-                && let Some(track) = found.track
-            {
-                let now = crate::ara::Layout::of(project, audio, track);
-                if now.is_empty() {
-                    instance.ara_layout = Some(now);
-                } else {
-                    rebind.push(found.key);
-                }
-                continue;
-            }
             let (Some(layout), Some(track)) = (&instance.ara_layout, found.track) else { continue };
             if instance.status != PluginStatus::Running || instance.control.is_none() {
                 continue;
@@ -1803,14 +1785,14 @@ impl Rack {
                         Ok(()) => instance.status = PluginStatus::Running,
                         Err(e) => instance.status = PluginStatus::Failed(e.message),
                     }
-                    // The host found it supports ARA where the catalog did not say so: it is
-                    // loaded again with its track's clips ([`Rack::follow_clips`]).
-                    if control.edits_clips() && instance.ara_layout.is_none() && self.ara_found.insert(started.key) {
-                        if !instance.spec.is_empty() && self.ara_plugins.insert(instance.spec.clone()) {
-                            self.ara_learned.push(instance.spec.clone());
-                        }
-                        notices
-                            .push(format!("{name} edits clips (ARA): it is loaded again with its track's audio clips"));
+                    // The host found it supports ARA where the catalog did not say so: the
+                    // catalog learns it. The device stays as it was loaded: an insert is not
+                    // bound to the clips for supporting ARA.
+                    if control.edits_clips()
+                        && !instance.spec.is_empty()
+                        && self.ara_plugins.insert(instance.spec.clone())
+                    {
+                        self.ara_learned.push(instance.spec.clone());
                     }
                     // A restarted plug-in has a new instance number: placements go to it, again.
                     instance.placer = None;

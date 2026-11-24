@@ -304,3 +304,24 @@ fn only_switches_and_lists_hold() {
     assert!(held(3, true), "a list of choices");
     assert!(!held(3, false) && !held(1024, false), "a knob with steps");
 }
+
+#[test]
+fn a_state_carries_the_archive_and_reads_back() {
+    let wrapped = wrap_ara_state(vec![1, 2, 3], Some(("com.example.doc".into(), vec![9; 5])));
+    let (component, archive) = unwrap_ara_state(&wrapped);
+    assert_eq!(component, [1, 2, 3]);
+    assert_eq!(archive, Some(("com.example.doc".to_string(), [9u8; 5].as_slice())));
+    assert!(carries_ara_archive(&wrapped));
+    // Without an archive, and any state of the plug-in's own, it is the component's.
+    assert_eq!(wrap_ara_state(vec![4, 5], None), [4, 5]);
+    assert_eq!(unwrap_ara_state(&[4, 5]), ([4u8, 5].as_slice(), None));
+    assert!(!carries_ara_archive(&[4, 5]));
+    // Cut short, it is not split, and holds no archive.
+    let cut = &wrapped[..wrapped.len() - 1];
+    assert_eq!(unwrap_ara_state(cut), (cut, None));
+    assert!(!carries_ara_archive(cut));
+    assert!(!carries_ara_archive(b"SUHINA-ARA-STATE"));
+    let mut huge = wrapped.clone();
+    huge[20..28].copy_from_slice(&u64::MAX.to_le_bytes());
+    assert_eq!(unwrap_ara_state(&huge).1, None);
+}

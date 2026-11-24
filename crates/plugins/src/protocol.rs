@@ -147,6 +147,55 @@ pub const MAX_ARA_TEXT: usize = 1024;
 /// Most notes one `ara_notes` message carries for a region; more are cut, and the message says so.
 pub const MAX_ARA_NOTES: usize = 16_384;
 
+/// What starts a VST3 state that carries the plug-in's ARA edits as well.
+const ARA_STATE_MAGIC: &[u8; 16] = b"SUHINA-ARA-STATE";
+
+/// The state a project keeps for a plug-in bound to an ARA document (ADR 0033 › 7): the
+/// component's own state and the document archive (its id and bytes), in one blob. Without an
+/// archive it is the component's state as it is.
+pub fn wrap_ara_state(component: Vec<u8>, archive: Option<(String, Vec<u8>)>) -> Vec<u8> {
+    let Some((id, bytes)) = archive else { return component };
+    let mut out = Vec::with_capacity(component.len() + bytes.len() + id.len() + 40);
+    out.extend_from_slice(ARA_STATE_MAGIC);
+    out.extend_from_slice(&1u32.to_le_bytes());
+    for part in [component.as_slice(), id.as_bytes(), bytes.as_slice()] {
+        out.extend_from_slice(&(part.len() as u64).to_le_bytes());
+        out.extend_from_slice(part);
+    }
+    out
+}
+
+/// Splits a state [`wrap_ara_state`] made into the component's state and the archive; any other
+/// state is the component's alone. A blob that starts like one but does not hold together is
+/// taken as the component's, untouched.
+pub fn unwrap_ara_state(data: &[u8]) -> (&[u8], Option<(String, &[u8])>) {
+    type Parts<'a> = (&'a [u8], Option<(String, &'a [u8])>);
+    let parts = || -> Option<Parts<'_>> {
+        let rest = data.strip_prefix(ARA_STATE_MAGIC.as_slice())?;
+        let (version, mut rest) = rest.split_at_checked(4)?;
+        if version != 1u32.to_le_bytes() {
+            return None;
+        }
+        let mut take = || -> Option<&[u8]> {
+            let (len, after) = rest.split_at_checked(8)?;
+            let len = usize::try_from(u64::from_le_bytes(len.try_into().ok()?)).ok()?;
+            let (part, after) = after.split_at_checked(len)?;
+            rest = after;
+            Some(part)
+        };
+        let (component, id, bytes) = (take()?, take()?, take()?);
+        let id = String::from_utf8(id.to_vec()).ok()?;
+        Some((component, Some((id, bytes))))
+    };
+    parts().unwrap_or((data, None))
+}
+
+/// Whether a saved state holds an ARA archive ([`wrap_ara_state`]): the plug-in was bound to its
+/// track's clips when the state was read, and its edits are in it.
+pub fn carries_ara_archive(state: &[u8]) -> bool {
+    unwrap_ara_state(state).1.is_some()
+}
+
 /// A note an ARA plug-in found in a clip (#720): `start` seconds after the region starts,
 /// lasting `length` seconds, at MIDI pitch `pitch`, as loud as `volume` (0 to 1).
 #[derive(Debug, Clone, Copy, PartialEq)]
