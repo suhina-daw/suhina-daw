@@ -2,9 +2,19 @@
   <a href="https://suhina.org"><img width="520" alt="Suhina" src="https://github.com/user-attachments/assets/7efa72b4-fba5-42f3-9503-0ea9f4e864f6"></a>
 </h1>
 
-<p align="center"><b>A free, open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live. For Windows, macOS and Linux.</b></p>
+<p align="center">
+  <b>A free, open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live.</b><br>
+  For Windows, macOS and Linux.
+</p>
 
-<p align="center">Launch clips and scenes, lay out the song on an Arrangement timeline, edit notes, automation and audio, and explore your samples on a map that groups them by how they sound. Built-in instruments and effects, CLAP, VST3 and VST2 plug-ins in a sandboxed host, themes written in CSS, and an AI agent that can work in your project over MCP. Opens your Ableton Live (<code>.als</code>) and FL Studio (<code>.flp</code>) projects. Drawn with egui, played through cpal, on an engine whose audio thread never waits.</p>
+<p align="center">
+  Launch clips, arrange the song, edit notes, automation and audio, and find samples by how they sound.<br>
+  Built-in instruments and effects, sandboxed CLAP, VST3 and VST2 plug-ins, CSS themes and an AI agent over MCP.
+</p>
+
+<p align="center">
+  <b>Opens your Ableton Live (<code>.als</code>) and FL Studio (<code>.flp</code>) projects.</b>
+</p>
 
 <p align="center">
   <a href="https://github.com/suhina-daw/suhina-daw/actions/workflows/ci.yml?query=branch%3Anext"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/suhina-daw/suhina-daw/ci.yml?branch=next&event=push&label=CI"></a>
@@ -99,7 +109,7 @@ What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and
   an AI agent over MCP run the same ones, with one undo history. Agent access is off until you
   enable it.
 - **Real-time engine.** The audio thread never allocates, locks or touches the disk; offline
-  rendering runs the same engine code.
+  rendering runs the same engine code. Drawn with egui and played through cpal.
 - **Your projects, not locked in.** Open Ableton Live (`.als`) and FL Studio (`.flp`) projects,
   bring in audio and MIDI, and save in Suhina's own format. FL Studio import brings patterns,
   samplers, audio clips, plug-ins with their state, mixer routing and automation, and names what it
