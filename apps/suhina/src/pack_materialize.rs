@@ -117,8 +117,11 @@ fn migrate_reported(base: &Path, old_name: &str) -> PathBuf {
 /// names (#1369). Compared by their components, case-insensitively, so a settings text that
 /// names the folder in another spelling of its case still keeps it. A relative setting is read
 /// from `cwd`, the working folder, as the panels read it (`App::nam_models_folder` hands the
-/// text on as it is). `.` and `..` are taken out by the text alone, without asking the disk
-/// (`work/../NAM models` is `NAM models`), as the system reads them in a path it opens.
+/// text on as it is). Where both paths exist they are compared as the disk resolves them too
+/// (links followed, so `link/../My captures` is wherever the link's parent is); either way of
+/// reading that finds the folder keeps it, since keeping a folder only leaves it where it is.
+/// Without the disk, `.` and `..` are taken out by the text (`work/../NAM models` is
+/// `NAM models`).
 fn is_kept(folder: &Path, keep: &[PathBuf], cwd: &Path) -> bool {
     let components = |path: &Path| -> Vec<String> {
         // Each part, and whether `..` may take it away: a root or a drive stays.
@@ -137,10 +140,15 @@ fn is_kept(folder: &Path, keep: &[PathBuf], cwd: &Path) -> bool {
         }
         parts.into_iter().map(|(part, _)| part).collect()
     };
+    let resolved_folder = std::fs::canonicalize(folder).ok().map(|f| components(&f));
     let folder = components(folder);
     keep.iter().any(|kept| {
         let kept = if kept.is_absolute() { kept.clone() } else { cwd.join(kept) };
-        components(&kept).starts_with(&folder)
+        let on_disk = resolved_folder
+            .as_ref()
+            .zip(std::fs::canonicalize(&kept).ok())
+            .is_some_and(|(folder, kept)| components(&kept).starts_with(folder));
+        on_disk || components(&kept).starts_with(&folder)
     })
 }
 

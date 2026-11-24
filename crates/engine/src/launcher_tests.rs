@@ -520,9 +520,12 @@ fn a_track_recording_into_the_arrangement_does_not_play_its_arrangement() {
     assert!(!onsets(&out).is_empty(), "a stop ended the recording: {:?}", onsets(&out));
 }
 
-/// The two loops' tracks, each with its loop in the arrangement for 32 beats.
+/// Two tracks, each with a one-beat loop in its slot and in the arrangement for 32 beats.
 fn two_loops_in_the_arrangement() -> Project {
-    let mut p = two_loops();
+    let mut p = project(
+        vec![notes(1, vec![note(0.0, 60)]), notes(2, vec![note(0.5, 72)])],
+        vec![vec![with(clip(1, 1.0, true))], vec![with(clip(2, 1.0, true))]],
+    );
     for track in [1, 2] {
         p.arrangement.lanes.push(ArrangementLane {
             id: Default::default(),

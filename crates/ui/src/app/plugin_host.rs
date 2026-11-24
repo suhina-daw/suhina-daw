@@ -84,14 +84,11 @@ impl App {
             // Read in the project it was added to, never in another that holds a device there.
             let report =
                 self.projects.session_mut(entry.project).ok().and_then(|s| s.plugin_report(entry.track, entry.device));
-            let waiting = now < entry.until;
-            match report.map(|r| (r.status, r.editor_open)) {
-                Some((PluginStatus::Running, false)) if entry.project == active => open.push(entry),
-                // Still starting, not reported yet, or its project not shown: wait while there is time.
-                Some((PluginStatus::Running, false) | (PluginStatus::Loading, _)) | None if waiting => {
-                    self.pending_editors.push(entry)
-                }
-                _ => {}
+            let state = report.map(|r| (r.status, r.editor_open));
+            match pending_step(state, entry.project == active, now < entry.until) {
+                PendingStep::Open => open.push(entry),
+                PendingStep::Wait => self.pending_editors.push(entry),
+                PendingStep::LetGo => {}
             }
         }
         for entry in open {
@@ -536,4 +533,29 @@ pub(super) fn pending_editor(
         _ => None,
     };
     added.map(|(track, device)| PendingEditor { project, track, device, until: now + EDITOR_WAIT })
+}
+
+/// What a pending editor does at a poll ([`App::open_pending_editors`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PendingStep {
+    Open,
+    Wait,
+    LetGo,
+}
+
+/// The step for a pending editor whose plug-in reports `state` (its status and whether its editor
+/// is open; `None` when nothing is reported yet), in the project shown or not, before its
+/// deadline or not. Nothing opens once the deadline has passed, a plug-in that starts at that
+/// very poll included: the setting promises about ten seconds, not an editor later on.
+pub(super) fn pending_step(state: Option<(PluginStatus, bool)>, shown: bool, waiting: bool) -> PendingStep {
+    if !waiting {
+        return PendingStep::LetGo;
+    }
+    match state {
+        Some((PluginStatus::Running, false)) if shown => PendingStep::Open,
+        // Still starting, not reported yet, or its project not shown: wait while there is time.
+        Some((PluginStatus::Running, false) | (PluginStatus::Loading, _)) | None => PendingStep::Wait,
+        // Failed, removed, or its editor opened already.
+        _ => PendingStep::LetGo,
+    }
 }

@@ -499,11 +499,18 @@ impl Session {
                 self.live.recording.notices.push(e.message);
             }
         }
+        // The recorder off also ends every track's recording into the arrangement in the engine,
+        // a column whose own end was refused included: while the engine's queue is full it is
+        // sent again at the next poll, never given up.
         if self.live.recording.takes.is_empty() && self.live.recording.engine_on {
-            if let Some(player) = self.sync.player.as_mut() {
-                let _ = player.send(LaunchCommand::SetRecording { on: false });
+            let sent = self
+                .sync
+                .player
+                .as_mut()
+                .is_none_or(|player| player.send(LaunchCommand::SetRecording { on: false }).is_ok());
+            if sent {
+                self.live.recording.engine_on = false;
             }
-            self.live.recording.engine_on = false;
         }
         self.resume_slots(now_clock);
         std::mem::take(&mut self.live.recording.notices)

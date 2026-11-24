@@ -134,6 +134,25 @@ fn a_relative_setting_keeps_the_old_folder_from_the_working_folder() {
     assert!(is_kept(&old, &[base.join("other").join("..").join("NAM models")], &work), "an absolute setting with `..`");
 }
 
+/// A setting that climbs out of a link (`link/../My captures`) names the folder the disk
+/// resolves, the link's real parent: when that is inside the old folder, the old folder stays,
+/// though the text alone reads it as a folder beside the working one.
+#[cfg(unix)]
+#[test]
+fn a_setting_through_a_link_keeps_the_old_folder_it_resolves_into() {
+    let dir = std::env::temp_dir().join(format!("suhina-pack-keep-link-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let old = dir.join("NAM models");
+    std::fs::create_dir_all(old.join("nested")).unwrap();
+    std::fs::create_dir_all(old.join("My captures")).unwrap();
+    let work = dir.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    std::os::unix::fs::symlink(old.join("nested"), work.join("link")).unwrap();
+    assert!(is_kept(&old, &[PathBuf::from("link/../My captures")], &work), "resolved through the link");
+    assert!(!is_kept(&old, &[PathBuf::from("My captures")], &work), "a folder beside the working one");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A name the new tree already holds is never overwritten: that file stays in the old
 /// folder, the old folder stays, and the warning says what was kept — once. A folder whose
 /// names the new tree holds never empties, so its warning is a start-up record, not a nag

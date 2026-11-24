@@ -1615,6 +1615,41 @@ fn the_open_semitones_field_steps_from_the_applied_value() {
     assert_eq!(sent, Some(8.25), "from the 7 typed");
 }
 
+/// With each step applied to the clip as the window applies it, repeated Shift+Up in the open
+/// Semitones field adds exactly an octave each time on a fractional transpose: -0.5, then 11.5,
+/// then 23.5, the cents kept, though the field's whole number rounds the other way after the
+/// first step.
+#[test]
+fn shift_up_in_the_open_semitones_field_adds_an_octave_each_time_on_a_fractional_transpose() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel::default(), 0.0, -0.5);
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(egui::vec2(1000.0, 260.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(
+            |ui, (detail, actions): &mut (Detail, Vec<Action>)| {
+                // The last transpose sent is the clip's, as the project would have it.
+                let sent = actions.iter().rev().find_map(|a| a.params["transpose"].as_f64());
+                if let (Some(transpose), Detail::Clip(info, _)) = (sent, &mut *detail) {
+                    info.transpose = transpose;
+                }
+                show_row(ui, detail, &[], actions, &mut Vec::new());
+            },
+            (detail, Vec::new()),
+        );
+    // -0.5 shows as -1 semitone and +50 cents.
+    harness.get_by_label("Semitones: -1").click();
+    harness.run();
+    for wanted in [11.5, 23.5] {
+        harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowUp);
+        harness.run();
+        let sent = harness.state().1.iter().rev().find_map(|a| a.params["transpose"].as_f64());
+        assert_eq!(sent, Some(wanted));
+    }
+}
+
 /// The tempo is typed into a text field opened by a double-click, halved and doubled, each a
 /// `clip.setTempo` set by hand; Escape leaves a typed tempo unset.
 #[test]

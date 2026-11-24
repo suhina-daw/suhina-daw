@@ -835,6 +835,23 @@ fn an_added_plugin_waits_for_its_editor_only_with_the_setting_on() {
     assert!(app.pending_editors.is_empty(), "let go at its deadline");
 }
 
+/// A pending editor opens only for a running plug-in in the project shown and before its
+/// deadline; one that starts at the first poll after the deadline opens nothing.
+#[test]
+fn a_pending_editor_opens_only_before_its_deadline_in_its_project() {
+    use plugin_host::{PendingStep, pending_step};
+    use suhina_session::PluginStatus::{Failed, Loading, Running};
+    let running = Some((Running, false));
+    assert_eq!(pending_step(running.clone(), true, true), PendingStep::Open);
+    assert_eq!(pending_step(running.clone(), true, false), PendingStep::LetGo, "running, but past its deadline");
+    assert_eq!(pending_step(running, false, true), PendingStep::Wait, "its project not shown");
+    assert_eq!(pending_step(Some((Loading, false)), true, true), PendingStep::Wait);
+    assert_eq!(pending_step(None, true, true), PendingStep::Wait, "not reported yet");
+    assert_eq!(pending_step(None, true, false), PendingStep::LetGo);
+    assert_eq!(pending_step(Some((Running, true)), true, true), PendingStep::LetGo, "its editor opened already");
+    assert_eq!(pending_step(Some((Failed("no".into()), false)), true, true), PendingStep::LetGo);
+}
+
 /// The ARA edits prompt and the missing files panel are drawn over the window: plug-in
 /// editors hide, and the keys that edit the project wait until they close.
 #[test]
