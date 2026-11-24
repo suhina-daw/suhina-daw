@@ -604,6 +604,7 @@ impl App {
         suhina_plugins::trace!("action {id} {params}");
         match self.projects.execute(id, params) {
             Ok(result) => {
+                self.note_added_plugin(id, params, &result);
                 self.revision += 1;
                 self.timeline = None;
                 Some(result)

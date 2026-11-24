@@ -1030,6 +1030,7 @@ impl App {
         for (id, params) in commands {
             match self.projects.execute(id, &params) {
                 Ok(result) => {
+                    self.note_added_plugin(id, &params, &result);
                     self.revision += 1;
                     self.timeline = None;
                     // A Stems file arrives as one group: it opens folded, so the drop reads as a

@@ -776,6 +776,33 @@ fn the_quick_add_palette_adds_effects_to_main() {
     assert_eq!(app.track_name(TrackId::MAIN), "Main");
 }
 
+/// With Settings › Plug-ins › Open the editor when added on, a plug-in a command adds is
+/// remembered until it runs; built-in devices and the setting off remember nothing, and one that
+/// never reports running is let go after its polls.
+#[test]
+fn an_added_plugin_waits_for_its_editor_only_with_the_setting_on() {
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let added = json!({ "device": 2 });
+    app.note_added_plugin("device.addPlugin", &json!({ "track": 1, "plugin": "Nova" }), &added);
+    assert!(app.pending_editors.is_empty(), "off by default");
+
+    app.settings.plugin_editor_on_add = true;
+    app.note_added_plugin("device.addPlugin", &json!({ "track": 1, "plugin": "Nova" }), &added);
+    assert_eq!(app.pending_editors, vec![(TrackId(1), 2, 60)]);
+    let new_track = json!({ "track": 9, "device": { "device": 0 } });
+    app.note_added_plugin("track.add", &json!({ "device": "fm-synth" }), &new_track);
+    assert_eq!(app.pending_editors.len(), 1, "a built-in device opens no editor");
+    app.note_added_plugin("track.add", &json!({ "device": "VST3:Nova" }), &new_track);
+    assert_eq!(app.pending_editors.last(), Some(&(TrackId(9), 0, 60)), "a plug-in on a new track");
+
+    // Nothing runs in the demo: each poll counts down, and the last lets them go.
+    for _ in 0..=60 {
+        app.open_pending_editors();
+    }
+    assert!(app.pending_editors.is_empty(), "let go once their polls are spent");
+}
+
 /// The ARA edits prompt and the missing files panel are drawn over the window: plug-in
 /// editors hide, and the keys that edit the project wait until they close.
 #[test]

@@ -37,6 +37,55 @@ impl App {
         self.run(&Action::new(command, json!({ "track": track.0, "device": index })));
     }
 
+    /// Remembers a plug-in a command just added, when Settings say its editor opens by itself:
+    /// `device.addPlugin` on a track (or Main), or `track.add` with a plug-in as its device. The
+    /// editor opens once the plug-in runs ([`App::open_pending_editors`]), since the plug-in
+    /// loads in its host after the command.
+    pub(super) fn note_added_plugin(&mut self, id: &str, params: &serde_json::Value, result: &serde_json::Value) {
+        if !self.settings.plugin_editor_on_add {
+            return;
+        }
+        let index = |v: &serde_json::Value| v.as_u64().and_then(|i| usize::try_from(i).ok());
+        let track = |v: &serde_json::Value| v.as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId);
+        let added = match id {
+            "device.addPlugin" => track(&params["track"]).zip(index(&result["device"])),
+            "track.add" if params["device"].is_string() => {
+                // A plug-in's spec, not a built-in device's id: the new track's device runs in a host.
+                let builtin = params["device"].as_str().is_some_and(|d| suhina_device_registry::info(d).is_some());
+                (!builtin).then(|| track(&result["track"]).zip(index(&result["device"]["device"]))).flatten()
+            }
+            _ => None,
+        };
+        if let Some((track, index)) = added {
+            // About ten seconds of polls for a plug-in that is slow to load.
+            self.pending_editors.push((track, index, 60));
+        }
+    }
+
+    /// Opens the editor of each plug-in [`App::note_added_plugin`] remembered, once it runs; one
+    /// that fails, is removed or does not start in time is let go.
+    pub(super) fn open_pending_editors(&mut self) {
+        if self.pending_editors.is_empty() {
+            return;
+        }
+        let pending = std::mem::take(&mut self.pending_editors);
+        let mut open = Vec::new();
+        for (track, index, left) in pending {
+            let report = self.projects.session_mut(None).ok().and_then(|s| s.plugin_report(track, index));
+            match report.map(|r| (r.status, r.editor_open)) {
+                Some((PluginStatus::Running, false)) => open.push((track, index)),
+                // Still starting, or not reported yet: wait a poll more, while there are polls left.
+                Some((PluginStatus::Loading, _)) | None if left > 0 => {
+                    self.pending_editors.push((track, index, left - 1))
+                }
+                _ => {}
+            }
+        }
+        for (track, index) in open {
+            self.run(&Action::new("device.openEditor", json!({ "track": track.0, "device": index })));
+        }
+    }
+
     /// How many devices `track`'s chain holds (Main's for [`TrackId::MAIN`]), if the track is in
     /// the project.
     pub(super) fn device_count(&self, track: TrackId) -> Option<usize> {
@@ -64,6 +113,7 @@ impl App {
         let changes = self.session().map(suhina_session::Session::change_count);
         let was_preparing = self.session().is_some_and(Session::audio_preparing);
         let notices = self.projects.poll_plugins();
+        self.open_pending_editors();
         if was_preparing && self.session().is_some_and(|s| s.player().is_some()) && notices.is_empty() {
             self.status = Status::Hint("Audio ready. Press Play to start playback.".into());
         }

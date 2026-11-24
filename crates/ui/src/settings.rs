@@ -468,6 +468,8 @@ pub struct Settings {
     pub mixer_controls: MixerControls,
     /// Where plug-in editors open.
     pub plugin_editors: EditorPlacement,
+    /// Whether a plug-in's editor opens by itself once the plug-in is added and running.
+    pub plugin_editor_on_add: bool,
     /// The theme in use: [`crate::kit::theme::BUILT_IN`] or the name of a file in the themes folder,
     /// without `.json`.
     pub theme: String,
@@ -606,6 +608,7 @@ impl Default for Settings {
             highlight_scale: true,
             mixer_controls: MixerControls::Field,
             plugin_editors: EditorPlacement::Window,
+            plugin_editor_on_add: false,
             theme: crate::kit::theme::BUILT_IN.into(),
             projects_folder: String::new(),
             templates_folder: String::new(),

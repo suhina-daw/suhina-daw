@@ -585,6 +585,9 @@ pub struct App {
     tab_switcher: Option<usize>,
     /// The quick-add palette while it is open (`quick_add.rs`).
     quick_add: Option<quick_add::QuickAdd>,
+    /// Plug-ins just added whose editors open once they run (Settings › Plug-ins › Open the
+    /// editor when added): the track, the device's place and the polls left to wait.
+    pending_editors: Vec<(TrackId, usize, u32)>,
     /// What the palette's buttons narrow it to, kept from one palette to the next.
     quick_add_filter: quick_add::Filter,
     /// What the palette's field said when it was closed without adding, for the next one.
@@ -885,6 +888,7 @@ impl App {
             rename: None,
             tab_switcher: None,
             quick_add: None,
+            pending_editors: Vec::new(),
             quick_add_filter: quick_add::Filter::default(),
             quick_add_kept: String::new(),
             clips_before: Vec::new(),
@@ -3063,6 +3067,9 @@ impl App {
             if let Some(line) = clipboard_line(action.id) {
                 self.clipboard_write = Some(line);
             }
+        }
+        if let Ok(result) = &ran {
+            self.note_added_plugin(action.id, params, result);
         }
         match ran {
             Ok(result) if result["no_input"].as_bool() == Some(true) => {

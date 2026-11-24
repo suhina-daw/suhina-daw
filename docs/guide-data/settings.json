@@ -486,6 +486,31 @@
       "workInProgress": false
     },
     {
+      "id": "Plugins/Editors/plugin_editor_on_add",
+      "page": "Plugins",
+      "section": "Editors",
+      "name": "Open the editor when added",
+      "note": "Open a plug-in’s editor as soon as you add the plug-in.",
+      "keys": [
+        "plugin_editor_on_add"
+      ],
+      "sourceFingerprint": "7898646f52a15698edd563575c6d3fe063112b3027f7389a25ff5c810bb33e4f",
+      "helpStatus": "reviewed",
+      "description": "When this is on, adding a plug-in to a track (from the browser, the quick-add palette or a drop) opens its editor by itself once the plug-in has loaded, where Plug-in editors open in says. Built-in devices are not affected.\n\nA plug-in that fails to load, or takes more than about ten seconds, opens no editor; open it with the P key or the device panel's button.",
+      "options": [
+        {
+          "name": "On",
+          "description": "A plug-in’s editor opens when the plug-in is added."
+        },
+        {
+          "name": "Off",
+          "description": "Editors open only when you ask. This is the default."
+        }
+      ],
+      "whenToChange": "Turn it on when you usually start editing a plug-in right after adding it, such as a synth you want to play with at once.",
+      "workInProgress": false
+    },
+    {
       "id": "Devices/NAM/nam_models_folder",
       "page": "Devices",
       "section": "NAM",
