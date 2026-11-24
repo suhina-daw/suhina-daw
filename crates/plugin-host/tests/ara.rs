@@ -99,7 +99,7 @@ fn inserted(state: Option<Vec<u8>>) -> Project {
     let mut project = project(true);
     let device = &mut project.channels[0].devices[0];
     device.clip_host = false;
-    device.state = state;
+    device.state = state.map(Into::into);
     project.arrangement.lanes[0].clips[0].ara = false;
     project
 }
