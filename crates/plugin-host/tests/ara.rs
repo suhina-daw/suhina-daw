@@ -14,7 +14,7 @@ use std::sync::Arc;
 use suhina_engine::{AudioData, AudioPool};
 use suhina_model::*;
 use suhina_plugins::scan::{Catalog, PluginInfo};
-use suhina_session::{PluginEnv, start_offline};
+use suhina_session::{PluginEnv, start_offline, start_offline_device};
 
 const SR: u32 = 48_000;
 
@@ -152,4 +152,27 @@ fn a_saved_ara_archive_keeps_a_device_bound() {
     let started = start_offline(&inserted(Some(state)), &audio(), &env(), SR);
     assert_eq!(started.running(), 0);
     assert!(started.notices.iter().any(|n| n.contains("does not support ARA")), "{:?}", started.notices);
+}
+
+/// A device bound before, on a track with no audio clips it can be given, loads without a
+/// document; its archive waits in its state for one (the host gives it back with the plug-in's
+/// own), so a save or a restart neither loses the edits nor lets it go as an insert.
+#[test]
+fn an_archive_waits_in_the_state_of_a_device_without_a_document() {
+    let archive = ("com.example.doc".to_string(), vec![9; 4]);
+    let own = 0.25f32.to_le_bytes().to_vec();
+    let state = suhina_plugins::protocol::wrap_ara_state(own.clone(), Some(archive.clone()));
+    let mut project = project(false);
+    project.channels[0].devices[0].clip_host = false;
+    project.channels[0].devices[0].state = Some(state.into());
+    assert_eq!(project.assign_ids(), Ok(()));
+    let key = suhina_engine::plugin_devices(&project)[0].key;
+    let mut started = start_offline_device(&project, &audio(), &env(), key, SR, None)
+        .unwrap()
+        .expect("the test plug-in is installed");
+    assert!(started.refused.is_none(), "{:?}", started.refused);
+    let read = started.control.save_state().unwrap();
+    let (component, kept) = suhina_plugins::protocol::unwrap_ara_state(&read.data);
+    assert_eq!(component, &own[..], "the plug-in's own state");
+    assert_eq!(kept.map(|(id, bytes)| (id, bytes.to_vec())), Some(archive), "the archive with it");
 }

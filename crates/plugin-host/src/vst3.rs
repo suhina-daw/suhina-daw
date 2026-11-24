@@ -716,6 +716,10 @@ pub(crate) struct Vst3Plugin {
     ara: Option<Box<crate::ara::Document>>,
     /// Its component answers ARA's entry point, so it can be bound to a document.
     supports_ara: bool,
+    /// The ARA archive of a state it was given while it had no document (its track had no audio
+    /// clips it could be given): kept, and given back with its state, until a load with a document
+    /// restores it, so its edits are not lost on the way (ADR 0033, amendment).
+    archive_waiting: Option<(String, Vec<u8>)>,
     component: ComPtr<IComponent>,
     _handler: ComWrapper<ComponentHandler>,
     _host: ComWrapper<HostApplication>,
@@ -816,6 +820,7 @@ impl Vst3Plugin {
             editor: None,
             ara: None,
             supports_ara: false,
+            archive_waiting: None,
             component,
             _handler: handler,
             _host: host,
@@ -1101,11 +1106,13 @@ impl Vst3Plugin {
         if !ok(unsafe { self.component.getState(raw.as_ptr()) }) {
             return Err("the plug-in did not give its state".into());
         }
-        // Bound to an ARA document, its edits there are part of its state (ADR 0033).
-        Ok(suhina_plugins::protocol::wrap_ara_state(
-            stream.bytes(),
-            self.ara.as_deref().and_then(crate::ara::Document::store),
-        ))
+        // Bound to an ARA document, its edits there are part of its state (ADR 0033); without
+        // one, the archive it was given waits in it.
+        let archive = match self.ara.as_deref() {
+            Some(document) => document.store(),
+            None => self.archive_waiting.clone(),
+        };
+        Ok(suhina_plugins::protocol::wrap_ara_state(stream.bytes(), archive))
     }
 
     /// The component's own state as it gives it, without an ARA document's edits; `None` when
@@ -1172,9 +1179,11 @@ impl Vst3Plugin {
             }
         }
         // Its ARA edits go back to the clips they were made on; without a document (the track
-        // has no audio clips now) they wait in the project for one.
-        if let (Some(document), Some((id, bytes))) = (&self.ara, archive) {
-            document.restore(&id, bytes)?;
+        // has no audio clips now) they wait in its state for one.
+        match (&self.ara, archive) {
+            (Some(document), Some((id, bytes))) => document.restore(&id, bytes)?,
+            (None, Some((id, bytes))) => self.archive_waiting = Some((id, bytes.to_vec())),
+            (_, None) => self.archive_waiting = None,
         }
         Ok(())
     }

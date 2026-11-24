@@ -60,7 +60,10 @@ track's, so the plug-in is no longer one of the track's effects:
 - **Old projects:** a device whose saved state holds an ARA archive (it was bound when it was
   saved) is loaded bound again, its edits kept, and keeps editing every audio clip of its track;
   the first **Edit with** or `clip.setAra` there makes it the clip host and names those clips. A
-  device without an archive loads as an insert.
+  device without an archive loads as an insert. One whose track has no audio clips it can be
+  given loads without a document; the host keeps the archive and gives it back with the
+  plug-in's own state, so a save or a restart keeps the edits and the binding until a document
+  restores them.
 
 ## What runs
 
