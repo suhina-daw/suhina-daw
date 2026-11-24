@@ -3068,8 +3068,12 @@ impl App {
                 self.clipboard_write = Some(line);
             }
         }
-        if let Ok(result) = &ran {
-            self.note_added_plugin(action.id, params, result);
+        // The fields themselves, not `note_added_plugin`: `session` still borrows the projects.
+        if let Ok(result) = &ran
+            && self.settings.plugin_editor_on_add
+            && let Some(added) = plugin_host::added_plugin(action.id, params, result)
+        {
+            self.pending_editors.push(added);
         }
         match ran {
             Ok(result) if result["no_input"].as_bool() == Some(true) => {

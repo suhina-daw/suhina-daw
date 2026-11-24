@@ -42,23 +42,10 @@ impl App {
     /// editor opens once the plug-in runs ([`App::open_pending_editors`]), since the plug-in
     /// loads in its host after the command.
     pub(super) fn note_added_plugin(&mut self, id: &str, params: &serde_json::Value, result: &serde_json::Value) {
-        if !self.settings.plugin_editor_on_add {
-            return;
-        }
-        let index = |v: &serde_json::Value| v.as_u64().and_then(|i| usize::try_from(i).ok());
-        let track = |v: &serde_json::Value| v.as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId);
-        let added = match id {
-            "device.addPlugin" => track(&params["track"]).zip(index(&result["device"])),
-            "track.add" if params["device"].is_string() => {
-                // A plug-in's spec, not a built-in device's id: the new track's device runs in a host.
-                let builtin = params["device"].as_str().is_some_and(|d| suhina_device_registry::info(d).is_some());
-                (!builtin).then(|| track(&result["track"]).zip(index(&result["device"]["device"]))).flatten()
-            }
-            _ => None,
-        };
-        if let Some((track, index)) = added {
-            // About ten seconds of polls for a plug-in that is slow to load.
-            self.pending_editors.push((track, index, 60));
+        if self.settings.plugin_editor_on_add
+            && let Some(added) = added_plugin(id, params, result)
+        {
+            self.pending_editors.push(added);
         }
     }
 
@@ -499,4 +486,27 @@ impl App {
             self.show_editor();
         }
     }
+}
+
+/// The plug-in a command just added, as a pending editor (track, device index, polls left), or
+/// `None` when the command added none. A free function so a caller that holds the session can
+/// still record it ([`App::note_added_plugin`]).
+pub(super) fn added_plugin(
+    id: &str,
+    params: &serde_json::Value,
+    result: &serde_json::Value,
+) -> Option<(TrackId, usize, u32)> {
+    let index = |v: &serde_json::Value| v.as_u64().and_then(|i| usize::try_from(i).ok());
+    let track = |v: &serde_json::Value| v.as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId);
+    let added = match id {
+        "device.addPlugin" => track(&params["track"]).zip(index(&result["device"])),
+        "track.add" if params["device"].is_string() => {
+            // A plug-in's spec, not a built-in device's id: the new track's device runs in a host.
+            let builtin = params["device"].as_str().is_some_and(|d| suhina_device_registry::info(d).is_some());
+            (!builtin).then(|| track(&result["track"]).zip(index(&result["device"]["device"]))).flatten()
+        }
+        _ => None,
+    };
+    // About ten seconds of polls for a plug-in that is slow to load.
+    added.map(|(track, index)| (track, index, 60))
 }

@@ -3166,11 +3166,11 @@ fn an_arrow_steps_a_semitone_dial_by_one_and_shift_by_an_octave() {
         let ctx = egui::Context::default();
         let at = crate::detail::detail_view::DeviceAt::at(0);
         let mut actions = Vec::new();
-        for (events, modifiers) in events {
+        for (mut events, modifiers) in events {
+            events.insert(0, egui::Event::ModifiersChanged(modifiers));
             let input = egui::RawInput {
                 screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::splat(72.0))),
                 events,
-                modifiers,
                 ..Default::default()
             };
             let mut output = ctx.run_ui(input, |ui| {

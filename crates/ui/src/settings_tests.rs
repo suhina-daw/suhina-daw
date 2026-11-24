@@ -157,6 +157,7 @@ fn settings_survive_a_round_trip() {
         toolbar_size: ToolbarSize::Larger,
         mixer_controls: MixerControls::Knob,
         plugin_editors: EditorPlacement::DeviceView,
+        plugin_editor_on_add: true,
         theme: "Night blue".into(),
         background_image: "C:/Pictures/background.png".into(),
         projects_folder: "C:/Music/Songs = mine".into(),
