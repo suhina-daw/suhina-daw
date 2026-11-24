@@ -1191,7 +1191,9 @@ first sub-row free at its start), so every clip stays visible and can be grabbed
 only where clips overlap: the clips that overlap one another, directly or through others, share
 the lane in as many rows as they use, and a clip that overlaps none fills the lane (#697). A thin
 line between the rows runs along the whole lane, under the clips, so each row reads as one in the
-empty stretches too.
+empty stretches too. However low the lane is made (the tracks zoomed out in height), a row keeps
+at least 2 points: on a lane lower than its rows need, they overlap, each clip still drawn and
+grabbed as at least a thin bar, never left out. So does each track's row in a folded group's lane.
 
 ## Folded groups
 
