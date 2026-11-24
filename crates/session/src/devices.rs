@@ -2082,8 +2082,11 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     // A plug-in put in a chain is an insert there, even one that supports ARA (ADR 0033,
     // amendment: an ARA plug-in in a chain is an insert). Only a clip host, which `clip.setAra`
     // adds (#990), is bound to the clips: it plays them from their files, so a device before it
-    // would not be heard, and it goes first wherever it was asked for.
-    let clip_host = plugin.ara && Args::new(params).value("clip_host").and_then(Value::as_bool) == Some(true);
+    // would not be heard, and it goes first wherever it was asked for. A VST3 plug-in the scan
+    // did not mark (`Session::ara_plugin`'s Melodyne) can be one too: the host binds it, which
+    // teaches the catalog, or refuses the load with why.
+    let may_edit_clips = plugin.ara || plugin.plugin_format() == suhina_plugins::scan::PluginFormat::Vst3;
+    let clip_host = may_edit_clips && Args::new(params).value("clip_host").and_then(Value::as_bool) == Some(true);
     let moved_first = clip_host && Args::new(params).has("position") && position != 0;
     let position = if clip_host { 0 } else { position };
     let position = take_out(&mut channel.devices, replaced.as_ref(), position);

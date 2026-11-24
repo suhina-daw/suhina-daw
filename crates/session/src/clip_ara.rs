@@ -161,7 +161,7 @@ pub(crate) fn set_ara(session: &mut Session, params: &Value) -> Result<Value, Co
                 session,
                 &json!({ "track": track.0, "plugin": plugin, "position": 0, "clip_host": true }),
             )?;
-            if added["ara"] != json!(true) {
+            if added["clip_host"] != json!(true) {
                 return Err(format!("{plugin} does not edit clips over ARA").into());
             }
         }

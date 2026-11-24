@@ -1129,8 +1129,9 @@ impl Session {
 
     /// The installed plug-in a clip is opened in when its track has none that edits clips (ARA):
     /// its name, and what `device.addPlugin` takes for it. One the scan marked as ARA, Melodyne
-    /// first; else Melodyne, which the host finds to support ARA when it loads. `None` without
-    /// a catalog or such a plug-in.
+    /// first; else a VST3 Melodyne, which `clip.setAra` adds as the clip host all the same and the
+    /// host binds when it loads (teaching the catalog). `None` without a catalog or such a
+    /// plug-in.
     pub fn ara_plugin(&self) -> Option<(String, String)> {
         let catalog = &self.plugins.env()?.catalog;
         let melodyne = |p: &&suhina_plugins::scan::PluginInfo| {
