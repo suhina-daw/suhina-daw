@@ -80,7 +80,7 @@ what is inside it).
 | Plug-ins | Actions | Scan, Rescan all, Manage plug-ins (commands, set off above the folders) |
 | Plug-ins | Folders | Folders (each on or off, with its format; add with a format, or by the system's picker with nothing typed, remove) |
 | Plug-ins | Editors | Plug-in editors open in (Window, Device view; where the embed is not possible — macOS, or no display — a note says so, and on macOS the editors still open in a window of their own) |
-| Plug-ins | Editors | Open the editor when added (off by default: on, a plug-in added to a track opens its editor once it has loaded) |
+| Plug-ins | Editors | Open editor when added (off by default: on, a plug-in added to a track opens its editor once it has loaded) |
 | Devices | NAM | Amp models folder, Cabinet sounds folder ([nam spec](nam-amp-and-cab.md) › Folders) |
 | Devices | Instruments | Tone without instrument |
 | Devices | Device panels | Device chain layout, Devices beside piano roll, Long parameter lists, Detail area width |

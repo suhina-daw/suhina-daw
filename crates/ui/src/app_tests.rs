@@ -776,7 +776,7 @@ fn the_quick_add_palette_adds_effects_to_main() {
     assert_eq!(app.track_name(TrackId::MAIN), "Main");
 }
 
-/// With Settings › Plug-ins › Open the editor when added on, a plug-in a command adds is
+/// With Settings › Plug-ins › Open editor when added on, a plug-in a command adds is
 /// remembered until it runs; built-in devices and the setting off remember nothing, and one that
 /// never reports running is let go after its polls.
 #[test]

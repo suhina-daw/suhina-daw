@@ -387,7 +387,7 @@
     ]
   },
   "Plugins/Editors/plugin_editor_on_add": {
-    "sourceFingerprint": "7898646f52a15698edd563575c6d3fe063112b3027f7389a25ff5c810bb33e4f",
+    "sourceFingerprint": "8174d7c3343cbd373c86419a6f860400ea8174acbdf66fecbc979c1f348ad503",
     "summary": "Open a plug-in’s editor as soon as you add the plug-in.",
     "description": "When this is on, adding a plug-in to a track (from the browser, the quick-add palette or a drop) opens its editor by itself once the plug-in has loaded, where Plug-in editors open in says. Built-in devices are not affected.\n\nA plug-in that fails to load, or takes more than about ten seconds, opens no editor; open it with the P key or the device panel's button.",
     "options": [

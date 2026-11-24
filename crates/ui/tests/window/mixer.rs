@@ -461,10 +461,12 @@ fn dragging_one_fader_of_a_selection_moves_every_track_in_proportion() {
     harness.drop_at(at - egui::vec2(20.0, 0.0));
     harness.run();
     let after = volumes(&harness);
-    let quieter = gain_of(-5.0);
     assert!(before.iter().all(|v| *v > 0.0), "{before:?}");
+    // Each lands 5 dB below where it was, set to a tenth of a dB as the Launcher view's strips
+    // set a selection (`track.setMixerValues`).
     for (track, (was, now)) in ["Drums", "Bass"].iter().zip(before.iter().zip(&after)) {
-        assert!((now / was - quieter).abs() < 1e-3, "{track}: {was} -> {now}");
+        let moved = 20.0 * now.log10() - 20.0 * was.log10();
+        assert!((moved + 5.0).abs() <= 0.05 + 1e-9, "{track}: {was} -> {now} ({moved:.3} dB)");
     }
 }
 
