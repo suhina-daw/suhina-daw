@@ -45,7 +45,7 @@
   <a href="#contributing">Contributing</a>
 </p>
 
-![Suhina's Arrangement: a song of seventy tracks, audio and MIDI clips in track colors along the timeline, with a clip's warp, gain and pitch controls below](https://suhina.org/assets/product/suhina-project.webp)
+![Suhina's Arrangement: a song of seventeen tracks in colored groups, with its pattern clips and audio along the timeline](docs/screenshots/arrangement.webp)
 
 <table>
   <tr>
@@ -57,12 +57,20 @@
     <td align="center">Lay out the song in the Arrangement</td>
   </tr>
   <tr>
-    <td><img src="https://suhina.org/assets/product/suhina-theme-sheet.webp" alt="Suhina Session in the green and white Suhina Sheet theme"></td>
-    <td><img src="https://suhina.org/assets/product/suhina-mixer-horizontal.webp" alt="Suhina Session in a dark theme whose mixer has horizontal faders and level meters"></td>
+    <td><img src="docs/screenshots/launcher-light.webp" alt="Suhina's Launcher in a light theme: MIDI and audio tracks with their clip slots above the mixer, and return tracks on the right"></td>
+    <td><img src="docs/screenshots/settings-themes.webp" alt="Suhina's Settings at Themes: the current theme with its color variants, and the built-in themes to choose from"></td>
   </tr>
   <tr>
-    <td align="center">The look is a theme, written in CSS</td>
-    <td align="center">A theme can rearrange the mixer too</td>
+    <td align="center">The Launcher in a light theme</td>
+    <td align="center">Choose a theme and its variant in Settings</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/plugin-manager.webp" alt="Suhina's Plug-in manager: scanned plug-ins filtered by type, format and vendor, each with its version and status"></td>
+    <td><img src="docs/screenshots/missing-files.webp" alt="Suhina's Missing files window: the samples a project could not find, with a folder to search and a button to locate each one"></td>
+  </tr>
+  <tr>
+    <td align="center">Scan, filter and enable plug-ins in the Plug-in manager</td>
+    <td align="center">Find and relink a project's missing samples</td>
   </tr>
 </table>
 
