@@ -535,8 +535,8 @@ fn a_clip_opens_in_the_installed_plug_in_that_edits_clips() {
 }
 
 /// A plug-in that supports ARA, put in a chain, is an insert there like any other (ADR 0033,
-/// amendment): it stays where it was asked for and is no clip host. Only `clip.setAra`'s clip
-/// host (`clip_host`) goes first, as it plays the clips from their files.
+/// amendment): it stays where it was asked for and is no clip host. Only `clip.setAra` makes a
+/// clip host, first in its chain (`clip_ara.rs`).
 #[test]
 fn a_plug_in_that_edits_clips_is_an_insert_in_a_chain() {
     let mut session = Session::new(project());
@@ -554,19 +554,6 @@ fn a_plug_in_that_edits_clips_is_an_insert_in_a_chain() {
     run(&mut session, "edit.undo", json!({})).unwrap();
     let tune = run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune" })).unwrap();
     assert_eq!((tune["device"].clone(), tune["clip_host"].clone()), (json!(1), json!(false)));
-    // As a clip host it goes first, wherever it was asked for, and says it moved.
-    run(&mut session, "edit.undo", json!({})).unwrap();
-    let host = run(
-        &mut session,
-        "device.addPlugin",
-        json!({ "track": 1, "plugin": "Tune", "position": 1, "clip_host": true }),
-    )
-    .unwrap();
-    assert_eq!(
-        (host["device"].clone(), host["clip_host"].clone(), host["moved_first"].clone()),
-        (json!(0), json!(true), json!(true))
-    );
-    assert!(session.project().channels[0].devices[0].clip_host);
 }
 
 /// A chain an earlier build left with two plain effects marked as clip hosts before the
@@ -628,9 +615,15 @@ fn a_false_clip_host_is_let_go_and_its_broken_chain_can_be_repaired() {
 /// The clip host of an ARA plug-in keeps its mark through device edits.
 #[test]
 fn a_real_clip_host_keeps_its_mark() {
-    let mut session = Session::new(project());
+    let project = ProjectBuilder::new()
+        .audio_track(1, "Vox")
+        .audio(1, "Take", 8.0, AudioRegion::new("take.wav"))
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .build();
+    let mut session = Session::new(project);
     session.rack_mut().set_env(plugin_env());
-    run(&mut session, "device.addPlugin", json!({ "track": 1, "plugin": "Tune", "clip_host": true })).unwrap();
+    run(&mut session, "clip.setAra", json!({ "clips": [{ "track": 1, "index": 0 }], "on": true, "plugin": "Tune" }))
+        .unwrap();
     run(&mut session, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
     let devices = &session.project().channels[0].devices;
     assert!(devices[0].clip_host && devices[0].name == "Tune");

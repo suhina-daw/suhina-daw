@@ -249,8 +249,8 @@ twice, once as an ordinary effect and once bound to the clips, or leave it to a 
   put. The scan's mark, and a host's answer that the plug-in supports ARA when it loads, only teach
   the catalog what the plug-in can do; neither binds it to the clips or loads it again.
 - **Only a clip host is bound to the clips:** the device a clip's **Edit with** or `clip.setAra`
-  adds (`Device::clip_host`, `device.addPlugin`'s `clip_host`), first in its chain as decision 2
-  says. A track with an insert of the plug-in gets a clip host of its own beside it.
+  adds (`Device::clip_host`), first in its chain as decision 2 says. A track with an insert of
+  the plug-in gets a clip host of its own beside it.
 - **A device bound before keeps its edits.** A device whose state holds an ARA archive (the state a
   bound plug-in writes, decision 7) is loaded bound as before, so no edit is lost and nothing
   sounds different; without one it loads as an insert. An imported project's devices carry their

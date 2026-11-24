@@ -54,7 +54,7 @@ track's, so the plug-in is no longer one of the track's effects:
 - **In a chain it is an insert** ([ADR 0033](../decisions/0033-ara-hosting.md) › Amendment: an
   ARA plug-in in a chain is an insert). An ARA plug-in dropped on a track, added with
   `device.addPlugin`, or in an imported project is an ordinary effect where it was put, bound to no
-  clip. Only the clip host is bound (`device.addPlugin`'s `clip_host`, which `clip.setAra` passes);
+  clip. Only the clip host is bound (`Device::clip_host`, which only `clip.setAra` sets);
   a track with an insert of the plug-in gets a clip host of its own beside it. The session decides
   it in one place for the live rack and the offline render (`ara::binds_clips`).
 - **Old projects:** a device whose saved state holds an ARA archive (it was bound when it was
@@ -237,10 +237,10 @@ the list below, in a first form). Where it differs from the decisions above it i
   and Alt+M work on any audio clip in the Arrangement: when the clip's track has no ARA plug-in
   running, the installed one (the scan's ARA plug-ins, Melodyne first, else Melodyne by name) is
   added to the track, and its editor opens in the clip's place once it runs with the clips.
-- **A clip host goes first in its chain**, wherever `device.addPlugin` with `clip_host` puts it
-  (the result says `moved_first`): it plays the clips from their files, so a device before it
-  would not be heard. Observed in another host, which moves it there too. An insert stays where
-  it was put (the result's `clip_host` is false).
+- **A clip host goes first in its chain**, where `clip.setAra` adds it: it plays the clips from
+  their files, so a device before it would not be heard. Observed in another host, which moves it
+  there too. An insert stays where it was put (`device.addPlugin`'s result says `clip_host`
+  false).
 - **Other interim limits.** Warped clips are described at their file's speed (their start and end follow the song), and the overlap guard and suspension (ADR 0033 › 6) are not built: overlapping
   clips are both in the document. Offline renders load the plug-in with the same document. The
   `notifyDocumentDataChanged` flag is kept but not read yet: the edits are noticed when the
