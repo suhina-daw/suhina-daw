@@ -4,7 +4,7 @@ read_when: scope of the project, what Suhina does not aim at, out of scope, buil
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-05
+last_verified: 2026-11-24
 ---
 
 # 0016: Scope: what Suhina aims at, what it leaves out, and the build order
