@@ -520,6 +520,110 @@ fn a_track_recording_into_the_arrangement_does_not_play_its_arrangement() {
     assert!(!onsets(&out).is_empty(), "a stop ended the recording: {:?}", onsets(&out));
 }
 
+/// The two loops' tracks, each with its loop in the arrangement for 32 beats.
+fn two_loops_in_the_arrangement() -> Project {
+    let mut p = two_loops();
+    for track in [1, 2] {
+        p.arrangement.lanes.push(ArrangementLane {
+            id: Default::default(),
+            name: String::new(),
+            track: Some(TrackId(track)),
+            clips: vec![Clip { length: 32.0, ..clip(track, 1.0, true) }],
+        });
+    }
+    p
+}
+
+/// A recording into the arrangement abandoned during its count-in, or one whose own end never
+/// reached the engine, leaves the arrangement playing: a stop during the count-in ends it, and so
+/// does the recorder turned off.
+#[test]
+fn an_abandoned_or_lost_arrangement_recording_leaves_the_arrangement_playing() {
+    let p = two_loops_in_the_arrangement();
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    renderer.handle(LaunchCommand::RecordArrangement { column: 0, on: true });
+    renderer.handle(LaunchCommand::CountIn { beats: 4.0, bar_beats: 4.0 });
+    let mut out = vec![0.0f32; 2 * BEAT];
+    renderer.process(&mut out);
+    renderer.handle(LaunchCommand::Stop);
+    renderer.handle(LaunchCommand::Play);
+    let mut out = vec![0.0f32; 2 * BAR];
+    renderer.process(&mut out);
+    assert!(onsets(&out).len() >= 3, "a stop in the count-in ended the recording: {:?}", onsets(&out));
+
+    renderer.handle(LaunchCommand::SetRecording { on: true });
+    renderer.handle(LaunchCommand::RecordArrangement { column: 0, on: true });
+    renderer.handle(LaunchCommand::RecordArrangement { column: 1, on: true });
+    let mut out = vec![0.0f32; 2 * BAR];
+    renderer.process(&mut out);
+    assert_eq!(onsets(&out), Vec::<usize>::new(), "silent while both record");
+    renderer.handle(LaunchCommand::SetRecording { on: false });
+    let mut out = vec![0.0f32; 2 * BAR];
+    renderer.process(&mut out);
+    assert!(onsets(&out).len() >= 3, "the recorder off ended both: {:?}", onsets(&out));
+}
+
+/// A track deleted before one that records into the arrangement does not hand its column's
+/// state to the next track: the recording track stays silent and the other plays.
+#[test]
+fn an_arrangement_recording_follows_its_track_through_a_graph_swap() {
+    let p = two_loops_in_the_arrangement();
+    let mut without_first = p.clone();
+    without_first.tracks.retain(|t| t.id != TrackId(1));
+    without_first.channels.retain(|c| c.id != ChannelId(1));
+    without_first.arrangement.lanes.retain(|l| l.track != Some(TrackId(1)));
+    without_first.launcher.columns.retain(|c| c.track != TrackId(1));
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    controller.send(LaunchCommand::Play).unwrap();
+    // Track 1 records: track 2, left alone, plays on after track 1 is deleted.
+    controller.send(LaunchCommand::RecordArrangement { column: 0, on: true }).unwrap();
+    let mut block = vec![0.0f32; 2 * 512];
+    renderer.process(&mut block);
+    controller.update(&without_first).unwrap();
+    for _ in 0..200 {
+        renderer.process(&mut block);
+    }
+    assert_eq!(controller.monitor().columns(), 1, "the swap took place");
+    let mut out = vec![0.0f32; 2 * BAR];
+    renderer.process(&mut out);
+    assert!(onsets(&out).len() >= 3, "track 2 plays: {:?}", onsets(&out));
+
+    // Track 2 records: deleting track 1 before it keeps it silent.
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    let mut controller = renderer.controller();
+    controller.send(LaunchCommand::Play).unwrap();
+    controller.send(LaunchCommand::RecordArrangement { column: 1, on: true }).unwrap();
+    renderer.process(&mut block);
+    controller.update(&without_first).unwrap();
+    for _ in 0..200 {
+        renderer.process(&mut block);
+    }
+    assert_eq!(controller.monitor().columns(), 1, "the swap took place");
+    let mut out = vec![0.0f32; 2 * BAR];
+    renderer.process(&mut out);
+    assert_eq!(onsets(&out), Vec::<usize>::new(), "track 2 still records");
+}
+
+/// A track that plays a launched clip when its recording into the arrangement starts keeps that
+/// clip's sounding notes: only the arrangement's are released.
+#[test]
+fn an_arrangement_recording_keeps_a_launched_clips_notes() {
+    let long = notes(1, vec![Note { duration: 4.0, ..note(0.0, 60) }]);
+    let p = project(vec![long], vec![vec![with(clip(1, 4.0, true))]]);
+    let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+    renderer.handle(LaunchCommand::Play);
+    renderer.handle(LaunchCommand::LaunchClip { column: 0, slot: 0 });
+    let mut out = vec![0.0f32; 2 * BEAT];
+    renderer.process(&mut out);
+    assert!(!onsets(&out).is_empty(), "the launched note sounds");
+    renderer.handle(LaunchCommand::RecordArrangement { column: 0, on: true });
+    let mut out = vec![0.0f32; 2 * (BEAT / 2)];
+    renderer.process(&mut out);
+    let tail = &out[out.len() - 200..];
+    assert!(tail.iter().any(|s| s.abs() > 1e-6), "the launched note sounds on");
+}
+
 /// A clip resumed on a new renderer from what the monitor reports plays on exactly where
 /// the old one was, and the play start marker stays (#178).
 #[test]
