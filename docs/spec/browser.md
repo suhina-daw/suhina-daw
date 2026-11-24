@@ -478,8 +478,9 @@ selected track header's.
   none on every format is listed; with some on, only plug-ins of those formats, the built-in
   devices still among them. The formats are one list in the code (`PluginFormat`), so a new one
   is one more button.
-- **On a track that plays no notes** (an audio track, a group, a return) no instrument or MIDI
-  effect is listed. **Effects go on the selected track only:** with no track selected, no effect
+- **On a track that plays no notes** (an audio track, a group, a return, Main) no instrument or
+  MIDI effect is listed. Main takes effects as a track does, with its header or strip selected; a
+  sample or MIDI file chosen there goes on a new track. **Effects go on the selected track only:** with no track selected, no effect
   or MIDI effect is listed, and the header says `select a track for effects`. If one is chosen
   anyway, the status line says why and nothing is added.
 - **The search is kept:** closed without adding (Escape, a click outside, to select a track,

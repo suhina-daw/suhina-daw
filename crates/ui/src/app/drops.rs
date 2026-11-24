@@ -740,6 +740,9 @@ impl App {
 
     /// A track's name, or its id when the project has none by that id.
     pub(super) fn track_name(&self, track: TrackId) -> String {
+        if track == TrackId::MAIN {
+            return "Main".to_string();
+        }
         self.session()
             .and_then(|s| s.project().track(track).map(|_| s.project().shown_track_name(track)))
             .unwrap_or_else(|| track.0.to_string())

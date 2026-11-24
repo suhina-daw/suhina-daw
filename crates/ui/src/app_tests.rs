@@ -759,6 +759,23 @@ fn the_quick_add_palette_targets_the_track_of_the_clip_worked_on() {
     assert_eq!(harness.state().quick_add_target().and_then(|(track, _)| track), Some(other.0), "the slot's track");
 }
 
+/// Main takes the quick-add palette's effects as a track does: with Main's header selected the
+/// palette targets Main, offers effects and no instrument, and names it "Main".
+#[test]
+fn the_quick_add_palette_adds_effects_to_main() {
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    assert!(app.session().unwrap().project().main_channel().is_some(), "the demo has Main");
+    app.shown = View::Arrangement;
+    app.arrangement.selected_tracks = vec![TrackId::MAIN];
+    app.arrangement.track_focus = true;
+    app.do_action("view.quickAdd", &mut Vec::new());
+    assert_eq!(app.quick_add_target().and_then(|(track, _)| track), Some(TrackId::MAIN));
+    assert_eq!(app.quick_add_notes(Some(TrackId::MAIN)), Some(false), "Main plays no notes");
+    assert!(quick_add::offered("effect", Some(false)) && !quick_add::offered("instrument", Some(false)));
+    assert_eq!(app.track_name(TrackId::MAIN), "Main");
+}
+
 /// The ARA edits prompt and the missing files panel are drawn over the window: plug-in
 /// editors hide, and the keys that edit the project wait until they close.
 #[test]
