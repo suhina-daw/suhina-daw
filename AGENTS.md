@@ -58,6 +58,9 @@ describe a file. Read only the ones that match your task.
    repository ([ADR 0016](docs/decisions/0016-scope.md) › 5). ROADMAP, README, the model, engine, CLI and UI describe Suhina's own features under
    their own names and neutral words, and other DAWs' product terms are not used as generic words
    ("drum sampler", not "drum rack"). User-facing text may name a format it imports or exports.
+   The one comparison kept is the README's opening line, which says whose workflow Suhina's is
+   comparable to so people looking for one find it; it stays that one line, never a list of
+   features matched or missing.
    The notices of code taken from an open-source project name that project wherever its licence
    asks (the file's header, `NOTICE`, `ATTRIBUTION.md`).
    The rule is about other DAWs and music software, not makers of hardware (amplifiers, speakers,
