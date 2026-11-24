@@ -699,6 +699,10 @@ pub struct Rack {
     /// [`Rack::take_ara_learned`] for the catalog.
     ara_plugins: std::collections::HashSet<String>,
     ara_learned: Vec<String>,
+    /// The plug-ins (by spec) `clip.setAra` made a clip host although neither the catalog nor a
+    /// host says they support ARA (`Session::ara_plugin`'s Melodyne): their devices keep the mark
+    /// until a host answers, by loading one or refusing it ([`crate::clip_ara::drop_false_hosts`]).
+    ara_awaited: std::collections::HashSet<String>,
     /// The region each plug-in that edits clips should show as selected (`clip-<id>`), by
     /// plug-in device key; told to it whenever it runs ([`Rack::select_ara`]).
     ara_selection: HashMap<u64, Option<String>>,
@@ -746,6 +750,7 @@ impl Default for Rack {
             ara_notes_hidden: std::collections::HashSet::new(),
             ara_document: next_ara_document(),
             ara_plugins: std::collections::HashSet::new(),
+            ara_awaited: std::collections::HashSet::new(),
             ara_learned: Vec::new(),
             carries: Vec::new(),
             next_carry: 0,
@@ -776,6 +781,17 @@ impl Rack {
     /// catalog maybe not saying so yet.
     pub(crate) fn found_to_edit_clips(&self, spec: &str) -> bool {
         self.ara_plugins.contains(spec)
+    }
+
+    /// Notes that a device of the plug-in `spec` was made a clip host before anything said it
+    /// supports ARA: it keeps the mark until a host answers ([`Rack::awaits_ara`]).
+    pub(crate) fn await_ara(&mut self, spec: String) {
+        self.ara_awaited.insert(spec);
+    }
+
+    /// Whether the plug-in `spec` was made a clip host and no host has answered for it yet.
+    pub(crate) fn awaits_ara(&self, spec: &str) -> bool {
+        self.ara_awaited.contains(spec)
     }
 
     pub fn env(&self) -> Option<&PluginEnv> {
@@ -1794,6 +1810,7 @@ impl Rack {
                     {
                         self.ara_learned.push(instance.spec.clone());
                     }
+                    self.ara_awaited.remove(&instance.spec);
                     // A restarted plug-in has a new instance number: placements go to it, again.
                     instance.placer = None;
                     instance.placement_sent = None;
@@ -1811,6 +1828,7 @@ impl Rack {
                 Err(why) => {
                     notices.push(format!("{name} could not start: {why}"));
                     instance.status = PluginStatus::Failed(why);
+                    self.ara_awaited.remove(&instance.spec);
                 }
             }
         }

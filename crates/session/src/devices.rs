@@ -2103,6 +2103,9 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
         "replaced": replaced.map(|(_, name)| name),
     });
     if clip_host {
+        if !plugin.ara {
+            session.plugins.await_ara(plugin.spec());
+        }
         let track = track_or_main_id(&session.project, params)?;
         if let Some(first) = session.project.channel_of_track_mut(track).and_then(|c| c.devices.first_mut()) {
             first.clip_host = true;
