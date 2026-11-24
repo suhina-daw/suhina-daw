@@ -4,7 +4,7 @@
 
 <p align="center"><b>A free, open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live. For Windows, macOS and Linux.</b></p>
 
-<p align="center">Launch clips and scenes, lay out the song on an Arrangement timeline, edit notes, automation and audio, and explore your samples on a map that groups them by how they sound. Built-in instruments and effects, CLAP, VST3 and VST2 plug-ins in a sandboxed host, themes written in CSS, and an AI agent that can work in your project over MCP. Drawn with egui, played through cpal, on an engine whose audio thread never waits.</p>
+<p align="center">Launch clips and scenes, lay out the song on an Arrangement timeline, edit notes, automation and audio, and explore your samples on a map that groups them by how they sound. Built-in instruments and effects, CLAP, VST3 and VST2 plug-ins in a sandboxed host, themes written in CSS, and an AI agent that can work in your project over MCP. Opens your Ableton Live (<code>.als</code>) and FL Studio (<code>.flp</code>) projects. Drawn with egui, played through cpal, on an engine whose audio thread never waits.</p>
 
 <p align="center">
   <a href="https://github.com/suhina-daw/suhina-daw/actions/workflows/ci.yml?query=branch%3Anext"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/suhina-daw/suhina-daw/ci.yml?branch=next&event=push&label=CI"></a>
@@ -100,24 +100,26 @@ What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and
   enable it.
 - **Real-time engine.** The audio thread never allocates, locks or touches the disk; offline
   rendering runs the same engine code.
-- **Your projects, not locked in.** Open `.als` projects, bring in audio and MIDI, and save in
-  Suhina's own format; `.flp` import is under way and DAWproject comes next.
+- **Your projects, not locked in.** Open Ableton Live (`.als`) and FL Studio (`.flp`) projects,
+  bring in audio and MIDI, and save in Suhina's own format. FL Studio import brings patterns,
+  samplers, audio clips, plug-ins with their state, mixer routing and automation, and names what it
+  could not bring in; DAWproject comes next.
 - **Your own devices.** Build audio effects, MIDI effects and instruments with the Rust device SDK
   and share each as a single `.sd` file ([Device SDK](#device-sdk)).
 
 Suhina is an independent clean-room project. It is not affiliated with, sponsored by or
-endorsed by Ableton AG or any other company named here. Ableton and Live are trademarks of Ableton AG. VST is a registered trademark and ASIO a
+endorsed by Ableton AG, Image-Line or any other company named here. Ableton and Live are trademarks of Ableton AG. FL Studio is a trademark of Image-Line Software. VST is a registered trademark and ASIO a
 trademark of Steinberg Media Technologies GmbH. DX7 is a trademark of Yamaha Corporation. Stems
 and NKS are trademarks of Native Instruments. Other product names are trademarks of their
 owners. They are named only to describe file compatibility and comparable workflows. Suhina contains no code or content from Ableton
-products; see [`CONTRIBUTING.md`](CONTRIBUTING.md) › Clean-room.
+or Image-Line products; see [`CONTRIBUTING.md`](CONTRIBUTING.md) › Clean-room.
 
 ## Goals
 
 - A real-time audio engine that never glitches, with offline rendering on the same code path.
 - Session-style clip launching with quantisation, plus a linear arrangement.
-- Reading `.als` projects you made yourself; later other formats such as DAWproject and `.flp`,
-  so projects are not locked to one program.
+- Reading `.als` and `.flp` projects you made yourself, and later DAWproject, so projects are not
+  locked to one program.
 - CLAP and VST3 plug-in hosting, sandboxed outside Suhina's process: a crashing plug-in never takes the project down.
 - Every action available headlessly: CLI and MCP for automation and agents.
 
