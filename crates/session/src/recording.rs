@@ -303,6 +303,15 @@ impl Session {
             .ok_or("no audio engine is attached; open the project in the app or with --audio")?;
         player.send(LaunchCommand::SetRecording { on: true })?;
         self.live.recording.engine_on = true;
+        // A track recording into the arrangement does not play its arrangement meanwhile: the
+        // take replaces what it covers, so an old clip there is not heard under it.
+        if matches!(target, Target::Arrangement) {
+            for &track in tracks {
+                if let Some(column) = self.project.launcher.columns.iter().position(|c| c.track == track) {
+                    player.send(LaunchCommand::RecordArrangement { column, on: true })?;
+                }
+            }
+        }
         if !running {
             let bars = f64::from(self.live.recording.count_in_bars);
             let bar_beats = self.project.transport.meter().position(start.max(0.0)).bar_beats;
@@ -1104,6 +1113,20 @@ pub(crate) fn record_arrangement(session: &mut Session, params: &Value) -> Resul
         }
         session.live.recording.arrangement = false;
         session.send_ends();
+        // The tracks that recorded into the arrangement play it again.
+        let columns: Vec<usize> = session
+            .live
+            .recording
+            .takes
+            .iter()
+            .filter(|t| matches!(t.target, Target::Arrangement))
+            .filter_map(|t| session.project.launcher.columns.iter().position(|c| c.track == t.track))
+            .collect();
+        if let Some(player) = session.sync.player.as_mut() {
+            for column in columns {
+                let _ = player.send(LaunchCommand::RecordArrangement { column, on: false });
+            }
+        }
         return Ok(json!({ "recording": false, "ended": ended }));
     }
     if session.live.recording.arrangement {

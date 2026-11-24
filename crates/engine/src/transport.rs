@@ -196,6 +196,8 @@ impl Renderer {
     /// Stops the transport; the playhead goes back to the marker, or, with `here`, the marker
     /// moves to the playhead. Stopping while stopped moves the marker to beat 0.
     pub(crate) fn stop_transport(&mut self, here: bool) {
+        // A stop ends every take, so no track records into the arrangement any more.
+        self.graph.launcher.end_arrangement_recording();
         // Hosted instruments fade their continuing waveform before reporting stopped,
         // ahead of downstream effects and delay compensation. A second output ramp would
         // replace the start of that waveform with a held sample. Keep the legacy fallback

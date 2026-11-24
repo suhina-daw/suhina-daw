@@ -474,6 +474,52 @@ fn back_to_arrangement_stops_the_launched_clip() {
     }
 }
 
+/// A track recording into the arrangement does not play its arrangement clips meanwhile, so an
+/// old clip under the take is not heard; it plays again when the recording ends, and a stop ends
+/// it too. The launcher's own override is untouched.
+#[test]
+fn a_track_recording_into_the_arrangement_does_not_play_its_arrangement() {
+    let mut p = two_loops();
+    let looped = Clip { length: 32.0, ..clip(1, 1.0, true) };
+    p.arrangement.lanes.push(ArrangementLane {
+        id: Default::default(),
+        name: String::new(),
+        track: Some(TrackId(1)),
+        clips: vec![looped],
+    });
+    let mut renderer = Renderer::build(
+        &p,
+        RenderInputs::from_audio(&AudioPool::new(), suhina_device_registry::factory()),
+        SR,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    let mut out = vec![0.0f32; 2 * BAR];
+    renderer.process(&mut out);
+    assert!(onsets(&out).len() >= 3, "the arrangement plays: {:?}", onsets(&out));
+
+    renderer.handle(LaunchCommand::RecordArrangement { column: 0, on: true });
+    let status = renderer.monitor().column(0).unwrap();
+    assert!(!status.overrides_arrangement, "no launched clip takes over");
+    let mut out = vec![0.0f32; 2 * BAR];
+    renderer.process(&mut out);
+    assert_eq!(onsets(&out), Vec::<usize>::new(), "silent while it records");
+
+    renderer.handle(LaunchCommand::RecordArrangement { column: 0, on: false });
+    let mut out = vec![0.0f32; 2 * BAR];
+    renderer.process(&mut out);
+    assert!(onsets(&out).len() >= 3, "it plays again: {:?}", onsets(&out));
+
+    // An out-of-range column is ignored; a stop ends a recording.
+    renderer.handle(LaunchCommand::RecordArrangement { column: 99, on: true });
+    renderer.handle(LaunchCommand::RecordArrangement { column: 0, on: true });
+    renderer.handle(LaunchCommand::Stop);
+    renderer.handle(LaunchCommand::Play);
+    let mut out = vec![0.0f32; 2 * BAR];
+    renderer.process(&mut out);
+    assert!(!onsets(&out).is_empty(), "a stop ended the recording: {:?}", onsets(&out));
+}
+
 /// A clip resumed on a new renderer from what the monitor reports plays on exactly where
 /// the old one was, and the play start marker stays (#178).
 #[test]

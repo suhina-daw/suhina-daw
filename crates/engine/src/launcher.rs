@@ -217,6 +217,14 @@ pub enum LaunchCommand {
     SetRecording {
         on: bool,
     },
+    /// The track behind `column` records into the arrangement (`on`), or no longer does: while it
+    /// records, its arrangement clips are silent, as the take will replace what it covers, and
+    /// the notes they sound are released (`docs/spec/recording.md`). A stop ends it for every
+    /// column. Out of range is ignored.
+    RecordArrangement {
+        column: usize,
+        on: bool,
+    },
     /// With the transport stopped, counts `beats` beats (up to 64, bars of `bar_beats`) with
     /// the metronome's click, then starts the transport; with nothing to count, starts it at
     /// once. Ignored while running. A stop cancels the count and leaves the transport stopped.
@@ -765,6 +773,9 @@ pub(crate) struct Column {
     held: Option<usize>,
     /// The frame from which the track plays launched clips instead of its arrangement.
     overrides_since: Option<u64>,
+    /// The frame from which the track records into the arrangement, its arrangement silent
+    /// meanwhile ([`LaunchCommand::RecordArrangement`]).
+    recording_since: Option<u64>,
 }
 
 pub(crate) struct ClipLauncher {
@@ -823,6 +834,7 @@ impl ClipLauncher {
                 pending: None,
                 held: None,
                 overrides_since: None,
+                recording_since: None,
             })
             .collect();
         // Every stretch voice gets its number; they are built later, off the audio thread.
@@ -893,6 +905,7 @@ impl ClipLauncher {
         let voices = &self.voices;
         for (new, old) in self.columns.iter_mut().zip(old.columns.iter_mut()) {
             new.overrides_since = old.overrides_since;
+            new.recording_since = old.recording_since;
             new.held = old.held;
             new.pending = old.pending.and_then(|p| match p.action {
                 Queued::Launch(slot) => map(slot)
@@ -907,14 +920,24 @@ impl ClipLauncher {
         self.publish();
     }
 
-    /// Whether the track behind `column` plays launched clips instead of its arrangement.
+    /// Whether the track behind `column` does not play its arrangement: it plays launched clips
+    /// instead, or it records into the arrangement.
     pub(crate) fn overrides(&self, column: u32) -> bool {
-        self.columns.get(column as usize).is_some_and(|c| c.overrides_since.is_some())
+        self.columns.get(column as usize).is_some_and(|c| c.overrides_since.is_some() || c.recording_since.is_some())
     }
 
     /// Like [`ClipLauncher::overrides`], at frame `position` of the block just rendered.
     pub(crate) fn overrides_at(&self, column: u32, position: u64) -> bool {
-        self.columns.get(column as usize).and_then(|c| c.overrides_since).is_some_and(|since| since <= position)
+        self.columns.get(column as usize).is_some_and(|c| {
+            [c.overrides_since, c.recording_since].into_iter().flatten().any(|since| since <= position)
+        })
+    }
+
+    /// Ends every column's recording into the arrangement: their arrangements play again.
+    pub(crate) fn end_arrangement_recording(&mut self) {
+        for column in &mut self.columns {
+            column.recording_since = None;
+        }
     }
 
     /// The tempo playing now.
@@ -1289,6 +1312,18 @@ impl Renderer {
                 self.stop_transport(true);
             }
             LaunchCommand::SetRecording { on } => self.recorder.set(on),
+            LaunchCommand::RecordArrangement { column, on } => {
+                let position = self.transport.position;
+                let Some(target) = self.graph.launcher.columns.get_mut(column) else { return };
+                if on {
+                    if target.recording_since.is_none() {
+                        target.recording_since = Some(position);
+                        self.release_column(column);
+                    }
+                } else {
+                    target.recording_since = None;
+                }
+            }
             LaunchCommand::CountIn { beats, bar_beats } => self.start_count_in(beats, bar_beats),
             LaunchCommand::SetPosition { beat } => {
                 self.pending_jump = None;
