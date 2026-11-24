@@ -45,7 +45,7 @@
   <a href="#contributing">Contributing</a>
 </p>
 
-![Suhina's Arrangement: a song of seventeen tracks in colored groups, with its pattern clips and audio along the timeline](docs/screenshots/arrangement.webp)
+![Suhina's Arrangement: a song of seventeen tracks in colored groups, with its MIDI and audio clips along the timeline](docs/screenshots/arrangement.webp)
 
 <table>
   <tr>
