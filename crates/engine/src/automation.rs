@@ -477,7 +477,22 @@ impl DeviceLanes {
 /// The gains of a track whose mixer follows lanes: the gains the rest of its way applies (its
 /// own channel's automated parameters at their neutral values: volume 1, centered, not muted),
 /// scaled frame by frame by the lanes.
+///
+/// The lanes are read at the time of the audio they scale, from the blocks played
+/// ([`crate::plugin::SongHistory`]), as device lanes are (`docs/spec/plugin-delay-compensation.md`):
+/// a loop's wrap, a jump or a stop inside a delayed block keeps its place in it.
 pub(crate) struct MixLanes {
+    curves: MixCurves,
+    /// This block's factors for the chain's output, after its latency compensation delay,
+    /// interleaved left and right per frame.
+    gains: Vec<f32>,
+    /// This block's factors at the fader itself, right after the chain's devices, for what is
+    /// taken there before the compensation delay (a key's post-fader tap).
+    fader: Vec<f32>,
+}
+
+/// The lanes of one channel's mixer, in arrangement frames.
+struct MixCurves {
     volume: Option<Envelope>,
     /// How many frames a jump of the volume is smoothed over ([`VOLUME_SMOOTHING`]).
     smoothing: u64,
@@ -485,17 +500,12 @@ pub(crate) struct MixLanes {
     mute: Option<Envelope>,
     /// Whether the pan applies (not on a group's bus, as for a group without lanes).
     pan_applies: bool,
-    /// How far the chain's output is delayed for latency compensation: the lanes are read that
-    /// much earlier, so they line up with what is heard.
-    latency: u64,
-    /// This block's factors, interleaved left and right per frame.
-    gains: Vec<f32>,
 }
 
 impl MixLanes {
     /// Whether a lane carries the pan: the pan knob is then the lane's, not live.
     pub(crate) fn has_pan(&self) -> bool {
-        self.pan.is_some()
+        self.curves.pan.is_some()
     }
 
     /// The lanes of `channel` at `frames_per_beat` and `sample_rate`; `None` when none plays.
@@ -514,18 +524,72 @@ impl MixLanes {
         let smoothing = (VOLUME_SMOOTHING * sample_rate).round();
         let smoothing = if smoothing.is_finite() && smoothing >= 0.0 { smoothing as u64 } else { 0 };
         Some(Self {
-            volume,
-            smoothing,
-            pan,
-            mute,
-            pan_applies,
-            latency: 0,
+            curves: MixCurves { volume, smoothing, pan, mute, pan_applies },
             gains: vec![1.0; crate::chain::MAX_BLOCK * 2],
+            fader: vec![1.0; crate::chain::MAX_BLOCK * 2],
         })
     }
 
-    pub(crate) fn set_latency(&mut self, frames: u32) {
-        self.latency = u64::from(frames);
+    /// Fills the factors of a block of `frames` frames: at the fader, for the audio `fader`
+    /// frames behind the block's source time (the chain's input latency and its devices'), and
+    /// at the output, `output` frames behind it (the compensation delay added after the
+    /// fader). Each span of the delayed audio is read at its own place in the arrangement and
+    /// with its own running state: a stopped span holds the lanes' value where the transport
+    /// stood, and the pre-roll before arrangement zero holds the value at zero. Never
+    /// allocates.
+    pub(crate) fn plan(&mut self, songs: &crate::plugin::SongHistory, fader: u32, output: u32, frames: usize) {
+        let frames = frames.min(self.gains.len() / 2);
+        let Self { curves, gains, fader: at_fader } = self;
+        curves.fill(gains, songs.spans(output, frames));
+        if fader == output {
+            let end = (frames * 2).min(gains.len()).min(at_fader.len());
+            if let (Some(to), Some(from)) = (at_fader.get_mut(..end), gains.get(..end)) {
+                to.copy_from_slice(from);
+            }
+        } else {
+            curves.fill(at_fader, songs.spans(fader, frames));
+        }
+    }
+
+    /// Fills both sets of factors of a block of `frames` frames from arrangement frame `time`,
+    /// as [`MixCurves::fill_span`] does, for tests of the lanes' shape.
+    #[cfg(test)]
+    pub(crate) fn plan_at(&mut self, time: u64, frames: usize, running: bool) {
+        let frames = frames.min(self.gains.len() / 2);
+        self.curves.fill_span(&mut self.gains, 0, frames, time, running);
+        self.curves.fill_span(&mut self.fader, 0, frames, time, running);
+    }
+
+    /// The output's factors of frame `frame` of the block.
+    pub(crate) fn gains(&self, frame: usize) -> (f32, f32) {
+        pair(&self.gains, frame)
+    }
+
+    /// The fader's factors of frame `frame` of the block, before the compensation delay.
+    pub(crate) fn fader_gains(&self, frame: usize) -> (f32, f32) {
+        pair(&self.fader, frame)
+    }
+}
+
+/// The left and right factors of frame `frame` in interleaved `gains`.
+fn pair(gains: &[f32], frame: usize) -> (f32, f32) {
+    match gains.get(frame * 2..frame * 2 + 2) {
+        Some(&[l, r]) => (l, r),
+        _ => (0.0, 0.0),
+    }
+}
+
+impl MixCurves {
+    /// Fills `gains` span by span: a playing span from its place in the arrangement on, a
+    /// stopped one at the place the transport stood, the pre-roll at zero. Never allocates.
+    fn fill(&self, gains: &mut [f32], spans: impl Iterator<Item = crate::plugin::AutomationSpan>) {
+        for span in spans {
+            let (time, running) = match span.time {
+                Some(time) => (time, span.advancing),
+                None => (span.parked, false),
+            };
+            self.fill_span(gains, span.offset, span.frames, time, running);
+        }
     }
 
     /// The left and right factors at arrangement frame `time`.
@@ -547,13 +611,12 @@ impl MixLanes {
         ((volume * left) as f32, (volume * right) as f32)
     }
 
-    /// Fills the factors of a block of `frames` frames from arrangement frame `time`: at every
+    /// Fills frames `offset..offset + frames` of `gains` from arrangement frame `time`: at every
     /// [`MIX_STEP`] frames of the arrangement the lanes' value, in a straight line between, so a
-    /// frame's factor depends on its time only. While the transport is stopped (`running`
-    /// false), every frame gets the factor at `time`. Never allocates.
-    pub(crate) fn plan(&mut self, time: u64, frames: usize, running: bool) {
-        let time = time.saturating_sub(self.latency);
-        let frames = frames.min(self.gains.len() / 2);
+    /// frame's factor depends on its time only. When the span does not run (`running` false:
+    /// stopped, or the pre-roll before arrangement zero), every frame gets the factor at
+    /// `time`. Never allocates.
+    fn fill_span(&self, gains: &mut [f32], offset: usize, frames: usize, time: u64, running: bool) {
         let step = MIX_STEP as u64;
         let mut frame = 0usize;
         while frame < frames {
@@ -565,22 +628,13 @@ impl MixLanes {
             for f in frame..until {
                 let t = if running { time.saturating_add(f as u64) } else { time };
                 let x = t.saturating_sub(grid) as f32 / MIX_STEP as f32;
-                if let Some([l, r]) =
-                    self.gains.get_mut(f * 2..f * 2 + 2).and_then(|s| <&mut [f32; 2]>::try_from(s).ok())
-                {
+                let i = (offset + f) * 2;
+                if let Some([l, r]) = gains.get_mut(i..i + 2).and_then(|s| <&mut [f32; 2]>::try_from(s).ok()) {
                     *l = a.0 + (b.0 - a.0) * x;
                     *r = a.1 + (b.1 - a.1) * x;
                 }
             }
             frame = until.max(frame + 1);
-        }
-    }
-
-    /// The factors of frame `frame` of the block.
-    pub(crate) fn gains(&self, frame: usize) -> (f32, f32) {
-        match self.gains.get(frame * 2..frame * 2 + 2) {
-            Some(&[l, r]) => (l, r),
-            _ => (0.0, 0.0),
         }
     }
 }

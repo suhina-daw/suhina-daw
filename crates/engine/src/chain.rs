@@ -675,7 +675,8 @@ impl Chain {
             for (frame, ([l, r], [bl, br])) in
                 tap.as_chunks_mut::<2>().0.iter_mut().zip(buffer.as_chunks::<2>().0).enumerate()
             {
-                let (lane_left, lane_right) = mix.as_ref().map_or((1.0, 1.0), |m| m.gains(frame));
+                // The tap is taken before the compensation delay: the lanes at the fader.
+                let (lane_left, lane_right) = mix.as_ref().map_or((1.0, 1.0), |m| m.fader_gains(frame));
                 let fader = live.at(frame);
                 *l = bl * gain_left * lane_left * fader * pan.0.at(frame);
                 *r = br * gain_right * lane_right * fader * pan.1.at(frame);
@@ -736,12 +737,15 @@ impl Chain {
         }
     }
 
-    /// Fills the track's mixer gains for a block of `frames` frames whose first frame is at
-    /// arrangement frame `time` (the play start marker while stopped, with `running` false).
-    /// Never allocates.
-    pub(crate) fn automate_mix(&mut self, time: u64, frames: usize, running: bool) {
+    /// Fills the track's mixer gains for a block of `frames` frames at the time of the audio
+    /// they scale, read from the blocks played: at the fader, as late as the chain's input and
+    /// its devices; at the output, as late as that and the compensation delay after the fader
+    /// (`docs/spec/plugin-delay-compensation.md` › Mixer automation). Never allocates.
+    pub(crate) fn automate_mix(&mut self, songs: &crate::plugin::SongHistory, frames: usize) {
+        let fader = self.input_latency.saturating_add(self.latency);
+        let output = fader.saturating_add(u32::try_from(self.delay.frames()).unwrap_or(u32::MAX));
         if let Some(mix) = self.mix.as_mut() {
-            mix.plan(time, frames.min(MAX_BLOCK), running);
+            mix.plan(songs, fader, output, frames.min(MAX_BLOCK));
         }
     }
 
