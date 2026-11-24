@@ -4,6 +4,22 @@
 //! The window's side of plug-in hosting: scans, the plug-in manager's requests, and where editors open.
 
 use super::*;
+use std::time::{Duration, Instant};
+
+/// How long an added plug-in may take to start before its editor is no longer opened for it.
+pub(super) const EDITOR_WAIT: Duration = Duration::from_secs(10);
+
+/// A plug-in just added whose editor opens once it runs (Settings › Plug-ins › Open editor when
+/// added): its project, its track and place in the chain, and when it is let go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct PendingEditor {
+    pub(super) project: Option<ProjectId>,
+    pub(super) track: TrackId,
+    pub(super) device: usize,
+    /// The add's moment and [`EDITOR_WAIT`]: a deadline in time, not in window frames, which come
+    /// many times a second while the transport runs and a few times when it does not.
+    pub(super) until: Instant,
+}
 
 impl App {
     /// The shown track's plug-in: the panel's pick when it is one of the track's plug-ins, else
@@ -43,33 +59,43 @@ impl App {
     /// loads in its host after the command.
     pub(super) fn note_added_plugin(&mut self, id: &str, params: &serde_json::Value, result: &serde_json::Value) {
         if self.settings.plugin_editor_on_add
-            && let Some(added) = added_plugin(id, params, result)
+            && let Some(added) = pending_editor(self.projects.active(), id, params, result, Instant::now())
         {
             self.pending_editors.push(added);
         }
     }
 
-    /// Opens the editor of each plug-in [`App::note_added_plugin`] remembered, once it runs; one
-    /// that fails, is removed or does not start in time is let go.
+    /// Opens the editor of each plug-in [`App::note_added_plugin`] remembered, once it runs in
+    /// the project shown, the one it was added to; one that fails or is removed, or does not
+    /// start by its deadline, is let go.
     pub(super) fn open_pending_editors(&mut self) {
+        self.open_pending_editors_at(Instant::now());
+    }
+
+    /// [`App::open_pending_editors`] at `now`, which a test gives.
+    pub(super) fn open_pending_editors_at(&mut self, now: Instant) {
         if self.pending_editors.is_empty() {
             return;
         }
+        let active = self.projects.active();
         let pending = std::mem::take(&mut self.pending_editors);
         let mut open = Vec::new();
-        for (track, index, left) in pending {
-            let report = self.projects.session_mut(None).ok().and_then(|s| s.plugin_report(track, index));
+        for entry in pending {
+            // Read in the project it was added to, never in another that holds a device there.
+            let report =
+                self.projects.session_mut(entry.project).ok().and_then(|s| s.plugin_report(entry.track, entry.device));
+            let waiting = now < entry.until;
             match report.map(|r| (r.status, r.editor_open)) {
-                Some((PluginStatus::Running, false)) => open.push((track, index)),
-                // Still starting, or not reported yet: wait a poll more, while there are polls left.
-                Some((PluginStatus::Loading, _)) | None if left > 0 => {
-                    self.pending_editors.push((track, index, left - 1))
+                Some((PluginStatus::Running, false)) if entry.project == active => open.push(entry),
+                // Still starting, not reported yet, or its project not shown: wait while there is time.
+                Some((PluginStatus::Running, false) | (PluginStatus::Loading, _)) | None if waiting => {
+                    self.pending_editors.push(entry)
                 }
                 _ => {}
             }
         }
-        for (track, index) in open {
-            self.run(&Action::new("device.openEditor", json!({ "track": track.0, "device": index })));
+        for entry in open {
+            self.run(&Action::new("device.openEditor", json!({ "track": entry.track.0, "device": entry.device })));
         }
     }
 
@@ -488,14 +514,16 @@ impl App {
     }
 }
 
-/// The plug-in a command just added, as a pending editor (track, device index, polls left), or
-/// `None` when the command added none. A free function so a caller that holds the session can
-/// still record it ([`App::note_added_plugin`]).
-pub(super) fn added_plugin(
+/// The plug-in a command just added in `project`, as a pending editor let go [`EDITOR_WAIT`]
+/// after `now`, or `None` when the command added none. A free function so a caller that holds
+/// the session can still record it ([`App::note_added_plugin`]).
+pub(super) fn pending_editor(
+    project: Option<ProjectId>,
     id: &str,
     params: &serde_json::Value,
     result: &serde_json::Value,
-) -> Option<(TrackId, usize, u32)> {
+    now: Instant,
+) -> Option<PendingEditor> {
     let index = |v: &serde_json::Value| v.as_u64().and_then(|i| usize::try_from(i).ok());
     let track = |v: &serde_json::Value| v.as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId);
     let added = match id {
@@ -507,6 +535,5 @@ pub(super) fn added_plugin(
         }
         _ => None,
     };
-    // About ten seconds of polls for a plug-in that is slow to load.
-    added.map(|(track, index)| (track, index, 60))
+    added.map(|(track, device)| PendingEditor { project, track, device, until: now + EDITOR_WAIT })
 }

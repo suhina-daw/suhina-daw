@@ -8,7 +8,7 @@
 //! write failures stay failures wholly on the page: the pack still plays from the executable,
 //! and the next start can try again.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Writes every pack file when its target is missing, under the library's NAM `sounds`
 /// folder: `<device folder>/<pack folder>/<file name>` — the pack's own `Suhina` folder inside
@@ -117,10 +117,25 @@ fn migrate_reported(base: &Path, old_name: &str) -> PathBuf {
 /// names (#1369). Compared by their components, case-insensitively, so a settings text that
 /// names the folder in another spelling of its case still keeps it. A relative setting is read
 /// from `cwd`, the working folder, as the panels read it (`App::nam_models_folder` hands the
-/// text on as it is).
+/// text on as it is). `.` and `..` are taken out by the text alone, without asking the disk
+/// (`work/../NAM models` is `NAM models`), as the system reads them in a path it opens.
 fn is_kept(folder: &Path, keep: &[PathBuf], cwd: &Path) -> bool {
     let components = |path: &Path| -> Vec<String> {
-        path.components().map(|component| component.as_os_str().to_string_lossy().to_lowercase()).collect()
+        // Each part, and whether `..` may take it away: a root or a drive stays.
+        let mut parts: Vec<(String, bool)> = Vec::new();
+        for component in path.components() {
+            match component {
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    if parts.last().is_some_and(|(_, normal)| *normal) {
+                        parts.pop();
+                    }
+                }
+                other => parts
+                    .push((other.as_os_str().to_string_lossy().to_lowercase(), matches!(other, Component::Normal(_)))),
+            }
+        }
+        parts.into_iter().map(|(part, _)| part).collect()
     };
     let folder = components(folder);
     keep.iter().any(|kept| {

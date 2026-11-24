@@ -124,6 +124,14 @@ fn a_relative_setting_keeps_the_old_folder_from_the_working_folder() {
     let elsewhere = std::env::temp_dir().join("somewhere-else");
     assert!(!is_kept(&old, &[PathBuf::from("NAM models/My captures")], &elsewhere), "read from another folder");
     assert!(!is_kept(&old, &[PathBuf::from("My captures")], &base), "a folder beside the old one");
+    // `.` and `..` read as the system reads them: from a working folder inside the library, a
+    // setting that climbs out of it still names the old folder's subfolder.
+    let work = base.join("work");
+    for setting in ["../NAM models/My captures", "./../NAM models/./My captures"] {
+        assert!(is_kept(&old, &[PathBuf::from(setting)], &work), "{setting} from a folder inside the library");
+    }
+    assert!(!is_kept(&old, &[PathBuf::from("NAM models/My captures")], &work), "no climb, another folder");
+    assert!(is_kept(&old, &[base.join("other").join("..").join("NAM models")], &work), "an absolute setting with `..`");
 }
 
 /// A name the new tree already holds is never overwritten: that file stays in the old

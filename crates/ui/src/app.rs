@@ -585,9 +585,9 @@ pub struct App {
     tab_switcher: Option<usize>,
     /// The quick-add palette while it is open (`quick_add.rs`).
     quick_add: Option<quick_add::QuickAdd>,
-    /// Plug-ins just added whose editors open once they run (Settings › Plug-ins › Open the
-    /// editor when added): the track, the device's place and the polls left to wait.
-    pending_editors: Vec<(TrackId, usize, u32)>,
+    /// Plug-ins just added whose editors open once they run (Settings › Plug-ins › Open editor
+    /// when added).
+    pending_editors: Vec<plugin_host::PendingEditor>,
     /// What the palette's buttons narrow it to, kept from one palette to the next.
     quick_add_filter: quick_add::Filter,
     /// What the palette's field said when it was closed without adding, for the next one.
@@ -2895,9 +2895,6 @@ impl App {
         self.device_picks().iter().map(|(_, at)| at.value()).collect()
     }
 
-    /// A device clicked in a strip's list or the chain, on the track or inside a group: picked
-    /// alone, added or taken out with Ctrl (Cmd), or with Shift the run from the device picked
-    /// last, in the same chain or branch of the same track.
     /// A press anywhere in a device panel, its knobs and buttons included: the panel's device
     /// takes the edit keys (Ctrl+D, Delete, Ctrl+C), as a click on its background does, so a
     /// device the user is working on is the one they act on (#1355). A device not picked yet is
@@ -2921,6 +2918,9 @@ impl App {
         }
     }
 
+    /// A device clicked in a strip's list or the chain, on the track or inside a group: picked
+    /// alone, added or taken out with Ctrl (Cmd), or with Shift the run from the device picked
+    /// last, in the same chain or branch of the same track.
     fn pick_device(&mut self, track: TrackId, at: detail_view::DeviceAt, add: bool, run: bool) {
         let mut picks = self.device_picks();
         let same_track = picks.first().is_some_and(|(t, _)| *t == track);
@@ -3071,7 +3071,8 @@ impl App {
         // The fields themselves, not `note_added_plugin`: `session` still borrows the projects.
         if let Ok(result) = &ran
             && self.settings.plugin_editor_on_add
-            && let Some(added) = plugin_host::added_plugin(action.id, params, result)
+            && let Some(added) =
+                plugin_host::pending_editor(active_project, action.id, params, result, std::time::Instant::now())
         {
             self.pending_editors.push(added);
         }

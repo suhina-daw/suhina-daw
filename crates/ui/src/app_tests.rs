@@ -741,6 +741,27 @@ fn the_quick_add_palette_targets_the_track_of_the_clip_worked_on() {
         "the clip's track, not the selected header's"
     );
 
+    // A lane clicked last, after that clip: the lane's track.
+    harness.state_mut().quick_add = None;
+    harness.run();
+    let lane = harness.get_by_label("Lane Keys").rect();
+    let clips: Vec<Rect> = harness.query_all_by_label_contains(" on Keys at bar ").map(|n| n.rect()).collect();
+    let empty = (0..200)
+        .map(|i| egui::pos2(lane.right() - 12.0 - i as f32 * 8.0, lane.center().y))
+        .find(|p| lane.contains(*p) && !clips.iter().any(|c| c.expand(2.0).contains(*p)))
+        .expect("a spot of Keys' lane no clip covers");
+    harness.hover_at(empty);
+    harness.run();
+    harness.drag_at(empty);
+    harness.step();
+    harness.drop_at(empty);
+    harness.step();
+    harness.run();
+    assert_eq!(harness.state().arrangement.selected_clip(), None, "the lane took the click");
+    harness.state_mut().do_action("view.quickAdd", &mut Vec::new());
+    harness.run();
+    assert_eq!(harness.state().quick_add_target().and_then(|(track, _)| track), Some(keys), "the lane's track");
+
     harness.state_mut().quick_add = None;
     harness.run();
     harness.get_by_label("Track Keys").click();
@@ -777,30 +798,41 @@ fn the_quick_add_palette_adds_effects_to_main() {
 }
 
 /// With Settings › Plug-ins › Open editor when added on, a plug-in a command adds is
-/// remembered until it runs; built-in devices and the setting off remember nothing, and one that
-/// never reports running is let go after its polls.
+/// remembered with its project until it runs; built-in devices and the setting off remember
+/// nothing, and one that never reports running is let go at its deadline, however many frames
+/// come before it.
 #[test]
 fn an_added_plugin_waits_for_its_editor_only_with_the_setting_on() {
+    use plugin_host::{EDITOR_WAIT, PendingEditor};
     let mut app = App::new();
     app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let project = app.projects.active();
     let added = json!({ "device": 2 });
     app.note_added_plugin("device.addPlugin", &json!({ "track": 1, "plugin": "Nova" }), &added);
     assert!(app.pending_editors.is_empty(), "off by default");
 
     app.settings.plugin_editor_on_add = true;
     app.note_added_plugin("device.addPlugin", &json!({ "track": 1, "plugin": "Nova" }), &added);
-    assert_eq!(app.pending_editors, vec![(TrackId(1), 2, 60)]);
+    let first = app.pending_editors.first().map(|e| (e.project, e.track, e.device));
+    assert_eq!(first, Some((project, TrackId(1), 2)));
     let new_track = json!({ "track": 9, "device": { "device": 0 } });
     app.note_added_plugin("track.add", &json!({ "device": "fm-synth" }), &new_track);
     assert_eq!(app.pending_editors.len(), 1, "a built-in device opens no editor");
     app.note_added_plugin("track.add", &json!({ "device": "VST3:Nova" }), &new_track);
-    assert_eq!(app.pending_editors.last(), Some(&(TrackId(9), 0, 60)), "a plug-in on a new track");
+    let last = app.pending_editors.last().map(|e| (e.track, e.device));
+    assert_eq!(last, Some((TrackId(9), 0)), "a plug-in on a new track");
 
-    // Nothing runs in the demo: each poll counts down, and the last lets them go.
-    for _ in 0..=60 {
-        app.open_pending_editors();
+    // Nothing runs in the demo. The deadline is in time: any number of polls before it keeps an
+    // entry, a poll at it lets it go.
+    let now = std::time::Instant::now();
+    let entry = |until| PendingEditor { project, track: TrackId(1), device: 2, until };
+    app.pending_editors = vec![entry(now + EDITOR_WAIT), entry(now)];
+    for _ in 0..1000 {
+        app.open_pending_editors_at(now);
     }
-    assert!(app.pending_editors.is_empty(), "let go once their polls are spent");
+    assert_eq!(app.pending_editors, vec![entry(now + EDITOR_WAIT)], "only the one at its deadline went");
+    app.open_pending_editors_at(now + EDITOR_WAIT);
+    assert!(app.pending_editors.is_empty(), "let go at its deadline");
 }
 
 /// The ARA edits prompt and the missing files panel are drawn over the window: plug-in

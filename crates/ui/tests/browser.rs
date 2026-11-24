@@ -590,6 +590,19 @@ fn adding_from_the_search_gives_ctrl_z_back_to_the_project() {
     harness.run();
     assert_eq!(synths(&harness), before, "Ctrl+Z undoes the add");
     assert_eq!(harness.state().browser.search, "fm synth", "and leaves the search as it was");
+
+    // Clicking a found row lets go of the field as well: Ctrl+Z then undoes what a double-click
+    // on it adds.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::F);
+    harness.run();
+    harness.run();
+    assert!(search_focused(&harness), "Ctrl+F gives the field the keyboard again");
+    double_click(&mut harness, &row("FM Synth"));
+    assert!(!search_focused(&harness), "a click on a row lets go of the keyboard");
+    assert_eq!(synths(&harness), before + 1, "a double-click adds the row");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(synths(&harness), before, "Ctrl+Z undoes that add");
     let _ = std::fs::remove_dir_all(&settings);
     let _ = std::fs::remove_dir_all(&folder);
 }

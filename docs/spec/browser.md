@@ -456,7 +456,7 @@ A shortcut (`view.quickAdd`, Ctrl+P by default, rebindable as every other key) o
 quick-add palette in the middle of the window, placed as the project switcher (Ctrl+Tab) is:
 a search field over one list of what `library.search` finds, with a small header above it naming
 where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no track selected.
-The track is the one worked on, the same one copied devices are pasted on: the track of the clip
+The target track is the one worked on, the same one copied devices are pasted on: the track of the clip
 or slot clicked last (so the clip shown in the piano roll takes what is added), else the
 selected track header's.
 
@@ -480,29 +480,30 @@ selected track header's.
   is one more button.
 - **On a track that plays no notes** (an audio track, a group, a return, Main) no instrument or
   MIDI effect is listed. Main takes effects as a track does, with its header or strip selected; a
-  sample or MIDI file chosen there goes on a new track. **Effects go on the selected track only:** with no track selected, no effect
-  or MIDI effect is listed, and the header says `select a track for effects`. If one is chosen
-  anyway, the status line says why and nothing is added.
+  sample or MIDI file chosen there goes on a new track. **Effects go on the target track only:**
+  with no target track (`New track` in the header), no effect or MIDI effect is listed, and the
+  header says `select a track for effects`. If one is chosen anyway, the status line says why and
+  nothing is added.
 - **The search is kept:** closed without adding (Escape, a click outside, to select a track,
   say), the palette opens again with what its field said; adding something clears it.
 - **Keys:** Up and Down move the lit row, wrapping round; Enter adds the lit item and closes;
   a click on a row adds it and closes; Escape or a click outside closes without changing
   anything. Letting go of a modifier does not close it.
 - **What a choice runs**, each one command and one undo step, so agents and the CLI do the same:
-  a device on the selected track is `device.add` (built-in) or `device.addPlugin` (plug-in), and
-  the detail area shows that track's devices; for an instrument with no track selected it is
+  a device on the target track is `device.add` (built-in) or `device.addPlugin` (plug-in), and
+  the detail area shows that track's devices; for an instrument with no target track it is
   `track.add` with `device` (a MIDI track named after the instrument), and the new track becomes
   the selected one, so the next add goes there too. Tracks are named as when dragging from the
   browser ([arrangement editing](arrangement-editing.md) › Names): an instrument names the
   track, an instrument's preset gives it the preset's name, an effect leaves it as it is. A
   preset is
-  `device.add` with `preset` (and `voice` for one voice of a bank, or `stock` for a stock preset) on the selected track, or
+  `device.add` with `preset` (and `voice` for one voice of a bank, or `stock` for a stock preset) on the target track, or
   `track.add` with them on a new one; a track that cannot take the preset's device says so in
   the status line. A sample or MIDI file
-  is `clip.addFiles` on the selected track, as a drop on its lane: the clip starts at the
+  is `clip.addFiles` on the target track, as a drop on its lane: the clip starts at the
   palette's place on that track when it holds the file (a sample on an audio track, a MIDI file
   on a MIDI track, an empty track taking the file's kind, #945); a track that cannot hold it
-  gets a new track right after it. With no track selected, a new track after the last regular
+  gets a new track right after it. With no target track, a new track after the last regular
   track. A sample is read on another thread first, as a drop is.
 - **The palette's place:** with the pointer over the Arrangement's lanes when the shortcut is
   pressed, the beat under it, snapped to the grid; anywhere else, the play start marker.

@@ -1587,6 +1587,34 @@ fn shift_and_an_arrow_move_the_pitch_by_an_octave() {
     }
 }
 
+/// The open Semitones field steps from the value as applied, not from the text it put in the
+/// box: the harness never applies a step, so the box goes back to +2 and the next Up sends +3
+/// again, where a stale box would send +4. A number typed is stepped from as typed.
+#[test]
+fn the_open_semitones_field_steps_from_the_applied_value() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel::default(), 0.0, 2.25);
+    let mut harness = panel_harness(detail);
+    harness.get_by_label("Semitones: +2").click();
+    harness.run();
+    harness.state_mut().clear();
+    for _ in 0..2 {
+        harness.key_press(egui::Key::ArrowUp);
+        harness.run();
+    }
+    let sent: Vec<f64> = harness.state().iter().filter_map(|a| a.params["transpose"].as_f64()).collect();
+    assert_eq!(sent, [3.25, 3.25], "each step from the applied +2");
+
+    harness.state_mut().clear();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Semitones value").type_text("7");
+    harness.run();
+    harness.key_press(egui::Key::ArrowUp);
+    harness.run();
+    let sent = harness.state().last().and_then(|a| a.params["transpose"].as_f64());
+    assert_eq!(sent, Some(8.25), "from the 7 typed");
+}
+
 /// The tempo is typed into a text field opened by a double-click, halved and doubled, each a
 /// `clip.setTempo` set by hand; Escape leaves a typed tempo unset.
 #[test]

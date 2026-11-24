@@ -287,7 +287,20 @@ pub(super) fn number_field(
     field: Field,
 ) -> Option<Change> {
     let edit_id = id.with("typing");
+    // The text the field itself last put in the box: while the box still holds it, it is the
+    // value's, not the user's, and follows the value as it is applied.
+    let written_id = id.with("written");
+    let short =
+        |v: f64| (text.shown)(v).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
     if let Some(mut typed) = ui.data(|d| d.get_temp::<String>(edit_id)) {
+        let unedited = ui.data(|d| d.get_temp::<String>(written_id)).is_some_and(|w| w == typed);
+        if unedited && typed != short(value) {
+            typed = short(value);
+            ui.data_mut(|d| {
+                d.insert_temp(edit_id, typed.clone());
+                d.insert_temp(written_id, typed.clone());
+            });
+        }
         // The arrows step the value while the text field is open, as they step every value
         // control (#707): taken before the field moves its cursor with them.
         let steps = ui.input_mut(|i| {
@@ -305,11 +318,15 @@ pub(super) fn number_field(
                 (true, false) => field.per_tick * 0.1,
                 (false, _) => field.per_tick,
             };
-            let from = (text.parse)(&typed).unwrap_or(value);
+            // From the value as applied while the box holds the field's own text, so a step adds
+            // exactly its interval; from the number typed when the user typed one.
+            let from = if unedited { value } else { (text.parse)(&typed).unwrap_or(value) };
             let next = (field.snap)(from + f64::from(steps) * step).clamp(field.range.0, field.range.1);
-            let shown =
-                (text.shown)(next).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
-            ui.data_mut(|d| d.insert_temp(edit_id, shown));
+            let shown = short(next);
+            ui.data_mut(|d| {
+                d.insert_temp(edit_id, shown.clone());
+                d.insert_temp(written_id, shown);
+            });
             return Some(Change { value: next, more: false });
         }
         let edit = egui::TextEdit::singleline(&mut typed)
@@ -336,6 +353,7 @@ pub(super) fn number_field(
         if response.lost_focus() || entered || escaped {
             ui.data_mut(|d| {
                 d.remove::<String>(edit_id);
+                d.remove::<String>(written_id);
                 d.remove::<bool>(id.with("started"));
             });
             if entered && !escaped {
@@ -372,9 +390,9 @@ pub(super) fn number_field(
     // One click opens the text field (a drag moves the value instead): a double-click was
     // needed before, and a click that only took the keys was easy to miss.
     if response.clicked() {
-        let start =
-            (text.shown)(value).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
+        let start = short(value);
         ui.data_mut(|d| {
+            d.insert_temp(written_id, start.clone());
             d.insert_temp(edit_id, start);
             d.remove::<f64>(preview_id);
             d.remove::<(f64, f64)>(grab_id);
