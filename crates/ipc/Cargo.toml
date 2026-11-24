@@ -5,7 +5,9 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
-[dependencies]
+# Shared memory is mapped with memmap2 everywhere but on Windows, where `shm.rs` maps it with
+# windows-sys; the cfg matches the one on `Shared::map`.
+[target.'cfg(not(windows))'.dependencies]
 memmap2 = "0.9"  # MIT OR Apache-2.0
 
 [target.'cfg(unix)'.dependencies]
