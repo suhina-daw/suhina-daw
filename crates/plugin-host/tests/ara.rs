@@ -163,12 +163,12 @@ fn an_archive_waits_in_the_state_of_a_device_without_a_document() {
     let archive = ("com.example.doc".to_string(), vec![9; 4]);
     let own = 0.25f32.to_le_bytes().to_vec();
     let state = suhina_plugins::protocol::wrap_ara_state(own.clone(), Some(archive.clone()));
-    let mut project = project(false);
-    project.channels[0].devices[0].clip_host = false;
-    project.channels[0].devices[0].state = Some(state.into());
-    assert_eq!(project.assign_ids(), Ok(()));
-    let key = suhina_engine::plugin_devices(&project)[0].key;
-    let mut started = start_offline_device(&project, &audio(), &env(), key, SR, None)
+    let mut no_clips = project(false);
+    no_clips.channels[0].devices[0].clip_host = false;
+    no_clips.channels[0].devices[0].state = Some(state.into());
+    assert_eq!(no_clips.assign_ids(), Ok(()));
+    let key = suhina_engine::plugin_devices(&no_clips)[0].key;
+    let mut started = start_offline_device(&no_clips, &audio(), &env(), key, SR, None)
         .unwrap()
         .expect("the test plug-in is installed");
     assert!(started.refused.is_none(), "{:?}", started.refused);
