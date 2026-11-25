@@ -370,14 +370,16 @@ Suhina has a user-agent style sheet, as a browser does: `crates/theme-package/sr
 element stands on: what keeps it usable, with no design of Suhina's. Its only colors are a
 plain readable floor on `window`, fixed light text on an opaque dark background, and the same
 opaque background on `menu`, `popup`, `tooltip` and `dialog`, so what floats over the window
-never shows what is behind it; the base sheet replaces them with Suhina's colors. Those
+never shows what is behind it; the base sheet replaces them with Suhina's colors. The one
+other color is the system's look for the window's buttons on Windows (`window-button`), which
+nothing above it sets, so they look like the system's in every theme. Those
 backgrounds reach the surfaces whichever sheet gives them: egui frames its menus, pop-ups and
 tooltips in the window's frame (`widget[kind="window"]`), which this sheet leaves clear, and the
 element's background replaces that frame's fill.
 
 - **It selects elements by name, state and attribute only:** no classes (but the standard toolbar
   group classes, `group.transport` and `group.display`, once the toolbar has groups), no ids, no
-  variables, no colors but the window's two fixed ones and that background on what floats over it, and no at-rules. Tests in
+  variables, no colors but the window's two fixed ones, that background on what floats over it and the window buttons' fixed ones, and no at-rules. Tests in
   `suhina-theme-package` check this, and that every element it names is in the registry.
 - **The cascade** is: the user-agent sheet, the base tier (*The base sheet*), the theme's
   `theme.css`, the chosen variant, device panel sheets (each inside its panel), and the user's
@@ -1472,6 +1474,12 @@ These native parts take the sheet (the [theme author guide](../guide/theme-autho
   `send.fill`.
 - **Add-track buttons:** push buttons (`button[kind="push"]`), `#control-add-midi-track`,
   `#control-add-audio-track`, `#control-add-return-track`, a device group's `#control-add-branch`.
+- **Window buttons:** where Suhina draws the title bar (Windows), `window-button[kind="minimize"]`,
+  `[kind="maximize"]` and `[kind="close"]`: an element of its own, not a `button`, so a theme's
+  rules for every `button` do not reach it, and it draws no artwork. The user-agent sheet draws
+  them as the system does, with fixed colors, so they look the same in every theme, with the base
+  sheet or without it: no fill at rest, a faint gray under the pointer, Close red (`#c42b1c`)
+  with a white cross. A theme restyles them only by naming `window-button`.
 - **Ruler, loop region, play position:** `ruler` (background, `color`, `border-color`;
   artwork `ruler`), `loop-region` (`[checked]` while looping; `height`; artwork `loop-region`,
   `.on`), `playhead` (`color`, `width`; `width: 0` hides it; the piano roll and the browser's preview strip draw it too).

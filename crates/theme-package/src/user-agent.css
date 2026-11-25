@@ -8,8 +8,9 @@
  * It holds only what keeps every element usable: layout, the regions' overflow, the default
  * artwork, the floating surfaces' blur, and plain readable text on an opaque window. It selects
  * elements by name, state and attribute only: no classes, no ids and no variables, and its only
- * colors are the window's two fixed plain ones and its background again for the menus, pop-ups,
- * tooltips and dialogs over it, so nothing in it depends on a theme. The element
+ * colors are the window's two fixed plain ones, its background again for the menus, pop-ups,
+ * tooltips and dialogs over it, and the system's own look for the window's buttons on Windows, so
+ * nothing in it depends on a theme. The element
  * reference lists every element it names.
  */
 
@@ -23,6 +24,16 @@ popup,
 menu,
 tooltip,
 dialog { background-color: #1e1e1e; }
+
+/* The window's own buttons where Suhina draws the title bar (Windows) look like the system's,
+   whatever the theme: no fill at rest and the window's text, a faint gray under the pointer that
+   shows on a light window and a dark one, and Close red with white under it. They are not
+   buttons, so neither the base sheet nor a theme's rules for every `button` reach them; a theme
+   restyles them only by naming `window-button`. */
+window-button:hover { background-color: rgba(128, 128, 128, 0.18); }
+window-button:active { background-color: rgba(128, 128, 128, 0.12); }
+window-button[kind="close"]:hover { background-color: #c42b1c; color: #ffffff; }
+window-button[kind="close"]:active { background-color: rgba(196, 43, 28, 0.9); color: #ffffff; }
 
 /* A dialog keeps what it holds 10 points in from its edge; its title row runs along its top,
    outside that. Its buttons stand in a row at the right of its bottom, 8 points apart. */

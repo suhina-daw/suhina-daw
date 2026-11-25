@@ -1051,6 +1051,7 @@ macro_rules! names {
 names! {
     WINDOW = "window";
     APPLICATION_BAR = "application-bar";
+    WINDOW_BUTTON = "window-button";
     MENU_BAR = "menu-bar";
     MENU = "menu";
     PROJECT_TABS = "project-tabs";

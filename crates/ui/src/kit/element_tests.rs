@@ -1170,3 +1170,26 @@ fn built_in_themes_dim_a_disabled_button_and_sheet_s_row_buttons_have_no_artwork
     assert!(entry && more, "Sheet's row buttons take their CSS look");
     assert!(!push, "Sheet's push buttons keep its artwork");
 }
+
+/// The window's own buttons (Windows) look like the system's in every theme: no fill at rest, a
+/// faint gray under the pointer, and Close the system's red with a white cross. The user-agent
+/// sheet gives them, and neither the base sheet nor a theme's rule for every `button` reaches them.
+#[test]
+fn the_window_buttons_look_like_the_system_s_in_every_theme() {
+    // Each entered on its own, not inside the one before.
+    let window = |css: &'static str, kind: &'static str, hovered| {
+        frames(css, || {
+            let el = WINDOW_BUTTON.attribute("kind", kind).pointer(hovered, false, false).enter();
+            (el.background(), el.color())
+        })
+    };
+    let every_button = "button { background-color: #00ff00; color: #00ff00; border-radius: 9px; image: none; }";
+    for css in ["", every_button] {
+        let (rest, _) = window(css, "minimize", false);
+        let (hovered, _) = window(css, "minimize", true);
+        let (close, close_ink) = window(css, "close", true);
+        assert_eq!(rest.a(), 0, "{css}: {rest:?}");
+        assert_eq!(hovered, egui::Color32::from_rgba_unmultiplied(128, 128, 128, 46), "{css}");
+        assert_eq!((close, close_ink), (egui::Color32::from_rgb(0xc4, 0x2b, 0x1c), egui::Color32::WHITE), "{css}");
+    }
+}

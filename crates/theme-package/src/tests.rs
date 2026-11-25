@@ -370,28 +370,12 @@ fn color_property(name: &str) -> bool {
 
 /// The user-agent sheet's only colors are the window's plain text and background, and the same
 /// opaque background for the menus, pop-ups, tooltips and dialogs over it (#1448): a theme that opts out of
-/// the base sheet stands on a bare floor it can read. All are fixed, opaque values. The theme swatch's square takes its color from its element,
-/// not from the sheet.
+/// the base sheet stands on a bare floor it can read. Those are fixed, opaque values. The window's
+/// own buttons on Windows (`window-button`) take the system's look from here too, in fixed colors,
+/// so every theme shows them as the system does. The theme swatch's square takes its color from its
+/// element, not from the sheet.
 #[test]
 fn the_user_agent_sheet_colors_only_the_window_and_what_floats_over_it() {
-    let sheet = suhina_style::sheet::Sheet::parse(USER_AGENT_SHEET).unwrap();
-    let mut given: Vec<&str> = Vec::new();
-    for (name, value) in sheet.declarations().filter(|(name, _)| color_property(name)) {
-        if value.trim().starts_with("attr(") {
-            continue;
-        }
-        assert!(
-            matches!(
-                suhina_style::value::Color::parse(value.trim()),
-                Ok(suhina_style::value::Color::Rgba([_, _, _, 255]))
-            ),
-            "the window's {name} is a fixed opaque color: {value}"
-        );
-        given.push(name);
-    }
-    given.sort_unstable();
-    assert_eq!(given, ["background-color", "color"]);
-    // The text in a rule for `window`, the background in one for it and what floats over it.
     // One line ending whatever the checkout makes of the file.
     let mut text = USER_AGENT_SHEET.replace("\r\n", "\n");
     while let Some(start) = text.find("/*") {
@@ -402,17 +386,36 @@ fn the_user_agent_sheet_colors_only_the_window_and_what_floats_over_it() {
     let mut colored = Vec::new();
     while let Some(open) = rest.find('{') {
         let close = rest.find('}').unwrap();
-        let body = &rest[open + 1..close];
-        if body.split(';').any(|declaration| {
-            declaration
-                .split_once(':')
-                .is_some_and(|(name, value)| color_property(name.trim()) && !value.trim().starts_with("attr("))
-        }) {
-            colored.push(rest[..open].trim().to_owned());
+        let selector = rest[..open].trim().to_owned();
+        let window_button = selector.starts_with("window-button");
+        for (name, value) in rest[open + 1..close].split(';').filter_map(|declaration| declaration.split_once(':')) {
+            let (name, value) = (name.trim(), value.trim());
+            if !color_property(name) || value.starts_with("attr(") {
+                continue;
+            }
+            match suhina_style::value::Color::parse(value) {
+                Ok(suhina_style::value::Color::Rgba([_, _, _, alpha])) => {
+                    assert!(window_button || alpha == 255, "{selector}'s {name} is opaque: {value}");
+                }
+                other => panic!("{selector}'s {name} is a fixed color: {value} ({other:?})"),
+            }
+            if !colored.contains(&selector) {
+                colored.push(selector.clone());
+            }
         }
         rest = &rest[close + 1..];
     }
-    assert_eq!(colored, ["window", "window,\npopup,\nmenu,\ntooltip,\ndialog"]);
+    assert_eq!(
+        colored,
+        [
+            "window",
+            "window,\npopup,\nmenu,\ntooltip,\ndialog",
+            "window-button:hover",
+            "window-button:active",
+            "window-button[kind=\"close\"]:hover",
+            "window-button[kind=\"close\"]:active",
+        ]
+    );
 }
 
 /// No color in the base sheet is fixed (#1448): every color it gives reads a variable, so a

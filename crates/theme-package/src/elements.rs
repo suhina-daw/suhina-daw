@@ -260,7 +260,9 @@ pub const ELEMENTS: &[Element] = &[
             "backdrop-blur",
         ]),
     element("application-bar", Region, "The bar at the very top, with the application's menus.")
-        .parts(&["group", "bar-item"]),
+        .parts(&["group", "bar-item", "window-button"]),
+    element("window-button", Control, "One of the window's own buttons, where Suhina draws the title bar (Windows): `window-button[kind=\"minimize\"]`, `[kind=\"maximize\"]` and `[kind=\"close\"]`, by its `background-color` (`:hover` under the pointer, `:active` pressed) and its `color` for the glyph. The user-agent sheet gives them the system's look in every theme; it is not a `button`, so a rule for every `button` does not reach it, and it draws no artwork.")
+        .attributes(&["kind"]),
     element("menu-bar", Region, "The menu bar."),
     element("menu", Region, "An open menu of the menu bar.").settings(FLOATING),
     element("project-tabs", Region, "The bar of open projects' tabs.").parts(&["project-tab"]),
