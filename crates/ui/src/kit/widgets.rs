@@ -259,6 +259,18 @@ pub fn paint_text(painter: &Painter, pos: Pos2, galley: Arc<Galley>, color: Colo
     super::native_css::paint_text(painter, pos, galley, color);
 }
 
+/// A child of `ui` over `rect` that takes no room in it, disabled unless `enabled`: where a
+/// control that only senses and paints (`button_area`, `check_box_named`) is drawn so that it
+/// takes `:disabled`. `ui.put` or `ui.scope_builder` would move `ui`'s cursor to the end of the
+/// child's empty extent, so whatever `ui` lays out next would start too high.
+pub fn cell(ui: &mut Ui, rect: Rect, enabled: bool) -> Ui {
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    if !enabled {
+        child.disable();
+    }
+    child
+}
+
 /// Makes `rect` clickable, with a label for screen readers and tests.
 pub fn button_area(ui: &Ui, rect: Rect, id: egui::Id, label: impl ToString) -> Response {
     let response = ui.interact(rect, id, Sense::click());

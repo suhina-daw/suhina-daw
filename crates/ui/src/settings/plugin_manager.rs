@@ -1513,12 +1513,9 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
             // Off while a scan runs: its result replaces the library, switches too.
             let label = format!("Use {}", plugin.name);
             let id = egui::Id::unique(("plugin-use", &plugin.spec));
-            let response = ui.put(check, |ui: &mut egui::Ui| {
-                ui.add_enabled_ui(!scanning, |ui| {
-                    crate::kit::widgets::check_box_named(ui, ui.painter(), check, id, ("", &label), plugin.enabled)
-                })
-                .inner
-            });
+            let cell = crate::kit::widgets::cell(ui, check, !scanning);
+            let response =
+                crate::kit::widgets::check_box_named(&cell, &painter, check, id, ("", &label), plugin.enabled);
             if response.clicked() {
                 asked.toggled = Some((plugin.spec.clone(), !plugin.enabled));
             }

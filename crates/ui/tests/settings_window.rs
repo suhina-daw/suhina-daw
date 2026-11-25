@@ -222,6 +222,36 @@ fn theme_cards_show_a_thumbnail_or_a_card_in_the_swatch_color() {
     );
 }
 
+/// The list of themes (its search, then its cards) starts below the card of the theme in use, also when that theme has no
+/// settings a variant could hold, so its grayed + is drawn in a cell that takes no room.
+#[test]
+fn the_theme_list_starts_below_the_theme_in_use() {
+    let mut harness = short_window();
+    harness.get_by_label("Settings page: Themes").click();
+    settle(&mut harness);
+    // Suhina Light declares no settings.
+    wheel_to(&mut harness, "Theme: Suhina Light", 40);
+    harness.get_by_label("Theme: Suhina Light").click();
+    settle(&mut harness);
+    wheel_to(&mut harness, "Theme in use: Suhina Light", 40);
+    let id = harness.state().settings().theme.clone();
+    let themes = suhina_ui::kit::theme::built_in_themes();
+    let plus = harness.get_by_label("New variant");
+    assert!(plus.accesskit_node().is_disabled(), "the + is grayed");
+    // The card's variants row, the + in it, is the bottom of the card in use.
+    let active = plus.rect();
+    let search = harness.get_by_label("Search themes").rect();
+    assert!(search.top() > active.bottom(), "the search at {search:?}, under {active:?}");
+    let mut others = 0;
+    for (_, theme) in themes.iter().filter(|(key, _)| *key != id) {
+        if let Some(card) = harness.query_by_label(&format!("Theme: {}", theme.name)) {
+            others += 1;
+            assert!(card.rect().top() > active.bottom(), "{} at {:?}, under {active:?}", theme.name, card.rect());
+        }
+    }
+    assert!(others > 0);
+}
+
 #[test]
 fn active_theme_is_featured_and_holding_it_keeps_the_preview_clear() {
     let mut harness = short_window();

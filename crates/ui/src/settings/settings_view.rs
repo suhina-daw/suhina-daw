@@ -2059,15 +2059,8 @@ fn theme_card(
             let area = place(variants.len());
             let enabled = !themes.declared.is_empty();
             let id = Id::unique(("theme-new-variant", base));
-            let plus = if enabled {
-                widgets::button_area(ui, area, id, "New variant")
-            } else {
-                // Disabled in a scope of its own, so the button's face takes `:disabled`.
-                ui.scope_builder(egui::UiBuilder::new().max_rect(area).disabled(), |ui| {
-                    widgets::button_area(ui, area, id, "New variant")
-                })
-                .inner
-            };
+            // Disabled in a cell of its own when grayed, so the button's face takes `:disabled`.
+            let plus = widgets::button_area(&widgets::cell(ui, area, enabled), area, id, "New variant");
             let plus = if enabled {
                 plus.on_hover_text("New variant from the values in use")
             } else {
@@ -2533,12 +2526,8 @@ pub(crate) fn plugin_folders(
         // Off while a scan runs: its result replaces the library, switches too.
         let label = format!("Scan {}", folder.path);
         let id = Id::unique(("plugin-folder-scan", &folder.path));
-        let response = ui.put(check, |ui: &mut egui::Ui| {
-            ui.add_enabled_ui(!plugins.scanning, |ui| {
-                widgets::check_box_named(ui, ui.painter(), check, id, ("", &label), folder.enabled)
-            })
-            .inner
-        });
+        let cell = widgets::cell(ui, check, !plugins.scanning);
+        let response = widgets::check_box_named(&cell, painter, check, id, ("", &label), folder.enabled);
         if response.clicked() {
             request = Some(PluginRequest::SetFolderEnabled(folder.path.clone(), !folder.enabled));
         }
@@ -2667,13 +2656,9 @@ fn plugin_actions(
             Vec2::new(half, buttons.height()),
         );
         // Push buttons, `:disabled` while a scan runs.
-        let response = ui
-            .add_enabled_ui(!plugins.scanning, |ui| {
-                let response = widgets::button_area(ui, cell, Id::unique(("scan", index)), text);
-                widgets::push_face(ui, painter, cell, &response, (text, widgets::Push::Plain), None);
-                response
-            })
-            .inner;
+        let area = widgets::cell(ui, cell, !plugins.scanning);
+        let response = widgets::button_area(&area, cell, Id::unique(("scan", index)), text);
+        widgets::push_face(&area, painter, cell, &response, (text, widgets::Push::Plain), None);
         if response.clicked() && !plugins.scanning {
             request = Some(PluginRequest::Scan { all });
         }

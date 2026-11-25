@@ -510,3 +510,20 @@ fn a_drop_downs_arrow_takes_the_sheets_dropdown_arrow_color() {
     assert!(painted("dropdown-arrow { color: #FF00FF; }"), "the arrow takes the sheet's color");
     assert!(!painted("dropdown-arrow { color: #00FF00; }"), "and only that");
 }
+
+/// A control drawn in a [`cell`] takes no room: what its parent lays out next starts where it
+/// would without it, and the cell grays the control when it is off.
+#[test]
+fn a_cell_takes_no_room_and_grays_its_control() {
+    let ctx = egui::Context::default();
+    let (after, enabled) = theme::in_style_frame(&ctx, |ui| {
+        let (row, _) = ui.allocate_exact_size(Vec2::new(100.0, 22.0), Sense::hover());
+        let check = Rect::from_center_size(row.center(), Vec2::splat(16.0));
+        let cell = cell(ui, check, false);
+        check_box_named(&cell, ui.painter(), check, Id::unique("cell-check"), ("", "Cell"), true);
+        let (next, _) = ui.allocate_exact_size(Vec2::new(100.0, 22.0), Sense::hover());
+        (next.top() - row.bottom() - ui.spacing().item_spacing.y, cell.is_enabled())
+    });
+    assert_eq!(after, 0.0);
+    assert!(!enabled);
+}
