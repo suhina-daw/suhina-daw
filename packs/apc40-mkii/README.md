@@ -42,8 +42,12 @@ plays and goes blank when stopped), the track stop, the activator (`track.setMut
 (`track.setSolo`), record arm (`track.setArm`), the track select buttons and master select
 (`track.select`), play/stop and the metronome, the crossfader (`mixer.setCrossfader`, one
 gesture) and each track's A/B button (`track.setCrossfadeAssign`), the eight faders
-(`track.setVolume`, one gesture each), the master fader (`mixer.setMainVolume`) and the pan
-encoders (`track.setPan`, one gesture each) with their rings.
+(`track.setVolume`, one gesture each), the master fader (`mixer.setMainVolume`), and the eight
+encoders with their rings: Pan (the track's pan), Sends (a return's send, paged with another
+Sends press) and User (left to the user), each button lighting its mode. Record records the
+arrangement (`transport.record`) and lights while it does; Session Record arms empty pads on
+armed tracks to record, and lights while armed or a slot take runs; Tap Tempo takes its taps'
+spacing, the tempo encoder turns a BPM a click, and Nudge −/+ step it.
 
 The device control section follows the selection the window, commands and agents share
 (`project.selection`, #1679): the eight knobs turn the selected device's dials — the page its
@@ -60,7 +64,5 @@ generated panel gives its sliders to the knobs the same way, in the panel's orde
 arrows light where there is another page, the device arrows while a device is selected, and the
 track select buttons light for the selected track.
 
-Not yet: the sends, user mode, Device Lock, the Clip/Dev and Detail View buttons, the tempo
-encoder, nudge, tap tempo, session record and shift; blinking queued pads; and the clip's own
-colour on its pad (a slot with a clip lights white, its track's states light green,
-yellow, red and grey).
+Not yet: Device Lock, the Clip/Dev and Detail View buttons, and shift; and blinking queued pads.
+A pad's state takes over its colour: green while it plays and yellow while it is queued.

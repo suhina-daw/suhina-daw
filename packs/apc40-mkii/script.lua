@@ -54,6 +54,9 @@ local CROSSFADE_A, CROSSFADE_B = 1, 2
 local KNOBS = 8
 local CROSSFADER = 15
 local CROSSFADE_AB = 66
+local TEMPO = 13
+local PAN_MODE, SENDS_MODE, USER_MODE = 87, 88, 89
+local RECORD, SESSION_RECORD, TAP_TEMPO, NUDGE_DOWN, NUDGE_UP = 93, 102, 99, 100, 101
 -- How many selection looks after a knob's last report count as still turning: the ring is not
 -- written while it turns, because a ring write resets an absolute encoder's own value and the
 -- next report would jump.
@@ -63,8 +66,18 @@ local TRACK_SELECT, MASTER_SELECT = 51, 80
 
 -- What the subscriptions last reported: the grid (which slots hold clips, which have stop
 -- buttons), the launcher's state (what plays and what is queued, the transport), the tracks
--- (mute, solo, armed, pan), and the selection (the selected track and device, #1679).
-local grid, state, strips, selection = nil, nil, nil, nil
+-- (mute, solo, armed, pan, sends), the selection (the selected track and device, #1679), and
+-- the record state (whether the arrangement records).
+local grid, state, strips, selection, record_state = nil, nil, nil, nil, nil
+
+-- The encoders' mode: pan, a return track's sends, or the user's own. In sends mode the sends
+-- are paged: pressing Sends again takes the next one.
+local encoder_mode = "pan"
+local send_index = 0
+-- Whether the Session Record button arms empty slots to record on the pads.
+local session_record = false
+-- The taps whose spacing makes the tap tempo, in microseconds, at most the last four.
+local tap_times = {}
 
 -- The bank of eight parameters the device knobs show: 0 for the first eight, 1 for the next,
 -- and back to 0 when another device is selected.
@@ -235,6 +248,94 @@ local function mixer_track(track)
         return nil
     end
     return column.track
+end
+
+-- The most sends any strip has, which Sends pages through.
+local function send_count()
+    local most = 0
+    for track = 0, TRACKS - 1 do
+        local strip = strip_of(track)
+        local sends = (strip ~= nil) and strip.sends or nil
+        if type(sends) == "table" and #sends > most then
+            most = #sends
+        end
+    end
+    return most
+end
+
+-- The send at the open page on a strip, or nil when that track has none.
+local function send_of(track)
+    local strip = strip_of(track)
+    local sends = (strip ~= nil) and strip.sends or nil
+    if type(sends) ~= "table" then
+        return nil
+    end
+    return sends[send_index + 1]
+end
+
+-- A send level in dB as its ring position, 0 at silence and 127 at 0 dB.
+local function send_position(level_db)
+    if is_nil(level_db) or level_db <= -60 then
+        return 0
+    end
+    return math.floor((math.min(0, level_db) + 60) / 60 * 127 + 0.5)
+end
+
+-- The tempo the engine plays, for the tempo knob's and the nudge buttons' next step.
+local function current_tempo()
+    if state ~= nil and type(state.tempo_bpm) == "number" then
+        return state.tempo_bpm
+    end
+    return 120
+end
+
+-- Sets the project tempo, limited to the tempo field's range and rounded to hundredths.
+local function set_tempo(bpm, gesture)
+    bpm = math.max(20, math.min(999, math.floor(bpm * 100 + 0.5) / 100))
+    suhina.command("transport.setTempo", { bpm = bpm }, gesture)
+end
+
+-- The nudge buttons: a BPM a press, as the tempo field's own nudge does.
+local function nudge_tempo(delta)
+    set_tempo(current_tempo() + delta, "apc40-mkii nudge")
+end
+
+-- The tap tempo: the last taps' spacing, reset after a pause of two seconds.
+local function tap_tempo(timestamp)
+    local now = tonumber(timestamp) or 0
+    if now <= 0 then
+        return
+    end
+    if #tap_times > 0 and now - tap_times[#tap_times] > 2000000 then
+        tap_times = {}
+    end
+    tap_times[#tap_times + 1] = now
+    if #tap_times > 4 then
+        table.remove(tap_times, 1)
+    end
+    if #tap_times < 2 then
+        return
+    end
+    local span = tap_times[#tap_times] - tap_times[1]
+    if span > 0 then
+        set_tempo(60 * 1000000 * (#tap_times - 1) / span, "apc40-mkii tap tempo")
+    end
+end
+
+-- Whether a scene or arrangement take is recording, for the Session Record light.
+local function session_recording()
+    if session_record then
+        return true
+    end
+    if record_state == nil or type(record_state.takes) ~= "table" then
+        return false
+    end
+    for _, take in ipairs(record_state.takes) do
+        if type(take.into) == "table" and not is_nil(take.into.scene) then
+            return true
+        end
+    end
+    return false
 end
 
 -- The protocol's RGB colour table, in velocity order 0 to 127: the palette the pads and scene
@@ -560,22 +661,45 @@ local function refresh()
         -- The track select buttons are radio style: the selected track's is lit.
         local id = mixer_track(track)
         led(track, TRACK_SELECT, (id ~= nil and not is_nil(selection) and selection.track == id) and ON or OFF_BUTTON)
-        -- The pan ring: pan spread style, then the position (0 at full left, 127 full right).
-        led_cc(56 + track, 3)
+        -- The encoders' ring: the pan's spread in pan mode, a send's level in sends mode, and
+        -- nothing in user mode, where the encoders are not the script's.
         local strip = strip_of(track)
-        local pan = (strip ~= nil and not is_nil(strip.pan)) and strip.pan or 0
-        local position
-        if pan <= -1 then
-            position = 0
-        elseif pan >= 1 then
-            position = 127
+        if encoder_mode == "pan" then
+            led_cc(56 + track, 3)
+            local pan = (strip ~= nil and not is_nil(strip.pan)) and strip.pan or 0
+            local position
+            if pan <= -1 then
+                position = 0
+            elseif pan >= 1 then
+                position = 127
+            else
+                position = math.floor(pan * 63.5 + 64 + 0.5)
+            end
+            if not knob_saw(48 + track, position) then
+                led_cc(48 + track, position)
+            end
+        elseif encoder_mode == "sends" then
+            local send = send_of(track)
+            if send ~= nil then
+                led_cc(56 + track, 2)
+                local position = send_position(send.level_db)
+                if not knob_saw(48 + track, position) then
+                    led_cc(48 + track, position)
+                end
+            else
+                led_cc(56 + track, 0)
+                led_cc(48 + track, 0)
+            end
         else
-            position = math.floor(pan * 63.5 + 64 + 0.5)
-        end
-        if not knob_saw(48 + track, position) then
-            led_cc(48 + track, position)
+            led_cc(56 + track, 0)
+            led_cc(48 + track, 0)
         end
     end
+    led(0, PAN_MODE, encoder_mode == "pan" and ON or OFF_BUTTON)
+    led(0, SENDS_MODE, encoder_mode == "sends" and ON or OFF_BUTTON)
+    led(0, USER_MODE, encoder_mode == "user" and ON or OFF_BUTTON)
+    led(0, RECORD, (record_state ~= nil and record_state.arrangement == true) and ON or OFF_BUTTON)
+    led(0, SESSION_RECORD, session_recording() and ON or OFF_BUTTON)
     for scene = 0, SCENES - 1 do
         led(0, 82 + scene, scene_velocity(scene))
     end
@@ -586,7 +710,7 @@ local function refresh()
 end
 
 -- A press: pads and scenes launch, the track buttons act, the transport runs.
-local function press(channel, note)
+local function press(channel, note, timestamp)
     if channel == 0 and note >= 0 and note <= 39 then
         local track, scene = pad_of(note)
         local id = mixer_track(track)
@@ -598,9 +722,17 @@ local function press(channel, note)
         if slot == nil then
             return
         end
-        -- An empty slot with a stop button stops the track; an empty one without does nothing.
-        if is_nil(slot.clip) and slot.stop_button ~= true then
-            return
+        -- An empty slot records on an armed track while Session Record is armed; otherwise an
+        -- empty one with a stop button stops the track, and one without does nothing.
+        if is_nil(slot.clip) then
+            local strip = strip_of(track)
+            if session_record and strip ~= nil and strip.armed == true then
+                suhina.command("clip.record", { track = id, scene = scene })
+                return
+            end
+            if slot.stop_button ~= true then
+                return
+            end
         end
         suhina.command("clip.launch", { track = id, scene = scene })
     elseif channel == 0 and note >= 82 and note <= 86 then
@@ -623,6 +755,34 @@ local function press(channel, note)
         end
     elseif channel == 0 and note == 90 then
         suhina.command("transport.setMetronome", { on = not (state ~= nil and state.metronome == true) })
+    elseif channel == 0 and note == PAN_MODE then
+        encoder_mode = "pan"
+        refresh()
+    elseif channel == 0 and note == SENDS_MODE then
+        if encoder_mode == "sends" then
+            local count = send_count()
+            if count > 0 then
+                send_index = (send_index + 1) % count
+            end
+        else
+            encoder_mode = "sends"
+            send_index = 0
+        end
+        refresh()
+    elseif channel == 0 and note == USER_MODE then
+        encoder_mode = "user"
+        refresh()
+    elseif channel == 0 and note == RECORD then
+        suhina.command("transport.record", { on = not (record_state ~= nil and record_state.arrangement == true) })
+    elseif channel == 0 and note == SESSION_RECORD then
+        session_record = not session_record
+        refresh()
+    elseif channel == 0 and note == TAP_TEMPO then
+        tap_tempo(timestamp)
+    elseif channel == 0 and note == NUDGE_DOWN then
+        nudge_tempo(-1)
+    elseif channel == 0 and note == NUDGE_UP then
+        nudge_tempo(1)
     elseif channel == 0 and note == DEVICE_LEFT then
         suhina.command("device.selectPrevious")
     elseif channel == 0 and note == DEVICE_RIGHT then
@@ -724,18 +884,47 @@ local function cc_received(channel, controller, value)
     elseif controller == CROSSFADER and channel == 0 then
         suhina.command("mixer.setCrossfader", { value = value / 127 }, "apc40-mkii crossfader")
     elseif controller >= 48 and controller <= 55 and channel == 0 then
-        local id = mixer_track(controller - 48)
+        local track = controller - 48
+        local id = mixer_track(track)
         if id == nil then
             return
         end
-        local pan = (value - 64) / 63.5
-        if pan > 1 then
-            pan = 1
-        elseif pan < -1 then
-            pan = -1
+        if encoder_mode == "pan" then
+            local pan = (value - 64) / 63.5
+            if pan > 1 then
+                pan = 1
+            elseif pan < -1 then
+                pan = -1
+            end
+            suhina.command("track.setPan", { tracks = { id }, pan = pan }, "apc40-mkii pan " .. id)
+            knob_reported(controller, value)
+        elseif encoder_mode == "sends" then
+            local send = send_of(track)
+            local target = (send ~= nil) and send["return"] or nil
+            if send == nil or is_nil(target) then
+                return
+            end
+            local db = "-inf"
+            if value > 0 then
+                db = math.floor((-60 + (value / 127) * 60) * 10) / 10
+            end
+            suhina.command(
+                "track.setSend",
+                { track = id, ["return"] = target, level = db },
+                "apc40-mkii send " .. id
+            )
+            knob_reported(controller, value)
         end
-        suhina.command("track.setPan", { tracks = { id }, pan = pan }, "apc40-mkii pan " .. id)
-        knob_reported(controller, value)
+        -- User mode leaves the encoders to the user: the script sends nothing for them.
+    elseif controller == TEMPO and channel == 0 then
+        -- The tempo knob is relative: 1 to 63 up, 127 down to 64 down.
+        local delta = value
+        if delta > 63 then
+            delta = delta - 128
+        end
+        if delta ~= 0 then
+            set_tempo(current_tempo() + delta, "apc40-mkii tempo")
+        end
     elseif controller == 14 then
         -- The master fader (CC 14): the main output's volume, the same curve.
         local db = "-inf"
@@ -752,7 +941,7 @@ suhina.on_port_message(function(bytes, port, timestamp)
         return
     end
     if message.kind == "note_on" and message.velocity > 0 then
-        press(message.channel, message.note)
+        press(message.channel, message.note, timestamp)
     elseif message.kind == "cc" then
         cc_received(message.channel, message.controller, message.value)
     end
@@ -774,6 +963,8 @@ suhina.on_state(function(token, value)
             bank_device = key
             bank = 0
         end
+    elseif kind == "record" then
+        record_state = value
     end
     refresh()
 end)
@@ -792,3 +983,4 @@ kinds[suhina.subscribe("project.launcher")] = "grid"
 kinds[suhina.subscribe("launcher.state")] = "state"
 kinds[suhina.subscribe("project.tracks")] = "strips"
 kinds[suhina.subscribe("project.selection")] = "selection"
+kinds[suhina.subscribe("record.state")] = "record"

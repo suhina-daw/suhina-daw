@@ -17,6 +17,7 @@ use mlua::{Lua, LuaString, Value, Variadic};
 struct Command {
     id: String,
     track: Option<u32>,
+    tracks: Vec<u32>,
     track_name: Option<String>,
     device: Option<String>,
     param: Option<String>,
@@ -24,6 +25,11 @@ struct Command {
     normalized: Option<f64>,
     assign: Option<String>,
     scene: Option<u64>,
+    bpm: Option<f64>,
+    on: Option<bool>,
+    level: Option<f64>,
+    pan: Option<f64>,
+    return_track: Option<u32>,
     gesture: Option<String>,
 }
 
@@ -100,9 +106,22 @@ impl Fake {
                     let field = |key: &str| params.and_then(|t| t.get::<Value>(key).ok());
                     let count = |key: &str| field(key).and_then(|v| number(&v)).map(|n| n as u32);
                     let text_field = |key: &str| field(key).and_then(|v| text(&v));
+                    let tracks: Vec<u32> = field("tracks")
+                        .and_then(|v| match v {
+                            Value::Table(table) => Some(
+                                table
+                                    .sequence_values::<Value>()
+                                    .filter_map(Result::ok)
+                                    .filter_map(|v| number(&v))
+                                    .map(|n| n as u32)
+                                    .collect(),
+                            ),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
                     let scene = field("scene").and_then(|v| match v {
                         Value::Table(table) => table.get::<Value>("id").ok().and_then(|id| number(&id)),
-                        _ => None,
+                        _ => number(&v),
                     });
                     let device = field("device").and_then(|v| match v {
                         Value::Integer(n) => Some(n.to_string()),
@@ -113,6 +132,7 @@ impl Fake {
                     recorded.borrow_mut().push(Command {
                         id,
                         track: count("track"),
+                        tracks,
                         track_name: field("track").and_then(|v| text(&v)),
                         device,
                         param: text_field("param"),
@@ -120,6 +140,14 @@ impl Fake {
                         normalized: field("normalized").and_then(|v| number(&v)),
                         assign: text_field("assign"),
                         scene: scene.map(|n| n as u64),
+                        bpm: field("bpm").and_then(|v| number(&v)),
+                        on: field("on").and_then(|v| match v {
+                            Value::Boolean(on) => Some(on),
+                            _ => None,
+                        }),
+                        level: field("level").and_then(|v| number(&v)),
+                        pan: field("pan").and_then(|v| number(&v)),
+                        return_track: count("return"),
                         gesture: args.get(2).and_then(text),
                     });
                     Ok(true)
@@ -274,9 +302,14 @@ impl Fake {
 
     /// One port message: CC 16 or a device-section note.
     fn message(&self, bytes: &[u8]) {
+        self.message_at(bytes, 0);
+    }
+
+    /// One port message with its arrival timestamp in microseconds, for the tap tempo.
+    fn message_at(&self, bytes: &[u8], timestamp: u64) {
         let handler: mlua::Function = self.lua.named_registry_value("on_port_message").unwrap();
         let bytes = self.lua.create_string(bytes).unwrap();
-        handler.call::<()>((bytes, "APC40 mkII in", 0u64)).unwrap();
+        handler.call::<()>((bytes, "APC40 mkII in", timestamp)).unwrap();
     }
 
     /// The tracks the project's subscription lists, so the track select buttons have ids.
@@ -316,6 +349,15 @@ impl Fake {
     /// The same grid with the clips' colour, as `project.launcher` gives the slot's own or its
     /// track's.
     fn launcher_grid_with_color(&self, scenes: &[(u64, &str)], color: Option<&str>) {
+        self.launcher_grid_slots(scenes, color, true);
+    }
+
+    /// A grid whose slots are empty, for the Session Record pad.
+    fn launcher_grid_empty(&self, scenes: &[(u64, &str)]) {
+        self.launcher_grid_slots(scenes, None, false);
+    }
+
+    fn launcher_grid_slots(&self, scenes: &[(u64, &str)], color: Option<&str>, clips: bool) {
         let grid = self.lua.create_table().unwrap();
         let list = self.lua.create_table().unwrap();
         for (index, (id, name)) in scenes.iter().enumerate() {
@@ -333,7 +375,7 @@ impl Fake {
             let slots = self.lua.create_table().unwrap();
             for scene in 0..scenes.len() {
                 let slot = self.lua.create_table().unwrap();
-                if track < 2 {
+                if clips && track < 2 {
                     slot.set("clip", "Clip").unwrap();
                     if let Some(color) = color {
                         slot.set("color", color).unwrap();
@@ -352,8 +394,14 @@ impl Fake {
 
     /// The launcher's state: which track (0 to 7) plays which scene (0 to 4), the rest idle.
     fn launcher_state(&self, playing: &[(u32, u32)]) {
+        self.launcher_state_tempo(playing, 120.0);
+    }
+
+    /// The launcher's state with the tempo its `tempo_bpm` reports.
+    fn launcher_state_tempo(&self, playing: &[(u32, u32)], tempo_bpm: f64) {
         let state = self.lua.create_table().unwrap();
         state.set("running", true).unwrap();
+        state.set("tempo_bpm", tempo_bpm).unwrap();
         let tracks = self.lua.create_table().unwrap();
         for track in 0..8u32 {
             let column = self.lua.create_table().unwrap();
@@ -369,6 +417,41 @@ impl Fake {
         handler.call::<()>((2u64, state)).unwrap();
     }
 
+    /// The record state, as `record.state` gives it: whether the arrangement records.
+    fn record_state(&self, arrangement: bool) {
+        let state = self.lua.create_table().unwrap();
+        state.set("arrangement", arrangement).unwrap();
+        state.set("takes", self.lua.create_table().unwrap()).unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((5u64, state)).unwrap();
+    }
+
+    /// Strips with their armed state and sends: each send's return id and level in dB.
+    fn strips_mixer(&self, entries: &[(u32, bool, &[f64])]) {
+        let strips = self.lua.create_table().unwrap();
+        for track in 0..8u32 {
+            let strip = self.lua.create_table().unwrap();
+            let (id, armed, levels) = entries
+                .get(track as usize)
+                .map_or((track + 1, false, &[][..]), |(id, armed, levels)| (*id, *armed, *levels));
+            strip.set("id", id).unwrap();
+            strip.set("pan", 0.0).unwrap();
+            strip.set("armed", armed).unwrap();
+            strip.set("crossfade_assign", "off").unwrap();
+            let sends = self.lua.create_table().unwrap();
+            for (index, level) in levels.iter().enumerate() {
+                let send = self.lua.create_table().unwrap();
+                send.set("return", 100 + index as u32).unwrap();
+                send.set("level_db", *level).unwrap();
+                sends.set(index + 1, send).unwrap();
+            }
+            strip.set("sends", sends).unwrap();
+            strips.set(track + 1, strip).unwrap();
+        }
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((3u64, strips)).unwrap();
+    }
+
     fn last_command(&self) -> Command {
         self.commands.borrow().last().cloned().unwrap_or_default()
     }
@@ -379,6 +462,10 @@ impl Fake {
 
     fn knob(&self, knob: u8, value: u8) {
         self.message(&[0xB0, 16 + knob, value]);
+    }
+
+    fn encoder(&self, track: u8, value: u8) {
+        self.message(&[0xB0, 48 + track, value]);
     }
 
     fn press(&self, note: u8) {
@@ -572,6 +659,131 @@ fn the_scene_launch_buttons_light_and_toggle_their_scene() {
     let command = fake.last_command();
     assert_eq!(command.id, "scene.launch", "{command:?}");
     assert_eq!(command.scene, Some(11), "{command:?}");
+}
+
+/// Pan, Sends and User take the eight encoders: pan, a return's send (paged by another Sends
+/// press), and nothing in User mode, where the encoders are left alone. Their buttons light the
+/// open mode.
+#[test]
+fn the_encoder_modes_take_pan_sends_and_user() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.strips_mixer(&[(7, false, &[-6.0, -12.0])]);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 87, 127].as_slice()),
+        "Pan is the open mode: {:?}",
+        fake.sends.borrow()
+    );
+    // Pan: the first encoder at full left.
+    fake.encoder(0, 0);
+    let command = fake.last_command();
+    assert_eq!(command.id, "track.setPan", "{command:?}");
+    assert_eq!(command.tracks, [7], "{command:?}");
+    assert!((command.pan.unwrap_or_default() + 1.0).abs() < 1e-6, "{command:?}");
+    // Sends: the first send, full up.
+    fake.press(88);
+    fake.encoder(0, 127);
+    let command = fake.last_command();
+    assert_eq!(command.id, "track.setSend", "{command:?}");
+    assert_eq!(command.track, Some(7), "{command:?}");
+    assert_eq!(command.return_track, Some(100), "{command:?}");
+    assert!((command.level.unwrap_or_default()).abs() < 1e-6, "{command:?}");
+    assert_eq!(command.gesture.as_deref(), Some("apc40-mkii send 7"), "{command:?}");
+    // Sends again pages to the second return; its bottom is silence.
+    fake.press(88);
+    fake.encoder(0, 0);
+    let command = fake.last_command();
+    assert_eq!(command.id, "track.setSend", "{command:?}");
+    assert_eq!(command.return_track, Some(101), "{command:?}");
+    assert_eq!(command.level, None, "silence is -inf: {command:?}");
+    // Pan again, and the knob is a pan once more.
+    fake.press(87);
+    fake.encoder(0, 127);
+    let command = fake.last_command();
+    assert_eq!(command.id, "track.setPan", "{command:?}");
+    assert_eq!(command.tracks, [7], "{command:?}");
+    assert!(command.pan.unwrap_or_default() > 0.9, "{command:?}");
+    // User: lit, the rings off, and the encoders send no command at all.
+    fake.press(89);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 89, 127].as_slice()),
+        "User lights: {:?}",
+        fake.sends.borrow()
+    );
+    let before = fake.commands.borrow().len();
+    fake.encoder(0, 64);
+    assert_eq!(fake.commands.borrow().len(), before, "User leaves the encoder alone: {:?}", fake.commands());
+}
+
+/// The Record button records the arrangement and lights while it does; Session Record arms
+/// empty pads on armed tracks to record and lights while it is armed or a slot take runs.
+#[test]
+fn the_record_and_session_buttons_toggle_their_lights() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.strips_mixer(&[(7, true, &[])]);
+    fake.record_state(false);
+    fake.press(93);
+    let command = fake.last_command();
+    assert_eq!(command.id, "transport.record", "{command:?}");
+    assert_eq!(command.on, Some(true), "{command:?}");
+    fake.record_state(true);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 93, 127].as_slice()),
+        "the record light follows the arrangement: {:?}",
+        fake.sends.borrow()
+    );
+    fake.press(102);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 102, 127].as_slice()),
+        "Session Record lights: {:?}",
+        fake.sends.borrow()
+    );
+    // An empty pad on the armed first track records instead of launching.
+    fake.launcher_grid_empty(&[(10, "Intro")]);
+    fake.press(32);
+    let command = fake.last_command();
+    assert_eq!(command.id, "clip.record", "{command:?}");
+    assert_eq!(command.track, Some(7), "{command:?}");
+    assert_eq!(command.scene, Some(0), "{command:?}");
+    // Disarmed for session record, the same empty pad with a stop button stops the track.
+    fake.press(102);
+    fake.press(32);
+    assert_eq!(fake.last_command().id, "clip.launch", "{:?}", fake.commands());
+    // The record button stops the arrangement once the state says it records.
+    fake.press(93);
+    let command = fake.last_command();
+    assert_eq!(command.id, "transport.record", "{command:?}");
+    assert_eq!(command.on, Some(false), "{command:?}");
+}
+
+/// The tempo knob is relative and steps a BPM a click; the nudge buttons step it too; the tap
+/// tempo takes the spacing of two taps.
+#[test]
+fn the_tempo_knob_nudge_and_tap_tempo_set_the_tempo() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.launcher_state_tempo(&[], 120.0);
+    fake.message_at(&[0xB0, 13, 1], 1);
+    let command = fake.last_command();
+    assert_eq!(command.id, "transport.setTempo", "{command:?}");
+    assert!((command.bpm.unwrap_or_default() - 121.0).abs() < 1e-6, "{command:?}");
+    assert_eq!(command.gesture.as_deref(), Some("apc40-mkii tempo"), "{command:?}");
+    fake.launcher_state_tempo(&[], 121.0);
+    fake.message_at(&[0xB0, 13, 127], 2);
+    assert!((fake.last_command().bpm.unwrap_or_default() - 120.0).abs() < 1e-6, "{:?}", fake.last_command());
+    fake.launcher_state_tempo(&[], 120.0);
+    fake.press(101);
+    assert!((fake.last_command().bpm.unwrap_or_default() - 121.0).abs() < 1e-6, "{:?}", fake.last_command());
+    fake.launcher_state_tempo(&[], 121.0);
+    fake.press(100);
+    assert!((fake.last_command().bpm.unwrap_or_default() - 120.0).abs() < 1e-6, "{:?}", fake.last_command());
+    // Two taps half a second apart are 120 BPM.
+    fake.message_at(&[0x90, 99, 127], 1_000_000);
+    fake.message_at(&[0x90, 99, 127], 1_500_000);
+    let command = fake.last_command();
+    assert_eq!(command.id, "transport.setTempo", "{command:?}");
+    assert!((command.bpm.unwrap_or_default() - 120.0).abs() < 1e-6, "{command:?}");
 }
 
 /// CC 15 sets the crossfader, and a track's note 66 button toggles A and B; the strip reading
