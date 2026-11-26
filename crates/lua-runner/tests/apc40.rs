@@ -395,7 +395,7 @@ fn the_crossfader_and_the_ab_button_drive_their_commands() {
     // The reading says A: the button burns yellow. Then A turns into B, red.
     fake.strips_assigns(&[(7, "a")]);
     assert!(
-        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 66, 13].as_slice()),
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 66, 1].as_slice()),
         "A lights yellow: {:?}",
         fake.sends.borrow()
     );
@@ -403,7 +403,7 @@ fn the_crossfader_and_the_ab_button_drive_their_commands() {
     assert_eq!(fake.last_command().assign.as_deref(), Some("b"));
     fake.strips_assigns(&[(7, "b")]);
     assert!(
-        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 66, 5].as_slice()),
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 66, 2].as_slice()),
         "B lights red: {:?}",
         fake.sends.borrow()
     );

@@ -45,6 +45,8 @@ local OFF, DIM, WHITE, RED, YELLOW, GREEN = 0, 2, 3, 5, 13, 21
 -- chart's own values — 0 is off, 1 to 127 on. The track's stop button has its own table: 0
 -- off, 1 lit, 2 triggered.
 local ON, OFF_BUTTON, STOP_LIT, STOP_TRIGGERED = 127, 0, 1, 2
+-- The A/B button has two colours, not the grid's: velocity 1 is yellow, 2 to 127 orange.
+local CROSSFADE_A, CROSSFADE_B = 1, 2
 
 -- The device control section (the protocol document's DEVICE KNOB 1-8 on CC 16-23, their ring
 -- types on CC 24-31; DEVICE < > on notes 58-59, BANK < > on notes 60-61, DEV. ON/OFF on note
@@ -333,9 +335,9 @@ local function crossfade_velocity(track)
         return OFF
     end
     if strip.crossfade_assign == "a" then
-        return YELLOW
+        return CROSSFADE_A
     elseif strip.crossfade_assign == "b" then
-        return RED
+        return CROSSFADE_B
     end
     return OFF_BUTTON
 end
