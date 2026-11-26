@@ -27,9 +27,11 @@ covers:
   (`crates/lua-runner/tests/apc40.rs`): the dials, the bank pages, the switches left out, a
   plug-in's sliders taking the knobs in its panel's order, and the device arrows change the
   selected device (#1679); a clip pad takes the clip's colour, a scene launch button lights
-  green while its scene plays and toggles between launching and stopping it, and the top-right
+  green while its scene plays and toggles between launching and stopping it, the top-right
   controls switch the encoders, record the arrangement or a slot, set the tempo by tap, knob
-  or nudge, set the cue level, and move the 5x8 window with the Bank Select arrows. The whole
+  or nudge, set the cue level, and move the 5x8 window with the Bank Select arrows (five scenes
+  and eight tracks while Shift is held), the device section locks its device and holds its
+  bank, and Clip/Dev View and Detail View queue the window's actions. The whole
   script's run through the supervisor — the mode
   message, a press of each strip button, the LEDs — follows.
 

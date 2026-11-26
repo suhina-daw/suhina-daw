@@ -60,6 +60,12 @@ impl Fake {
                 let bytes = bytes.as_bytes();
                 let message = lua.create_table()?;
                 match bytes.first().copied() {
+                    Some(status) if status & 0xF0 == 0x80 => {
+                        message.set("kind", "note_off")?;
+                        message.set("channel", status & 0x0F)?;
+                        message.set("note", *bytes.get(1).unwrap_or(&0))?;
+                        message.set("velocity", *bytes.get(2).unwrap_or(&0))?;
+                    }
                     Some(status) if status & 0xF0 == 0x90 => {
                         message.set("kind", "note_on")?;
                         message.set("channel", status & 0x0F)?;
@@ -368,6 +374,11 @@ impl Fake {
         self.launcher_grid_tracks(scenes, None, true, 9);
     }
 
+    /// Wide enough for the Shift arrow jumps, which move five scenes and eight tracks.
+    fn launcher_grid_huge(&self, scenes: &[(u64, &str)]) {
+        self.launcher_grid_tracks(scenes, None, true, 17);
+    }
+
     fn launcher_grid_tracks(&self, scenes: &[(u64, &str)], color: Option<&str>, clips: bool, track_count: u32) {
         let grid = self.lua.create_table().unwrap();
         let list = self.lua.create_table().unwrap();
@@ -387,7 +398,7 @@ impl Fake {
             let slots = self.lua.create_table().unwrap();
             for scene in 0..scenes.len() {
                 let slot = self.lua.create_table().unwrap();
-                if clips && track < 2 {
+                if clips && (track < 2 || track_count > 9) {
                     slot.set("clip", "Clip").unwrap();
                     if let Some(color) = color {
                         slot.set("color", color).unwrap();
@@ -880,6 +891,88 @@ fn the_bank_select_arrows_move_the_window() {
     fake.press(97);
     fake.press(32);
     assert_eq!(fake.last_command().track, Some(1), "{:?}", fake.last_command());
+}
+
+/// Device Lock keeps the device section on its device while the selection moves; without it
+/// the device buttons follow the selection.
+#[test]
+fn the_device_buttons_follow_the_device_lock() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    fake.press(62);
+    let command = fake.last_command();
+    assert_eq!(command.id, "device.setEnabled", "{command:?}");
+    assert_eq!(command.track, Some(1), "{command:?}");
+    fake.press(63);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 63, 127].as_slice()),
+        "Device Lock lights: {:?}",
+        fake.sends.borrow()
+    );
+    fake.selection(4, 2, 1);
+    fake.press(62);
+    let command = fake.last_command();
+    assert_eq!(command.track, Some(1), "the locked track: {command:?}");
+    assert_eq!(command.device.as_deref(), Some("0"), "{command:?}");
+    // Unlocked, the same press follows the selection again.
+    fake.press(63);
+    fake.press(62);
+    let command = fake.last_command();
+    assert_eq!(command.track, Some(2), "{command:?}");
+    assert_eq!(command.device.as_deref(), Some("1"), "{command:?}");
+    // Clip / Devices and Detail View ask the window's own actions.
+    fake.press(64);
+    assert_eq!(fake.last_command().id, "view.devices", "{:?}", fake.commands());
+    fake.press(65);
+    assert_eq!(fake.last_command().id, "view.detail", "{:?}", fake.commands());
+}
+
+/// Bank Lock keeps the bank across a device change; without it another device starts at its
+/// first bank.
+#[test]
+fn the_bank_lock_holds_the_parameter_bank() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    fake.press(61);
+    fake.press(103);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 103, 127].as_slice()),
+        "Bank Lock lights: {:?}",
+        fake.sends.borrow()
+    );
+    fake.selection(4, 2, 1);
+    fake.knob(0, 127);
+    assert_eq!(fake.last_command().param.as_deref(), Some("dial9"), "{:?}", fake.last_command());
+    // Unlocked, the next device's bank starts at its first dial.
+    fake.press(103);
+    fake.selection(4, 2, 0);
+    fake.knob(0, 127);
+    assert_eq!(fake.last_command().param.as_deref(), Some("dial6"), "{:?}", fake.last_command());
+}
+
+/// Held Shift makes the Bank Select arrows jump five scenes and eight tracks.
+#[test]
+fn shift_makes_the_bank_select_arrows_jump() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    let scenes: Vec<(u64, &str)> = (0..11).map(|i| (10 + i, "Scene")).collect();
+    fake.launcher_grid_huge(&scenes);
+    fake.press(98);
+    fake.press(95);
+    fake.press(82);
+    assert_eq!(fake.last_command().scene, Some(15), "five scenes down: {:?}", fake.last_command());
+    fake.press(94);
+    fake.press(82);
+    assert_eq!(fake.last_command().scene, Some(10), "five scenes up: {:?}", fake.last_command());
+    fake.press(96);
+    fake.press(32);
+    assert_eq!(fake.last_command().track, Some(9), "eight tracks right: {:?}", fake.last_command());
+    fake.message(&[0x80, 98, 0]);
+    fake.press(97);
+    fake.press(32);
+    assert_eq!(fake.last_command().track, Some(8), "one track left after Shift: {:?}", fake.last_command());
 }
 
 /// CC 15 sets the crossfader, and a track's note 66 button toggles A and B; the strip reading

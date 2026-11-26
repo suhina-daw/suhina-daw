@@ -65,8 +65,11 @@ next report would jump. The ring goes to the dial's position when the bank or de
 when a value comes from elsewhere. Switches and choices stay on the device's panel; a plug-in's
 generated panel gives its sliders to the knobs the same way, in the panel's order. The bank
 arrows light where there is another page, the device arrows while a device is selected, and the
-track select buttons light for the selected track.
+track select buttons light for the selected track. Device Lock (`device.read`) holds the device
+section on its device while the selection moves elsewhere; Bank Lock holds the parameter bank
+across devices. The Clip/Dev and Detail View buttons queue the window's own actions
+(`view.devices`, `view.detail`), and Shift makes the Bank Select arrows jump five scenes or
+eight tracks.
 
-Not yet: Device Lock, the Clip/Dev and Detail View buttons, and shift (with its five-scene and
-eight-track arrow jumps); and blinking queued pads. A pad's state takes over its colour: green
-while it plays and yellow while it is queued.
+Not yet: the other Shift combinations and blinking queued pads. A pad's state takes over its
+colour: green while it plays and yellow while it is queued.

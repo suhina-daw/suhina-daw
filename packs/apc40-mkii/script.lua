@@ -64,6 +64,8 @@ local ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT = 94, 95, 96, 97
 -- next report would jump.
 local KNOB_SETTLE = 12
 local DEVICE_LEFT, DEVICE_RIGHT, BANK_LEFT, BANK_RIGHT, DEVICE_ON_OFF = 58, 59, 60, 61, 62
+local DEVICE_LOCK, CLIP_DEVICE_VIEW, DETAIL_VIEW = 63, 64, 65
+local SHIFT, BANK_LOCK = 98, 103
 local TRACK_SELECT, MASTER_SELECT = 51, 80
 
 -- What the subscriptions last reported: the grid (which slots hold clips, which have stop
@@ -85,9 +87,17 @@ local session_record = false
 local tap_times = {}
 
 -- The bank of eight parameters the device knobs show: 0 for the first eight, 1 for the next,
--- and back to 0 when another device is selected.
+-- and back to 0 when another device is selected unless Bank Lock holds the bank.
 local bank = 0
 local bank_device = nil
+local bank_locked = false
+
+-- Device Lock keeps the device section on the device it was locked to, read live through
+-- device.read while the selection moves elsewhere.
+local device_locked = false
+local locked_track, locked_path, locked_reading, locked_token = nil, nil, nil, nil
+-- Shift is held while its button is down, for the arrow jumps and other combinations.
+local shift_down = false
 
 -- What each LED last had, so a refresh writes only what changed; and the output port.
 local leds = {}
@@ -101,12 +111,26 @@ local function is_nil(value)
     return value == nil or value == suhina.null
 end
 
--- The selected device from the selection reading, or nil with nothing selected.
+-- The device the device section controls: the locked one, or the selected one.
 local function selected_device()
+    if device_locked and locked_reading ~= nil then
+        return locked_reading
+    end
     if is_nil(selection) or is_nil(selection.device) then
         return nil
     end
     return selection.device
+end
+
+-- The track whose device section is open: the locked one, or the selected one.
+local function device_track()
+    if device_locked and locked_track ~= nil then
+        return locked_track
+    end
+    if is_nil(selection) then
+        return nil
+    end
+    return selection.track
 end
 
 -- Every parameter the selected device lists, in the order its panel shows them.
@@ -183,7 +207,7 @@ local function device_key()
     if device == nil then
         return nil
     end
-    return tostring(selection.track) .. ":" .. tostring(device.path)
+    return tostring(device_track()) .. ":" .. tostring(device.path)
 end
 
 -- The parameter a knob (0-7) shows in the open bank, or nil past the device's last one.
@@ -670,7 +694,7 @@ end
 -- is another page, and Device On/Off whether the device is on.
 local function refresh_device()
     local device = selected_device()
-    local device_key = device ~= nil and (tostring(selection.track) .. ":" .. tostring(device.path)) or ""
+    local device_key = device ~= nil and (tostring(device_track()) .. ":" .. tostring(device.path)) or ""
     for knob = 0, KNOBS - 1 do
         local controller = 16 + knob
         local param = knob_param(knob)
@@ -705,6 +729,8 @@ local function refresh_device()
     led(0, BANK_LEFT, bank > 0 and ON or OFF_BUTTON)
     led(0, BANK_RIGHT, bank < last_bank() and ON or OFF_BUTTON)
     led(0, DEVICE_ON_OFF, (device ~= nil and device.enabled == true) and ON or OFF_BUTTON)
+    led(0, DEVICE_LOCK, device_locked and ON or OFF_BUTTON)
+    led(0, BANK_LOCK, bank_locked and ON or OFF_BUTTON)
 end
 
 local function max_track_offset()
@@ -875,13 +901,13 @@ local function press(channel, note, timestamp)
     elseif channel == 0 and note == NUDGE_UP then
         nudge_tempo(1)
     elseif channel == 0 and note == ARROW_UP then
-        scroll(0, -1)
+        scroll(0, shift_down and -5 or -1)
     elseif channel == 0 and note == ARROW_DOWN then
-        scroll(0, 1)
+        scroll(0, shift_down and 5 or 1)
     elseif channel == 0 and note == ARROW_LEFT then
-        scroll(-1, 0)
+        scroll(shift_down and -8 or -1, 0)
     elseif channel == 0 and note == ARROW_RIGHT then
-        scroll(1, 0)
+        scroll(shift_down and 8 or 1, 0)
     elseif channel == 0 and note == DEVICE_LEFT then
         suhina.command("device.selectPrevious")
     elseif channel == 0 and note == DEVICE_RIGHT then
@@ -900,11 +926,44 @@ local function press(channel, note, timestamp)
         local device = selected_device()
         if device ~= nil then
             suhina.command("device.setEnabled", {
-                track = selection.track,
+                track = device_track(),
                 device = device.path,
                 enabled = device.enabled ~= true,
             })
         end
+    elseif channel == 0 and note == DEVICE_LOCK then
+        if device_locked then
+            device_locked = false
+            if locked_token ~= nil then
+                suhina.unsubscribe(locked_token)
+                kinds[locked_token] = nil
+            end
+            locked_track, locked_path, locked_reading, locked_token = nil, nil, nil, nil
+        else
+            local device = selected_device()
+            if device ~= nil and not is_nil(selection) then
+                locked_track = selection.track
+                locked_path = device.path
+                locked_reading = device
+                device_locked = true
+                if locked_token ~= nil then
+                    suhina.unsubscribe(locked_token)
+                    kinds[locked_token] = nil
+                end
+                locked_token = suhina.subscribe("device.read", { track = locked_track, device = locked_path })
+                kinds[locked_token] = "locked_device"
+            end
+        end
+        refresh()
+    elseif channel == 0 and note == BANK_LOCK then
+        bank_locked = not bank_locked
+        refresh()
+    elseif channel == 0 and note == CLIP_DEVICE_VIEW then
+        suhina.command("view.devices", {})
+    elseif channel == 0 and note == DETAIL_VIEW then
+        suhina.command("view.detail", {})
+    elseif channel == 0 and note == SHIFT then
+        shift_down = true
     elseif channel == 0 and note == MASTER_SELECT then
         suhina.command("track.select", { track = "main" })
     elseif channel >= 0 and channel < TRACKS then
@@ -967,7 +1026,7 @@ local function cc_received(channel, controller, value)
             return
         end
         local args = {
-            track = selection.track,
+            track = device_track(),
             device = device.path,
             -- A built-in's id is text, a plug-in's a number: the command takes text.
             param = tostring(param.id),
@@ -977,7 +1036,7 @@ local function cc_received(channel, controller, value)
         else
             args.value = param.min + (value / 127) * (param.max - param.min)
         end
-        suhina.command("device.setParam", args, "apc40-mkii device " .. tostring(selection.track) .. ":" .. tostring(device.path) .. ":" .. tostring(param.id))
+        suhina.command("device.setParam", args, "apc40-mkii device " .. tostring(device_track()) .. ":" .. tostring(device.path) .. ":" .. tostring(param.id))
         knob_reported(controller, value)
         knob_turn[controller] = KNOB_SETTLE
     elseif controller == CROSSFADER and channel == 0 then
@@ -1042,6 +1101,13 @@ local function cc_received(channel, controller, value)
     end
 end
 
+-- A button letting go; Shift is the one whose held state matters.
+local function release(channel, note)
+    if channel == 0 and note == SHIFT then
+        shift_down = false
+    end
+end
+
 suhina.on_port_message(function(bytes, port, timestamp)
     local message = suhina.midi.parse(bytes)
     if message == nil then
@@ -1049,6 +1115,8 @@ suhina.on_port_message(function(bytes, port, timestamp)
     end
     if message.kind == "note_on" and message.velocity > 0 then
         press(message.channel, message.note, timestamp)
+    elseif message.kind == "note_off" or (message.kind == "note_on" and message.velocity == 0) then
+        release(message.channel, message.note)
     elseif message.kind == "cc" then
         cc_received(message.channel, message.controller, message.value)
     end
@@ -1064,11 +1132,21 @@ suhina.on_state(function(token, value)
         strips = value
     elseif kind == "selection" then
         selection = value
-        -- Another device starts at its first bank, as the controller's focus does.
+        -- Another device starts at its first bank, unless Bank Lock holds it.
         local key = device_key()
         if key ~= bank_device then
             bank_device = key
-            bank = 0
+            if not bank_locked then
+                bank = 0
+            end
+            local last = last_bank()
+            if bank > last then
+                bank = last
+            end
+        end
+    elseif kind == "locked_device" then
+        if device_locked then
+            locked_reading = value
         end
     elseif kind == "record" then
         record_state = value
