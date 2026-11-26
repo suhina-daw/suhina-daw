@@ -549,6 +549,34 @@ fn a_parameter_stays_in_step_between_the_session_and_the_editors() {
     }
 }
 
+/// The selection reading carries a running plug-in's generated panel: its sliders are the
+/// dials a controller turns, in the panel's order, and the value the project set is the one
+/// the reading shows (#1679).
+#[test]
+fn the_selection_reading_gives_a_plugins_generated_sliders_to_a_controller() {
+    let p = project(8.0, false, vec![plugin_device("vst3")]);
+    let (mut session, mut renderer) = session(p, false);
+    session.execute("transport.play", &json!({})).unwrap();
+    until(&mut session, &mut renderer, "starting", |s| s["status"] == "running");
+    let selected = session.execute("track.select", &json!({ "track": 1 })).unwrap();
+    let params = selected["device"]["params"].as_array().unwrap();
+    let names: Vec<&str> = params.iter().filter_map(|p| p["name"].as_str()).collect();
+    assert_eq!(names, ["Gain", "Latency"], "{selected}");
+    let ids: Vec<u64> = params.iter().filter_map(|p| p["id"].as_u64()).collect();
+    assert_eq!(ids, [0, 1], "{selected}");
+    let dials: Vec<u64> = selected["device"]["dials"].as_array().unwrap().iter().filter_map(|id| id.as_u64()).collect();
+    assert_eq!(dials, [0, 1], "both sliders are dials, in the panel's order: {selected}");
+    for param in params {
+        assert_eq!(param["kind"], "continuous", "{param}");
+        assert_eq!(param["unit"], "", "{param}");
+    }
+    // A value the project keeps is the one the reading shows, not the plug-in's older one.
+    session.execute("device.setParam", &json!({ "track": 1, "device": 0, "param": "0", "value": 0.75 })).unwrap();
+    let after = session.execute("project.selection", &json!({})).unwrap();
+    let gain = after["device"]["params"].as_array().unwrap().iter().find(|p| p["id"] == 0).unwrap();
+    assert_eq!(gain["value"], 0.75, "{after}");
+}
+
 /// An editor edit the session took in is set again when the plug-in restarts, though its state
 /// was last read before the edit: the values set since the state's last read are kept for a
 /// restart, the latest of a parameter winning (ADR 0006, decision 3; #828).
