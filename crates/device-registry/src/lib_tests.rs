@@ -571,3 +571,19 @@ fn the_amp_modelers_artwork_is_embedded_from_its_files() {
     assert!(style.contains("button { image: none;"), "{style}");
     assert!(layout_errors().is_empty(), "{:?}", layout_errors());
 }
+
+/// A controller's knobs follow the compact panel's dials left to right and top to bottom, not
+/// the parameter order; a generated panel follows the parameter order.
+#[test]
+fn the_panel_dials_follow_their_control_positions() {
+    assert_eq!(
+        dials("dj-eq"),
+        ["low", "mid", "high", "lowFrequency", "highFrequency"],
+        "the DJ EQ's three big dials then the two frequency dials"
+    );
+    assert_eq!(
+        dials("utility"),
+        ["gain", "balance", "width", "midSide", "bassMonoFrequency"],
+        "the generated list's continuous parameters, in order"
+    );
+}

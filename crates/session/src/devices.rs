@@ -602,9 +602,13 @@ pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
                 .collect::<Vec<_>>()
         })
     });
+    // The dials a controller's knobs take, in the device's compact panel order; a generated
+    // panel follows its parameter order (the registry appends what a custom canvas leaves out).
+    let dials = info.map(|info| suhina_device_registry::dials(&info.id));
     let mut value = json!({
         "index": path.last().copied().unwrap_or(0),
         "path": path_value(path),
+        "dials": dials,
         // The device's own id (#763 › 1); `id` is what it is (a built-in's or a plug-in's).
         "device_id": device.id.0,
         "name": device.name,

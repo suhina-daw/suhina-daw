@@ -9,9 +9,10 @@ use std::any::Any;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use suhina_device_api::{Device, DeviceError, DeviceInfo};
+use suhina_device_api::{Device, DeviceError, DeviceInfo, ParamKind};
 use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
+use suhina_device_sdk::ui::Widget;
 
 /// One built-in device: everything the rest of Suhina asks the registry about it, in one row
 /// (#764 › 9). [`DEVICES`], [`create`], [`layout`], [`panel`] and [`is_file_device`] read this
@@ -233,6 +234,59 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
         LayoutSource::JsonWithImages(text, images) => Some(with_images(text, images)),
         LayoutSource::Rust(make) => Some(Ok(make())),
     }
+}
+
+/// A built-in device's dials as parameter ids, in its compact panel's reading order: the
+/// `Knob` and `Dial` controls bound to a continuous or whole-number parameter, left to right
+/// and top to bottom, then the dials the generated list places under the canvas in parameter
+/// order. A device with no custom panel follows its parameter order alone. The selection
+/// reading gives this to a controller, so its knobs follow the panel's layout, not the
+/// parameter order.
+pub fn dials(id: &str) -> Vec<String> {
+    let Some(info) = info(id) else { return Vec::new() };
+    let mut ordered: Vec<String> = Vec::new();
+    if let Some(Ok(layout)) = layout(id)
+        && let Some(ui) = layout.ui
+    {
+        let mut controls: Vec<(f32, f32, &str)> = ui
+            .controls
+            .iter()
+            .filter(|control| matches!(control.widget, Some(Widget::Knob { .. } | Widget::Dial { .. })))
+            .filter_map(|control| {
+                let id = control.x.as_ref().or(control.y.as_ref())?.parameter.as_str();
+                let param = info.params.iter().find(|p| p.id == id)?;
+                matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer).then_some((
+                    control.bounds[1],
+                    control.bounds[0],
+                    id,
+                ))
+            })
+            .collect();
+        controls.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        // A row is controls whose tops lie within a control's height of the row's first, so a
+        // small dial beside a tall one is read left to right with it; then left to right.
+        let mut rows: Vec<(f32, Vec<(f32, &str)>)> = Vec::new();
+        for (top, x, id) in controls {
+            match rows.last_mut() {
+                Some((row_top, row)) if top - *row_top <= 24.0 => row.push((x, id)),
+                _ => rows.push((top, vec![(x, id)])),
+            }
+        }
+        for (_, mut row) in rows {
+            row.sort_by(|a, b| a.0.total_cmp(&b.0));
+            for (_, id) in row {
+                ordered.push(id.to_string());
+            }
+        }
+    }
+    for param in info.params.iter() {
+        if matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer)
+            && !ordered.iter().any(|id| id == param.id.as_ref())
+        {
+            ordered.push(param.id.to_string());
+        }
+    }
+    ordered
 }
 
 /// The layout in `text` with `images` added to its compact canvas's assets.
