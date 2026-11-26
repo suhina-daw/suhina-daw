@@ -116,11 +116,31 @@ local function is_dial(param)
     return type(param.min) == "number" and type(param.max) == "number"
 end
 
--- The selected device's dials, in the order its panel lists them.
+-- The selected device's dials, in the order its panel reads them: the reading's `dials` list
+-- (left to right and top to bottom) when it has one, else the parameters' own order for an .sd
+-- device, a plug-in or an older reading.
 local function device_dials()
+    local device = selected_device()
+    if device == nil then
+        return nil
+    end
     local params = device_params()
     if params == nil then
         return nil
+    end
+    if not is_nil(device.dials) and #device.dials > 0 then
+        local by_id = {}
+        for _, param in ipairs(params) do
+            by_id[tostring(param.id)] = param
+        end
+        local dials = {}
+        for _, id in ipairs(device.dials) do
+            local param = by_id[tostring(id)]
+            if param ~= nil then
+                dials[#dials + 1] = param
+            end
+        end
+        return dials
     end
     local dials = {}
     for _, param in ipairs(params) do

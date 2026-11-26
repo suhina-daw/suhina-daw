@@ -180,10 +180,8 @@ impl Fake {
         let device = self.lua.create_table().unwrap();
         device.set("path", path).unwrap();
         device.set("enabled", true).unwrap();
-        // The Utility's parameters in the order its panel lists them: the first bank's eight,
-        // then Invert Left (the ninth) and the rest.
-        // Nine dials with switches and a choice between them: the knobs take the dials only,
-        // and the bank's next page holds the ninth.
+        // Nine dials with switches and a choice between them, in parameter order; the dials
+        // list is the panel's own order, which a knob follows instead.
         let params = [
             ("gain", "continuous", -150.0, 35.0, gain),
             ("mono", "toggle", 0.0, 1.0, 0.0),
@@ -211,6 +209,15 @@ impl Fake {
             list.set(index + 1, param).unwrap();
         }
         device.set("params", list).unwrap();
+        let dials = self.lua.create_table().unwrap();
+        for (index, id) in
+            ["dial6", "gain", "balance", "width", "midSide", "bassMonoFrequency", "dial7", "dial8", "dial9"]
+                .iter()
+                .enumerate()
+        {
+            dials.set(index + 1, *id).unwrap();
+        }
+        device.set("dials", dials).unwrap();
         selection.set("device", device).unwrap();
         let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
         handler.call::<()>((token, selection)).unwrap();
@@ -260,33 +267,32 @@ fn the_device_knobs_turn_the_selected_devices_parameters_in_banks_of_eight() {
     // The selection the window and commands share: track 1, the Utility at path 0.
     fake.selection(4, 1, 0);
 
-    // The first knob, full: the first dial, Gain, at its maximum, in dB.
+    // The first knob, full: the panel's first dial, not the parameter list's first.
     fake.knob(0, 127);
     let command = fake.last_command();
     assert_eq!(command.id, "device.setParam", "{command:?}");
     assert_eq!(command.track, Some(1), "{command:?}");
     assert_eq!(command.device.as_deref(), Some("0"), "{command:?}");
-    assert_eq!(command.param.as_deref(), Some("gain"), "{command:?}");
-    assert!((command.value.unwrap_or_default() - 35.0).abs() < 1e-6, "{command:?}");
-    assert_eq!(command.gesture.as_deref(), Some("apc40-mkii device 1:0:gain"), "{command:?}");
+    assert_eq!(command.param.as_deref(), Some("dial6"), "{command:?}");
+    assert!((command.value.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
+    assert_eq!(command.gesture.as_deref(), Some("apc40-mkii device 1:0:dial6"), "{command:?}");
 
-    // The second knob skips the toggle between the first two dials: Balance, not Mono.
+    // The panel's second dial is Gain; the switch between them in the parameter list is skipped.
     fake.knob(1, 127);
     let command = fake.last_command();
-    assert_eq!(command.param.as_deref(), Some("balance"), "{command:?}");
+    assert_eq!(command.param.as_deref(), Some("gain"), "{command:?}");
+    assert!((command.value.unwrap_or_default() - 35.0).abs() < 1e-6, "{command:?}");
     // Bank right, then the first knob: the ninth dial.
     fake.press(61);
     fake.knob(0, 127);
     let command = fake.last_command();
     assert_eq!(command.param.as_deref(), Some("dial9"), "{command:?}");
-    assert!((command.value.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
-
-    // Bank left, then the first knob at zero: Gain at its minimum.
+    // Bank left, then the first knob at zero: the first dial at its minimum.
     fake.press(60);
     fake.knob(0, 0);
     let command = fake.last_command();
-    assert_eq!(command.param.as_deref(), Some("gain"), "{command:?}");
-    assert!(command.value.unwrap_or_default() < -100.0, "{command:?}");
+    assert_eq!(command.param.as_deref(), Some("dial6"), "{command:?}");
+    assert!(command.value.unwrap_or_default() < 0.001, "{command:?}");
 }
 
 #[test]
@@ -335,20 +341,21 @@ fn a_knobs_own_report_is_not_written_back_to_its_ring() {
     let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
     fake.ports();
     fake.selection(4, 1, 0);
-    // The knob reports 64; the session's gain trails with the same position.
-    fake.knob(0, 64);
+    // The gain is the panel's second dial: its knob reports 64, and the session's gain trails
+    // with the same position on that knob's ring.
+    fake.knob(1, 64);
     let after_knob = fake.sends.borrow().len();
     let gain = -150.0 + (64.0 / 127.0) * 185.0;
     fake.selection_with_gain(4, 1, 0, gain);
     assert!(
-        !fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 16, 64].as_slice()),
+        !fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
         "the knob's own ring is not yanked: {:?}",
         &fake.sends.borrow()[after_knob..]
     );
     // A value the knob never reported — the window set the gain to its maximum — writes.
     fake.selection_with_gain(4, 1, 0, 35.0);
     assert!(
-        fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 16, 127].as_slice()),
+        fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 127].as_slice()),
         "a change from elsewhere writes the ring: {:?}",
         &fake.sends.borrow()[after_knob..]
     );
@@ -366,7 +373,8 @@ fn the_knobs_ring_shows_the_parameters_position() {
         sends.iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, controller, value].as_slice())
     };
     assert!(cc(24, 1), "the first knob's ring style: {:?}", *sends);
-    assert!(cc(16, 103), "the first knob's position: {:?}", *sends);
+    assert!(cc(16, 0), "the first dial's position: {:?}", *sends);
+    assert!(cc(17, 103), "the second dial, Gain, at 0 dB: {:?}", *sends);
 }
 
 fn text(value: &Value) -> Option<String> {

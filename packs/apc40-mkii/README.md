@@ -43,7 +43,8 @@ gesture each) with their rings.
 
 The device control section follows the selection the window, commands and agents share
 (`project.selection`, #1679): the eight knobs turn the selected device's dials — its continuous
-parameters — in banks of eight (`device.setParam`, one gesture each), Device left/right step
+parameters, in the order its panel reads them: left to right, top to bottom — in banks of eight
+(`device.setParam`, one gesture each), Device left/right step
 along the chain (`device.selectPrevious`, `device.selectNext`), Bank left/right take the next or
 previous eight dials, and Device On/Off switches the device (`device.setEnabled`). Switches and
 choices stay on the device's panel. Each knob's ring shows its dial's position, the bank arrows
