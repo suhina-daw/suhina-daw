@@ -47,47 +47,47 @@ use suhina_theme_render::{Subject, scenes};
 /// #1448 (a base style sheet under every theme) runs Suhina Studio on the style engine, and its
 /// scenes are counted here too: started from Glass, so choosing Studio resets the styles, it
 /// costs what Glass and the see-through theme cost, and no count went up. It added the counts
-/// after one colour of a theme's own map is edited (`colour_change_*`, the see-through theme's;
-/// a built-in theme is not edited in place): the colour map is the base tier's `:root` rule,
-/// and the base sheet reads every colour variable, so one change resets the styles once, as a
+/// after one color of a theme's own map is edited (`color_change_*`, the see-through theme's;
+/// a built-in theme is not edited in place): the color map is the base tier's `:root` rule,
+/// and the base sheet reads every color variable, so one change resets the styles once, as a
 /// theme change does (2 frames, and every identity worked out afresh: 386 and 618, 398 and 630 on
-/// Windows). Before, a colour the theme's own sheet did not read reset nothing. Resetting only the
+/// Windows). Before, a color the theme's own sheet did not read reset nothing. Resetting only the
 /// styles that read the changed variable is #1456.
 ///
-/// #1449 (the shared controls take their colours from the base sheet) added no node and no
-/// identity, and one style worked out the first time the pointer reaches a control whose colours
-/// fade (`hover_fresh` 0 to 1 in each scene, and one more after a colour change: 387 and 619, 399
+/// #1449 (the shared controls take their colors from the base sheet) added no node and no
+/// identity, and one style worked out the first time the pointer reaches a control whose colors
+/// fade (`hover_fresh` 0 to 1 in each scene, and one more after a color change: 387 and 619, 399
 /// and 631 on Windows): the look it fades to is a style of its own, looked up while it fades.
 ///
-/// #1450 (the Launcher, the mixer and the Arrangement take their colours from the base sheet) added
+/// #1450 (the Launcher, the mixer and the Arrangement take their colors from the base sheet) added
 /// 39 nodes and 39 identities to each scene (the Windows numbers move by the same): the looks the
-/// views read their colours from, each a style of its own, once for the whole view or per control
+/// views read their colors from, each a style of its own, once for the whole view or per control
 /// (the switches' lit looks, the scenes' and the device rows' fades, a clip's states, the surface
-/// colours of the Launcher and of the Arrangement). The theme change and the colour change work
+/// colors of the Launcher and of the Arrangement). The theme change and the color change work
 /// those identities out afresh, so their counts move by the same 39: 425 and 657, 426 and 658
 /// (437 and 669, 438 and 670 on Windows).
 ///
-/// #1451 (the detail panels, the piano roll and the browser take their colours from the base sheet)
+/// #1451 (the detail panels, the piano roll and the browser take their colors from the base sheet)
 /// raised the FM synth's counts by 18 nodes and 18 identities over #1450's, and the styles worked
-/// out after a theme or a colour change by as many (675 and 676, 687 and 688 on Windows); the
-/// Launcher's did not move. The colours a device's canvas draws with are read from `device-canvas`
-/// and its six kinds, and the parts that fell back to different colours are told apart by kinds of
+/// out after a theme or a color change by as many (675 and 676, 687 and 688 on Windows); the
+/// Launcher's did not move. The colors a device's canvas draws with are read from `device-canvas`
+/// and its six kinds, and the parts that fell back to different colors are told apart by kinds of
 /// their own (the expanded panel's fills, `detail-fill`, its parameters' `label`, `value` and
 /// `slider`), each read once a frame.
-/// #1452 (the app's bars, Settings and dialogs take their colours from the base sheet; egui's
+/// #1452 (the app's bars, Settings and dialogs take their colors from the base sheet; egui's
 /// own widgets take theirs from `widget`) raised every scene's counts by 22 nodes and 30
-/// identities, and the styles worked out after a theme or a colour change by 30 (455 and 456, 705
+/// identities, and the styles worked out after a theme or a color change by 30 (455 and 456, 705
 /// and 706; 467 and 468, 717 and 718 on Windows): the control bar's fills, switches and words
 /// (`app-fill`, `button[kind]`, `label[kind]`, `meter[kind="cpu"]`), the two inks of text on a
-/// colour (`label[kind="on-light"]` and `[kind="on-dark"]`, read once a frame for each set of
+/// color (`label[kind="on-light"]` and `[kind="on-dark"]`, read once a frame for each set of
 /// variables in scope, not once a clip), and the lookups the root's `Visuals` are built from (`widget` in its
 /// states and kinds, inside a `window`), once when the styles reset, with no node left in the tree.
 ///
 /// #1269 (the time signature in the toolbar) raised them by 2 nodes and 1 identity in each scene:
 /// its two numbers are value controls a theme styles, as the tempo is, where it was plain text.
-/// With #1453's strips laid out in CSS and the stack's colours together (the combined #1023 pull
+/// With #1453's strips laid out in CSS and the stack's colors together (the combined #1023 pull
 /// request), every scene's counts are 5 nodes and 4 identities over #1452's, and the styles worked
-/// out after a theme or a colour change 4 more (459 and 460, 709 and 710). On Windows each count is
+/// out after a theme or a color change 4 more (459 and 460, 709 and 710). On Windows each count is
 /// one more again (478 nodes and 472 identities, 472 and 473, 722 and 723), as CI measured it; which
 /// element that extra one is has not been traced.
 ///
@@ -95,12 +95,15 @@ use suhina_theme_render::{Subject, scenes};
 /// Fold, Scale and Highlight buttons (ordinary tool buttons) raised the node counts by 4 in the
 /// Launcher and 1 in the FM synth (469 and 716; 481 and 728 on Windows, where the FM synth did not move), while the identities
 /// went down (452 and 698).
+///
+/// The menu bar's titles (#1487 › P8) are elements a theme styles (`menu-bar bar-item[kind="menu"]`),
+/// 5 more nodes in each scene and no identity (474 and 721; 486 and 733 on Windows).
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 469,
+            nodes: 474,
             identities: 459,
             unstyled: 0,
             fresh: 0,
@@ -111,14 +114,14 @@ const RECORDED: [(&str, Counts); 2] = [
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 1,
-            colour_change_frames: 2,
-            colour_change_fresh: 460,
+            color_change_frames: 2,
+            color_change_fresh: 460,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 716,
+            nodes: 721,
             identities: 709,
             unstyled: 0,
             fresh: 0,
@@ -129,8 +132,8 @@ const RECORDED: [(&str, Counts); 2] = [
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
-            colour_change_frames: 2,
-            colour_change_fresh: 710,
+            color_change_frames: 2,
+            color_change_fresh: 710,
         },
     ),
 ];
@@ -142,7 +145,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 481,
+            nodes: 486,
             identities: 472,
             unstyled: 0,
             fresh: 0,
@@ -153,14 +156,14 @@ const RECORDED: [(&str, Counts); 2] = [
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
-            colour_change_frames: 2,
-            colour_change_fresh: 473,
+            color_change_frames: 2,
+            color_change_fresh: 473,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 728,
+            nodes: 733,
             identities: 722,
             unstyled: 0,
             fresh: 0,
@@ -171,8 +174,8 @@ const RECORDED: [(&str, Counts); 2] = [
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
-            colour_change_frames: 2,
-            colour_change_fresh: 723,
+            color_change_frames: 2,
+            color_change_fresh: 723,
         },
     ),
 ];
@@ -190,8 +193,8 @@ fn within(name: &str, theme: &str, counts: Counts, budget: Counts) -> Vec<String
         ("frames after a hover", counts.hover_frames, budget.hover_frames),
         ("style frames after a hover", counts.hover_style_frames, budget.hover_style_frames),
         ("fresh styles after a hover", counts.hover_fresh as u64, budget.hover_fresh as u64),
-        ("frames after a colour change", counts.colour_change_frames, budget.colour_change_frames),
-        ("fresh styles after a colour change", counts.colour_change_fresh as u64, budget.colour_change_fresh as u64),
+        ("frames after a color change", counts.color_change_frames, budget.color_change_frames),
+        ("fresh styles after a color change", counts.color_change_fresh as u64, budget.color_change_fresh as u64),
     ];
     fields
         .into_iter()

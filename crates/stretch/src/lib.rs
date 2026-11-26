@@ -14,8 +14,21 @@
 //!
 //! Left out from the original for now: formant shifting and custom frequency maps, and the option
 //! to spread one block's work over several calls (the engine renders ahead on a worker instead).
+//!
+//! Beside the port, Suhina's own simpler stretches for the modes that want another sound: grains
+//! ([`Grains`], Tonal and Texture), slices at the sound's transients ([`Slices`], Rhythmic), and
+//! the [`transients()`] they are cut at.
 
+mod grains;
+mod onsets;
+mod slices;
 mod stft;
+mod transients;
+
+pub use grains::Grains;
+pub use onsets::{MAX_ONSETS, note_onsets};
+pub use slices::{Slices, Tail};
+pub use transients::{MAX_TRANSIENTS, transients};
 
 use std::ops::{Deref, DerefMut};
 

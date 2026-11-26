@@ -150,7 +150,7 @@ fn native_toolbar_css_styles_modules_and_buttons_without_reflow_or_sibling_leaks
     assert_eq!(text(&tempo_text).color, egui::Color32::from_rgb(12, 34, 56));
     assert_eq!(text(&tempo_text).font_id.size, 18.0);
     assert_eq!(text(&position_text).font_id.size, theme::TEXT, "font must not leak into the next module");
-    // `background` sets the colour too (transparent), so the gradient is the button's only fill:
+    // `background` sets the color too (transparent), so the gradient is the button's only fill:
     // Suhina's own button artwork is not drawn under it.
     assert!(!harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
             egui::Shape::Rect(rect) if rect.rect == play && rect.brush.is_some())));

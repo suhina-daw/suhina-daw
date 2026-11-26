@@ -274,7 +274,7 @@ fn decodes_every_value_kind() {
         (event(128, Payload::Dword(0xffff_fffd)), ValueKind::Signed, Value::Signed(-3)),
         (event(128, Payload::Dword(1.5f32.to_bits())), ValueKind::F32, Value::F32(1.5)),
         (event(128, Payload::Dword(0x0002_0001)), ValueKind::TwoU16, Value::TwoU16(1, 2)),
-        (event(128, Payload::Dword(0xff33_2211)), ValueKind::Colour, Value::Colour(0x11, 0x22, 0x33)),
+        (event(128, Payload::Dword(0xff33_2211)), ValueKind::Color, Value::Color(0x11, 0x22, 0x33)),
         (event(208, Payload::Data(vec![1, 2])), ValueKind::Binary, Value::Binary(vec![1, 2])),
         (event(1, Payload::Byte(7)), ValueKind::Binary, Value::Binary(vec![7])),
         (event(199, Payload::Data(ascii("12.0"))), ValueKind::AsciiString, Value::String("12.0".into())),
@@ -290,7 +290,7 @@ fn rejects_a_value_of_the_wrong_size() {
         (event(64, Payload::Word(1)), ValueKind::Bool, 1),
         (event(1, Payload::Byte(1)), ValueKind::F32, 4),
         (event(64, Payload::Word(1)), ValueKind::TwoU16, 4),
-        (event(1, Payload::Byte(1)), ValueKind::Colour, 4),
+        (event(1, Payload::Byte(1)), ValueKind::Color, 4),
         (event(208, Payload::Data(vec![1; 4])), ValueKind::Unsigned, 4),
     ];
     for (e, kind, expected) in cases {
@@ -304,7 +304,7 @@ fn rejects_a_value_of_the_wrong_size() {
 #[test]
 fn knows_the_kinds_the_spec_names() {
     assert_eq!(kind_of(ids::CHANNEL_ENABLED), ValueKind::Bool);
-    assert_eq!(kind_of(ids::COLOUR), ValueKind::Colour);
+    assert_eq!(kind_of(ids::COLOR), ValueKind::Color);
     assert_eq!(kind_of(ids::TEMPO), ValueKind::Unsigned);
     assert_eq!(kind_of(ids::VERSION), ValueKind::AsciiString);
     for id in [ids::NAME, ids::URL, ids::LICENSEE, ids::AUTHOR] {

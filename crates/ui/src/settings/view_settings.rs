@@ -11,8 +11,8 @@ pub const MIXER_HEIGHTS: (u32, u32, u32) = (46, 166, 2000);
 
 /// How Arrangement waveforms and note previews choose their ink, independently of clip names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum WaveformColour {
-    /// The theme's colour (`clip-waveform`, `clip-notes`), or Dark where it gives none.
+pub enum WaveformColor {
+    /// The theme's color (`clip-waveform`, `clip-notes`), or Dark where it gives none.
     #[default]
     Theme,
     Auto,
@@ -21,7 +21,7 @@ pub enum WaveformColour {
     Custom,
 }
 
-impl WaveformColour {
+impl WaveformColor {
     fn name(self) -> &'static str {
         match self {
             Self::Theme => "theme",
@@ -35,40 +35,40 @@ impl WaveformColour {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WaveformAppearance {
-    pub mode: WaveformColour,
+    pub mode: WaveformColor,
     pub custom: egui::Color32,
 }
 
 impl Default for WaveformAppearance {
     fn default() -> Self {
-        Self { mode: WaveformColour::Theme, custom: egui::Color32::from_rgb(232, 228, 221) }
+        Self { mode: WaveformColor::Theme, custom: egui::Color32::from_rgb(232, 228, 221) }
     }
 }
 
 impl WaveformAppearance {
     pub fn ink(self, automatic: egui::Color32) -> egui::Color32 {
         match self.mode {
-            WaveformColour::Auto => automatic,
-            WaveformColour::Light => egui::Color32::from_rgb(240, 237, 232),
-            WaveformColour::Dark | WaveformColour::Theme => egui::Color32::from_rgb(32, 31, 29),
-            WaveformColour::Custom => self.custom,
+            WaveformColor::Auto => automatic,
+            WaveformColor::Light => egui::Color32::from_rgb(240, 237, 232),
+            WaveformColor::Dark | WaveformColor::Theme => egui::Color32::from_rgb(32, 31, 29),
+            WaveformColor::Custom => self.custom,
         }
     }
 }
 
-/// How the Arrangement's automation envelopes are coloured (Settings › Arrangement › Automation ›
-/// Automation colour).
+/// How the Arrangement's automation envelopes are colored (Settings › Arrangement › Automation ›
+/// Automation color).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum AutomationColour {
-    /// Each envelope in its track's colour.
+pub enum AutomationColor {
+    /// Each envelope in its track's color.
     #[default]
     Track,
-    /// Every envelope's line in one colour and every point in one colour: the theme's
-    /// `automation-line[fixed]` and `automation-point[fixed]`, or the colours chosen here.
+    /// Every envelope's line in one color and every point in one color: the theme's
+    /// `automation-line[fixed]` and `automation-point[fixed]`, or the colors chosen here.
     Fixed,
 }
 
-impl AutomationColour {
+impl AutomationColor {
     fn name(self) -> &'static str {
         match self {
             Self::Track => "track",
@@ -77,22 +77,22 @@ impl AutomationColour {
     }
 }
 
-/// The automation colour setting: the choice, and the line and point colours **Fixed** uses where
+/// The automation color setting: the choice, and the line and point colors **Fixed** uses where
 /// they are chosen here rather than taken from the theme (`None`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct AutomationAppearance {
-    pub mode: AutomationColour,
+    pub mode: AutomationColor,
     pub line: Option<egui::Color32>,
     pub point: Option<egui::Color32>,
 }
 
-/// A colour the settings file keeps as `theme` or `#RRGGBB`.
-fn themed_colour(colour: Option<egui::Color32>) -> String {
-    colour.map_or_else(|| "theme".to_owned(), crate::kit::theme::hex)
+/// A color the settings file keeps as `theme` or `#RRGGBB`.
+fn themed_color(color: Option<egui::Color32>) -> String {
+    color.map_or_else(|| "theme".to_owned(), crate::kit::theme::hex)
 }
 
-/// What [`themed_colour`] wrote: `Some(None)` for `theme`, `None` when it is neither.
-fn parse_themed_colour(value: &str) -> Option<Option<egui::Color32>> {
+/// What [`themed_color`] wrote: `Some(None)` for `theme`, `None` when it is neither.
+fn parse_themed_color(value: &str) -> Option<Option<egui::Color32>> {
     if value == "theme" { Some(None) } else { crate::kit::theme::parse_hex(value).map(Some) }
 }
 
@@ -163,19 +163,24 @@ impl ViewSettings {
 /// The settings this module reads and writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewSettings {
-    /// Experimental materials, independent of theme colours. Each 0..=100 strength defaults off.
+    /// Experimental materials, independent of theme colors. Each 0..=100 strength defaults off.
     pub liquid: crate::kit::liquid::Options,
     pub track_sizes: super::track_sizes::TrackSizes,
     pub waveform: WaveformAppearance,
-    /// How automation envelopes are coloured: in their track's colour, or in one line and one
-    /// point colour (#1518).
+    /// The audio editor's waveform in the theme's `clip-waveform` color; off, in the clip's
+    /// color (its own, else its track's), as the Arrangement colors the clip.
+    pub audio_editor_theme_waveform: bool,
+    /// A warp marker's line down the audio editor's waveform can be dragged as its flag can.
+    pub audio_editor_line_drag: bool,
+    /// How automation envelopes are colored: in their track's color, or in one line and one
+    /// point color (#1518).
     pub automation: AutomationAppearance,
-    /// The colour selected track headers and clips are filled with (#1217, #1218).
+    /// The color selected track headers and clips are filled with (#1217, #1218).
     pub selection: crate::kit::selection::SelectionLook,
-    /// Audio clip colour strength, as a percentage of its source RGB colour.
-    pub audio_colour_strength: u8,
-    /// Track header colour strength, as a percentage of its source RGB colour.
-    pub header_colour_strength: u8,
+    /// Audio clip color strength, as a percentage of its source RGB color.
+    pub audio_color_strength: u8,
+    /// Track header color strength, as a percentage of its source RGB color.
+    pub header_color_strength: u8,
     /// The Launcher mixer's height, in points.
     pub mixer_height: u32,
     /// The strips' fader height the divider under their device lists sets, in points; 0 is
@@ -261,12 +266,12 @@ pub struct ViewSettings {
     /// shown: the devices stack in a column beside the view, as with the Stack layout (off by
     /// default).
     pub stack_in_piano_roll: bool,
-    /// New tracks all get the palette's first colour, instead of the next one in turn (off by
+    /// New tracks all get the palette's first color, instead of the next one in turn (off by
     /// default, #709).
-    pub fixed_track_colour: bool,
-    /// A new clip takes its track's colour, instead of the theme's MIDI or audio clip default
+    pub fixed_track_color: bool,
+    /// A new clip takes its track's color, instead of the theme's MIDI or audio clip default
     /// (on by default).
-    pub new_clip_track_colour: bool,
+    pub new_clip_track_color: bool,
     /// The browser shows Recent's kinds as chips over its list rather than as items indented
     /// under it in the sidebar (#711).
     pub recent_chips: bool,
@@ -318,10 +323,12 @@ impl Default for ViewSettings {
             liquid: crate::kit::liquid::Options::default(),
             track_sizes: super::track_sizes::TrackSizes::default(),
             waveform: WaveformAppearance::default(),
+            audio_editor_theme_waveform: false,
+            audio_editor_line_drag: false,
             automation: AutomationAppearance::default(),
             selection: crate::kit::selection::SelectionLook::default(),
-            audio_colour_strength: 82,
-            header_colour_strength: 82,
+            audio_color_strength: 82,
+            header_color_strength: 82,
             mixer_height: MIXER_HEIGHTS.1,
             strip_fader: 0,
             detail_layout: DetailLayout::Beside,
@@ -356,8 +363,8 @@ impl Default for ViewSettings {
             play_from_clip: true,
             device_list_vertical: false,
             stack_in_piano_roll: false,
-            fixed_track_colour: false,
-            new_clip_track_colour: true,
+            fixed_track_color: false,
+            new_clip_track_color: true,
             recent_chips: false,
             returns_hidden: false,
             new_returns: true,
@@ -386,7 +393,7 @@ impl ViewSettings {
     /// The lines this module adds to the settings file.
     pub fn to_text(&self) -> String {
         format!(
-            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ncovered_notes = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_colour = {}\nnew_clip_colour = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\nautomation_group = {}\nautomation_top_lane = {}\n",
+            "device_list_scroll = {}\nsession_mixer_height = {}\nsession_strip_fader = {}\ndetail_layout = {}\ndouble_click_clip = {}\nmenu_name_field = {}\nnotes_replace = {}\ncovered_notes = {}\ntime_select = {}\nstretch_alt_drag = {}\nrename_selected_clips = {}\nplay_from_selected_clip = {}\nnew_track_color = {}\nnew_clip_color = {}\nbrowser_recent = {}\narrangement_returns = {}\nnew_project_returns = {}\ncopy_names = {}\nalt_wheel = {}\nbrowser_folder_drop = {}\narrangement_toolbar = {}\nclip_drag = {}\nclip_grid = {}\nwaveform_zoom = {}\nautomation_click = {}\nautomation_group = {}\nautomation_top_lane = {}\n",
             if self.device_list_vertical { "vertical" } else { "horizontal" },
             self.mixer_height,
             self.strip_fader,
@@ -399,8 +406,8 @@ impl ViewSettings {
             if self.stretch_alt { "on" } else { "off" },
             if self.rename_selected { "on" } else { "off" },
             if self.play_from_clip { "on" } else { "off" },
-            if self.fixed_track_colour { "fixed" } else { "alternating" },
-            if self.new_clip_track_colour { "track" } else { "theme" },
+            if self.fixed_track_color { "fixed" } else { "alternating" },
+            if self.new_clip_track_color { "track" } else { "theme" },
             if self.recent_chips { "chips" } else { "indented" },
             if self.returns_hidden { "hidden" } else { "shown" },
             if self.new_returns { "two" } else { "none" },
@@ -420,22 +427,30 @@ impl ViewSettings {
             },
         ) + &format!("empty_group_processing = {}\n", if self.remove_group_processing { "remove" } else { "ask" })
             + &format!(
-                "waveform_colour = {}\nwaveform_custom_colour = {}\naudio_clip_colour_strength = {}\ntrack_header_colour_strength = {}\n",
+                "waveform_color = {}
+audio_editor_waveform_color = {}
+audio_editor_marker_line_drag = {}
+waveform_custom_color = {}
+audio_clip_color_strength = {}
+track_header_color_strength = {}
+",
                 self.waveform.mode.name(),
+                if self.audio_editor_theme_waveform { "theme" } else { "track" },
+                if self.audio_editor_line_drag { "on" } else { "off" },
                 crate::kit::theme::hex(self.waveform.custom),
-                self.audio_colour_strength,
-                self.header_colour_strength,
+                self.audio_color_strength,
+                self.header_color_strength,
             )
             + &format!(
-                "automation_colour = {}
-automation_line_colour = {}
-automation_point_colour = {}
-selection_colour = {}
-selection_custom_colour = {}
+                "automation_color = {}
+automation_line_color = {}
+automation_point_color = {}
+selection_color = {}
+selection_custom_color = {}
 ",
                 self.automation.mode.name(),
-                themed_colour(self.automation.line),
-                themed_colour(self.automation.point),
+                themed_color(self.automation.line),
+                themed_color(self.automation.point),
                 self.selection.mode.name(),
                 crate::kit::theme::hex(self.selection.custom),
             )
@@ -513,46 +528,50 @@ selection_custom_colour = {}
                     _ => self.liquid.clips = strength,
                 }
             }
-            ("audio_clip_colour_strength" | "track_header_colour_strength", strength) => {
+            ("audio_clip_color_strength" | "track_header_color_strength", strength) => {
                 let Ok(strength) = strength.parse::<u32>() else { return false };
                 let strength = strength.min(100) as u8;
-                if key == "audio_clip_colour_strength" {
-                    self.audio_colour_strength = strength;
+                if key == "audio_clip_color_strength" {
+                    self.audio_color_strength = strength;
                 } else {
-                    self.header_colour_strength = strength;
+                    self.header_color_strength = strength;
                 }
             }
-            ("waveform_colour", mode) => {
+            ("waveform_color", mode) => {
                 self.waveform.mode = match mode {
-                    "theme" => WaveformColour::Theme,
-                    "auto" => WaveformColour::Auto,
-                    "light" => WaveformColour::Light,
-                    "dark" => WaveformColour::Dark,
-                    "custom" => WaveformColour::Custom,
+                    "theme" => WaveformColor::Theme,
+                    "auto" => WaveformColor::Auto,
+                    "light" => WaveformColor::Light,
+                    "dark" => WaveformColor::Dark,
+                    "custom" => WaveformColor::Custom,
                     _ => return false,
                 };
             }
-            ("waveform_custom_colour", colour) => {
-                let Some(colour) = crate::kit::theme::parse_hex(colour) else { return false };
-                self.waveform.custom = colour;
+            ("audio_editor_waveform_color", "track") => self.audio_editor_theme_waveform = false,
+            ("audio_editor_waveform_color", "theme") => self.audio_editor_theme_waveform = true,
+            ("audio_editor_marker_line_drag", "on") => self.audio_editor_line_drag = true,
+            ("audio_editor_marker_line_drag", "off") => self.audio_editor_line_drag = false,
+            ("waveform_custom_color", color) => {
+                let Some(color) = crate::kit::theme::parse_hex(color) else { return false };
+                self.waveform.custom = color;
             }
-            ("automation_colour", "track") => self.automation.mode = AutomationColour::Track,
-            ("automation_colour", "fixed") => self.automation.mode = AutomationColour::Fixed,
-            ("automation_line_colour" | "automation_point_colour", colour) => {
-                let Some(colour) = parse_themed_colour(colour) else { return false };
-                if key == "automation_line_colour" {
-                    self.automation.line = colour;
+            ("automation_color", "track") => self.automation.mode = AutomationColor::Track,
+            ("automation_color", "fixed") => self.automation.mode = AutomationColor::Fixed,
+            ("automation_line_color" | "automation_point_color", color) => {
+                let Some(color) = parse_themed_color(color) else { return false };
+                if key == "automation_line_color" {
+                    self.automation.line = color;
                 } else {
-                    self.automation.point = colour;
+                    self.automation.point = color;
                 }
             }
-            ("selection_colour", mode) => {
-                let Some(mode) = crate::kit::selection::SelectionColour::parse(mode) else { return false };
+            ("selection_color", mode) => {
+                let Some(mode) = crate::kit::selection::SelectionColor::parse(mode) else { return false };
                 self.selection.mode = mode;
             }
-            ("selection_custom_colour", colour) => {
-                let Some(colour) = crate::kit::theme::parse_hex(colour) else { return false };
-                self.selection.custom = colour;
+            ("selection_custom_color", color) => {
+                let Some(color) = crate::kit::theme::parse_hex(color) else { return false };
+                self.selection.custom = color;
             }
             ("session_mixer_height", height) => match height.parse::<u32>() {
                 Ok(height) => self.mixer_height = height.clamp(MIXER_HEIGHTS.0, MIXER_HEIGHTS.2),
@@ -595,8 +614,8 @@ selection_custom_colour = {}
             ("play_from_selected_clip", "on" | "off") => self.play_from_clip = value == "on",
             ("device_list_scroll", "horizontal" | "vertical") => self.device_list_vertical = value == "vertical",
             ("stack_in_piano_roll", "on" | "off") => self.stack_in_piano_roll = value == "on",
-            ("new_track_colour", "fixed" | "alternating") => self.fixed_track_colour = value == "fixed",
-            ("new_clip_colour", "track" | "theme") => self.new_clip_track_colour = value == "track",
+            ("new_track_color", "fixed" | "alternating") => self.fixed_track_color = value == "fixed",
+            ("new_clip_color", "track" | "theme") => self.new_clip_track_color = value == "track",
             ("browser_recent", "chips" | "indented") => self.recent_chips = value == "chips",
             ("arrangement_returns", "hidden" | "shown") => self.returns_hidden = value == "hidden",
             ("new_project_returns", "two" | "none") => self.new_returns = value == "two",

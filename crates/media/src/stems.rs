@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Stems files (`.stem.mp4`, `.stem.m4a`): an MP4 file whose first audio track is the finished
-//! mix (the master) and whose further audio tracks are its parts (stems), with names, colours
+//! mix (the master) and whose further audio tracks are its parts (stems), with names, colors
 //! and mastering settings in a JSON document in `moov/udta/stem`. The format is described in
 //! `docs/spec/stems-format.md`.
 //!
@@ -41,7 +41,7 @@ pub fn is_stems_path(path: &Path) -> bool {
     name.ends_with(".stem.mp4") || name.ends_with(".stem.m4a")
 }
 
-/// One stem's name and colour.
+/// One stem's name and color.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stem {
     pub name: String,
@@ -88,7 +88,7 @@ pub struct LimiterSettings {
 pub struct StemsInfo {
     /// Audio tracks in the file, the master first.
     pub tracks: usize,
-    /// One per stem (`tracks - 1`), in track order. Names and colours come from the metadata;
+    /// One per stem (`tracks - 1`), in track order. Names and colors come from the metadata;
     /// stems it does not name are called `"Stem <n>"`.
     pub stems: Vec<Stem>,
     /// Whether the file has stem metadata at all.

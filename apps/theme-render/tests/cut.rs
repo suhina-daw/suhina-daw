@@ -1,17 +1,18 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The texts each built-in theme and variant cuts off are those recorded in `cut/<theme>.txt` (#1548): a
+//! The texts each theme the painted test draws cuts off, against `cut/<theme>.txt` (#1548): a
 //! label shortened with "…", wrapped onto another line, or painted partly outside its clip
 //! ([`suhina_theme_render::cut`]). Headless, on the drawings the painted test makes
 //! ([`super::painted::Drawings`]), once per theme for both checks.
 //!
 //! Some cuts are meant (a long path in a dialog, a name in a narrow column) and some are bugs not
 //! yet fixed, so the test holds the list rather than an empty one: a change that cuts a new text,
-//! or stops cutting one, fails until the list is recorded again with
-//! `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`, and the pull request says
-//! why. A theme's cut is listed once, under the first scene that shows it by name: a text the
-//! toolbar cuts in every scene is one line.
+//! or stops cutting one, is flagged with the painted digests (`painted.rs` says how), and the
+//! lists are recorded on the default branch after the merge with
+//! `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted`, never by a pull request.
+//! A theme's cut is listed once, under the first scene that shows it by name: a text the toolbar
+//! cuts in every scene is one line.
 //!
 //! The scrolled scenes are left out of the clipped texts, since a view scrolled along cuts what it
 //! scrolls at its edge on purpose.
@@ -46,15 +47,13 @@ fn lines<'a>(drawings: impl Iterator<Item = (&'a (String, String), &'a [Cut])>) 
     first.into_iter().map(|((theme, cut), scene)| format!("{theme} {scene}: {cut}")).collect()
 }
 
-/// Checked by the painted test (`painted.rs`), which draws the scenes once for both.
+/// The texts cut off that differ from `cut/<theme>.txt`: a first line that counts them, then a line
+/// each; `None` when they are as recorded. Records them instead when blessing. Called by the
+/// painted test (`painted.rs`), which draws the scenes once for both and fails on a drawing that
+/// failed before it gets here.
 #[allow(clippy::unwrap_used)] // called by the painted test, outside a #[test] function
-pub fn cuts_off_only_the_texts_recorded(theme: &str, all: &super::painted::Drawings) {
+pub fn cut_differences(theme: &str, all: &super::painted::Drawings) -> Option<String> {
     let file = file(theme);
-    let failed: Vec<String> = all
-        .iter()
-        .filter_map(|((scene, theme), drawing)| drawing.as_ref().err().map(|e| format!("{scene} in {theme}: {e}")))
-        .collect();
-    assert!(failed.is_empty(), "these drawings failed:\n{}", failed.join("\n"));
     let now = lines(all.iter().filter_map(|(key, drawing)| Some((key, drawing.as_ref().ok()?.cut.as_slice()))));
     let mut text = String::from(
         "# The texts each built-in theme cuts off, drawn as on Linux on every system: `theme scene: how\n\
@@ -67,22 +66,22 @@ pub fn cuts_off_only_the_texts_recorded(theme: &str, all: &super::painted::Drawi
     }
     if suhina_test_support::blessing() {
         std::fs::write(&file, text).unwrap();
-        return;
+        return None;
     }
-    let recorded = std::fs::read_to_string(&file).unwrap();
+    // A theme added in this change has no list yet: every text it cuts is new.
+    let recorded = std::fs::read_to_string(&file).unwrap_or_default();
     let recorded: Vec<&str> = recorded.lines().filter(|l| !l.starts_with('#') && !l.trim().is_empty()).collect();
     let added: Vec<&String> = now.iter().filter(|line| !recorded.contains(&line.as_str())).collect();
     let gone: Vec<&&str> = recorded.iter().filter(|line| !now.iter().any(|n| n == **line)).collect();
-    assert!(
-        added.is_empty() && gone.is_empty(),
-        "the texts cut off differ from {} (see tests/cut.rs for how to record them).\n\
-         Cut now, not recorded:\n{}\nRecorded, not cut now:\n{}\n\n\
-         The file as this run draws it, between the lines:\n----- {} -----\n{text}----- end -----",
-        file.display(),
-        added.iter().map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n"),
-        gone.iter().map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n"),
-        file.display(),
-    );
+    if added.is_empty() && gone.is_empty() {
+        return None;
+    }
+    let lines: Vec<String> = added
+        .iter()
+        .map(|line| format!("cut now, not recorded: {line}"))
+        .chain(gone.iter().map(|line| format!("recorded, not cut now: {line}")))
+        .collect();
+    Some(format!("{} texts cut off differ from tests/cut/{theme}.txt\n{}\n", lines.len(), lines.join("\n")))
 }
 
 #[test]

@@ -7,8 +7,8 @@ use crate::settings::Settings;
 /// Kept in `settings.json` but changed outside the Settings window: the browser, the map window
 /// and the plug-in manager's table as they were left.
 const NOT_IN_THE_WINDOW: [&str; 14] = [
-    "recent_colours",
-    "colour_window_rect",
+    "saved_colors",
+    "color_window_rect",
     // The piano roll toolbar's Highlight switches it.
     "highlight_scale",
     "setting_descriptions",

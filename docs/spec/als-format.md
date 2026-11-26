@@ -3,7 +3,7 @@ description: The Live Set (.als) format as observed: container, tracks, clips, n
 read_when: reading .als, importer, XML element, MIDI effects, MidiChord, MidiArpeggiator, clip scale, ScaleInformation, warp markers, locators, arrangement markers, time signature, tempo envelope, tempo changes, devices, plug-in state, Utility, StereoGain, device parameters, muted note, deactivated note, IsEnabled
 type: spec
 status: current
-last_verified: 2026-11-05
+last_verified: 2026-11-23
 covers:
   - crates/als/src/lib.rs
   - crates/als/src/devices.rs
@@ -88,7 +88,7 @@ Per track:
 | What | Where | Notes |
 |---|---|---|
 | Name | `Name/EffectiveName@Value` | Default names look like `1-MIDI`, `3-Audio`, `A-Reverb`. |
-| Colour | `Color@Value` | Index into Live's colour palette. |
+| Color | `Color@Value` | Index into Live's color palette. |
 | Group | `TrackGroupId@Value` | `-1` when not in a group; otherwise the group track's `Id`. Grouping two tracks (file `60`) inserted a `GroupTrack` before them and renumbered the default names (`3-Audio` became `4-Audio`). A `GroupTrack` has a `TrackGroupId` too, so a group inside a group names the outer group's `Id`; the reader takes any depth (the synthetic tests write such sets by hand from this; no corpus file holds one yet). A track whose groups contain each other, or that sits deeper than Suhina nests groups (16 levels), is moved to the top level and plays to the main output, with a warning. |
 | Mixer | `DeviceChain/Mixer` | see below |
 | Output | `DeviceChain/AudioOutputRouting/Target@Value` | `AudioOut/Main` routes to the main output; `AudioOut/GroupTrack` to the track's group. |
@@ -128,7 +128,7 @@ The same `MidiClip` element is used in session slots
 | Loop region | `Loop/LoopStart@Value`, `Loop/LoopEnd@Value` | In content beats. Setting the clip length to 2 bars changed `LoopEnd` (and `CurrentEnd`) from 4 to 8. |
 | Start marker | loop on: `LoopStart + StartRelative`; loop off: `LoopStart` | Beats. See *Markers* below. |
 | End marker (loop off) | `Loop/LoopEnd@Value` | Not `OutMarker`, whose meaning is still unknown. |
-| Name, colour | `Name@Value`, `Color@Value` | |
+| Name, color | `Name@Value`, `Color@Value` | |
 | Deactivated clip | `Disabled@Value` | `true` after selecting the clip and pressing `0` (file `58`). |
 
 ### Markers
@@ -522,7 +522,7 @@ These change without any musical edit:
 - Everything named `ViewState*`, `SequencerNavigator`, `ScrollerTimePreserver`, `TimeSelection`,
   `ClientSize`, `ScrollerPos`, `CurrentZoom`, `HighlightedTrackIndex`, `Selected*`,
   `IsContentSelectedInDocument`, `LastSelected*`: view and selection state.
-- `ColorSequenceIndex`, `AutoColorPicker*/NextColorIndex`: automatic colour assignment.
+- `ColorSequenceIndex`, `AutoColorPicker*/NextColorIndex`: automatic color assignment.
 - `TakeId` on clips.
 - `Transport/CurrentTime`: the play position.
 

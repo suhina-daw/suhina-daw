@@ -194,7 +194,7 @@ fn sdk_knob_and_button_use_theme_svg_without_changing_parameter_commands() {
     crate::kit::skin::configure(&crate::kit::skin::Skin::default());
 }
 /// A dial's pointer over the device's own dark face stays readable when the theme's text is dark
-/// too (a light theme): it takes the ink that reads on the face, not the theme's text colour.
+/// too (a light theme): it takes the ink that reads on the face, not the theme's text color.
 #[test]
 fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
     let face = suhina_device_sdk::ui::ImageAsset::from_bytes(
@@ -203,7 +203,7 @@ fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
     )
     .unwrap();
     let (pixels, size) = face.decode_rgba().unwrap();
-    let fill = face_colour(&pixels, size).unwrap();
+    let fill = face_color(&pixels, size).unwrap();
     let canvas = Arc::new(DeviceUi {
         size: [60.0, 52.0],
         assets: vec![face],
@@ -229,7 +229,7 @@ fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
     let parameters = [parameter("gain", false)];
     let pointer = |text: Color32| {
         let ctx = egui::Context::default();
-        // The sheet's variables: the canvas's text colour reads `--text-primary`, a knob's own
+        // The sheet's variables: the canvas's text color reads `--text-primary`, a knob's own
         // `color` `--text-hint` (base.css), which the dial's line takes.
         crate::kit::theme::use_colors(
             &ctx,
@@ -266,10 +266,10 @@ fn a_dials_pointer_reads_on_the_devices_own_face_whatever_the_themes_text() {
     }
 }
 
-/// A face's colour is the mean of the opaque pixels in its middle; the transparent corners and the
+/// A face's color is the mean of the opaque pixels in its middle; the transparent corners and the
 /// rim do not count.
 #[test]
-fn a_faces_colour_is_its_middles_opaque_mean() {
+fn a_faces_color_is_its_middles_opaque_mean() {
     // 8 × 8: a white rim, a red middle out to 62% of the half-size (a radius of 2.48).
     let mut pixels = vec![255u8; 8 * 8 * 4];
     for (i, px) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
@@ -278,13 +278,13 @@ fn a_faces_colour_is_its_middles_opaque_mean() {
             *px = [200, 10, 10, 255];
         }
     }
-    assert_eq!(face_colour(&pixels, [8, 8]), Some(Color32::from_rgb(200, 10, 10)));
-    assert_eq!(face_colour(&[0; 16 * 4], [4, 4]), None, "a transparent image has no face colour");
+    assert_eq!(face_color(&pixels, [8, 8]), Some(Color32::from_rgb(200, 10, 10)));
+    assert_eq!(face_color(&[0; 16 * 4], [4, 4]), None, "a transparent image has no face color");
 }
 
-/// A token drawing in a translucent theme colour keeps the theme's alpha, times its own (#1235).
+/// A token drawing in a translucent theme color keeps the theme's alpha, times its own (#1235).
 #[test]
-fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
+fn a_translucent_theme_color_in_a_token_drawing_keeps_its_alpha() {
     let canvas = Arc::new(DeviceUi {
         size: [100.0, 60.0],
         layers: vec![
@@ -297,7 +297,7 @@ fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
     let faint = Color32::from_rgba_unmultiplied(255, 255, 255, 0x14);
     crate::kit::theme::use_colors(&ctx, &[("border".to_owned(), faint)].into());
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-        // The canvas reads its colours from the sheet, whose variables the colour map sets.
+        // The canvas reads its colors from the sheet, whose variables the color map sets.
         let _frame = crate::kit::native_css::frame(ui);
         show(
             ui,
@@ -324,9 +324,9 @@ fn a_translucent_theme_colour_in_a_token_drawing_keeps_its_alpha() {
     assert_eq!(half, Some(Color32::from_rgba_unmultiplied(255, 255, 255, 10)), "half of the theme's alpha");
 }
 /// A translucent token keeps its exact RGB until the drawing's alpha is applied: rounding it
-/// through a premultiplied colour first would tint a faint dark colour.
+/// through a premultiplied color first would tint a faint dark color.
 #[test]
-fn a_token_takes_the_drawings_alpha_without_rounding_its_colour_twice() {
+fn a_token_takes_the_drawings_alpha_without_rounding_its_color_twice() {
     assert_eq!(with_alpha([7, 0, 0, 0x14], 128), Color32::from_rgba_unmultiplied(7, 0, 0, 10));
     assert_eq!(with_alpha([200, 100, 50, 255], 255), Color32::from_rgb(200, 100, 50));
 }
@@ -1287,15 +1287,18 @@ fn delay_panel_renders_and_selector_dispatches_a_literal() {
     let actions = click(&canvas, &time_parameters, Pos2::new(35., 59.));
     assert!(actions.iter().any(|a| a.params["param"] == "sync_left" && a.params["value"] == 1.0));
 }
-/// A canvas dropdown has the standard popup frame, as every other dropdown, and `popup` styles
-/// its rows (#1239).
+/// A canvas dropdown has the standard popup frame, as every other dropdown, and its rows are the
+/// kit's menu rows, which `button[kind="entry"]` styles (#1239, #1688).
 #[test]
-fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
+fn a_canvas_dropdown_has_the_standard_popup_frame_and_entry_rules_reach_its_rows() {
     use egui_kittest::kittest::Queryable;
     let graph = super::delay_example::build().unwrap();
     let parameters: Vec<_> = graph.parameters.iter().map(|p| GraphParameter::new(p, p.default)).collect();
     let canvas = Arc::new(graph.ui.unwrap());
-    let skin = crate::kit::skin::Skin { css: Some(Arc::from("popup { color: #00ff00; }")), ..Default::default() };
+    let skin = crate::kit::skin::Skin {
+        css: Some(Arc::from("button[kind=\"entry\"] { color: #00ff00; }")),
+        ..Default::default()
+    };
     crate::kit::skin::configure(&skin);
     let mut harness =
         egui_kittest::Harness::builder().allow_missing_glyphs().with_size(Vec2::new(956., 300.)).build_ui(move |ui| {
@@ -1336,7 +1339,7 @@ fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
             && frame.corner_radius == visuals.menu_corner_radius),
         "the menu's frame is egui's popup frame: {frames:?}"
     );
-    // A row's text without a colour of its own takes the text shape's.
+    // A row's text without a color of its own takes the text shape's.
     let ink = harness.output().shapes.iter().find_map(|shape| match &shape.shape {
         egui::Shape::Text(text) if text.galley.job.text == "Wander" => {
             let own = text.galley.job.sections[0].format.color;
@@ -1344,7 +1347,7 @@ fn a_canvas_dropdown_has_the_standard_popup_frame_and_popup_rules_reach_it() {
         }
         _ => None,
     });
-    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), "popup's colour reaches a row");
+    assert_eq!(ink, Some(Color32::from_rgb(0, 0xFF, 0)), "the entry's color reaches a row");
 }
 #[test]
 fn delay_menus_open_choose_and_cancel_without_spurious_edits() {
@@ -2218,7 +2221,7 @@ fn built_in_widget_colors_follow_the_active_theme_and_refresh_the_cache() {
         }],
         ..DeviceUi::default()
     });
-    // The canvas reads its colours from the sheet, whose variables the colour map sets: in a frame.
+    // The canvas reads its colors from the sheet, whose variables the color map sets: in a frame.
     let images = |context: &egui::Context, canvas: &Arc<DeviceUi>| {
         let mut loaded = None;
         let mut output = context.run_ui(egui::RawInput::default(), |ui| {
@@ -2260,7 +2263,7 @@ fn default_canvas_background_follows_the_theme_and_authored_background_stays_fix
     let default = Arc::new(DeviceUi::default());
     let authored = Arc::new(DeviceUi { background: [44, 55, 66, 255], ..DeviceUi::default() });
     let mut output = context.run_ui(egui::RawInput::default(), |ui| {
-        // The canvas reads its colours from the sheet, whose variables the colour map sets.
+        // The canvas reads its colors from the sheet, whose variables the color map sets.
         let _frame = crate::kit::native_css::frame(ui);
         let mut actions = Vec::new();
         for (x, canvas) in [(8.0, &default), (56.0, &authored)] {
@@ -2707,7 +2710,7 @@ fn a_position_drag_hides_the_pointer_and_moves_from_where_it_was_pressed() {
     assert!(parameters[0].value <= 0.5 + 1e-6, "no further than the pointer went, got {}", parameters[0].value);
 }
 
-/// The sample markers' colour with no rule of a theme: the accent, which the base sheet gives the
+/// The sample markers' color with no rule of a theme: the accent, which the base sheet gives the
 /// canvas (`device-canvas`'s `accent-color`).
 fn marker_color() -> Color32 {
     crate::kit::theme::studio("accent")
@@ -2834,17 +2837,17 @@ fn image_dial_canvas() -> Arc<DeviceUi> {
     })
 }
 
-/// One frame of `canvas` under `skin` and `colours`: its shapes, and whether a texture it uploaded
-/// holds `colour`.
+/// One frame of `canvas` under `skin` and `colors`: its shapes, and whether a texture it uploaded
+/// holds `color`.
 fn drawn_with(
     canvas: &Arc<DeviceUi>,
     skin: crate::kit::skin::Skin,
-    colours: &[(&str, Color32)],
-    colour: Color32,
+    colors: &[(&str, Color32)],
+    color: Color32,
 ) -> (Vec<egui::epaint::ClippedShape>, bool) {
     crate::kit::skin::configure(&skin);
     let ctx = egui::Context::default();
-    crate::kit::theme::use_colors(&ctx, &colours.iter().map(|(n, c)| ((*n).to_owned(), *c)).collect());
+    crate::kit::theme::use_colors(&ctx, &colors.iter().map(|(n, c)| ((*n).to_owned(), *c)).collect());
     let parameters = [parameter("gain", false)];
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         let _frame = crate::kit::native_css::frame(ui);
@@ -2860,7 +2863,7 @@ fn drawn_with(
         )
     });
     let painted = output.textures_delta.set.values().flat_map(|deltas| deltas.iter()).any(|delta| match &delta.image {
-        egui::ImageData::Color(image) => image.pixels.contains(&colour),
+        egui::ImageData::Color(image) => image.pixels.contains(&color),
     });
     output.textures_delta.clear();
     crate::kit::theme::use_colors(&ctx, &crate::kit::theme::Colors::new());
@@ -2871,7 +2874,7 @@ fn drawn_with(
 /// A panel's sheet hides a control with `display: none`, so `@media (prefers-color-scheme: …)`
 /// picks artwork made in a light and a dark version by the variant's declared scheme.
 #[test]
-fn a_panel_picks_its_light_or_dark_artwork_by_the_declared_colour_scheme() {
+fn a_panel_picks_its_light_or_dark_artwork_by_the_declared_color_scheme() {
     let artwork = |id: &str, color: [u8; 4]| CustomControl {
         id: id.into(),
         name: id.into(),
@@ -3095,7 +3098,7 @@ fn the_amp_modelers_sheet_parses_without_notices() {
 /// The pointer line over the device's face takes `knob-pointer { color }` where the theme gives
 /// one, rather than the ink worked out from the face (#1500).
 #[test]
-fn a_dials_pointer_line_takes_the_themes_knob_pointer_colour() {
+fn a_dials_pointer_line_takes_the_themes_knob_pointer_color() {
     let canvas = image_dial_canvas();
     let magenta = Color32::from_rgb(0xFF, 0x00, 0xFF);
     let skin = crate::kit::skin::Skin { css: Some("knob-pointer { color: #FF00FF; }".into()), ..Default::default() };
@@ -3114,5 +3117,5 @@ fn a_dials_pointer_line_takes_the_themes_knob_pointer_colour() {
         egui::Shape::LineSegment { stroke, .. } => Some(stroke.color),
         _ => None,
     });
-    assert_eq!(line, Some(Color32::from_rgb(0x12, 0xAB, 0x34)), "the panel's pointer colour");
+    assert_eq!(line, Some(Color32::from_rgb(0x12, 0xAB, 0x34)), "the panel's pointer color");
 }

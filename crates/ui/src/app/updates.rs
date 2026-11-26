@@ -295,8 +295,8 @@ impl Updates {
         };
         let error = matches!(phase, Phase::CheckFailed(_) | Phase::InstallFailed { .. });
         let status_line = line(&mut y);
-        let colour = if error { fault } else { ink };
-        widgets::text_in(&painter, status_line, Align2::LEFT_CENTER, &status, font.clone(), colour);
+        let color = if error { fault } else { ink };
+        widgets::text_in(&painter, status_line, Align2::LEFT_CENTER, &status, font.clone(), color);
         if let Phase::Downloading { build, done } = &phase
             && build.size > 0
         {

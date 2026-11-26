@@ -3,7 +3,7 @@
 
 //! Commands for the browser's library (`docs/spec/browser.md` › Commands, ADR 0012): the
 //! folders, searching them with the built-in effects and instruments, and installed plug-ins, what a file is,
-//! pins, recent items and colour tags. They belong to Suhina, not to one project, so they run
+//! pins, recent items and color tags. They belong to Suhina, not to one project, so they run
 //! on [`Projects`] like the `plugin.*` commands, and never change a project.
 
 use std::path::{Path, PathBuf};
@@ -129,7 +129,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
     },
     CommandSpec {
         id: "library.tags",
-        label: "List the colour tags (name, colour), the items carrying them and the most tags there may be",
+        label: "List the color tags (name, color), the items carrying them and the most tags there may be",
         params: &[],
         kind: CommandKind::on(crate::commands::Target::Library, crate::commands::Effect::Read),
         run: tags,
@@ -137,19 +137,15 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
     },
     CommandSpec {
         id: "library.setTag",
-        label: "Add a colour tag, or change a tag's colour or name; or change the most tags there may be",
+        label: "Add a color tag, or change a tag's color or name; or change the most tags there may be",
         params: &[
             optional(
                 "id",
                 ParamType::Text,
-                "the tag to change, by its id (#<id>) or name; a name no tag has creates one, coloured from the named colours ([#1254])",
+                "the tag to change, by its id (#<id>) or name; a name no tag has creates one, colored from the named colors ([#1254])",
             ),
             optional("name", ParamType::Text, "the tag (the id's form names it too)"),
-            optional(
-                "color",
-                ParamType::Text,
-                "its colour, #RRGGBB (new tags take a named colour when it is left out)",
-            ),
+            optional("color", ParamType::Text, "its color, #RRGGBB (new tags take a named color when it is left out)"),
             optional("rename", ParamType::Text, "a new name for it"),
             optional(
                 "folder",
@@ -164,7 +160,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
     },
     CommandSpec {
         id: "library.removeTag",
-        label: "Remove a colour tag from the list and from every item",
+        label: "Remove a color tag from the list and from every item",
         params: &[
             optional("id", ParamType::Text, "the tag, by its id (#<id>) or its name ([#1254])"),
             optional("name", ParamType::Text, "the tag"),
@@ -175,7 +171,7 @@ static LIBRARY_COMMANDS: &[CommandSpec<Projects>] = &[
     },
     CommandSpec {
         id: "library.tag",
-        label: "Set or clear a colour tag on an item",
+        label: "Set or clear a color tag on an item",
         params: &[
             ITEM,
             param("tag", ParamType::Text, "the tag, by its id (#<id>) or its name ([#1254])"),
@@ -1247,7 +1243,7 @@ fn set_tag(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
         // when no limit and no tag came with it ([#1254] review).
         let mut done = parsed_limit.is_some();
         match tag_param(projects, params)? {
-            // A tag by its id or name, changed, or created from the named colours when the name
+            // A tag by its id or name, changed, or created from the named colors when the name
             // is not one yet ([#1254]):
             Some(SetTagGiven::Tag((id, rename))) => {
                 if folder.is_some() {

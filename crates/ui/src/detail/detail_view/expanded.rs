@@ -40,7 +40,7 @@ pub fn expanded_device(ctx: &egui::Context, detail: &Detail) -> Option<(TrackId,
     let (track, at) = expanded(ctx)?;
     let chain = match detail {
         Detail::Devices(chain) | Detail::Clip(_, chain) => Some(chain),
-        Detail::Nothing => None,
+        Detail::Nothing | Detail::NoClip => None,
     };
     let found = chain
         .filter(|chain| chain.track == track)

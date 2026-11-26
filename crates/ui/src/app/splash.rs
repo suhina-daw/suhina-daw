@@ -147,7 +147,7 @@ impl Splash {
         let line = |center_y: f32, height: f32| {
             Rect::from_center_size(egui::pos2(rect.center().x, center_y), Vec2::new(rect.width(), height))
         };
-        // The logo, the name in the theme's text colour; the name as text if it cannot be drawn.
+        // The logo, the name in the theme's text color; the name as text if it cannot be drawn.
         let width = (rect.width() - 2.0 * LOGO_MARGIN).clamp(0.0, LOGO_WIDTH);
         let size = Vec2::new(width, width / crate::kit::logo::aspect());
         let name = Rect::from_center_size(egui::pos2(rect.center().x, rect.center().y - 12.0), size);

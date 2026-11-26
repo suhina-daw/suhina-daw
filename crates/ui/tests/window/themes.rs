@@ -218,7 +218,7 @@ fn blocks_artwork_covers_slot_columns_and_keeps_native_clip_launches() {
             )
         })
     };
-    assert!(has_body(&h), "colour-keyed body artwork spans the slot column");
+    assert!(has_body(&h), "color-keyed body artwork spans the slot column");
     assert_eq!(
         clicked(&mut h, "Launch Walk on Bass (scene 2)"),
         [Action::new("clip.launch", json!({"track":2,"scene":1}))]
@@ -476,8 +476,8 @@ fn shift_wheel_over_clip_gain_scrolls_timeline_without_editing_gain() {
 }
 
 #[test]
-fn waveform_colour_changes_live_in_settings_without_changing_the_project() {
-    use suhina_ui::settings::view_settings::WaveformColour;
+fn waveform_color_changes_live_in_settings_without_changing_the_project() {
+    use suhina_ui::settings::view_settings::WaveformColor;
     let mut h = window(audio_app());
     h.get_by_label("Arrangement view").click();
     h.run();
@@ -490,7 +490,7 @@ fn waveform_colour_changes_live_in_settings_without_changing_the_project() {
     h.run();
     h.get_by_label("Search settings").focus();
     h.run();
-    h.get_by_label("Search settings").type_text("waveform colour");
+    h.get_by_label("Search settings").type_text("waveform color");
     h.run();
     fn has_ink(shape: &egui::Shape, clip: egui::Rect, ink: egui::Color32) -> bool {
         match shape {
@@ -500,32 +500,32 @@ fn waveform_colour_changes_live_in_settings_without_changing_the_project() {
             _ => false,
         }
     }
-    for (name, mode, colour) in [
-        ("Light", WaveformColour::Light, egui::Color32::from_rgb(240, 237, 232)),
-        ("Dark", WaveformColour::Dark, egui::Color32::from_rgb(32, 31, 29)),
-        ("Custom", WaveformColour::Custom, custom),
+    for (name, mode, color) in [
+        ("Light", WaveformColor::Light, egui::Color32::from_rgb(240, 237, 232)),
+        ("Dark", WaveformColor::Dark, egui::Color32::from_rgb(32, 31, 29)),
+        ("Custom", WaveformColor::Custom, custom),
     ] {
-        h.get_by_label(&format!("Waveform and note colour: {name}")).click();
+        h.get_by_label(&format!("Waveform and note color: {name}")).click();
         h.run();
         assert_eq!(h.state().settings().view.waveform.mode, mode);
         let clip = h.get_by_label("Clip Loop on Loop at bar 1").rect();
         assert!(
-            h.output().shapes.iter().any(|s| has_ink(&s.shape, clip, colour)),
+            h.output().shapes.iter().any(|s| has_ink(&s.shape, clip, color)),
             "{name} applies while Settings is open"
         );
         let midi = h.get_by_label("Clip Beat A on Drums at bar 1").rect();
-        assert!(h.output().shapes.iter().any(|s| has_ink(&s.shape, midi, colour)), "{name} also applies to MIDI notes");
+        assert!(h.output().shapes.iter().any(|s| has_ink(&s.shape, midi, color)), "{name} also applies to MIDI notes");
     }
-    assert!(h.query_by_label("Custom waveform colour").is_some());
-    h.get_by_label("Waveform and note colour: Auto").click();
+    assert!(h.query_by_label("Custom waveform color").is_some());
+    h.get_by_label("Waveform and note color: Auto").click();
     h.run();
-    assert!(h.query_by_label("Custom waveform colour").is_none());
+    assert!(h.query_by_label("Custom waveform color").is_none());
     assert!(!h.state().session().unwrap().can_undo());
 }
 
 #[test]
-fn ara_note_overlays_use_the_same_content_colour_as_midi_and_waveforms() {
-    use suhina_ui::settings::view_settings::WaveformColour;
+fn ara_note_overlays_use_the_same_content_color_as_midi_and_waveforms() {
+    use suhina_ui::settings::view_settings::WaveformColor;
     let (project, waveforms) = project_with_audio();
     let mut timeline = Timeline::build(&project, None);
     timeline.waveforms = std::sync::Arc::new(waveforms);
@@ -545,32 +545,32 @@ fn ara_note_overlays_use_the_same_content_colour_as_midi_and_waveforms() {
         (timeline, ArrangementViewState::default(), Vec::new()),
     );
     theme::install(&h.ctx);
-    for (mode, colour) in [
-        (WaveformColour::Dark, egui::Color32::from_rgb(32, 31, 29)),
-        (WaveformColour::Custom, egui::Color32::from_rgb(212, 88, 50)),
+    for (mode, color) in [
+        (WaveformColor::Dark, egui::Color32::from_rgb(32, 31, 29)),
+        (WaveformColor::Custom, egui::Color32::from_rgb(212, 88, 50)),
     ] {
         h.state_mut().1.waveform_appearance.mode = mode;
-        h.state_mut().1.waveform_appearance.custom = colour;
+        h.state_mut().1.waveform_appearance.custom = color;
         h.run();
         let area = h.get_by_label("Clip Loop on Loop at bar 1").rect();
-        fn note(shape: &egui::Shape, area: egui::Rect, colour: egui::Color32) -> bool {
+        fn note(shape: &egui::Shape, area: egui::Rect, color: egui::Color32) -> bool {
             match shape {
-                egui::Shape::Vec(shapes) => shapes.iter().any(|s| note(s, area, colour)),
-                egui::Shape::Rect(r) => r.fill == colour && r.rect.height() <= 6.0 && area.contains(r.rect.center()),
+                egui::Shape::Vec(shapes) => shapes.iter().any(|s| note(s, area, color)),
+                egui::Shape::Rect(r) => r.fill == color && r.rect.height() <= 6.0 && area.contains(r.rect.center()),
                 _ => false,
             }
         }
-        assert!(h.output().shapes.iter().any(|s| note(&s.shape, area, colour)), "ARA notes follow {mode:?}");
+        assert!(h.output().shapes.iter().any(|s| note(&s.shape, area, color)), "ARA notes follow {mode:?}");
     }
 }
 
 #[test]
-fn notes_lost_on_a_dark_clip_are_redrawn_readable_unless_the_user_chose_their_colour() {
-    use suhina_ui::settings::view_settings::WaveformColour;
+fn notes_lost_on_a_dark_clip_are_redrawn_readable_unless_the_user_chose_their_color() {
+    use suhina_ui::settings::view_settings::WaveformColor;
     let (project, waveforms) = project_with_audio();
     let mut timeline = Timeline::build(&project, None);
     timeline.waveforms = std::sync::Arc::new(waveforms);
-    // An imported clip's own colour can be as dark as the Dark notes drawn on it.
+    // An imported clip's own color can be as dark as the Dark notes drawn on it.
     for clip in timeline.lanes.iter_mut().flat_map(|lane| lane.clips.iter_mut()).filter(|c| !c.audio) {
         clip.color = suhina_engine::model::Rgb(14, 14, 14);
     }
@@ -590,8 +590,8 @@ fn notes_lost_on_a_dark_clip_are_redrawn_readable_unless_the_user_chose_their_co
             _ => false,
         }
     }
-    // Theme draws notes Dark where the sheet gives no `clip-notes` colour, as the built-in one does.
-    for (mode, kept) in [(WaveformColour::Dark, true), (WaveformColour::Theme, false)] {
+    // Theme draws notes Dark where the sheet gives no `clip-notes` color, as the built-in one does.
+    for (mode, kept) in [(WaveformColor::Dark, true), (WaveformColor::Theme, false)] {
         h.state_mut().1.waveform_appearance.mode = mode;
         h.run();
         let area = h.get_by_label("Clip Beat A on Drums at bar 1").rect();
@@ -601,7 +601,7 @@ fn notes_lost_on_a_dark_clip_are_redrawn_readable_unless_the_user_chose_their_co
 }
 
 #[test]
-fn audio_and_header_colour_strengths_apply_live_and_match_at_equal_strength() {
+fn audio_and_header_color_strengths_apply_live_and_match_at_equal_strength() {
     let mut h = window(audio_app());
     h.get_by_label("Arrangement view").click();
     h.run();
@@ -625,19 +625,19 @@ fn audio_and_header_colour_strengths_apply_live_and_match_at_equal_strength() {
     }
     let clip = "Clip Loop on Loop at bar 1";
     let original = surface(&h, clip);
-    assert_eq!(surface(&h, "Track Loop"), original, "the same source colour uses the same default strength");
+    assert_eq!(surface(&h, "Track Loop"), original, "the same source color uses the same default strength");
     let mut settings = h.state().settings().clone();
-    settings.view.audio_colour_strength = 25;
+    settings.view.audio_color_strength = 25;
     let ctx = h.ctx.clone();
     h.state_mut().set_settings(&ctx, settings.clone());
     h.run();
     let softer = surface(&h, clip);
     assert_ne!(softer, original);
     assert_eq!(surface(&h, "Track Loop"), original, "audio tuning leaves the header's chosen strength alone");
-    settings.view.header_colour_strength = 25;
+    settings.view.header_color_strength = 25;
     h.state_mut().set_settings(&ctx, settings);
     h.run();
-    assert_eq!(surface(&h, "Track Loop"), softer, "matched strengths keep the source colour consistent");
+    assert_eq!(surface(&h, "Track Loop"), softer, "matched strengths keep the source color consistent");
     assert!(!h.state().session().unwrap().can_undo());
 }
 
@@ -779,7 +779,7 @@ fn the_arrangement_track_on_toggle_is_control_track_on() {
             _ => false,
         }
     }
-    // The toggle is lit only by a rule for its lit state (#1440): `#control-track-on` colours the
+    // The toggle is lit only by a rule for its lit state (#1440): `#control-track-on` colors the
     // tracks that are off, `#control-track-on[checked]` the ones that are on.
     let orange = egui::Color32::from_rgb(0xFF, 0x88, 0x00);
     let blue = egui::Color32::from_rgb(0x00, 0x88, 0xFF);
@@ -845,7 +845,7 @@ fn the_loop_lines_reach_down_past_the_returns_to_main() {
     let tallest = h.output().shapes.iter().map(|s| tallest_line(&s.shape, green)).fold(0.0, f32::max);
     let main = h.query_all_by_label_contains("Main").map(|n| n.rect().top()).fold(0.0, f32::max);
     suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(tallest > 0.0, "the line takes loop-line's colour");
+    assert!(tallest > 0.0, "the line takes loop-line's color");
     assert!(tallest > main, "it reaches down past Main's row: ends at {tallest}, Main at {main}");
 }
 
@@ -930,7 +930,7 @@ fn choosing_another_themes_folder_asks_before_its_themes_move() {
 
 #[test]
 fn a_theme_with_a_background_image_lets_the_window_rest() {
-    // Its window style changes the window's colours; the background once set them again each
+    // Its window style changes the window's colors; the background once set them again each
     // frame to undo them, and the window never stopped repainting.
     let mut h = window(demo_app());
     let ctx = h.ctx.clone();
@@ -973,7 +973,7 @@ fn the_first_frame_with_a_backdrop_paints_the_window_faded() {
     assert!(suhina_ui::kit::liquid::background_image(&ctx).is_some(), "the background image shows");
     let mut seen = Vec::new();
     h.output().shapes.iter().for_each(|s| fills(&s.shape, &mut seen));
-    // Over the image (drawn on its opaque window colour), the window's own fill is faded.
+    // Over the image (drawn on its opaque window color), the window's own fill is faded.
     assert_eq!(seen.last(), Some(&base.gamma_multiply(0.5)), "the window over the image: {seen:?}");
 }
 
@@ -1041,7 +1041,7 @@ fn a_hovered_clip_takes_the_themes_hover_background() {
 }
 
 /// A clip's own background rule is not a hover's: `clip { background-color }` alone leaves a
-/// hovered clip its lighter mix, as its colour fills it at rest (#1252).
+/// hovered clip its lighter mix, as its color fills it at rest (#1252).
 #[test]
 fn a_clips_background_rule_alone_does_not_fill_it_when_hovered() {
     fn fills(shape: &egui::Shape, around: egui::Rect, out: &mut Vec<egui::Color32>) {
@@ -1069,7 +1069,7 @@ fn a_clips_background_rule_alone_does_not_fill_it_when_hovered() {
     let hovered = painted(&mut h);
     suhina_ui::kit::native_css::set_user_sheet(None);
     let dark = egui::Color32::from_rgb(0x22, 0x22, 0x22);
-    assert!(!rest.contains(&dark), "the clip's colour fills it at rest: {rest:?}");
+    assert!(!rest.contains(&dark), "the clip's color fills it at rest: {rest:?}");
     assert!(!hovered.contains(&dark), "and the lighter mix when it is hovered: {hovered:?}");
     assert_ne!(rest, hovered, "the hover shows");
 }
@@ -1113,8 +1113,8 @@ fn open_with_clip(css: &str, stacked: bool) -> Harness<'static, App> {
     }
     h.get_by_label("Launcher view").click();
     h.run();
-    h.get_by_label("Select Beat B on Drums (scene 3)").click();
-    h.run();
+    // A double-click on the slot opens its clip; one click only selects it.
+    open_clip(&mut h, "Select Beat B on Drums (scene 3)");
     h
 }
 
@@ -1126,9 +1126,9 @@ fn open_with_clip(css: &str, stacked: bool) -> Harness<'static, App> {
 fn a_layout_with_only_gaps_keeps_the_dragged_detail_area_in_bounds() {
     let mut h = open_with_clip("workspace-panel { margin: 4px; }", true);
     // A clip's editor lies along the bottom even with the devices stacked: a track's devices
-    // stand beside the view.
-    h.get_by_label("Track Drums").click();
-    h.run();
+    // (a double-click on its name shows them) stand beside the view.
+    let name = h.get_by_label("Track Drums").rect().center();
+    double_click_at(&mut h, name);
     let before = h.get_by_label("Detail area splitter").rect().center().x;
     let nudged = drag(&mut h, "Detail area splitter", Vec2::new(40.0, 0.0)).map(|s| s.center().x);
     assert!(nudged.is_some_and(|x| (x - before).abs() < 1.0), "one width: {before} to {nudged:?}");
@@ -1254,7 +1254,7 @@ fn a_padded_browser_takes_the_pointer_only_inside_its_panel() {
 
 /// The workspace's splitters are elements a theme styles: `#detail-splitter` (its strip's
 /// `background-color`, its grip's `color`, with `:hover`) and `#browser-splitter`, in a layout
-/// with only gaps as in the native one; a sheet without them leaves the native colours (#1252).
+/// with only gaps as in the native one; a sheet without them leaves the native colors (#1252).
 #[test]
 fn a_theme_styles_the_workspace_splitters() {
     let (magenta, cyan, green, blue) = (
@@ -1310,10 +1310,10 @@ fn the_mixer_splitter_takes_hover_and_active_and_still_drags() {
     h.run();
     let edge = h.get_by_label("Mixer height").rect().center();
     // The line across the mixer's top, wherever the drag has it.
-    let lines = |h: &Harness<'static, App>, colour: egui::Color32| {
+    let lines = |h: &Harness<'static, App>, color: egui::Color32| {
         h.output().shapes.iter().any(|shape| match &shape.shape {
             egui::Shape::LineSegment { points, stroke } => {
-                stroke.color == colour && points[0].y == points[1].y && (points[1].x - points[0].x) > 100.0
+                stroke.color == color && points[0].y == points[1].y && (points[1].x - points[0].x) > 100.0
             }
             _ => false,
         })
@@ -1457,7 +1457,7 @@ fn padded_regions_hold_their_views_inside_their_content_box() {
     h.get_by_label("Track Drums").click();
     check(&mut h, "a track's devices");
     assert!(h.query_by_label("Device Utility").is_some(), "the devices show");
-    h.get_by_label("Select Walk on Bass (scene 2)").click();
+    open_clip(&mut h, "Select Walk on Bass (scene 2)");
     check(&mut h, "a clip and its notes");
     let settings = suhina_ui::settings::Settings {
         device_layout: suhina_ui::settings::DeviceLayout::Stack,

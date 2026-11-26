@@ -151,7 +151,7 @@ pub fn parse(source: &str) -> Result<Vec<Linear>, String> {
                 }
             }
             if stops.len() < 2 {
-                return Err("Gradient needs at least two colour stops".into());
+                return Err("Gradient needs at least two color stops".into());
             }
             Ok(Linear { direction, repeating, stops, shape })
         })?;
@@ -342,7 +342,7 @@ fn angle_radians(source: &str) -> Result<f32, String> {
 fn parse_stop(source: &str, conic: bool) -> Result<Vec<Stop>, String> {
     let mut parser = Parser::new(source);
     let start = parser.position();
-    if matches!(parser.next().map_err(|_| "Missing gradient colour")?, Token::Function(_)) {
+    if matches!(parser.next().map_err(|_| "Missing gradient color")?, Token::Function(_)) {
         crate::sheet::nested(&mut parser, crate::sheet::consume)?;
     }
     let color = Color::parse(parser.slice_from(start))?;
@@ -350,7 +350,7 @@ fn parse_stop(source: &str, conic: bool) -> Result<Vec<Stop>, String> {
     while !parser.is_exhausted() {
         parser.skip_whitespace();
         if stops.len() >= 2 {
-            return Err("Too many positions on a colour stop".into());
+            return Err("Too many positions on a color stop".into());
         }
         let start = parser.position();
         parser.next().map_err(|_| "Invalid gradient position")?;
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(at, [Length::Percent(0.25), Length::Percent(0.75)]);
         assert_eq!(layers[2].positions(1.0), vec![0.0, 0.25, 0.5]);
         assert!(layers[3].repeating);
-        // No prelude: the first part is a colour stop.
+        // No prelude: the first part is a color stop.
         assert_eq!(parse("radial-gradient(red, blue)").unwrap()[0].stops.len(), 2);
         assert_eq!(parse("conic-gradient(red, blue)").unwrap()[0].stops.len(), 2);
     }

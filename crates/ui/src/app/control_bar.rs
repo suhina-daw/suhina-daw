@@ -326,7 +326,10 @@ impl App {
                             .selected_text(egui::RichText::new(chosen).font(mono.clone()).color(scope.color())),
                         |ui| {
                             for q in QUANTIZATION {
-                                ui.selectable_value(&mut chosen, q, egui::RichText::new(q).font(mono.clone()));
+                                if crate::kit::menu::item(ui, q, chosen == q).clicked() {
+                                    chosen = q;
+                                    ui.close();
+                                }
                             }
                         },
                     )
@@ -674,7 +677,7 @@ impl App {
             items.push(Item::named("bar-item", "status-counts").width(widgets::text_width(ui, counts, font.clone())));
         }
         let Some(laid) = row::row(&Bar::of(style_class, bar.size()), &items) else { return };
-        // The message's colour says what it is (an error is red) unless a rule colours the item
+        // The message's color says what it is (an error is red) unless a rule colors the item
         // itself; the bar's own `color` does not.
         if let Some(rect) = laid.at(0, bar.min) {
             let item = crate::kit::element::BAR_ITEM.id("status-message").attribute("kind", "status-message").enter();
@@ -814,7 +817,7 @@ struct Step {
     performance: (bool, bool),
 }
 
-/// Where the view switch's underline goes: its x, y, width and colour.
+/// Where the view switch's underline goes: its x, y, width and color.
 type Underline = (f32, f32, f32, egui::Color32);
 
 /// What the toolbar's modules draw from, before a module's element is entered.

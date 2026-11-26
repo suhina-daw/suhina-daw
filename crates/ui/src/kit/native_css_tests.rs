@@ -5,7 +5,7 @@ use super::*;
 use crate::kit::element::test_el;
 use egui::Vec2;
 #[test]
-fn native_gradients_publish_every_layer_and_their_end_colours() {
+fn native_gradients_publish_every_layer_and_their_end_colors() {
     for (image, layers, first, last) in [
         ("linear-gradient(red,blue)", 1, Color32::RED, Color32::BLUE),
         ("linear-gradient(to right, red, transparent)", 1, Color32::RED, Color32::TRANSPARENT),
@@ -113,8 +113,8 @@ fn unsupported_declarations_are_skipped_and_the_rest_of_the_sheet_applies() {
         assert!(!actual.has_gradient(), "{css}");
         assert!(!inspect(css).unwrap().is_empty(), "{css}");
     }
-    // A variable that does not make a valid colour makes the property unset, as in CSS:
-    // the colour is inherited, not the earlier declaration's.
+    // A variable that does not make a valid color makes the property unset, as in CSS:
+    // the color is inherited, not the earlier declaration's.
     prepare(":root { --ink:color-mix(in lab, red, blue); } button { color:red; color:var(--ink); }", 800.0);
     assert_ne!(scoped(&["button".into()]).unwrap().color, Color32::RED);
     // A sheet that cannot be parsed at all keeps the last working styles.
@@ -212,10 +212,10 @@ fn device_controls(theme: &str, device: &str, user: Option<&str>) -> (Computed, 
     styles.unwrap()
 }
 
-/// A sheet asks for the variant's declared colour scheme with `prefers-color-scheme` and
+/// A sheet asks for the variant's declared color scheme with `prefers-color-scheme` and
 /// `light-dark()`, and its answers change when the scheme does: a device panel picks its artwork.
 #[test]
-fn a_sheet_follows_the_variants_declared_colour_scheme() {
+fn a_sheet_follows_the_variants_declared_color_scheme() {
     let device = "@media (prefers-color-scheme: light) { #cutoff { display: none; } } \
                   #cutoff { color: light-dark(#ffffff, #000000); }";
     let ctx = egui::Context::default();
@@ -379,7 +379,7 @@ fn responsive_workspace_and_toolbar_survive_resize() {
     skin::configure(&skin::Skin::default());
 }
 #[test]
-fn colour_and_resize_restyle_retained_tree_and_preserve_author_colours() {
+fn color_and_resize_restyle_retained_tree_and_preserve_author_colors() {
     prepare(
         "button { background-color:currentColor; } browser { color:#123456; } @media (max-width:600px) { browser { color:#654321; } }",
         800.0,
@@ -428,8 +428,8 @@ fn colour_and_resize_restyle_retained_tree_and_preserve_author_colours() {
     skin::configure(&skin::Skin::default());
 }
 #[test]
-#[ignore = "manual timing comparison for live colour edits"]
-fn measure_primary_colour_edits() {
+#[ignore = "manual timing comparison for live color edits"]
+fn measure_primary_color_edits() {
     let css = include_str!("../../themes/suhina-sheet/theme.css");
     prepare(css, 800.0);
     let ctx = egui::Context::default();
@@ -455,15 +455,15 @@ fn measure_primary_colour_edits() {
         }
     }
     samples.sort_by(f64::total_cmp);
-    eprintln!("primary colour edit: median {:.3} ms, max {:.3} ms", samples[30], samples[59]);
+    eprintln!("primary color edit: median {:.3} ms, max {:.3} ms", samples[30], samples[59]);
     set_colors(&theme::Colors::new());
     skin::configure(&skin::Skin::default());
 }
-/// A colour of the theme's colour map reaches the sheet's `var()` and the root's variables from
+/// A color of the theme's color map reaches the sheet's `var()` and the root's variables from
 /// the next frame, through the base tier. Every edit resets the styles: the base sheet reads the
-/// colours, and the root's variables and the scopes' must follow them (#1448).
+/// colors, and the root's variables and the scopes' must follow them (#1448).
 #[test]
-fn a_colour_map_edit_reaches_the_sheet_and_the_root() {
+fn a_color_map_edit_reaches_the_sheet_and_the_root() {
     prepare("browser { color: var(--accent); background-color: white; }", 800.0);
     let stack = ["browser".into()];
     assert_eq!(scoped(&stack).unwrap().color, crate::kit::theme::studio("accent"));
@@ -472,7 +472,7 @@ fn a_colour_map_edit_reaches_the_sheet_and_the_root() {
     prepare("browser { color: var(--accent); background-color: white; }", 800.0);
     assert_eq!(scoped(&stack).unwrap().color, accent);
     assert_eq!(root_color("--accent"), Some(accent));
-    // The theme's own `:root` beats its colour map.
+    // The theme's own `:root` beats its color map.
     prepare(":root { --accent: #102030; } browser { color: var(--accent); }", 800.0);
     assert_eq!(scoped(&stack).unwrap().color, Color32::from_rgb(0x10, 0x20, 0x30));
     assert_eq!(root_color("--accent"), Some(Color32::from_rgb(0x10, 0x20, 0x30)));
@@ -484,7 +484,7 @@ fn prepare(css: &str, width: f32) {
 }
 
 /// [`prepare`] with no base sheet under the theme's: for a test of what a rule alone does, such as
-/// an element inheriting a colour its region's rule gives.
+/// an element inheriting a color its region's rule gives.
 fn prepare_bare(css: &str, width: f32) {
     prepare_with(css, width, false);
 }
@@ -869,7 +869,7 @@ fn dragging_a_splitter_lays_the_window_out_once_a_frame() {
     skin::configure(&skin::Skin::default());
 }
 #[test]
-fn unrelated_css_preserves_native_colours_font_sizes_and_corner_defaults() {
+fn unrelated_css_preserves_native_colors_font_sizes_and_corner_defaults() {
     let mut seen = None;
     painted("browser { color:rgb(10 20 30); }", |_| {
         let mixer = {
@@ -980,7 +980,7 @@ fn a_view_background_leaves_the_controls_on_it_their_own_fill() {
         ));
     });
     let (own, window, inside) = seen.unwrap();
-    assert_eq!(own, egui::Color32::from_rgb(0x10, 0x20, 0x30), "what is drawn in the view knows its colour");
+    assert_eq!(own, egui::Color32::from_rgb(0x10, 0x20, 0x30), "what is drawn in the view knows its color");
     assert_eq!(window, window_token, "the view's background writes no token (#1233)");
     assert_eq!(inside, control, "the add-track buttons keep the theme's control fill");
 }
@@ -1070,12 +1070,12 @@ fn a_selected_header_s_background_never_fills_its_buttons() {
         seen = Some((shown, crate::kit::theme::studio("control-background")));
     });
     let (shown, control) = seen.unwrap();
-    assert_eq!(shown, egui::Color32::from_rgb(0x30, 0x40, 0x50), "the header shows the sheet's colour");
+    assert_eq!(shown, egui::Color32::from_rgb(0x30, 0x40, 0x50), "the header shows the sheet's color");
     assert_ne!(control, shown, "its buttons keep their own fill");
 }
 
 #[test]
-fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
+fn a_track_gives_its_color_to_the_sheet_and_each_view_is_known() {
     let mut seen = None;
     // `attr()` reads the strip's own attribute; the theme hands it to the name in a variable.
     let css = "mixer { --track: attr(color type(<color>)); } mixer track-name { background-color: var(--track); }";
@@ -1092,9 +1092,9 @@ fn a_track_gives_its_colour_to_the_sheet_and_each_view_is_known() {
 }
 
 #[test]
-fn tracks_and_clips_carry_their_colour_as_an_attribute() {
+fn tracks_and_clips_carry_their_color_as_an_attribute() {
     let mut seen = None;
-    // The attribute holds the final RGB, in lowercase, so a selector for one colour takes `i`.
+    // The attribute holds the final RGB, in lowercase, so a selector for one color takes `i`.
     let css = "track-header { background-color: color-mix(in oklab, attr(color type(<color>)), black 50%); } \
                clip[color=\"#E8913A\" i] { background-color: #010203; } \
                clip { color: contrast-color(attr(color type(<color>))); }";
@@ -1284,9 +1284,9 @@ fn the_ruler_and_loop_bar_lines_stay_in_the_time_area() {
 }
 
 /// Zoomed far out over a large project, the clips in view fill the style tree; the playhead, drawn
-/// over them last, keeps its colour all the same instead of turning transparent.
+/// over them last, keeps its color all the same instead of turning transparent.
 #[test]
-fn the_playhead_keeps_its_colour_when_the_clips_fill_the_style_tree() {
+fn the_playhead_keeps_its_color_when_the_clips_fill_the_style_tree() {
     use crate::arrangement::{arrangement_view, timeline};
     let mut project = crate::demo::demo_project();
     // Every track's first clip, again on each beat for 2000 beats: more clips in view than the
@@ -1315,7 +1315,7 @@ fn the_playhead_keeps_its_colour_when_the_clips_fill_the_style_tree() {
     assert!(
         shapes.iter().any(|s| matches!(&s.shape, egui::Shape::LineSegment { stroke, .. }
             if stroke.color == egui::Color32::from_rgb(0, 0, 0xFF))),
-        "the playhead keeps its colour"
+        "the playhead keeps its color"
     );
 }
 
@@ -1358,7 +1358,7 @@ fn clips_alike_share_their_parts_looks_for_the_frame() {
 
 /// A take piece is drawn outside its track's `track-lane`, so a rule for the lane does not reach
 /// it: its parts are kept apart from those of the lane's own clips of the same kind, and each
-/// keeps its own colour whichever is drawn first in the frame.
+/// keeps its own color whichever is drawn first in the frame.
 #[test]
 fn a_take_piece_keeps_its_own_parts_beside_a_lane_clip_of_its_kind() {
     use crate::arrangement::{arrangement_view, timeline};
@@ -1424,7 +1424,7 @@ fn a_level_bar_draws_a_handle_where_its_fill_ends() {
 }
 
 #[test]
-fn piano_roll_notes_take_the_clip_colour_and_their_states() {
+fn piano_roll_notes_take_the_clip_color_and_their_states() {
     use crate::detail::piano_roll::part_style;
     let css = "piano-roll { --clip: attr(color type(<color>)); } \
                piano-note { background-color: var(--clip); } \
@@ -1469,7 +1469,7 @@ fn egui_widgets_in_a_scope_take_the_generic_button_and_input_rules() {
     assert_eq!(visuals.extreme_bg_color, egui::Color32::from_rgb(5, 5, 5));
 }
 
-/// A `button` rule that sets only a border width (no colour, no fill) still sets the width of
+/// A `button` rule that sets only a border width (no color, no fill) still sets the width of
 /// egui's outline: `border-width: 0` removes it (#1336).
 #[test]
 fn a_button_rule_with_only_a_border_width_sets_egui_s_outline() {
@@ -1487,7 +1487,7 @@ fn a_button_rule_with_only_a_border_width_sets_egui_s_outline() {
 }
 
 /// egui draws one outline all round its widgets: a `button` rule whose sides differ (an
-/// underline) keeps egui's width and takes only its colour, not a box of its widest side (#1336).
+/// underline) keeps egui's width and takes only its color, not a box of its widest side (#1336).
 #[test]
 fn a_button_rule_with_uneven_sides_is_not_a_box_round_egui_s_widgets() {
     let mut seen = Vec::new();
@@ -1506,7 +1506,7 @@ fn a_button_rule_with_uneven_sides_is_not_a_box_round_egui_s_widgets() {
     }
     let red = egui::Color32::from_rgb(0xFF, 0, 0);
     let [plain, uneven, even] = seen[..] else { panic!("three strokes: {seen:?}") };
-    assert_eq!(uneven, egui::Stroke::new(plain.width, red), "egui's own width, the rule's colour");
+    assert_eq!(uneven, egui::Stroke::new(plain.width, red), "egui's own width, the rule's color");
     assert_eq!(even, egui::Stroke::new(3.0, red));
 }
 
@@ -1607,7 +1607,7 @@ fn the_midi_tools_part_draws_the_quantise_amount_as_a_knob_where_the_theme_says(
 }
 
 #[test]
-fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_colour_spares_them() {
+fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_color_spares_them() {
     use crate::detail::detail_view::{slider_as_knob, themed_slider};
     let mut seen = (true, true);
     painted("", |_| seen = (themed_slider(), slider_as_knob()));
@@ -1622,7 +1622,7 @@ fn device_sliders_take_parts_and_knobs_from_the_sheet_and_a_panel_colour_spares_
         let styled = device.ui(ui);
         fill = Some(styled.style().visuals.widgets.inactive.bg_fill);
     });
-    assert_ne!(fill, Some(egui::Color32::from_rgb(0x10, 0x20, 0x30)), "the rails keep their own colour");
+    assert_ne!(fill, Some(egui::Color32::from_rgb(0x10, 0x20, 0x30)), "the rails keep their own color");
 }
 
 #[test]
@@ -1638,7 +1638,7 @@ fn a_round_button_s_shadow_is_round() {
 }
 
 #[test]
-fn a_theme_sets_how_strongly_the_track_colour_tints_its_header() {
+fn a_theme_sets_how_strongly_the_track_color_tints_its_header() {
     let (theme, _) = super::super::theme::from_css("arrangement { header-tint: 0; }");
     skin::configure(&theme.skin);
     assert_eq!(super::super::style_class::theme_header_tint(), Some(0));
@@ -1711,7 +1711,7 @@ fn a_family_class_reaches_every_part_of_its_kind() {
 }
 
 #[test]
-fn a_level_bar_s_fill_can_take_the_track_s_colour() {
+fn a_level_bar_s_fill_can_take_the_track_s_color() {
     let field = Rect::from_min_size(egui::pos2(10.0, 10.0), Vec2::new(200.0, 20.0));
     let css = "track-header { --track: attr(color type(<color>)); } value-fill { background-color: var(--track); }";
     let shapes = painted(css, |ui| {
@@ -1729,7 +1729,7 @@ fn a_level_bar_s_fill_can_take_the_track_s_colour() {
         );
     });
     let orange = egui::Color32::from_rgb(0xE8, 0x91, 0x3A);
-    assert!(rects(&shapes).iter().any(|r| r.fill == orange), "the lit part is the track's colour");
+    assert!(rects(&shapes).iter().any(|r| r.fill == orange), "the lit part is the track's color");
 }
 
 /// The surface of `el`, as a control painted inside it draws it.
@@ -2065,11 +2065,11 @@ fn window_frame(ctx: &egui::Context) -> Computed {
     style.unwrap()
 }
 
-/// The window's opacity over a backdrop fades the window's, the panels' and the lines' colours as
-/// the palette did (`gamma_multiply`), byte for byte, and the faded colours are the variables the
+/// The window's opacity over a backdrop fades the window's, the panels' and the lines' colors as
+/// the palette did (`gamma_multiply`), byte for byte, and the faded colors are the variables the
 /// sheet sees on `window` (#1448).
 #[test]
-fn an_opacity_change_reaches_the_window_panel_and_border_colours() {
+fn an_opacity_change_reaches_the_window_panel_and_border_colors() {
     let ctx = egui::Context::default();
     skin::configure(&skin::Skin::default());
     let studio = crate::kit::theme::studio;
@@ -2086,17 +2086,17 @@ fn an_opacity_change_reaches_the_window_panel_and_border_colours() {
                 other => panic!("{name}: {other:?}"),
             };
             assert_eq!(sheet, faded, "the sheet's {name} at {percent} %");
-            // The theme's own colour, the panels' base under the backdrop, is not faded.
+            // The theme's own color, the panels' base under the backdrop, is not faded.
             assert_eq!(root_color(name), Some(base), "{name}");
         }
     }
     set_window_opacity(&ctx, 1.0);
 }
 
-/// A translucent theme colour fades as `gamma_multiply` fades it, the bytes the palette gave, in
+/// A translucent theme color fades as `gamma_multiply` fades it, the bytes the palette gave, in
 /// the sheet's variable on `window`, at every opacity (#1448).
 #[test]
-fn a_translucent_colour_fades_on_window_as_gamma_multiply_does() {
+fn a_translucent_color_fades_on_window_as_gamma_multiply_does() {
     let ctx = egui::Context::default();
     skin::configure(&skin::Skin::default());
     let mut colors = theme::Colors::new();
@@ -2124,7 +2124,7 @@ fn a_translucent_colour_fades_on_window_as_gamma_multiply_does() {
     assert!(off.is_empty(), "{}", off.join("\n"));
 }
 
-/// `"base": "none"` leaves the base sheet out: its parts' colours are gone and the user-agent
+/// `"base": "none"` leaves the base sheet out: its parts' colors are gone and the user-agent
 /// sheet's bare look is left, the variables still resolving. A base rule alone leaves the element
 /// unauthored (#1448).
 #[test]
@@ -2139,7 +2139,7 @@ fn opting_out_of_the_base_sheet_leaves_the_bare_look() {
     assert_eq!(based.color, crate::kit::theme::studio("control-background"), "the base sheet's knob body");
     assert!(!based.authored.color, "a base rule is not the theme's");
     let bare = knob_body(false);
-    assert_eq!(bare.color, Color32::from_rgb(0xff, 0xb0, 0x00), "the knob's own colour, inherited");
+    assert_eq!(bare.color, Color32::from_rgb(0xff, 0xb0, 0x00), "the knob's own color, inherited");
     assert_eq!(bare.variable("--accent"), Some("#A6A3FF"), "the core variables still apply");
     skin::configure(&skin::Skin::default());
 }
@@ -2147,7 +2147,7 @@ fn opting_out_of_the_base_sheet_leaves_the_bare_look() {
 /// The user-agent sheet's floor is readable: with `"base": "none"` and nothing of the theme's,
 /// the window has plain text on an opaque background, and the menus, pop-ups, tooltips and
 /// dialogs over it the same background; with the base sheet, the window takes
-/// Suhina Studio's colours as before.
+/// Suhina Studio's colors as before.
 #[test]
 fn opting_out_of_the_base_sheet_leaves_readable_text_on_an_opaque_window() {
     let ctx = egui::Context::default();
@@ -2313,8 +2313,8 @@ fn a_box_at_a_fraction_of_a_pixel_paints_its_gradient_on_whole_pixels() {
     assert_eq!((left, top), (10.0, 20.0), "the face starts where the border does");
 }
 
-/// The out-of-frame lookups read the window's own cascade (#1585): its size, its colour map, its
-/// faded colours and its `body`, as an element the window paints does.
+/// The out-of-frame lookups read the window's own cascade (#1585): its size, its color map, its
+/// faded colors and its `body`, as an element the window paints does.
 #[test]
 fn out_of_frame_settings_follow_the_window_s_size() {
     let css = "@media (max-width: 1000px) { arrangement { track-height: 48px; } }";
@@ -2326,13 +2326,13 @@ fn out_of_frame_settings_follow_the_window_s_size() {
 }
 
 #[test]
-fn out_of_frame_settings_take_the_theme_s_colour_map_and_the_window_s_fade() {
+fn out_of_frame_settings_take_the_theme_s_color_map_and_the_window_s_fade() {
     use super::super::element::TOOLTIP;
     let panel = Color32::from_rgb(0x20, 0x40, 0x80);
     set_colors(&[("panel-background".to_owned(), panel)].into());
     prepare("tooltip { background-color: var(--panel-background); }", 800.0);
     assert_eq!(settings_of(&[TOOLTIP]).map(|style| style.background), Some(panel));
-    // Over a backdrop the window's panel colour is faded, for a tooltip's frame too.
+    // Over a backdrop the window's panel color is faded, for a tooltip's frame too.
     let ctx = egui::Context::default();
     set_window_opacity(&ctx, 0.5);
     prepare("tooltip { background-color: var(--panel-background); }", 800.0);

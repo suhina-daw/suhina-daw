@@ -171,7 +171,7 @@ fn malformed_scene_parameters_are_refused_and_change_nothing() {
         ("scene.setTimeSignature", json!({ "scene": 99, "numerator": 3, "denominator": 3 })),
         ("scene.setTimeSignature", json!({ "scene": 99, "numerator": 300, "denominator": 4 })),
         ("scene.setTimeSignature", json!({ "scene": 99, "numerator": "3", "denominator": 4 })),
-        ("scene.setTempo", json!({ "scene": 99, "bpm": 120, "colour": "red" })),
+        ("scene.setTempo", json!({ "scene": 99, "bpm": 120, "color": "red" })),
     ];
     for (id, params) in bad {
         assert!(run(&mut session, id, params.clone()).is_err(), "{id} {params} was accepted");

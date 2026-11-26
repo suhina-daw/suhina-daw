@@ -3,6 +3,7 @@
 
 //! SDK drawing programs are evaluated only on the UI thread.
 use crate::detail::detail_view::GraphParameter;
+use crate::kit::menu;
 use crate::kit::widgets::{Action, fixed};
 use egui::{Color32, Pos2, Rect, Stroke, Vec2};
 use serde_json::json;
@@ -57,15 +58,15 @@ struct Loaded {
     source: Arc<DeviceUi>,
     palette: WidgetPalette,
     images: Vec<Result<egui::TextureHandle, String>>,
-    /// Each image's colour where a dial's pointer crosses it ([`face_colour`]), by asset.
+    /// Each image's color where a dial's pointer crosses it ([`face_color`]), by asset.
     faces: Vec<Option<Color32>>,
     controls: Vec<Vec<Draw>>,
 }
 
-/// The mean colour of the round middle of an RGBA image, out to 62% of its half-size where a
+/// The mean color of the round middle of an RGBA image, out to 62% of its half-size where a
 /// dial's pointer ends, weighted by alpha: what a pointer line drawn over a device's own knob face
 /// must stand out from. `None` for an image with no opaque pixel there.
-fn face_colour(pixels: &[u8], [width, height]: [usize; 2]) -> Option<Color32> {
+fn face_color(pixels: &[u8], [width, height]: [usize; 2]) -> Option<Color32> {
     let (cx, cy) = (width as f32 / 2.0, height as f32 / 2.0);
     let reach = cx.min(cy) * 0.62;
     let mut sum = [0.0f64; 4];
@@ -287,7 +288,7 @@ fn sample_marker(painter: &egui::Painter, x: f32, top: f32, bottom: f32, marker_
     painter.line_segment(line, Stroke::new(2., marker_color));
 }
 
-/// The colour of slice lines: the waveform's accent turned to the opposite hue, fully saturated
+/// The color of slice lines: the waveform's accent turned to the opposite hue, fully saturated
 /// and bright, so the lines stand apart from the waveform in any theme.
 fn slice_line(accent: Color32) -> Color32 {
     let hsva = egui::ecolor::Hsva::from(accent);
@@ -337,11 +338,11 @@ fn sample_waveform(
     });
     let source = ui.ctx().data(|data| data.get_temp::<Arc<suhina_engine::AudioData>>(sample_source_id(track, device)));
     let painter = ui.painter_at(visible);
-    let mut colors = colours();
+    let mut look = colors();
     let scoped = styled_palette(widget_palette(), style);
-    colors.accent = color(scoped.accent);
-    colors.text_primary = color(scoped.text);
-    colors.border = color(scoped.border);
+    look.accent = color(scoped.accent);
+    look.text_primary = color(scoped.text);
+    look.border = color(scoped.border);
     painter.rect_filled(bounds, 0., color(scoped.control));
     let compact = bounds.height() < 100. && inline_recording;
     let field = if compact {
@@ -536,13 +537,10 @@ fn sample_waveform(
     response.context_menu(|ui| {
         if slicing {
             if let Some(key) = selected_key {
-                ui.label(format!(
-                    "Slice {} · {} (MIDI {key})",
-                    selected_index + 1,
-                    crate::interaction::key_name::key_name(key)
-                ));
+                let name = crate::interaction::key_name::key_name(key);
+                menu::heading(ui, &format!("Slice {} · {name} (MIDI {key})", selected_index + 1));
             }
-            if ui.button("Zoom to selected slice").clicked() {
+            if menu::entry(ui, "Zoom to selected slice", None, true).clicked() {
                 if let Some(source) = &source {
                     let span = (selection_end - selection_start).clamp(1. / source.frames().max(1) as f64, 1.);
                     view = SampleView { start: selection_start.clamp(0., 1. - span), span };
@@ -556,32 +554,37 @@ fn sample_waveform(
                     .data(|d| d.get_temp::<(f64, f64)>(numeric_id))
                     .filter(|(old, _)| *old == selection_start)
                     .map_or(selection_start, |(_, value)| value);
-                ui.horizontal(|ui| {
-                    ui.label("Boundary (source fraction)");
-                    ui.add(egui::DragValue::new(&mut position).speed(0.0001).range(boundary_low..=boundary_high));
+                // Its place is typed inside, then applied: a click in it keeps it open.
+                menu::Entry::new("Move boundary").keep_open().submenu(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        crate::kit::controls::text(ui, "Boundary (source fraction)");
+                        let number =
+                            egui::DragValue::new(&mut position).speed(0.0001).range(boundary_low..=boundary_high);
+                        crate::kit::widgets::number_input(ui, None, number);
+                    });
+                    if menu::entry(ui, "Apply boundary", None, true).clicked() {
+                        edit_boundary(actions, "move", Some(selection_start), Some(position));
+                        ui.close();
+                    }
                 });
                 ui.ctx().data_mut(|d| d.insert_temp(numeric_id, (selection_start, position)));
-                if ui.button("Apply boundary").clicked() {
-                    edit_boundary(actions, "move", Some(selection_start), Some(position));
-                    ui.close();
-                }
-                if ui.button("Delete boundary").clicked() {
+                if menu::entry(ui, "Delete boundary", None, true).clicked() {
                     edit_boundary(actions, "delete", Some(selection_start), None);
                     ui.close();
                 }
             }
         }
-        if correction_mode && ui.button("Regenerate slices").clicked() {
+        if correction_mode && menu::entry(ui, "Regenerate slices", None, true).clicked() {
             edit_boundary(actions, "regenerate", None, None);
             ui.close();
         }
         // Shared waveform clients expose only commands their parameter contract supports.
         if parameters.iter().any(|p| p.id == "grid_division") {
-            ui.menu_button("Grid", |ui| {
+            menu::submenu(ui, "Grid", false, |ui| {
                 for (index, label) in
                     ["Off", "1/4", "1/8", "1/16", "1/32", "1/8 triplet", "1/16 triplet"].iter().enumerate()
                 {
-                    if ui.selectable_label(value("grid_division") as usize == index, *label).clicked() {
+                    if menu::item(ui, label, value("grid_division") as usize == index).clicked() {
                         actions.push(Action::new(
                             "device.setParam",
                             json!({"track":track.0,"device":address,"param":"grid_division","value":index}),
@@ -592,18 +595,27 @@ fn sample_waveform(
             });
         }
         if ["source_numerator", "source_denominator"].iter().all(|id| parameters.iter().any(|p| p.id == *id)) {
-            ui.menu_button("Source time signature", |ui| {
+            // Its count and its note value are set inside, then applied: a click in it keeps it open.
+            menu::Entry::new("Source time signature").keep_open().submenu(ui, |ui| {
                 let meter_id = source_id.with("meter-edit");
                 let mut meter = ui
                     .ctx()
                     .data(|d| d.get_temp::<(f64, usize)>(meter_id))
                     .unwrap_or((f64::from(value("source_numerator")).max(1.), value("source_denominator") as usize));
-                ui.add(egui::DragValue::new(&mut meter.0).range(1. ..=16.).speed(1.));
+                ui.horizontal(|ui| {
+                    crate::kit::controls::text(ui, "Beats");
+                    let number = egui::DragValue::new(&mut meter.0).range(1. ..=16.).speed(1.);
+                    crate::kit::widgets::number_input(ui, None, number);
+                });
+                menu::heading(ui, "Note value");
                 for (index, label) in ["2", "4", "8", "16"].iter().enumerate() {
-                    ui.radio_value(&mut meter.1, index, *label);
+                    if menu::item(ui, label, meter.1 == index).clicked() {
+                        meter.1 = index;
+                    }
                 }
                 ui.ctx().data_mut(|d| d.insert_temp(meter_id, meter));
-                if ui.button("Apply time signature").clicked() {
+                menu::separator(ui);
+                if menu::entry(ui, "Apply time signature", None, true).clicked() {
                     // One undo step: both values in one gesture.
                     for (param, value) in
                         [("source_numerator", meter.0.round()), ("source_denominator", meter.1 as f64)]
@@ -618,19 +630,19 @@ fn sample_waveform(
             });
         }
         if parameters.iter().any(|p| p.id == "grid_snap") {
-            let mut snapping = value("grid_snap") > 0.;
-            if ui.checkbox(&mut snapping, "Snap to grid (Alt bypasses)").changed() {
+            let snapping = value("grid_snap") > 0.;
+            if menu::toggle(ui, "Snap to grid (Alt bypasses)", snapping).clicked() {
                 actions.push(Action::new(
                     "device.setParam",
-                    json!({"track":track.0,"device":address,"param":"grid_snap","value":u8::from(snapping)}),
+                    json!({"track":track.0,"device":address,"param":"grid_snap","value":u8::from(!snapping)}),
                 ));
             }
         }
-        if ui.button("Show whole sample").clicked() {
+        if menu::entry(ui, "Show whole sample", None, true).clicked() {
             view = SampleView::default();
             ui.close();
         }
-        if ui.button("Zoom to source region").clicked() {
+        if menu::entry(ui, "Zoom to source region", None, true).clicked() {
             if let Some(source) = &source {
                 let minimum = 1. / source.frames().max(1) as f64;
                 let span = (active_end - active_start).clamp(minimum, 1.);
@@ -764,7 +776,7 @@ fn sample_waveform(
     )
     .intersect(field);
     if active_rect.is_positive() {
-        wave_painter.rect_filled(active_rect, 0., colors.accent.gamma_multiply(0.06));
+        wave_painter.rect_filled(active_rect, 0., look.accent.gamma_multiply(0.06));
     }
     if slicing && selection_end > selection_start {
         let selected_rect = Rect::from_min_max(
@@ -773,10 +785,10 @@ fn sample_waveform(
         )
         .intersect(field);
         if selected_rect.is_positive() {
-            wave_painter.rect_filled(selected_rect, 0., colors.accent.gamma_multiply(0.28));
+            wave_painter.rect_filled(selected_rect, 0., look.accent.gamma_multiply(0.28));
             wave_painter.line_segment(
                 [selected_rect.left_bottom(), selected_rect.right_bottom()],
-                Stroke::new(3., colors.accent),
+                Stroke::new(3., look.accent),
             );
         }
     }
@@ -799,7 +811,7 @@ fn sample_waveform(
             let x = view.x(point, field);
             wave_painter.line_segment(
                 [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
-                Stroke::new(1., colors.text_primary.gamma_multiply(0.09)),
+                Stroke::new(1., look.text_primary.gamma_multiply(0.09)),
             );
             if !compact && x >= last_label + 70. && x <= field.right() - 40. {
                 last_label = x;
@@ -818,7 +830,7 @@ fn sample_waveform(
                         (beat, sixteenth) => format!("{bar}.{beat}.{sixteenth}"),
                     },
                     crate::kit::theme::ui_font(10.),
-                    colors.text_primary,
+                    look.text_primary,
                 );
             }
         }
@@ -843,7 +855,7 @@ fn sample_waveform(
             let x = view.x(point, field);
             wave_painter.line_segment(
                 [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
-                Stroke::new(1., colors.text_primary.gamma_multiply(0.09)),
+                Stroke::new(1., look.text_primary.gamma_multiply(0.09)),
             );
             if !compact && x >= last_label + 90. && x <= field.right() - 50. {
                 last_label = x;
@@ -852,7 +864,7 @@ fn sample_waveform(
                     egui::Align2::LEFT_CENTER,
                     clock(seconds),
                     crate::kit::theme::ui_font(10.),
-                    colors.text_primary,
+                    look.text_primary,
                 );
             }
         }
@@ -863,7 +875,7 @@ fn sample_waveform(
     )
     .intersect(field);
     if edit_loop && loop_area.is_positive() {
-        wave_painter.rect_filled(loop_area, 0., colors.accent.gamma_multiply(0.12));
+        wave_painter.rect_filled(loop_area, 0., look.accent.gamma_multiply(0.12));
     }
     if let Some(source) = &source {
         let frames = source.frames();
@@ -891,9 +903,9 @@ fn sample_waveform(
                 let x = field.left() + i as f32 / 1024. * field.width();
                 let point = view.point(x, field);
                 let color = if point < f64::from(value("start")) || point > f64::from(value("end")) {
-                    colors.text_primary.gamma_multiply(0.18)
+                    look.text_primary.gamma_multiply(0.18)
                 } else {
-                    colors.accent
+                    look.accent
                 };
                 let h = peak * height * 0.44;
                 wave_painter.line_segment([Pos2::new(x, center - h), Pos2::new(x, center + h)], Stroke::new(1., color));
@@ -906,7 +918,7 @@ fn sample_waveform(
             let edges: Vec<f64> =
                 std::iter::once(active_start).chain(inside).chain(std::iter::once(active_end)).collect();
             let playable = 128usize.saturating_sub(value("root").max(0.) as usize);
-            let line = slice_line(colors.accent);
+            let line = slice_line(look.accent);
             for (index, pair) in edges.windows(2).enumerate() {
                 let [from, to] = [pair[0], pair[1]];
                 if to < view.start || from > view.start + view.span {
@@ -921,19 +933,19 @@ fn sample_waveform(
                     wave_painter.rect_filled(
                         band,
                         0.,
-                        crate::kit::style_class::surface_or(colours().panel_background).gamma_multiply(0.6),
+                        crate::kit::style_class::surface_or(colors().panel_background).gamma_multiply(0.6),
                     );
                     continue;
                 }
                 if index % 2 == 1 {
-                    wave_painter.rect_filled(band, 0., colors.text_primary.gamma_multiply(0.05));
+                    wave_painter.rect_filled(band, 0., look.text_primary.gamma_multiply(0.05));
                 }
                 if index == 0 {
                     continue;
                 }
                 let x = view.x(from, field);
                 let pinned = manual || edits.as_ref().is_some_and(|edits| edits.pins().contains(&from));
-                // A bright line in a colour of its own over a dark edge, so it shows over the
+                // A bright line in a color of its own over a dark edge, so it shows over the
                 // waveform and over silence, with a tab at its top; one placed by hand is thicker,
                 // with a round tab.
                 let width = if pinned { 2.5 } else { 1.5 };
@@ -964,7 +976,7 @@ fn sample_waveform(
             egui::Align2::CENTER_CENTER,
             "Drop a sample here",
             crate::kit::theme::ui_font(12.),
-            colors.text_primary,
+            look.text_primary,
         );
     }
     let positions = ui
@@ -975,7 +987,7 @@ fn sample_waveform(
         let x = view.x(f64::from(position.clamp(0., 1.)), field);
         wave_painter.line_segment(
             [Pos2::new(x, field.top()), Pos2::new(x, field.bottom())],
-            Stroke::new(1., colors.text_primary),
+            Stroke::new(1., look.text_primary),
         );
     }
     for (id, caption, offset) in [
@@ -1045,20 +1057,19 @@ fn sample_recording(ui: &mut egui::Ui, bounds: Rect, track: TrackId, device: usi
         .unwrap_or_default();
     let record_x = bounds.right() - if recording { 152. } else { 78. };
     let menu = Rect::from_min_size(Pos2::new(record_x - 164., bounds.top()), Vec2::new(160., bounds.height()));
-    ui.scope_builder(
-        egui::UiBuilder::new().max_rect(menu).layout(egui::Layout::right_to_left(egui::Align::Center)),
-        |ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-            ui.spacing_mut().interact_size.y = bounds.height();
-            ui.menu_button(format!("Input: {}", crate::interaction::menus::audio_input_text(&input)), |ui| {
-                let mut next_armed = armed;
-                if ui.checkbox(&mut next_armed, "Arm track").changed() {
-                    actions.push(Action::new("track.setArm", json!({"track":track.0, "armed":next_armed})));
-                }
-                crate::interaction::menus::audio_input_choices(ui, track, &input, channels, actions);
-            });
-        },
-    );
+    // A dropdown, as the toolbars' are: its words the input, its menu the input's choices.
+    let text = format!("Input: {}", crate::interaction::menus::audio_input_text(&input));
+    let id = sample_source_id(track, device).with("input-menu");
+    let response = crate::kit::widgets::button_area(ui, menu, id, &text);
+    // Its ink is picked against the device panel's surface it sits on.
+    let surface = crate::kit::style_class::surface_or(colors().panel_background);
+    crate::kit::widgets::subtle_dropdown(ui, ui.painter(), menu, &response, &text, surface);
+    egui::Popup::menu(&response).show(|ui| {
+        if menu::toggle(ui, "Arm track", armed).clicked() {
+            actions.push(Action::new("track.setArm", json!({"track":track.0, "armed":!armed})));
+        }
+        crate::interaction::menus::audio_input_choices(ui, track, &input, channels, actions);
+    });
     for (text, on, x) in [(if recording { "Recording" } else { "Record" }, true, 8.), ("Stop", false, 90.)] {
         if !on && !recording {
             continue;
@@ -1067,12 +1078,11 @@ fn sample_recording(ui: &mut egui::Ui, bounds: Rect, track: TrackId, device: usi
             Pos2::new(record_x + x - 8., bounds.top()),
             Vec2::new(if on { 78. } else { 70. }, bounds.height()),
         );
-        let response = ui.put(
-            button,
-            egui::Button::new(if on { format!("   {text}") } else { text.into() })
-                .corner_radius(0.)
-                .selected(on && recording),
-        );
+        // The kit's button, lit (its primary look) while recording; the record dot sits left of
+        // its words.
+        let words = if on { format!("   {text}") } else { text.to_owned() };
+        let id = sample_source_id(track, device).with(("record-button", on));
+        let response = crate::kit::widgets::button_with_id(ui, ui.painter(), button, id, &words, text, on && recording);
         if on {
             ui.painter().circle_filled(
                 Pos2::new(button.left() + 10., button.center().y),
@@ -1135,7 +1145,7 @@ fn envelope(
     let values = [a.value, d.value, normalized(l, false), r.map_or(0., |p| p.value)];
     let max_time = (a.max + d.max + r.map_or(0., |p| p.max)).max(0.01);
     let plot = EnvelopePlot::new(bounds, values, max_time, adsr);
-    let mut palette = colours();
+    let mut palette = colors();
     let scoped = styled_palette(widget_palette(), style);
     palette.accent = color(scoped.accent);
     palette.border = color(scoped.border);
@@ -1266,14 +1276,14 @@ fn accent_text(accent: egui::Color32) -> [u8; 4] {
     let luminance = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);
     if luminance > 145.0 { [29, 28, 26, 255] } else { [255, 255, 255, 255] }
 }
-/// The colours a device's canvas draws with, read from the `device-canvas` element in the scope of
+/// The colors a device's canvas draws with, read from the `device-canvas` element in the scope of
 /// the device's panel: its `color` the text, its `background-color` the controls, its
 /// `border-color` the lines and its `accent-color` the accent; its kinds `secondary`, `value` and
 /// `inverse` (`color`) the other texts, `panel`, `window` and `active` (`background-color`) the
-/// other fills. A canvas reads them once a frame ([`Colours::enter`]), so its drawings take them
+/// other fills. A canvas reads them once a frame ([`Colors::enter`]), so its drawings take them
 /// from one place.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Colours {
+pub(crate) struct Colors {
     pub text_primary: Color32,
     pub text_secondary: Color32,
     pub text_value: Color32,
@@ -1287,11 +1297,11 @@ pub(crate) struct Colours {
 }
 
 thread_local! {
-    /// The colours of the canvas being drawn, while one is.
-    static COLOURS: std::cell::Cell<Option<Colours>> = const { std::cell::Cell::new(None) };
+    /// The colors of the canvas being drawn, while one is.
+    static COLORS: std::cell::Cell<Option<Colors>> = const { std::cell::Cell::new(None) };
 }
 
-impl Colours {
+impl Colors {
     /// What the sheet gives a canvas drawn here.
     fn look() -> Self {
         use crate::kit::element::DEVICE_CANVAS;
@@ -1311,29 +1321,29 @@ impl Colours {
         }
     }
 
-    /// Reads the colours for the canvas about to be drawn, and keeps them until the value is
+    /// Reads the colors for the canvas about to be drawn, and keeps them until the value is
     /// dropped.
-    fn enter() -> ColoursScope {
-        ColoursScope(COLOURS.with(|colours| colours.replace(Some(Self::look()))))
+    fn enter() -> ColorsScope {
+        ColorsScope(COLORS.with(|colors| colors.replace(Some(Self::look()))))
     }
 }
 
-/// Puts back the colours of the canvas that was being drawn before.
-struct ColoursScope(Option<Colours>);
+/// Puts back the colors of the canvas that was being drawn before.
+struct ColorsScope(Option<Colors>);
 
-impl Drop for ColoursScope {
+impl Drop for ColorsScope {
     fn drop(&mut self) {
-        COLOURS.with(|colours| colours.set(self.0));
+        COLORS.with(|colors| colors.set(self.0));
     }
 }
 
-/// The colours of the canvas being drawn; read afresh where none is.
-pub(crate) fn colours() -> Colours {
-    COLOURS.with(std::cell::Cell::get).unwrap_or_else(Colours::look)
+/// The colors of the canvas being drawn; read afresh where none is.
+pub(crate) fn colors() -> Colors {
+    COLORS.with(std::cell::Cell::get).unwrap_or_else(Colors::look)
 }
 
 fn widget_palette() -> WidgetPalette {
-    let colors = colours();
+    let colors = colors();
     WidgetPalette {
         text: rgba(colors.text_primary),
         panel: rgba(colors.panel_background),
@@ -1343,7 +1353,7 @@ fn widget_palette() -> WidgetPalette {
         accent_text: accent_text(colors.accent),
     }
 }
-/// The widget palette of a control with `style`, its element's: colours its CSS writes
+/// The widget palette of a control with `style`, its element's: colors its CSS writes
 /// (`color`, `background-color`, `border-color`, `accent-color`) replace the theme's.
 fn styled_palette(mut palette: WidgetPalette, style: Option<&crate::kit::element::Computed>) -> WidgetPalette {
     let Some(style) = style else { return palette };
@@ -1403,7 +1413,7 @@ fn images(ctx: &egui::Context, source: &Arc<DeviceUi>) -> Arc<Loaded> {
         .map(|a| {
             a.decode_rgba()
                 .map(|(pixels, size)| {
-                    faces.push(face_colour(&pixels, size));
+                    faces.push(face_color(&pixels, size));
                     ctx.load_texture(
                         &a.id,
                         egui::ColorImage::from_rgba_unmultiplied(size, &pixels),
@@ -1587,7 +1597,7 @@ fn handle(
             if hollow {
                 painter.circle_stroke(center, if hot { 4.0 } else { 3.0 }, Stroke::new(1.5, color(line_color)));
             } else {
-                let ring = Stroke::new(1.0, crate::kit::style_class::surface_or(colours().panel_background));
+                let ring = Stroke::new(1.0, crate::kit::style_class::surface_or(colors().panel_background));
                 painter.circle(center, if hot { 5.5 } else { 4.0 }, color(line_color), ring);
             }
         }
@@ -1691,7 +1701,7 @@ fn plot_inside(points: &[(f32, f32)], top: f32, bottom: f32) -> Vec<Vec<(f32, f3
 }
 
 /// The SDK's theme tokens (`--device-display`, `--device-series-1` …) as a panel's scope resolves
-/// them, each the theme's colour or the token's default; worked out once per panel and frame.
+/// them, each the theme's color or the token's default; worked out once per panel and frame.
 /// Kept unmultiplied, so a translucent token keeps its exact RGB until a drawing's alpha is applied.
 struct Tokens([[u8; 4]; suhina_device_sdk::ui::THEME_TOKENS.len()]);
 impl Tokens {
@@ -1703,7 +1713,7 @@ impl Tokens {
             style
                 .as_ref()
                 .and_then(|s| s.variable(name))
-                // Any CSS colour the style engine reads: `rgb()`, a named colour, `color-mix()` …
+                // Any CSS color the style engine reads: `rgb()`, a named color, `color-mix()` …
                 .and_then(|value| match suhina_style::value::Color::parse(value.trim()) {
                     Ok(suhina_style::value::Color::Rgba(rgba)) => Some(rgba),
                     _ => None,
@@ -1711,7 +1721,7 @@ impl Tokens {
                 .unwrap_or([r, g, b, 255])
         }))
     }
-    /// A drawing's colour: a token takes its colour, the palette's tokens the palette's (`color`).
+    /// A drawing's color: a token takes its color, the palette's tokens the palette's (`color`).
     fn color(&self, c: [u8; 4]) -> Color32 {
         let [r, g, b, a] = c;
         suhina_device_sdk::ui::THEME_TOKENS
@@ -1744,13 +1754,13 @@ fn scaled_font(size: f32, weight: f32) -> egui::FontId {
     font
 }
 
-/// A colour of the SDK's palette: one of its theme tokens ([3, 1, k]) takes the theme's colour,
-/// its alpha times the drawing's, so a translucent theme colour stays translucent.
+/// A color of the SDK's palette: one of its theme tokens ([3, 1, k]) takes the theme's color,
+/// its alpha times the drawing's, so a translucent theme color stays translucent.
 fn color(c: [u8; 4]) -> Color32 {
     let [r, g, b, a] = c;
-    // The theme's own colours by token ([3, 1, k]): text, panel, control, border, accent.
+    // The theme's own colors by token ([3, 1, k]): text, panel, control, border, accent.
     if [r, g] == [3, 1] {
-        let palette = colours();
+        let palette = colors();
         let base = match b {
             1 => palette.text_primary,
             2 => palette.panel_background,
@@ -1864,6 +1874,7 @@ fn paint_scaled(
                         TextFormat::Seconds => format!("{text}{} s", fixed(p.value, 2)),
                         TextFormat::Percent => format!("{text}{}%", fixed(p.value * 100., 0)),
                         TextFormat::Decibels => format!("{text}{} dB", fixed(p.value, 1)),
+                        TextFormat::Ratio => format!("{text}{}:1", fixed(p.value, *decimals)),
                         TextFormat::Balance if p.value.abs() < 0.005 => format!("{text}C"),
                         TextFormat::Balance => {
                             format!("{text}{} {}", fixed(p.value.abs() * 100., 0), if p.value < 0. { "L" } else { "R" })
@@ -2084,7 +2095,7 @@ fn paint_control(
         paint_sample_mode(painter, &scope, bounds, label, on, state, palette);
         return;
     }
-    let ink = scope.color_or(colours().text_value);
+    let ink = scope.color_or(colors().text_value);
     // A button's or a number's text: the SDK places it by a guess at the font's height, so the
     // host centers its capitals in the control, as the font really is (#1487 B12).
     let label_box = matches!(control.widget, Some(Widget::Button { .. } | Widget::Number { .. })).then_some(bounds);
@@ -2092,7 +2103,7 @@ fn paint_control(
     let mut knob_effects = false;
     // A dial with the device's own face (`Dial { image }`): the device's image is its artwork, so
     // no theme's knob artwork replaces it; the theme styles only what the device leaves
-    // unstyled, the pointer line's colour.
+    // unstyled, the pointer line's color.
     let device_face = matches!(control.widget, Some(Widget::Dial { image: Some(_), .. }));
     let mut face: Option<Rect> = None;
     let mut face_fill: Option<Color32> = None;
@@ -2112,21 +2123,21 @@ fn paint_control(
                 let pointer = crate::kit::element::KNOB_POINTER.response_if(response).enter().look();
                 // The line takes `knob-pointer { color }` where the theme gives one (#1500).
                 // Otherwise it sits on the device's own face, not on the theme's: in the theme's
-                // text colour where that reads on it, else in the ink that does (a light theme's
+                // text color where that reads on it, else in the ink that does (a light theme's
                 // dark text on a black knob would hide the pointer).
                 let themed = tokens.color(*c);
-                let colour = match (pointer.own_color(), face_fill) {
+                let color = match (pointer.own_color(), face_fill) {
                     (Some(own), _) => Some(own),
                     (None, Some(fill)) if crate::kit::theme::text_contrast(themed, fill) < 3.0 => {
                         Some(crate::kit::theme::text_on(fill))
                     }
                     _ => None,
                 };
-                if let Some(colour) = colour {
+                if let Some(color) = color {
                     let line = Draw::Line {
                         from: from.clone(),
                         to: to.clone(),
-                        color: colour.to_srgba_unmultiplied(),
+                        color: color.to_srgba_unmultiplied(),
                         width: *width,
                     };
                     paint_scaled(
@@ -2151,7 +2162,7 @@ fn paint_control(
                     let body_ink = crate::kit::element::KNOB_BODY
                         .response_if(response)
                         .enter()
-                        .computed_color_or(colours().control_background);
+                        .computed_color_or(colors().control_background);
                     crate::kit::skin::paint_as(&scope, painter, rect, "knob.body", state, body_ink)
                 });
                 if replaced {
@@ -2180,11 +2191,11 @@ fn paint_control(
                 // A canvas may fill an on button with the accent, so it reads at a glance and the
                 // SDK's dark label for an on button stays legible on it.
                 let fill = scope.background_or(if on && accent_on {
-                    colours().accent
+                    colors().accent
                 } else if on {
-                    colours().control_active
+                    colors().control_active
                 } else {
-                    colours().control_background
+                    colors().control_background
                 });
                 let radius = scope.radius_or(*radius * scale.x.min(scale.y));
                 if crate::kit::skin::no_artwork(&scope) {
@@ -2235,7 +2246,7 @@ fn paint_control(
 }
 
 /// The sampler's mode buttons: a drawn glyph over the caption, both in the accent on a lighter
-/// face for the chosen mode, in the dimmer text colour for the others.
+/// face for the chosen mode, in the dimmer text color for the others.
 fn paint_sample_mode(
     painter: &egui::Painter,
     el: &crate::kit::element::Entered,
@@ -2364,12 +2375,12 @@ pub(crate) fn show(
     // a group (#672) is named by its last step.
     let device = at.0.last().copied().unwrap_or(0);
     // What its drawings take from the theme, read once in the panel's scope.
-    let _colours = Colours::enter();
+    let _colors = Colors::enter();
     let loaded = images(ui.ctx(), canvas);
     let tokens = Tokens::resolve(&panel);
     let painter = ui.painter_at(rect.intersect(ui.clip_rect()));
     let background = if canvas.background == DeviceUi::default().background {
-        crate::kit::style_class::surface_or(colours().panel_background)
+        crate::kit::style_class::surface_or(colors().panel_background)
     } else {
         tokens.color(canvas.background)
     };
@@ -2477,6 +2488,17 @@ pub(crate) fn show(
         if matches!(control.widget, Some(Widget::EqCurve)) {
             // `eq-curve` is no element of the registry, so it is drawn in the control's scope.
             super::eq_curve::show(ui, bounds, parameters, track, at, actions);
+            continue;
+        }
+        // The CompressorDisplay is host-drawn as well: only the built-in Compressor's own
+        // parameter set may claim it. Its ground, reduction and level colors are theme tokens.
+        if matches!(control.widget, Some(Widget::CompressorDisplay)) {
+            let palette = super::compressor_display::Palette {
+                display: tokens.color([3, 0, 1, 255]),
+                reduction: tokens.color([3, 0, 2, 255]),
+                level: tokens.color([3, 0, 3, 255]),
+            };
+            super::compressor_display::show(ui, bounds, parameters, palette, track, at, actions);
             continue;
         }
         if let Some(Widget::Handle { color: line_color, span, offset, dot, relative, hollow }) = &control.widget {
@@ -2866,12 +2888,8 @@ pub(crate) fn show(
                     popup = popup.open_memory(Some(egui::SetOpenCommand::Toggle));
                 }
                 let mut picked = None;
-                // The standard popup frame, as every other dropdown's; `popup` styles its rows and
-                // `button[checked]` the chosen one (#1239).
+                // The kit's compact menu rows (`kit::menu`), styled as every menu's are.
                 popup.show(|ui| {
-                    let popup = crate::kit::element::POPUP.enter();
-                    let mut styled_ui = popup.ui(ui);
-                    let ui = &mut *styled_ui;
                     ui.spacing_mut().item_spacing.y = 0.;
                     ui.spacing_mut().scroll =
                         egui::style::ScrollStyle { bar_width: 6., ..egui::style::ScrollStyle::solid() };
@@ -2886,18 +2904,18 @@ pub(crate) fn show(
                         .map(|(_, label)| {
                             ui.fonts_mut(|fonts| {
                                 fonts
-                                    .layout_no_wrap((*label).into(), egui::FontId::proportional(11.), Color32::WHITE)
+                                    .layout_no_wrap(
+                                        (*label).into(),
+                                        crate::kit::theme::ui_font(crate::kit::theme::TEXT_SMALL),
+                                        Color32::WHITE,
+                                    )
                                     .size()
                                     .x
                             })
                         })
                         .fold(0., f32::max);
                     let scroll = &ui.spacing().scroll;
-                    let width = text_width
-                        + ui.spacing().button_padding.x * 2.
-                        + scroll.bar_width
-                        + scroll.bar_inner_margin
-                        + scroll.bar_outer_margin;
+                    let width = text_width + 16. + scroll.bar_width + scroll.bar_inner_margin + scroll.bar_outer_margin;
                     ui.set_min_width(
                         width.ceil() + if matches!(control.widget, Some(Widget::WaveformMenu)) { 48. } else { 0. },
                     );
@@ -2905,12 +2923,12 @@ pub(crate) fn show(
                     egui::ScrollArea::vertical().max_height(240.).show(ui, |ui| {
                         for (value, label) in choices {
                             let selected = p.value.round() == value;
-                            let text = egui::RichText::new(label).size(11.);
+                            let row = menu::Entry::new(label).chosen(selected).compact();
                             let clicked = if matches!(control.widget, Some(Widget::WaveformMenu)) {
-                                let response = ui.add_sized(
-                                    Vec2::new(ui.available_width(), 18.),
-                                    egui::Button::selectable(selected, text).right_text(()),
-                                );
+                                // Taller, for the wave drawn after its name.
+                                ui.spacing_mut().interact_size.y = 18.;
+                                let response = row.show(ui);
+                                ui.spacing_mut().interact_size.y = 14.;
                                 let icon = Rect::from_min_size(
                                     response.rect.left_top() + Vec2::new(text_width + 12., 3.),
                                     Vec2::new(36., 10.),
@@ -2929,12 +2947,12 @@ pub(crate) fn show(
                                     points,
                                     Stroke::new(
                                         1.,
-                                        if selected { ui.visuals().selection.stroke.color } else { colours().accent },
+                                        if selected { menu::chosen_ink(&response) } else { colors().accent },
                                     ),
                                 ));
                                 response.clicked()
                             } else {
-                                ui.selectable_label(selected, text).clicked()
+                                row.show(ui).clicked()
                             };
                             if clicked {
                                 picked = Some(value);

@@ -1765,16 +1765,16 @@ fn a_marker_is_dragged_by_the_place_under_the_pointer() {
     assert!(offsets.last().is_some_and(|o| (o - o.round()).abs() < 1e-9 && *o > 1.0), "whole beats: {offsets:?}");
 }
 
-/// A slot's clip shows its colour, but no palette: `clip.setColor` names arrangement clips.
+/// A slot's clip opens the palette, as an arrangement clip's does: `clip.setColor` takes either.
 #[test]
-fn a_slots_clip_has_no_colour_palette() {
+fn a_slots_clip_has_the_color_palette() {
     use egui_kittest::kittest::Queryable;
     let (Detail::Clip(mut info, chain), _) = audio_detail(AudioPanel::default(), 0.0, 0.0) else {
         panic!("expected the clip")
     };
     info.at = Some(ClipRef::Slot(TrackId(1), 0));
     let harness = panel_harness(Detail::Clip(info, chain));
-    assert!(harness.query_by_label("Clip colour").is_none());
+    assert!(harness.query_by_label("Clip color").is_some(), "a slot's clip opens the palette too");
 }
 
 /// Semitones at the top and cents added stay in the transpose's range.
@@ -2214,11 +2214,11 @@ fn the_slot_after_a_chains_last_device_never_covers_it() {
             shapes = output.shapes;
         }
         crate::kit::skin::configure(&crate::kit::skin::Skin::default());
-        let fills = |colour: egui::Color32| -> Vec<Rect> {
+        let fills = |color: egui::Color32| -> Vec<Rect> {
             shapes
                 .iter()
                 .filter_map(|s| match &s.shape {
-                    egui::Shape::Rect(r) if r.fill == colour => Some(r.rect),
+                    egui::Shape::Rect(r) if r.fill == color => Some(r.rect),
                     _ => None,
                 })
                 .collect()
@@ -2338,7 +2338,7 @@ fn sidechain_to_searches_the_keyed_devices() {
             let menu = TrackMenu {
                 track: TrackId(1),
                 name: "Kick",
-                colour: suhina_engine::model::Rgb(200, 100, 50),
+                color: suhina_engine::model::Rgb(200, 100, 50),
                 is_group: false,
                 is_return: false,
                 selection: &[],
@@ -2349,12 +2349,15 @@ fn sidechain_to_searches_the_keyed_devices() {
                 tracks_copied: false,
                 key_readers: &readers,
             };
-            track_menu(ui, &menu, actions);
+            // Inside a right-click menu, as the views open it.
+            ui.button("Kick").context_menu(|ui| track_menu(ui, &menu, actions));
         },
         Vec::new(),
     );
     harness.run();
-    harness.get_by_label("Sidechain to").click();
+    harness.get_by_label("Kick").click_secondary();
+    harness.run();
+    harness.get_by_label("Sidechain to").hover();
     harness.run();
     harness.run();
     assert!(harness.query_by_label("Pad 3 › Compressor").is_some(), "every device is listed");

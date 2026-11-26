@@ -7,7 +7,8 @@
 
 use super::*;
 
-/// The window with a MIDI clip open in the piano roll, under the user sheet `css`.
+/// The window with a MIDI clip open in the piano roll (a double-click on its slot), under the user
+/// sheet `css`.
 fn with_clip(css: &str) -> Harness<'static, App> {
     let mut app = App::new();
     app.set_session(Session::new(demo_project()), &[]);
@@ -16,8 +17,7 @@ fn with_clip(css: &str) -> Harness<'static, App> {
     let mut h = window(app);
     h.get_by_label("Launcher view").click();
     h.run();
-    h.get_by_label("Select Beat B on Drums (scene 3)").click();
-    h.run();
+    open_clip(&mut h, "Select Beat B on Drums (scene 3)");
     h
 }
 
@@ -207,7 +207,7 @@ fn a_menu_item_s_menu_lies_in_its_content_box() {
 }
 
 /// Where the painted text inside the node labelled like `label` starts, from the node's left edge,
-/// under `css`; and the rectangles painted in `colour`.
+/// under `css`; and the rectangles painted in `color`.
 fn text_offset(css: &str, label: &str, word: &str) -> Option<f32> {
     let h = with_clip(css);
     let node = h.query_all_by_label_contains(label).next().map(|node| node.rect())?;
@@ -221,7 +221,7 @@ fn text_offset(css: &str, label: &str, word: &str) -> Option<f32> {
     found
 }
 
-/// Whether a filled rectangle of `colour` is painted under `css`, at a window `width` wide.
+/// Whether a filled rectangle of `color` is painted under `css`, at a window `width` wide.
 fn paints_red(css: &str, width: f32, label: &str) -> (bool, bool) {
     let mut h = with_clip(css);
     h.set_size(egui::vec2(width, 900.0));

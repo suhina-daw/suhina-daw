@@ -48,7 +48,7 @@ the next reader does not think the two contradict each other.
      fast route for something reached often; the **status prefix** is what tells a user whether there is any reason
      to reach for either.
    - **The status bar is always drawn**, so an indicator that needs action is visible while playing without being
-     moved to a different bar. Its severity is carried by **colour and weight**, which the bar already does:
+     moved to a different bar. Its severity is carried by **color and weight**, which the bar already does:
      [`docs/design/components.md`](https://github.com/suhina-daw/suhina-daw/blob/main/docs/design/components.md) records errors drawn in the recording red.
    - **A fixed prefix means a fixed budget.** The prefix is capped (the issue records the number and the measurement);
      beyond it, the least important indicator collapses into a count that opens Project Info. **The message keeps the
@@ -130,7 +130,7 @@ the next reader does not think the two contradict each other.
 
 - **Where the code goes** (`docs/architecture.md` › Where new code goes): `ui`, drawn from the project and from
   monitors, dispatching commands — the same shape as the existing control bar, which already draws the tempo, the
-  transport and the CPU load. Measurements and colours come from `theme`, `docs/design/brief.md` and
+  transport and the CPU load. Measurements and colors come from `theme`, `docs/design/brief.md` and
   `docs/design/components.md`, never from a value written in a view.
 - **A design constraint worth repeating here because it is the easiest one to break:** the control bar is for
   **controls** — including the control that changes what you are looking at. **How full another product's bar is, is

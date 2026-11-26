@@ -139,7 +139,7 @@ pub fn rows(clip: &PianoClip, fold: Fold) -> KeyRows {
 }
 
 /// The plain rows' own fills, read once for a frame: the `background-color` of `piano-row` (the
-/// lighter row) and of `piano-row-black` (the darker one, the colour a scale's rows are tinted
+/// lighter row) and of `piano-row-black` (the darker one, the color a scale's rows are tinted
 /// from).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RowBase {
@@ -177,18 +177,18 @@ pub(crate) fn row_fill(
     }
 }
 
-/// How much of the clip's colour a row in the clip's scale takes, and its root's row.
+/// How much of the clip's color a row in the clip's scale takes, and its root's row.
 const SCALE_TINT: f32 = 0.08;
 const ROOT_TINT: f32 = 0.14;
 
 /// The lighter plain row. Under an authored surface it paints nothing: the region already painted
-/// that surface, and painting it again would stack its alpha; else it is the panel colour.
+/// that surface, and painting it again would stack its alpha; else it is the panel color.
 fn light_row(base: RowBase) -> egui::Color32 {
     if crate::kit::style_class::has_surface() { egui::Color32::TRANSPARENT } else { base.light }
 }
 
-/// The darker plain row: the window colour; under an authored surface, that surface pulled toward
-/// the window colour (black, then white, where that leaves it as it is), painted over it so it reads
+/// The darker plain row: the window color; under an authored surface, that surface pulled toward
+/// the window color (black, then white, where that leaves it as it is), painted over it so it reads
 /// darker than the light row, which paints nothing.
 fn dark_row(base: RowBase) -> egui::Color32 {
     if !crate::kit::style_class::has_surface() {
@@ -288,14 +288,14 @@ mod tests {
     }
 
     #[test]
-    fn row_colours_follow_the_scale() {
+    fn row_colors_follow_the_scale() {
         let c = Some(scale(0, ScaleMode::Major));
         let red = egui::Color32::from_rgb(220, 40, 40);
         let dark = theme::studio("window-background");
         let base = RowBase { light: theme::studio("panel-background"), dark };
         let (root, inside) = (row_fill(c, 60, false, red, base), row_fill(c, 62, false, red, base));
-        assert_eq!(root, dark.lerp_to_gamma(red, ROOT_TINT), "the root, the clip's colour a little more");
-        assert_eq!(inside, dark.lerp_to_gamma(red, SCALE_TINT), "in the scale, a little of the clip's colour");
+        assert_eq!(root, dark.lerp_to_gamma(red, ROOT_TINT), "the root, the clip's color a little more");
+        assert_eq!(inside, dark.lerp_to_gamma(red, SCALE_TINT), "in the scale, a little of the clip's color");
         assert_ne!(root, inside, "the root stands out");
         assert_eq!(row_fill(c, 61, true, red, base), dark, "outside it");
         assert_eq!(row_fill(c, 61, false, red, base), dark, "white or black alike");

@@ -155,7 +155,7 @@ pub(super) fn header() -> DeviceUi {
     let mut ui = DeviceUi {
         // The header row's whole height, so the Input menu and the buttons are not cut.
         size: [HEADER_WIDTH, 20.],
-        // Clear, so the header row stays one colour behind its controls.
+        // Clear, so the header row stays one color behind its controls.
         background: [0, 0, 0, 0],
         hidden_parameters: PARAMS.iter().map(|p| p.id.to_string()).collect(),
         ..DeviceUi::default()

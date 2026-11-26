@@ -173,7 +173,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                             gradient.stops = stops;
                             Ok(())
                         } else {
-                            Err("gradient stops are 2..8 of `#colour position%`")
+                            Err("gradient stops are 2..8 of `#color position%`")
                         }
                     };
                     if result.is_ok() {
@@ -188,9 +188,9 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                     }
                     None => Err("artwork fps must be 1..30"),
                 },
-                // A track colour an earlier version kept in the theme: tracks keep their own now,
+                // A track color an earlier version kept in the theme: tracks keep their own now,
                 // so it is left behind without a word, and the theme still converts.
-                ":root" if super::theme::is_former_track_colour(property.trim_start_matches("--")) => Ok(()),
+                ":root" if super::theme::is_former_track_color(property.trim_start_matches("--")) => Ok(()),
                 ":root" if property.starts_with("--") => {
                     let variable = property.trim_start_matches("--");
                     match (super::theme::is_color_variable(variable), super::theme::parse_rgba(value)) {
@@ -198,7 +198,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
                             theme.read_color(variable, rgba);
                             Ok(())
                         }
-                        _ => Err("unknown colour token or invalid hex colour"),
+                        _ => Err("unknown color token or invalid hex color"),
                     }
                 }
                 "window" if matches!(property, "background-image" | "background-opacity" | "background-blur") => {
@@ -342,7 +342,7 @@ pub fn apply(theme: &mut Theme, css: &str) -> Vec<String> {
 /// Canonical CSS is generated from the same model the theme editor changes.
 pub fn export(theme: &Theme) -> String {
     let mut css = String::from("/* Suhina native theme CSS. See README.md for supported properties. */\n");
-    // Only the colours the theme sets: a theme that sets none writes no colour block.
+    // Only the colors the theme sets: a theme that sets none writes no color block.
     if !theme.colors.is_empty() {
         css.push_str(":root {\n");
         for (variable, color) in &theme.colors {
@@ -410,12 +410,12 @@ pub fn export(theme: &Theme) -> String {
 }
 
 /// A theme's own style sheet (`theme.css`) written from the model, for a theme that has none
-/// yet (one migrated from an earlier version, or a copy of Suhina Studio): its colours in a `:root`
+/// yet (one migrated from an earlier version, or a copy of Suhina Studio): its colors in a `:root`
 /// rule and its settings in rules of their elements, its artwork, then `advanced`, the free-form CSS it carried. Its name is in
 /// `theme.json`.
 pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
     let mut css = String::from(
-        "/* Suhina theme. Colours are custom properties, settings properties of their elements; see README.md. */\n",
+        "/* Suhina theme. Colors are custom properties, settings properties of their elements; see README.md. */\n",
     );
     let mut root = String::new();
     let defaults = super::theme_vars::core_values(&Theme::default());
@@ -427,13 +427,13 @@ pub fn sheet(theme: &Theme, advanced: Option<&str>) -> String {
             }
             continue;
         }
-        // A colour the theme sets is written, and no other: a theme that sets none has no colours.
+        // A color the theme sets is written, and no other: a theme that sets none has no colors.
         let palette = name.strip_prefix("--").is_some_and(|variable| theme.colors.contains_key(variable));
         if palette || defaults.get(&name) != Some(&value) {
             root.push_str(&format!("  {name}: {value};\n"));
         }
     }
-    // A theme that sets no colour has no colour block.
+    // A theme that sets no color has no color block.
     if !root.is_empty() {
         css.push_str(&format!(":root {{\n{root}}}\n"));
     }

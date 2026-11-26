@@ -3,7 +3,7 @@ description: The one copy of how work is done on Suhina - issues and their types
 read_when: opening an issue, claiming, /claim, opening a pull request, branch name, issue type, labels, overlapping work, Depends on, post as the bot, agent_post, how to check it, settings help, which documents to update, generated files, front matter, last_verified, merging
 type: howto
 status: current
-last_verified: 2026-11-18
+last_verified: 2026-11-23
 covers:
   - scripts/agent_post.py
   - scripts/branch_name.py
@@ -379,7 +379,11 @@ after every merge by [`docs-generated.yml`](../.github/workflows/docs-generated.
 request that edits one of them fails CI rather than losing the edit silently. The same workflow
 writes one more thing a pull request leaves alone: `last_verified` in a document's front matter,
 which `python scripts/docs.py stamp` moves up to the day of the document's last change on `next`
-after the merge.
+after the merge. It also records the theme drawings, `apps/theme-render/tests/painted/` and
+`cut/`: a pull request that changes how a built-in theme looks gets the scenes flagged in CI's job
+summary for the reviewer, never records them itself (`SUHINA_BLESS=1`), and fails CI if it edits
+them, since nearly every change to the views moves them and two pull requests that recorded them
+conflicted.
 
 ```sh
 python scripts/docs.py impact   # documents that cover code you changed but you have not updated

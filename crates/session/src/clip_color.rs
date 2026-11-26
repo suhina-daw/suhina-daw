@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Clips' colours and names as a track's: a clip with no colour of its own shows its track's
+//! Clips' colors and names as a track's: a clip with no color of its own shows its track's
 //! (a new clip takes it that way); `clip.setColor` gives clips one, or with `"none"` hands them
 //! back to the track's (the track menu's *Assign track color to all clips*); `track.renameClips`
 //! names every clip of a track after the track.
@@ -28,23 +28,21 @@ pub(crate) fn parse_color(params: &Value, key: &str) -> Result<Option<Rgb>, Comm
     }
 }
 
-/// `clip.setColor {track, color, index?}`: one arrangement clip's colour (by index), or every
-/// clip of the track, its arrangement clips and its slots' clips, when no index is given.
-/// `"none"` makes them show the track's colour again.
+/// `clip.setColor {clip | track, color, index?}`: one clip's color, named by id (an arrangement
+/// clip or a slot's), or by its arrangement index; or every clip of the track, its arrangement
+/// clips and its slots' clips, when neither is given. `"none"` makes them show the track's
+/// color again.
 pub(crate) fn set_clip_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let color = parse_color(params, "color")?;
-    let (track, index) = match crate::commands::named_arrangement_clip(&session.project, params)? {
-        Some((track, _, index)) => (track, Some(index)),
-        None => (
-            track_id(&session.project, params)?,
-            match Args::new(params).value("index") {
-                None => None,
-                Some(v) => Some(
-                    v.as_u64()
-                        .and_then(|n| usize::try_from(n).ok())
-                        .ok_or("index must be a clip index from project.clips")?,
-                ),
-            },
+    if let Some(named) = crate::commands::named_clip(&session.project, params)? {
+        crate::notes::clip_mut(&mut session.project, named.at).ok_or("the clip is missing")?.color = color;
+        return Ok(json!({ "clips": 1, "color": Args::new(params).value("color") }));
+    }
+    let track = track_id(&session.project, params)?;
+    let index = match Args::new(params).value("index") {
+        None => None,
+        Some(v) => Some(
+            v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or("index must be a clip index from project.clips")?,
         ),
     };
     let p = &mut session.project;

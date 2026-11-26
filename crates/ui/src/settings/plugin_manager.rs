@@ -8,7 +8,7 @@
 //! right shows the row picked last. A plug-in is switched on or off by its checkbox; a file that
 //! failed, or that is built for another processor, is read again with its **Scan again**. Opened
 //! from Settings › Plug-ins and drawn in the Settings dialog's place until it is closed; what it
-//! changes goes through the `plugin.*` commands, as [`PluginRequest`]s the app runs. Every colour
+//! changes goes through the `plugin.*` commands, as [`PluginRequest`]s the app runs. Every color
 //! comes from the theme.
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Ui, Vec2};
@@ -17,7 +17,7 @@ use crate::kit::theme::{self, PAD};
 use crate::kit::{motion, widgets};
 use crate::settings::settings_view::{PluginRequest, PluginsView};
 
-/// The manager's colours, every one from the style sheet: words by how much they stand out
+/// The manager's colors, every one from the style sheet: words by how much they stand out
 /// (`label` and its kinds), the fills the app paints for itself (`app-fill`), a row's when picked
 /// or under the pointer (`list-row`) and the lines between rows (`separator[kind="row"]`, a
 /// `button`'s `border-color`). Read once a frame where the manager is painted, so its region's
@@ -73,7 +73,7 @@ thread_local! {
     static INKS: std::cell::Cell<Option<Inks>> = const { std::cell::Cell::new(None) };
 }
 
-/// The manager's colours this frame.
+/// The manager's colors this frame.
 fn ink() -> Inks {
     INKS.with(|cell| {
         cell.get().unwrap_or_else(|| {
@@ -329,7 +329,7 @@ impl State {
         }
     }
 
-    /// The mark's and the word's colour, from the theme.
+    /// The mark's and the word's color, from the theme.
     fn inks(self) -> (Color32, Color32) {
         match self {
             State::Ready => (ink().ok, ink().secondary),
@@ -774,7 +774,7 @@ pub fn show(ui: &mut Ui, area: Rect, plugins: &mut PluginsView) -> ManagerOut {
     let painter = ui.painter_at(area);
     // What the page holds goes in its content box, inside its border and padding (#1336).
     let area = page.paint(&painter, area).content;
-    // The colours, read once a frame inside the manager's element.
+    // The colors, read once a frame inside the manager's element.
     INKS.with(|cell| cell.set(Some(Inks::read())));
     let parts = parts(area);
     let line = theme::hairline(ink().line);
@@ -936,17 +936,25 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
     let vendor_row = row(&mut y, 24.0);
     let shown = state.vendor.clone().unwrap_or_else(|| "All vendors".into());
     let combo = ui.scope_builder(egui::UiBuilder::new().max_rect(vendor_row), |ui| {
-        egui::ComboBox::from_id_salt("plugin-manager-vendor")
-            .selected_text(shown)
-            .width(vendor_row.width())
-            .height(320.0)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut state.vendor, None, "All vendors");
-                for name in names {
-                    let value = Some(name.clone());
-                    ui.selectable_value(&mut state.vendor, value, name);
+        crate::kit::widgets::combo_box(
+            ui,
+            egui::ComboBox::from_id_salt("plugin-manager-vendor")
+                .selected_text(shown)
+                .width(vendor_row.width())
+                .height(320.0),
+            |ui| {
+                if crate::kit::menu::item(ui, "All vendors", state.vendor.is_none()).clicked() {
+                    state.vendor = None;
+                    ui.close();
                 }
-            })
+                for name in names {
+                    if crate::kit::menu::item(ui, &name, state.vendor.as_deref() == Some(name.as_str())).clicked() {
+                        state.vendor = Some(name);
+                        ui.close();
+                    }
+                }
+            },
+        )
     });
     let vendor_label = format!("Vendor: {}", state.vendor.as_deref().unwrap_or("All vendors"));
     combo.inner.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &vendor_label));
@@ -1252,14 +1260,14 @@ pub fn hideable_headings() -> impl Iterator<Item = &'static str> {
 fn columns_menu(ui: &mut Ui, state: &mut ManagerState, out: &mut ManagerOut) {
     for index in HIDEABLE {
         let name = COLUMNS[index];
-        let mut on = state.shows(index);
-        if ui.checkbox(&mut on, name).changed() {
-            state.set_shown(index, on);
+        let on = state.shows(index);
+        if crate::kit::menu::toggle(ui, name, on).clicked() {
+            state.set_shown(index, !on);
             out.hidden = Some(state.hidden.clone());
         }
     }
-    ui.separator();
-    if ui.button("Show every column").clicked() {
+    crate::kit::menu::separator(ui);
+    if crate::kit::menu::entry(ui, "Show every column", None, true).clicked() {
         state.hidden.clear();
         out.hidden = Some(Vec::new());
         ui.close();
@@ -1426,12 +1434,12 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
                     continue;
                 }
                 let what = if specs.len() > 1 { format!("{} plug-ins", specs.len()) } else { "the plug-in".into() };
-                if ui.add_enabled(!scanning, egui::Button::new(format!("{verb} {what}"))).clicked() {
+                if crate::kit::menu::entry(ui, &format!("{verb} {what}"), None, !scanning).clicked() {
                     asked.toggled_many = Some((specs, enabled));
                     ui.close();
                 }
             }
-            ui.separator();
+            crate::kit::menu::separator(ui);
             // Marked as owned: only the mark that changes something, as for the switch.
             let (owned, others) = split_by_owned(&these, plugins);
             for (specs, mark, verb) in [(others, true, "Mark"), (owned, false, "Unmark")] {
@@ -1440,7 +1448,7 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
                 }
                 let what = if specs.len() > 1 { format!("{} plug-ins", specs.len()) } else { "the plug-in".into() };
                 let text = format!("{verb} {what} as owned");
-                if ui.add_enabled(!scanning, egui::Button::new(text)).clicked() {
+                if crate::kit::menu::entry(ui, &text, None, !scanning).clicked() {
                     asked.owned_many = Some((specs, mark));
                     ui.close();
                 }
@@ -1453,7 +1461,7 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
                 if !rest.is_empty() {
                     let text = format!("Turn off the rest of {vendor} ({})", rest.len());
                     let tip = "Every one of this vendor's plug-ins that is not marked as owned is switched off";
-                    if ui.add_enabled(!scanning, egui::Button::new(text)).on_hover_text(tip).clicked() {
+                    if crate::kit::menu::entry(ui, &text, None, !scanning).on_hover_text(tip).clicked() {
                         asked.toggled_many = Some((rest, false));
                         ui.close();
                     }
@@ -1462,13 +1470,13 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
         } else {
             let files: Vec<String> = these.iter().filter_map(|k| k.strip_prefix("file:")).map(str::to_string).collect();
             let what = if files.len() > 1 { format!("Scan {} files again", files.len()) } else { "Scan again".into() };
-            if ui.add_enabled(!scanning, egui::Button::new(what)).clicked() {
+            if crate::kit::menu::entry(ui, &what, None, !scanning).clicked() {
                 asked.again = Some(files);
                 ui.close();
             }
         }
-        ui.separator();
-        if ui.button(show_in_folder_label()).clicked() {
+        crate::kit::menu::separator(ui);
+        if crate::kit::menu::entry(ui, show_in_folder_label(), None, true).clicked() {
             asked.show = Some(line.file.clone());
             ui.close();
         }
@@ -1562,19 +1570,23 @@ fn hosting_menu(ui: &mut Ui, keys: &[String], plugins: &PluginsView, scanning: b
     if specs.is_empty() {
         return;
     }
-    ui.menu_button("Process", |ui| {
+    crate::kit::menu::submenu(ui, "Process", false, |ui| {
         for (hosting, on, allowed) in choices {
             let allowed = allowed && !scanning;
-            let response = ui
-                .add_enabled(allowed, egui::Button::selectable(on, hosting_label(hosting)))
+            let response = crate::kit::menu::Entry::new(hosting_label(hosting))
+                .chosen(on)
+                .enabled(allowed)
+                .show(ui)
                 .on_hover_text("From the plug-in's next start: open the project again");
-            if response.clicked() && !on {
-                asked.hosting = Some((specs.clone(), hosting.to_string()));
+            if response.clicked() {
+                if !on {
+                    asked.hosting = Some((specs.clone(), hosting.to_string()));
+                }
                 ui.close();
             }
         }
     });
-    ui.separator();
+    crate::kit::menu::separator(ui);
 }
 
 fn switch(

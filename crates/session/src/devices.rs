@@ -614,6 +614,7 @@ fn device_json(path: &[usize], device: &Device) -> Value {
             "tap": input.source.tap().name(),
             "gain": gain_db(input.gain),
             "port": input.port,
+            "enabled": input.enabled,
         });
     }
     if !device.automation.is_empty() {
@@ -698,7 +699,7 @@ pub(crate) fn set_key(session: &mut Session, params: &Value) -> Result<Value, Co
     if path.len() > 1 {
         return Err(format!("{} is inside a device group, where a sidechain is not read yet", device.name).into());
     }
-    device.inputs = vec![suhina_model::DeviceInput { port: port.clone(), source: point, gain }];
+    device.inputs = vec![suhina_model::DeviceInput { port: port.clone(), source: point, gain, enabled: true }];
     Ok(json!({
         "device": path_value(&path),
         "key": { "track": source_track.0, "channel": source.0, "tap": tap.name(), "gain": db, "port": port },
@@ -713,6 +714,19 @@ pub(crate) fn clear_key(session: &mut Session, params: &Value) -> Result<Value, 
     let had = !device.inputs.is_empty();
     device.inputs.clear();
     Ok(json!({ "device": path_value(&path), "cleared": had }))
+}
+
+/// `device.setKeyEnabled`: switches a device's key (sidechain) on or off, keeping its source, tap
+/// and gain. Off, the device hears its own input again.
+pub(crate) fn set_key_enabled(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let enabled = Args::new(params).bool("enabled")?;
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
+    let input = device.inputs.first_mut().ok_or_else(|| format!("{} reads no key", device.name))?;
+    let changed = input.enabled != enabled;
+    input.enabled = enabled;
+    Ok(json!({ "device": path_value(&path), "enabled": enabled, "changed": changed }))
 }
 
 pub(crate) fn is_plugin(kind: &DeviceKind) -> bool {

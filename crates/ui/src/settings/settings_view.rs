@@ -35,9 +35,9 @@ const CONTROL_COLUMN: f32 = 240.0;
 /// tooltip.
 const LINE_ROW: f32 = 24.0;
 const SEGMENT: f32 = 15.0;
-/// The width of a colour row's picker button.
-const COLOUR_SWATCH_WIDTH: f32 = 40.0;
-/// The width of a colour row's **Theme** button.
+/// The width of a color row's picker button.
+const COLOR_SWATCH_WIDTH: f32 = 40.0;
+/// The width of a color row's **Theme** button.
 const THEME_BUTTON_WIDTH: f32 = 52.0;
 /// The Browse… button at the end of a path field.
 const BROWSE_WIDTH: f32 = 60.0;
@@ -203,14 +203,14 @@ pub enum PluginRequest {
 pub struct ThemesView {
     /// Each theme's id, name and whether it comes with Suhina: the user's own first.
     pub list: Vec<(String, String, bool)>,
-    /// Each theme's and variant's swatch colour, by id (`theme_vars::swatch`).
+    /// Each theme's and variant's swatch color, by id (`theme_vars::swatch`).
     pub swatches: Vec<(String, egui::Color32)>,
     /// Each theme's and variant's thumbnail with its values substituted, by id; a theme without
-    /// one shows a card filled with its swatch colour.
+    /// one shows a card filled with its swatch color.
     pub pictures: Vec<(String, std::sync::Arc<str>)>,
     /// Each theme's `theme.json`: name, author, description and default variant's name, by id.
     pub info: Vec<(String, ThemeInfo)>,
-    /// The id of the theme in use, whether it comes with Suhina, its name and its colours.
+    /// The id of the theme in use, whether it comes with Suhina, its name and its colors.
     pub current: String,
     pub built_in: bool,
     pub name: String,
@@ -413,8 +413,8 @@ pub struct PageState {
     pub skin_editor: super::skin_editor::State,
     /// What the theme list is filtered by: part of a theme's or a variant's name, or its id.
     pub theme_search: String,
-    /// A colour picker is open while its primary pointer button is held.
-    pub theme_colour_held: bool,
+    /// A color picker is open while its primary pointer button is held.
+    pub theme_color_held: bool,
     /// The audio devices were listed since the Audio page was opened.
     pub audio_listed: Option<bool>,
     /// A driver picked in the form, applied only once its device is chosen.
@@ -462,7 +462,7 @@ pub struct Outcome {
     pub plugins: Option<PluginRequest>,
     pub themes: Option<ThemeRequest>,
     pub keymap_changed: bool,
-    /// The most colour tags the browser may have, as chosen.
+    /// The most color tags the browser may have, as chosen.
     pub tag_limit: Option<usize>,
     /// The audio output was chosen anew: the app runs `audio.setOutput` with it, or
     /// `output.setCuePair` or `output.setCueVolume` when only the cue changed.
@@ -485,7 +485,7 @@ pub struct Sources<'a> {
     pub plugins: &'a mut PluginsView,
     pub themes: &'a ThemesView,
     pub keymap: &'a mut Keymap,
-    /// The most colour tags the browser may have now.
+    /// The most color tags the browser may have now.
     pub tag_limit: usize,
 }
 
@@ -711,8 +711,8 @@ impl Cx<'_> {
         }
     }
 
-    /// A percentage applied live to its colour surface.
-    pub fn colour_strength(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut u8) {
+    /// A percentage applied live to its color surface.
+    pub fn color_strength(&mut self, row: Rect, field: impl FnOnce(&mut Settings) -> &mut u8) {
         let value = field(self.settings);
         let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
         let response = self.ui.put(rect, egui::Slider::new(value, 0..=100).suffix(" %"));
@@ -749,47 +749,47 @@ impl Cx<'_> {
     }
 
     /// The custom waveform and note ink, with the picker's RGB/hex controls.
-    pub fn waveform_colour(&mut self, row: Rect) {
-        self.colour_well(row, false, |s| &mut s.view.waveform.custom);
+    pub fn waveform_color(&mut self, row: Rect) {
+        self.color_well(row, false, |s| &mut s.view.waveform.custom);
     }
 
-    /// A colour the setting `field` holds: the picker's button with its RGB/hex controls, an
-    /// opacity slider too when `see_through`, and the colour's hex beside it (`#RRGGBBAA` while it
+    /// A color the setting `field` holds: the picker's button with its RGB/hex controls, an
+    /// opacity slider too when `see_through`, and the color's hex beside it (`#RRGGBBAA` while it
     /// is see-through).
-    pub fn colour_well(
+    pub fn color_well(
         &mut self,
         row: Rect,
         see_through: bool,
         field: impl FnOnce(&mut Settings) -> &mut egui::Color32,
     ) {
         let value = field(self.settings);
-        let mut colour = *value;
-        let (held, _) = colour_picker(self.ui, self.painter, self.name, row, &mut colour, false, see_through);
+        let mut color = *value;
+        let (held, _) = color_picker(self.ui, self.painter, self.name, row, &mut color, false, see_through);
         self.outcome.adjusting |= held;
-        if colour != *value {
-            *value = colour;
+        if color != *value {
+            *value = color;
             self.outcome.changed = true;
         }
     }
 
-    /// A colour the theme gives, `themed`, which the setting `field` overrides once one is picked
-    /// (`Some`): the picker shows the colour in use, and **Theme** beside it, while one is picked,
+    /// A color the theme gives, `themed`, which the setting `field` overrides once one is picked
+    /// (`Some`): the picker shows the color in use, and **Theme** beside it, while one is picked,
     /// gives the theme's back.
-    pub fn themed_colour(
+    pub fn themed_color(
         &mut self,
         row: Rect,
         themed: egui::Color32,
         field: impl FnOnce(&mut Settings) -> &mut Option<egui::Color32>,
     ) {
         let value = field(self.settings);
-        let mut colour = value.unwrap_or(themed);
-        let (held, reset) = colour_picker(self.ui, self.painter, self.name, row, &mut colour, value.is_some(), false);
+        let mut color = value.unwrap_or(themed);
+        let (held, reset) = color_picker(self.ui, self.painter, self.name, row, &mut color, value.is_some(), false);
         self.outcome.adjusting |= held;
         if reset {
             *value = None;
             self.outcome.changed = true;
-        } else if colour != value.unwrap_or(themed) {
-            *value = Some(colour);
+        } else if color != value.unwrap_or(themed) {
+            *value = Some(color);
             self.outcome.changed = true;
         }
     }
@@ -946,7 +946,7 @@ impl Cx<'_> {
         shown.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{name}: {text}")));
     }
 
-    /// The most colour tags the browser may have, kept by the library rather than the settings.
+    /// The most color tags the browser may have, kept by the library rather than the settings.
     pub fn tag_limit(&mut self, row: Rect, options: &[(&str, usize)]) {
         let rect = options_rect(self.ui, row, options);
         if let Some(limit) = segmented(self.ui, self.painter, rect, self.name, options, self.tag_limit) {
@@ -1048,11 +1048,11 @@ impl Cards {
 }
 
 thread_local! {
-    /// The cards' colours while the picker is drawn.
+    /// The cards' colors while the picker is drawn.
     static CARDS: std::cell::Cell<Option<Cards>> = const { std::cell::Cell::new(None) };
 }
 
-/// Clears the cards' colours when the picker's drawing ends, however it ends.
+/// Clears the cards' colors when the picker's drawing ends, however it ends.
 struct CardsGuard;
 
 impl Drop for CardsGuard {
@@ -1456,7 +1456,7 @@ fn page_list(ui: &Ui, painter: &egui::Painter, rect: Rect, shown: Option<Page>) 
     picked
 }
 
-/// Appearance › Themes: the themes, the theme in use and its colours.
+/// Appearance › Themes: the themes, the theme in use and its colors.
 pub(crate) fn theme_block(cx: &mut Cx<'_>, y: &mut f32) {
     let (request, close) = theme_page(cx.ui, cx.page, y, cx.themes, cx.state);
     cx.outcome.themes = request;
@@ -1464,7 +1464,7 @@ pub(crate) fn theme_block(cx: &mut Cx<'_>, y: &mut f32) {
         cx.outcome.close = true;
         cx.state.audio_pending = None;
     }
-    cx.outcome.adjusting |= cx.state.theme_colour_held;
+    cx.outcome.adjusting |= cx.state.theme_color_held;
 }
 
 /// Shortcuts › Keys: every action's keys and the preset.
@@ -1531,7 +1531,7 @@ fn theme_page(
     themes: &ThemesView,
     state: &mut PageState,
 ) -> (Option<ThemeRequest>, bool) {
-    state.theme_colour_held = false;
+    state.theme_color_held = false;
     CARDS.set(Some(Cards::read()));
     let _cards = CardsGuard;
     let mut request = None;
@@ -1561,10 +1561,10 @@ const DEFAULT_REASON: &str = "The default variant is the theme's own values; it 
 
 /// A menu item or button that is grayed with `reason` on hover when it does not apply.
 fn item(ui: &mut Ui, label: &str, reason: Option<&str>) -> bool {
-    let response = ui.add_enabled(reason.is_none(), egui::Button::new(label));
+    let response = crate::kit::menu::entry(ui, label, None, reason.is_none());
     match reason {
         Some(reason) => {
-            response.on_disabled_hover_text(reason);
+            response.on_hover_text(reason);
             false
         }
         None => response.clicked(),
@@ -1610,12 +1610,13 @@ fn theme_gallery(ui: &mut Ui, page: Rect, themes: &ThemesView, state: &mut PageS
     let mut request = None;
     let current = crate::kit::theme_vars::split_id(&themes.current).0.to_owned();
     ui.horizontal(|ui| {
-        if ui.button("Edit current variant").clicked() {
+        if crate::kit::controls::button(ui, "Edit current variant").clicked() {
             state.theme_editor = true;
             state.scrolled = None;
         }
-        ui.menu_button("More", |ui| {
-            if ui.button("New theme…").clicked() {
+        let more = crate::kit::controls::button(ui, "More");
+        egui::Popup::menu(&more).show(|ui| {
+            if crate::kit::menu::entry(ui, "New theme…", None, true).clicked() {
                 state.theme_dialog = Some(new_theme(None));
                 ui.close();
             }
@@ -1625,23 +1626,16 @@ fn theme_gallery(ui: &mut Ui, page: Rect, themes: &ThemesView, state: &mut PageS
                 ("Open the themes folder", ThemeRequest::OpenFolder),
                 ("Back up themes", ThemeRequest::Backup),
             ] {
-                if ui.button(label).clicked() {
+                if crate::kit::menu::entry(ui, label, None, true).clicked() {
                     request = Some(action);
                     ui.close();
                 }
             }
-            ui.separator();
+            crate::kit::menu::separator(ui);
             let refused = delete_refused(themes, &themes.current);
-            let label = egui::RichText::new("Delete variant…").color(if refused.is_none() {
-                crate::kit::element::error_ink()
-            } else {
-                ink().hint
-            });
-            let response = ui.add_enabled(refused.is_none(), egui::Button::new(label));
-            response
-                .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, refused.is_none(), "Delete variant…"));
+            let response = crate::kit::menu::entry(ui, "Delete variant…", None, refused.is_none());
             if let Some(reason) = refused {
-                response.on_disabled_hover_text(reason);
+                response.on_hover_text(reason);
             } else if response.clicked() {
                 state.theme_dialog = Some(delete_variant(themes, &themes.current));
                 ui.close();
@@ -1653,7 +1647,7 @@ fn theme_gallery(ui: &mut Ui, page: Rect, themes: &ThemesView, state: &mut PageS
     let width = ((page.width() - gap) / 2.0).max(80.0);
     if let Some((_, name, built_in)) = themes.list.iter().find(|(id, _, _)| *id == current) {
         let (active, asked) = theme_card(ui, themes, state, &themes.current, name, *built_in, page.width(), true);
-        state.theme_colour_held |= active.is_pointer_button_down_on() && ui.input(|input| input.pointer.primary_down());
+        state.theme_color_held |= active.is_pointer_button_down_on() && ui.input(|input| input.pointer.primary_down());
         request = asked.or(request);
         ui.add_space(gap);
     }
@@ -1710,10 +1704,16 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
                 ui.add_sized([140.0, theme::ROW], egui::Label::new("Start from"));
                 let label = format!("Start from {start}");
                 let combo = egui::ComboBox::from_id_salt("new-theme-from").selected_text(start).width(260.0);
-                let response = combo.show_ui(ui, |ui| {
-                    ui.selectable_value(&mut new.from, None, "Suhina's defaults");
+                let response = widgets::combo_box(ui, combo, |ui| {
+                    if crate::kit::menu::item(ui, "Suhina's defaults", new.from.is_none()).clicked() {
+                        new.from = None;
+                        ui.close();
+                    }
                     for (id, name, _) in &themes.list {
-                        ui.selectable_value(&mut new.from, Some(id.clone()), name);
+                        if crate::kit::menu::item(ui, name, new.from.as_ref() == Some(id)).clicked() {
+                            new.from = Some(id.clone());
+                            ui.close();
+                        }
                     }
                 });
                 response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, &label));
@@ -1887,7 +1887,7 @@ fn theme_card(
         );
         let picture = themes.pictures.iter().find(|(key, _)| key == id).map(|(_, svg)| svg);
         if !picture.is_some_and(|svg| crate::kit::skin::paint_svg(ui.painter(), preview, svg, 2.0)) {
-            // A theme without a thumbnail: a blank card in its swatch colour.
+            // A theme without a thumbnail: a blank card in its swatch color.
             ui.painter().rect_filled(preview, 2.0, swatch);
         }
         let border = if in_use {
@@ -1947,11 +1947,11 @@ fn theme_card(
     }
     response.context_menu(|ui| {
         // The large card is the theme in use already.
-        if !active && ui.button("Use").clicked() {
+        if !active && crate::kit::menu::entry(ui, "Use", None, true).clicked() {
             asked = Some(ThemeRequest::Use(base.to_owned()));
             ui.close();
         }
-        if ui.button("New theme from this…").clicked() {
+        if crate::kit::menu::entry(ui, "New theme from this…", None, true).clicked() {
             let from = if in_use { themes.current.clone() } else { base.to_owned() };
             state.theme_dialog = Some(new_theme(Some(from)));
             ui.close();
@@ -1962,7 +1962,7 @@ fn theme_card(
             state.theme_dialog = Some(ThemeDialog::Info { id: base.to_owned(), info });
             ui.close();
         }
-        if ui.button("Export theme…").clicked() {
+        if crate::kit::menu::entry(ui, "Export theme…", None, true).clicked() {
             asked = Some(ThemeRequest::ExportPackage(base.to_owned()));
             ui.close();
         }
@@ -1978,7 +1978,7 @@ fn theme_card(
             asked = Some(ThemeRequest::AddDefaultArtwork(base.to_owned()));
             ui.close();
         }
-        ui.separator();
+        crate::kit::menu::separator(ui);
         if item(ui, "Delete theme…", refused) {
             state.theme_dialog = Some(ThemeDialog::Delete { id: base.to_owned(), name: name.clone(), revert: false });
             ui.close();
@@ -2010,21 +2010,21 @@ fn theme_card(
                 asked = Some(ThemeRequest::Use((*variant).to_string()));
             }
             swatch.context_menu(|ui| {
-                if ui.button("Use").clicked() {
+                if crate::kit::menu::entry(ui, "Use", None, true).clicked() {
                     asked = Some(ThemeRequest::Use((*variant).to_string()));
                     ui.close();
                 }
-                if ui.button("Edit…").clicked() {
+                if crate::kit::menu::entry(ui, "Edit…", None, true).clicked() {
                     asked = Some(ThemeRequest::Use((*variant).to_string()));
                     state.theme_editor = true;
                     state.scrolled = None;
                     ui.close();
                 }
-                if ui.button("Duplicate").clicked() {
+                if crate::kit::menu::entry(ui, "Duplicate", None, true).clicked() {
                     asked = Some(ThemeRequest::DuplicateVariant((*variant).to_string()));
                     ui.close();
                 }
-                ui.separator();
+                crate::kit::menu::separator(ui);
                 let revert = themes.overridden.iter().any(|o| o == variant);
                 let label = if revert { "Revert to built-in…" } else { "Delete…" };
                 if item(ui, label, delete_refused(themes, variant)) {
@@ -2089,7 +2089,7 @@ fn theme_card(
     (response, asked)
 }
 
-/// The swatch colour of the theme or variant `id`, or the panels' colour when it has none.
+/// The swatch color of the theme or variant `id`, or the panels' color when it has none.
 fn swatch_of(themes: &ThemesView, id: &str) -> egui::Color32 {
     themes
         .swatches
@@ -2099,7 +2099,7 @@ fn swatch_of(themes: &ThemesView, id: &str) -> egui::Color32 {
 }
 
 /// A swatch of `color`: a `theme-swatch` element with that `color` attribute, as the theme in use
-/// styles it, or a rounded rectangle of the colour without a theme sheet. Returns its corner
+/// styles it, or a rounded rectangle of the color without a theme sheet. Returns its corner
 /// radius.
 fn paint_swatch(painter: &egui::Painter, rect: Rect, color: egui::Color32) -> f32 {
     let radius = |r: f32| r.clamp(0.0, rect.width().min(rect.height()) / 2.0);
@@ -2186,12 +2186,12 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
     }
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        ui.add_sized([140.0, theme::ROW], egui::Label::new("Colour scheme"))
+        ui.add_sized([140.0, theme::ROW], egui::Label::new("Color scheme"))
             .on_hover_text("Whether this look is light or dark: the window's title bar follows it, and devices pick their light or dark artwork by it");
         let (rect, _) = ui.allocate_exact_size(Vec2::new(128.0, SEGMENT), egui::Sense::hover());
         let painter = ui.painter().clone();
         let options = [("Dark", false), ("Light", true)];
-        if let Some(light) = segmented(ui, &painter, rect, "Colour scheme", &options, themes.light) {
+        if let Some(light) = segmented(ui, &painter, rect, "Color scheme", &options, themes.light) {
             request = Some(ThemeRequest::EditScheme(light));
         }
     });
@@ -2207,7 +2207,7 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
             .color(ink().caption),
         );
     }
-    if let Some(edit) = super::skin_editor::declared(ui, themes, &mut state.skin_editor, &mut state.theme_colour_held) {
+    if let Some(edit) = super::skin_editor::declared(ui, themes, &mut state.skin_editor, &mut state.theme_color_held) {
         request = Some(edit);
     }
     if let Some(to) = state.theme_leave {
@@ -3408,10 +3408,12 @@ fn choice_field<T: Clone + PartialEq>(
     widgets::form_dropdown(ui, painter, field, &response, shown);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
-        let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
         for (label, value) in options {
-            if ui.selectable_label(value == current, text(label)).clicked() && value != current {
-                picked = Some(value.clone());
+            if crate::kit::menu::Entry::new(label).chosen(value == current).compact().show(ui).clicked() {
+                if value != current {
+                    picked = Some(value.clone());
+                }
+                ui.close();
             }
         }
     });
@@ -3498,7 +3500,7 @@ fn switch(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, on: bool) -> 
     let knob_width = SEGMENT - 4.0;
     let x = track.left() + 2.0 + lit * (track.width() - 4.0 - knob_width);
     let knob = Rect::from_min_size(Pos2::new(x, track.top() + 2.0), Vec2::new(knob_width, SEGMENT - 4.0));
-    // The knob's lit colour contrasts with the lit track: an opaque ground, else the inverse text.
+    // The knob's lit color contrasts with the lit track: an opaque ground, else the inverse text.
     let ground = crate::kit::style_class::opaque_surface_or(crate::kit::element::app_fill("window"));
     let ground = if ground.a() == u8::MAX { ground } else { crate::kit::element::app_fill("knob") };
     painter.rect_filled(knob, 0.0, motion::mix(ink().caption, ground, lit));
@@ -3576,22 +3578,22 @@ fn segmented_parts<T: Copy + PartialEq>(
     widgets::option_parts(ui, painter, rect, widths, id, name, options, current)
 }
 
-/// The colour picker's button for `colour` at the control's place in `row`, labelled `name`, its
+/// The color picker's button for `color` at the control's place in `row`, labelled `name`, its
 /// hex beside it, and a **Theme** button at the control's right end when `resettable`; with an
 /// opacity slider when `see_through`: whether the picker is held open with the button down (a
 /// drag in it), and whether **Theme** was clicked. The hex and **Theme** are the kit's text and
 /// button, so the theme styles them as every other row's.
-fn colour_picker(
+fn color_picker(
     ui: &mut Ui,
     painter: &egui::Painter,
     name: &str,
     row: Rect,
-    colour: &mut egui::Color32,
+    color: &mut egui::Color32,
     resettable: bool,
     see_through: bool,
 ) -> (bool, bool) {
     let rect = Rect::from_min_size(Pos2::new(row.right() - 190.0, row.top()), Vec2::new(190.0, SEGMENT));
-    let swatch = Rect::from_min_size(rect.min, Vec2::new(COLOUR_SWATCH_WIDTH, SEGMENT));
+    let swatch = Rect::from_min_size(rect.min, Vec2::new(COLOR_SWATCH_WIDTH, SEGMENT));
     let theme_button = Rect::from_min_size(
         Pos2::new(rect.right() - THEME_BUTTON_WIDTH, rect.top() + 1.0),
         Vec2::new(THEME_BUTTON_WIDTH, SEGMENT),
@@ -3602,7 +3604,7 @@ fn colour_picker(
     ui.scope_builder(egui::UiBuilder::new().max_rect(swatch), |ui| {
         let popup = ui.auto_id_with("popup");
         let alpha = if see_through { egui::color_picker::Alpha::OnlyBlend } else { egui::color_picker::Alpha::Opaque };
-        let response = egui::color_picker::color_edit_button_srgba(ui, colour, alpha);
+        let response = egui::color_picker::color_edit_button_srgba(ui, color, alpha);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ColorWell, true, name));
         held = egui::Popup::is_id_open(ui.ctx(), popup) && ui.input(|input| input.pointer.primary_down());
     });
@@ -3610,7 +3612,7 @@ fn colour_picker(
         painter,
         hex,
         Align2::LEFT_CENTER,
-        &theme::hex(*colour),
+        &theme::hex(*color),
         theme::mono_font(theme::TEXT_SMALL),
         ink().name,
     );

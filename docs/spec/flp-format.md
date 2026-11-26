@@ -3,7 +3,7 @@ description: The FL Studio project (.flp) container and event stream as read by 
 read_when: reading .flp, FL Studio project, FLhd, FLdt, event stream, event id, varint, LEB128, UTF-16 strings, version event 199, flp reader errors
 type: spec
 status: draft
-last_verified: 2026-11-19
+last_verified: 2026-11-23
 covers:
   - crates/flp/src/lib.rs
   - crates/flp/src/event.rs
@@ -108,7 +108,7 @@ these kinds, each checking that the value has the size it needs:
 | Unsigned, signed | 1, 2 or 4 (`u8`/`i8`, `u16`/`i16`, `u32`/`i32`) |
 | `f32` | 4, IEEE 754 single precision |
 | Two `u16` | 4, the first `u16` then the second |
-| Colour | 4: red, green, blue, then a fourth byte that is ignored **(hypothesis)** |
+| Color | 4: red, green, blue, then a fourth byte that is ignored **(hypothesis)** |
 | String | see below |
 | Binary | the bytes as they are, for structures a later piece decodes |
 
@@ -121,7 +121,7 @@ Ids whose kind the reader knows so far **(hypothesis unless marked)**:
 | 64 | new channel (the index of the channel the following events describe) | `u16` |
 | 65 | new pattern (the same for patterns) | `u16` |
 | 66 | tempo in whole beats per minute, older files | `u16` |
-| 128 | colour | colour |
+| 128 | color | color |
 | 156 | tempo in thousandths of a beat per minute: 140000 is 140 BPM | `u32` **(corpus)** |
 | 192 | name (of a channel or plug-in) | string |
 | 193 | pattern name | string |

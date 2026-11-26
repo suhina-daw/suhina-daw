@@ -3,7 +3,7 @@ description: The plug-in manager and the plug-in folders: every plug-in and ever
 read_when: plug-in manager, owned plug-ins, mark as owned, plugin.setOwned, manage plug-ins, switch a plug-in off, disable plug-in, blocklist, plug-in folders, VST2 folder, folder format, scan again, failed plug-ins, incompatible architecture, Intel plug-in on Apple silicon, plugin.setEnabled, plugin.setFolderEnabled, plugin.scanFile
 type: spec
 status: current
-last_verified: 2026-11-17
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/settings/plugin_manager.rs
   - crates/ui/src/settings/plugin_manager_tests.rs
@@ -20,7 +20,7 @@ Settings › Plug-ins holds the folders scans look in and the scan itself; every
 found is in the **plug-in manager**, opened with **Manage plug-ins** on that page. The manager
 takes the Settings dialog's place, larger than it where the window has room, until **Close**
 (or Escape) shows Settings again. What it changes goes through the `plugin.*` commands, so an
-agent and `suhina-cli plugins` do the same. Every colour, font and surface in it comes from the
+agent and `suhina-cli plugins` do the same. Every color, font and surface in it comes from the
 current theme: switching the theme changes the manager with the rest of the app.
 
 ## Layout
@@ -78,7 +78,7 @@ one table (a file that loads and holds no plug-ins is not in it):
 | **Name** | The plug-in's name; for a file's row, the file's name. |
 | **Vendor**, **Type**, **Version** | From the scan; the type is *Instrument* or *Effect*. |
 | **Format** | VST3, CLAP or VST2 (VST2 where the host's `vst2` feature is on); for a file, from its extension. |
-| **Status** | A mark and a word: *Ready*, *Disabled*, *Failed* or *Wrong architecture* (the two last with a warning mark, in the theme's recording and warning colours). |
+| **Status** | A mark and a word: *Ready*, *Disabled*, *Failed* or *Wrong architecture* (the two last with a warning mark, in the theme's recording and warning colors). |
 | **File** | The plug-in's file; for a file that gave none, why. It takes the width the other columns leave. |
 | (action) | **Scan again** for a file that failed or is built for another processor; the column is there only while such a row is shown. |
 

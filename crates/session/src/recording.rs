@@ -641,7 +641,7 @@ impl Session {
             self.project = before;
             return Err(e);
         }
-        self.colour_new_clips(&before);
+        self.color_new_clips(&before);
         self.history.changes = self.history.changes.wrapping_add(1);
         self.push_undo(before);
         self.update_player(None)?;
@@ -879,8 +879,8 @@ impl Session {
             self.project = before;
             return Err(e);
         }
-        // The clip the take put on the track takes the track type's colour, as a new clip does.
-        self.colour_new_clips(&before);
+        // The clip the take put on the track takes the track type's color, as a new clip does.
+        self.color_new_clips(&before);
         self.history.changes = self.history.changes.wrapping_add(1);
         self.push_undo(before);
         self.update_player(None)?;

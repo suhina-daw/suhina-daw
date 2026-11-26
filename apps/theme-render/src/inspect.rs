@@ -8,7 +8,7 @@
 //! Both read the style engine's record of the last frame
 //! ([`suhina_ui::kit::native_css::inspector`]): the elements the frame entered, with the box each
 //! painted, and the cascade behind any of them, worked out from the tree and sheets the frame was
-//! styled with. A part that reads an element's colour without entering the element has no box of
+//! styled with. A part that reads an element's color without entering the element has no box of
 //! its own, so a probe at it names the element around it.
 
 use std::collections::BTreeSet;

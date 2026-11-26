@@ -2,9 +2,8 @@
 # "text"`, under the first scene that shows it. Written by
 # `SUHINA_BLESS=1 cargo test -p suhina-theme-render --test main painted` (tests/cut.rs).
 suhina-studio@light devices: clipped "-60"
-suhina-studio@light devices: clipped "4"
+suhina-studio@light detail-beside: clipped "3.0 : 1   knee 6.0 dB"
 suhina-studio@light devices: clipped "Analog Clip"
-suhina-studio@light devices: clipped "Right"
 suhina-studio@light devices: clipped "Slope"
 suhina-studio@light quick-add: clipped "Test Sampler\nPlug-in instrument"
 suhina-studio@light quick-add: clipped "VST3"
@@ -18,12 +17,8 @@ suhina-studio@light device-group: shortened "Bass Mono Listen" as "Bass Mono Lis
 suhina-studio@light devices: shortened "Color Frequency" as "Color Freque…"
 suhina-studio@light project-dialog: shortened "Path to a .suhina, .als or .flp file, or a zip holding one" as "Path to a .suhina, .als or .flp …"
 suhina-studio@light agent-dialog: shortened "Quantize" as "Qu…"
-suhina-studio@light detail-beside: shortened "Side-Chain High-Pass" as "Side-Cha…"
 suhina-studio@light project-dialog: shortened "Templates in ; the folder is set in Settings › Projects and backups" as "Templates in ; the folder is set in Settings › Projects and …"
 suhina-studio@light settings-midi: shortened "no MIDI inputs here; the desktop app has them, and suhina-cli mcp with --audio" as "no MIDI inputs here; the desktop app has them, and suhina-cli mcp with --…"
-suhina-studio@light count-in-menu: wrapped "2 bars"
-suhina-studio@light count-in-menu: wrapped "4 bars"
-suhina-studio@light quantize-menu: wrapped "8 bars"
 suhina-studio@light new-theme-dialog: wrapped "Copies the built-in control images into the theme's assets folder, with a rule for each in its theme.css, so you can edit them."
 suhina-studio@light missing-files: wrapped "Or drop the file here, or copy its path and press Ctrl+V."
 suhina-studio@light settings: wrapped "When a copy of each changed project is written to .backup beside it; last backup: None written for this project yet"
