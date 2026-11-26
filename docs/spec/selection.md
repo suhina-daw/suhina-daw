@@ -70,10 +70,11 @@ agent attached to the app may run them (the selection is project state, not sett
 - `track` — the selected track's id and name, or nothing.
 - `device` — the selected device's entry as [`track.devices`](midi-mapping.md) lists it: its
   path, kind, id and name, and its parameters. A built-in's parameters carry `name`, `group`,
-  `min`, `max` and `unit` beside `id` and `value` — the registry held them, and the `.sd`
-  devices' branch of the reading already emitted its own — so a knob can scale onto the unit and
-  a ring draw the position; a plug-in's are its stored values, and `device.pluginParams` is the
-  way to its full list.
+  `min`, `max`, `unit` and `kind` beside `id` and `value` (`continuous`, `integer`, `toggle` or
+  `choice`) — the registry held them, and the `.sd` devices' branch of the reading already
+  emitted its own `control` — so a controller's knob can take the continuous dials and leave the
+  switches to the panel, scale onto the unit and draw the position; a plug-in's are its stored
+  values, and `device.pluginParams` is the way to its full list.
 - With nothing selected, both are nothing and the parameters are empty.
 
 ## The window follows
