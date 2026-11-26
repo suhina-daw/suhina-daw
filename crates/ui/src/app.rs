@@ -3300,6 +3300,9 @@ impl App {
         // the track highlight and the device picked in the chain follow
         // (docs/spec/selection.md › The window follows).
         self.follow_session_selection();
+        // What the window points at after following the session: only a change from this, made
+        // in this frame, is a click or a key the frame's end publishes.
+        let selection_before = self.window_selection();
         // The layout settings, as the window's grid reads them (#1370), so a theme's rules for
         // them paint as they lay out.
         let (detail_place, browser_side) = self.window_place(self.session().is_some());
@@ -4283,7 +4286,7 @@ impl App {
         self.follow_selection_with_arm();
         // A click that selected a track or picked a device sets the same selection the CLI, MCP
         // and surface programs read (docs/spec/selection.md › The window follows).
-        self.publish_session_selection();
+        self.publish_session_selection(selection_before);
         self.end_gesture_on_release(ui.ctx());
         self.frame_trace.mark("commands");
         self.frame_trace.note(|| format!("{ran} commands"));
@@ -4625,3 +4628,7 @@ enum CopiedLast {
 #[cfg(test)]
 #[path = "app/instrument_editor_tests.rs"]
 mod instrument_editor_tests;
+
+#[cfg(test)]
+#[path = "app/selection_tests.rs"]
+mod selection_tests;
