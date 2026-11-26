@@ -1215,6 +1215,10 @@ impl Projects {
         }
         self.poll_programs();
         if let Some(session) = self.tabs.active.and_then(|id| self.get_mut(id)) {
+            // Every subscription has read the notices up to here. A take finished by the poll
+            // below queues a new notice for the next frame's readings while the window gets it
+            // now, so neither consumer can take one from the other.
+            session.clear_surface_recording_notices();
             session.catch_up_player();
             notices.extend(session.poll_recording());
         }

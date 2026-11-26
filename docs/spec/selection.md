@@ -3,7 +3,7 @@ description: The selection an open project carries - the selected track and the 
 read_when: selected track, selected device, selection, track.select, device.select, project.selection, controller focus, mapping selected target, what the knobs control
 type: spec
 status: current
-last_verified: 2026-11-21
+last_verified: 2026-11-26
 covers:
   - crates/session/src/selection.rs
   - crates/session/src/commands/selection.rs
@@ -93,7 +93,9 @@ agent attached to the app may run them (the selection is project state, not sett
   values. `device.pluginParams` lists the same parameters for an agent or a command, and
   `device.read { track, device }` answers one device's same entry, or nothing when the track or
   device has gone: a controller's Device Lock reads its device live while the selection moves
-  elsewhere, and releases the lock when that reading becomes nothing.
+  elsewhere, and releases the lock when that reading becomes nothing. A track name several tracks
+  share is still refused as ambiguous, not reported as gone; only a name no track has, or an id
+  with no track, is nothing.
 - With nothing selected, both are nothing and the parameters are empty.
 
 ### A controller's dials

@@ -116,7 +116,11 @@ pub(crate) struct Recording {
     takes: Vec<Take>,
     /// The engine was told to record and not yet told to stop.
     engine_on: bool,
+    /// What the window has not shown yet.
     notices: Vec<String>,
+    /// A copy for `record.state` readings, cleared once the window's frame has let every
+    /// surface program read it; a notice made after that look stays for the next one.
+    surface_notices: Vec<String>,
     /// Slots whose new clip should play: column, slot, the clock beat it started at, until when.
     resumes: Vec<(usize, usize, f64, Instant)>,
 }
@@ -129,13 +133,20 @@ impl Recording {
         let Some(receiver) = receiver else { return };
         match RecordThread::start(receiver, sample_rate) {
             Ok(thread) => self.threads.push(thread),
-            Err(e) => self.notices.push(e),
+            Err(e) => self.note(e),
         }
         // Threads of engines gone with nothing left to write are let go.
         let keep = self.threads.len().saturating_sub(4);
         if keep > 0 && self.takes.iter().all(|t| t.file.is_none()) {
             self.threads.drain(..keep);
         }
+    }
+
+    /// Queues a notice for the window and for `record.state` readings. The surface copy is
+    /// taken again until the frame's program poll has run, so every subscription sees it.
+    fn note(&mut self, notice: String) {
+        self.notices.push(notice.clone());
+        self.surface_notices.push(notice);
     }
 
     fn take_on(&self, track: TrackId) -> Option<&Take> {
@@ -386,6 +397,12 @@ impl Session {
         let _ = self.poll_recording_after(SETTLE, false);
     }
 
+    /// Lets the notices the frame's program poll has already offered to `record.state` readings
+    /// go. A notice made after that poll is not cleared, so the next reading still carries it.
+    pub(crate) fn clear_surface_recording_notices(&mut self) {
+        self.live.recording.surface_notices.clear();
+    }
+
     /// Waits for the recording threads to take in what the engine has recorded so far, then polls
     /// as [`Session::poll_recording`] does, without the settling time: the notes and frames
     /// "on their way" are all here. For offline renders and tests, which render a fixed number of
@@ -493,7 +510,7 @@ impl Session {
         for index in done.into_iter().rev() {
             let take = self.live.recording.takes.remove(index);
             if let Err(e) = self.commit_take(take, now_clock) {
-                self.live.recording.notices.push(e.message);
+                self.live.recording.note(e.message);
             }
         }
         if self.live.recording.takes.is_empty() && self.live.recording.engine_on {
@@ -577,13 +594,12 @@ impl Session {
             Some(path) => {
                 let (frames, channels, error) = take.finished.clone().unwrap_or((0, 1, None));
                 if let Some(error) = error {
-                    self.live.recording.notices.push(error);
+                    self.live.recording.note(error);
                 }
                 if frames == 0 {
                     self.live
                         .recording
-                        .notices
-                        .push(format!("nothing was recorded on {}", track_name(&self.project, take.track)));
+                        .note(format!("nothing was recorded on {}", track_name(&self.project, take.track)));
                     let _ = std::fs::remove_file(path);
                     return Ok(());
                 }
@@ -791,10 +807,10 @@ impl Session {
             Some(path) => {
                 let (frames, channels, error) = take.finished.clone().unwrap_or((0, 1, None));
                 if let Some(error) = error {
-                    self.live.recording.notices.push(error);
+                    self.live.recording.note(error);
                 }
                 if frames == 0 {
-                    self.live.recording.notices.push(format!("nothing was recorded on {name}"));
+                    self.live.recording.note(format!("nothing was recorded on {name}"));
                     let _ = std::fs::remove_file(path);
                     return Ok(());
                 }
@@ -1161,8 +1177,9 @@ pub(crate) fn set_count_in(session: &mut Session, params: &Value) -> Result<Valu
 /// `record.state`.
 pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
     // A reading changes nothing: the frame's poll finishes takes and leaves its notices for
-    // both this reading and the window, rather than a subscription taking them first.
-    let notices = session.live.recording.notices.clone();
+    // both this reading and the window, rather than a subscription taking them first. The
+    // surface copy survives every reading in a frame and is cleared after the program poll.
+    let notices = session.live.recording.surface_notices.clone();
     let count_in = session.player().map_or(0.0, |p| p.monitor().count_in_beats());
     let p = session.project();
     let takes: Vec<Value> = session
@@ -1196,15 +1213,28 @@ pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, Co
 mod tests {
     use super::*;
 
-    /// A reading reports the pending notices but leaves them for the window's own poll: a
-    /// surface program's subscription cannot take a recording warning first.
+    /// A reading reports the pending notices until the frame has offered them to every
+    /// program, while the window's own poll still hears them.
     #[test]
     fn record_state_reports_notices_without_taking_them() {
         let mut session = Session::new(Project::default());
-        session.live.recording.notices.push("the disk is full".into());
+        session.live.recording.note("the disk is full".into());
         let read = record_state(&mut session, &json!({})).unwrap();
         assert_eq!(read["notices"], json!(["the disk is full"]));
+        assert_eq!(record_state(&mut session, &json!({})).unwrap()["notices"], json!(["the disk is full"]));
         assert_eq!(session.poll_recording(), ["the disk is full"], "the window still hears it");
+        session.clear_surface_recording_notices();
         assert_eq!(record_state(&mut session, &json!({})).unwrap()["notices"], json!([]));
+    }
+
+    /// A notice a take makes after the frame's program poll waits for the next reading: the
+    /// clear after that poll cannot take it before any subscription sees it.
+    #[test]
+    fn a_notice_after_the_program_poll_stays_for_the_next_reading() {
+        let mut session = Session::new(Project::default());
+        session.clear_surface_recording_notices();
+        session.live.recording.note("the writer failed".into());
+        let read = record_state(&mut session, &json!({})).unwrap();
+        assert_eq!(read["notices"], json!(["the writer failed"]));
     }
 }

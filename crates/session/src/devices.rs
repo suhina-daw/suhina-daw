@@ -731,6 +731,17 @@ pub(crate) fn device_entry(session: &mut Session, track: suhina_model::TrackId, 
     Some(entry)
 }
 
+/// Whether `name` names a track, so an error resolving it is an ambiguity rather than a track
+/// that is gone. A reading by name keeps both errors; only the missing one becomes null.
+fn names_a_track(project: &Project, name: &str) -> bool {
+    project.tracks.iter().any(|track| {
+        project.shown_track_name(track.id) == name
+            || track.name == name
+            || project.shown_track_name(track.id).eq_ignore_ascii_case(name)
+            || track.name.eq_ignore_ascii_case(name)
+    })
+}
+
 /// `device.read {track, device}`: one device's entry, as the selection would give it, or null
 /// when the track or device it names is gone. A controller locked to a device follows it with a
 /// subscription, and a refused read pushes no state: null is how a removal reaches the lock.
@@ -747,8 +758,9 @@ pub(crate) fn read_device(session: &mut Session, params: &Value) -> Result<Value
                 return Ok(Value::Null);
             }
         }
-        Some(Value::String(_)) => match track_or_main_id(&session.project, params) {
+        Some(Value::String(name)) => match track_or_main_id(&session.project, params) {
             Ok(track) => track,
+            Err(error) if names_a_track(&session.project, name) => return Err(error),
             Err(_) => return Ok(Value::Null),
         },
         _ => return Err("track must be a track id or name, or \"main\" for the main channel".into()),

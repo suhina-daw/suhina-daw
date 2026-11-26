@@ -62,6 +62,21 @@ fn selecting_a_track_selects_its_first_device_with_its_parameters() {
     assert_eq!(gone, Value::Null);
 }
 
+/// A name several tracks share is still an ambiguity, not a device that is gone: only a name
+/// no track has reads as nothing, so a controller's lock releases for a real removal.
+#[test]
+fn device_read_keeps_an_ambiguous_track_name_as_an_error() {
+    let mut session = Session::new(blank_project());
+    let [first, second] = [session.project().tracks[0].id, session.project().tracks[1].id];
+    for track in [first, second] {
+        run(&mut session, "device.add", json!({ "track": track.0, "id": "utility" })).unwrap();
+    }
+    let error = run(&mut session, "device.read", json!({ "track": "# MIDI", "device": 0 })).unwrap_err();
+    assert!(error.contains("several tracks are named"), "{error}");
+    let gone = run(&mut session, "device.read", json!({ "track": "No such track", "device": 0 })).unwrap();
+    assert_eq!(gone, Value::Null);
+}
+
 /// A dial's normalized position is the panel's, not a linear share of the value: half of the FM
 /// Synth's logarithmic attack is its geometric middle, and the reading carries the position back
 /// so a controller's ring matches the dial (#1718).
