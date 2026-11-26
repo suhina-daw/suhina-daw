@@ -763,8 +763,16 @@ impl DeviceUi {
                             })
                             && offset.as_ref().is_none_or(|v| v.validate(&readouts, 0, &mut expression_budget).is_ok())
                     }
-                    Widget::Number { .. } | Widget::Knob { .. } | Widget::Dial { .. } | Widget::Stepper { .. } => {
+                    Widget::Number { .. } | Widget::Knob { .. } | Widget::Stepper { .. } => {
                         c.gesture == UiGesture::Drag && c.x.is_none() && c.y.is_some()
+                    }
+                    Widget::Dial { readout, .. } => {
+                        c.gesture == UiGesture::Drag
+                            && c.x.is_none()
+                            && c.y.is_some()
+                            && readout.as_ref().is_none_or(|readout| {
+                                readout.value.validate(&readouts, 0, &mut expression_budget).is_ok()
+                            })
                     }
                     Widget::ValueMenu { choices } => {
                         let mut values = HashSet::new();

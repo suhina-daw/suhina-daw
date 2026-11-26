@@ -38,6 +38,8 @@ fn selecting_a_track_selects_its_first_device_with_its_parameters() {
         assert!(param["min"].is_number() && param["max"].is_number(), "{param}");
         assert!(param["unit"].is_string(), "{param}");
         assert!(param["kind"].is_string(), "a controller tells its dials from its switches: {param}");
+        let normalized = param["normalized"].as_f64().unwrap_or_else(|| panic!("the dial's position: {param}"));
+        assert!((0.0..=1.0).contains(&normalized), "0 to 1: {param}");
     }
     // The dials a controller's knobs take, in the panel's order.
     let dials = picked["device"]["dials"].as_array().unwrap_or_else(|| panic!("the dials: {picked}"));
@@ -51,6 +53,41 @@ fn selecting_a_track_selects_its_first_device_with_its_parameters() {
     let read = selection(&mut session);
     assert_eq!(read["device"]["device_id"], picked["device"]["device_id"], "{read}");
     assert_eq!(read["track"], track.0);
+}
+
+/// A dial's normalized position is the panel's, not a linear share of the value: half of the FM
+/// Synth's logarithmic attack is its geometric middle, and the reading carries the position back
+/// so a controller's ring matches the dial (#1718).
+#[test]
+fn a_normalized_position_turns_a_logarithmic_time_smoothly() {
+    let (mut session, track) = with_devices();
+    run(&mut session, "track.select", json!({ "track": track.0 })).unwrap();
+    let set = run(
+        &mut session,
+        "device.setParam",
+        json!({ "track": track.0, "device": 0, "param": "op1.env.attack", "normalized": 0.5 }),
+    )
+    .unwrap();
+    let value = set["value"].as_f64().unwrap_or_default();
+    let middle = (0.0005f64 * 60.0).sqrt();
+    assert!((value - middle).abs() < 1e-9, "the log dial's middle: {set}");
+    assert!(value < 0.5, "not the linear middle of 0.0005 to 60: {set}");
+    let read = selection(&mut session);
+    let attack = read["device"]["params"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "op1.env.attack")
+        .unwrap_or_else(|| panic!("the attack: {read}"));
+    assert!((attack["normalized"].as_f64().unwrap_or_default() - 0.5).abs() < 1e-9, "{read}");
+    assert!((attack["value"].as_f64().unwrap_or_default() - middle).abs() < 1e-9, "{read}");
+    // One of the two, not both, and a finite number.
+    let both = run(
+        &mut session,
+        "device.setParam",
+        json!({ "track": track.0, "device": 0, "param": "op1.env.attack", "value": 1.0, "normalized": 0.5 }),
+    );
+    assert!(both.is_err(), "{both:?}");
 }
 
 /// Stepping: the project's track order for tracks (nothing at either end; the first or last

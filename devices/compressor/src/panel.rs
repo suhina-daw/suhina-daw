@@ -41,7 +41,7 @@ fn dial(
     let mut c = CustomControl::widget(
         id,
         label,
-        Widget::Dial { label: label.into(), decimals, format, image: None },
+        Widget::Dial { label: label.into(), decimals, format, image: None, readout: None },
         [x, row as f32 * DIAL[1], DIAL[0], DIAL[1]],
     );
     c.tooltip = TOOLTIP.into();

@@ -627,10 +627,12 @@ def lfo_picture(x, y, w, h, tag, visible=None):
 
 
 def lfo_rate_knob(x, y, w, h, visible, tag):
-    """The rate in hertz on the free ranges, a note length on the synced one."""
-    bounds = [x, y, w, h]
-    return [knob("lfo2Rate", "Rate", bounds, lfo_rate_hz(0), " Hz", 2, visible=both(visible, equal(par("lfo2Range"), 0.0)), tag=f"{tag}_low"),
-            knob("lfo2Rate", "Rate", bounds, lfo_rate_hz(1), " Hz", 0, visible=both(visible, equal(par("lfo2Range"), 1.0)), tag=f"{tag}_high")
+    """The rate in hertz on the free ranges, a note length on the synced one: a native dial whose
+    readout is the range's hertz, not the 0-1 the parameter stores."""
+    return [dial("lfo2Rate", "Rate", x, y, lfo_rate_hz(0), decimals=2, visible=both(visible, equal(par("lfo2Range"), 0.0)),
+                 tag=f"{tag}_low", w=w, h=h, readout={"value": lfo_rate_hz(0), "suffix": " Hz"}),
+            dial("lfo2Rate", "Rate", x, y, lfo_rate_hz(1), decimals=0, visible=both(visible, equal(par("lfo2Range"), 1.0)),
+                 tag=f"{tag}_high", w=w, h=h, readout={"value": lfo_rate_hz(1), "suffix": " Hz"})
             ] + named_menu("lfo2Sync", "Rate", [x + 2.0, y + 8.0, w - 4.0, 38.0], both(visible, equal(par("lfo2Range"), float(SYNC_RANGE))), tag)
 
 
@@ -784,9 +786,33 @@ def algorithm_legend(cid, x, y, visible=None):
     return graphic(cid, "Filled is heard, outlined shapes what it points to", [x, y, 200.0, 14.0], draws, visible)
 
 
-def dial(pid, caption, x, y, value, suffix="", decimals=0, log=False, visible=None, tag="", big=False, w=50.0):
-    return knob(pid, caption, [x, y, w, 70.0], value, suffix, decimals, log, visible, tag, big,
-                texts=lambda cx, at: [written(pid, cx, at, value, suffix, decimals)])
+# The native dial's number format, from the generator's custom suffix. The dial draws the value
+# from the parameter itself; the native widget no longer takes the hand-drawn `value` expression.
+DIAL_FORMATS = {
+    " ms": "seconds",
+    " s": "seconds",
+    " Hz": "frequency",
+    " kHz": "frequency",
+    " dB": "decibels",
+    " %": "percent",
+}
+
+
+def dial(pid, caption, x, y, value, suffix="", decimals=0, log=False, visible=None, tag="", big=False, w=50.0, h=70.0, readout=None):
+    """One native dial: the SDK's `Dial` draws its face, label and value; the panel places it.
+    `readout` replaces the value with a computed one (the LFO rate in hertz, by its range)."""
+    widget = {"kind": "dial", "label": caption, "decimals": decimals,
+              "format": DIAL_FORMATS.get(suffix, "number")}
+    if readout is not None:
+        widget["readout"] = readout
+    elif suffix not in DIAL_FORMATS and suffix:
+        # A unit the SDK has no format for (semitones) rides the dial's readout, as it did its
+        # hand-drawn value.
+        widget["readout"] = {"value": value, "suffix": suffix}
+    return {"widget": widget,
+            "visible_when": visible, "id": f"{pid}{tag}", "name": caption, "tooltip": caption,
+            "bounds": [x, y, w, h], "gesture": "drag",
+            "x": None, "y": {"parameter": pid, "logarithmic": log, "drag_scale": 1.0}, "drawing": []}
 
 
 def op_dials(n, x, y, tag):

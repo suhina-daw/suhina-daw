@@ -77,10 +77,10 @@ agent attached to the app may run them (the selection is project state, not sett
   `choice`) — the registry held them, and the `.sd` devices' branch of the reading already
   emitted its own `control` — so a controller's knob can take the continuous dials and leave the
   switches to the panel, scale onto the unit and draw the position. A built-in also carries
-  `dials`: the parameter ids its knobs can turn, in the order its compact panel reads them —
-  left to right and top to bottom, then the dials the generated list places under the canvas in
-  parameter order — so a controller's knobs follow the device's layout, not its parameter
-  order. A dial also carries `normalized`: the position its panel's dial shows, 0 to 1, beside
+  `dials`: the parameter ids its knobs can turn — the page the panel shows, its dials left to
+  right and top to bottom, then the dials that stay on every page in the panel's section order
+  — so a controller's knobs follow the device's layout, not its parameter order. A dial also
+  carries `normalized`: the position its panel's dial shows, 0 to 1, beside
   `value`. A plug-in's parameters are its stored values, and `device.pluginParams` is the way to
   its full list.
 - With nothing selected, both are nothing and the parameters are empty.
@@ -95,9 +95,10 @@ between the ends of a linear value range. A controller maps the page the device 
 or operator change in the window is not followed yet (below).
 
 The FM Synth is the first such panel: its page 0, operator 1 envelope dials (attack, decay,
-sustain, release, initial, peak, by vel and by key) come first, then the always-visible LFO,
-filter, Spread, Volume and Random dials; banks page through the rest
-([FM Synth](fm-synth.md#panel), #1718).
+sustain, release, initial, peak, by vel and by key) come first, then the always-visible LFO rate
+and amount, filter frequency and resonance, Spread and Volume dials; banks page through the
+rest. The LFO's Rate dial computes its hertz from the stored position, and a controller's ring
+uses the same normalized position either way ([FM Synth](fm-synth.md#panel), #1718).
 
 ## The window follows
 

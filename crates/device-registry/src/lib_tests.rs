@@ -587,3 +587,67 @@ fn the_panel_dials_follow_their_control_positions() {
         "the generated list's continuous parameters, in order"
     );
 }
+
+/// The FM Synth opens on Env; the device's Env model chooses the page's dials. The ADSR/time
+/// model gives the eight envelope dials first, then the always-visible dials; the Rates model
+/// gives its four rates and four levels first. The operator table's fields are not dials.
+#[test]
+fn the_fm_synths_envelope_dials_follow_the_chosen_model() {
+    let time = dials_with("fm-synth", &[("op1.envMode".to_string(), 1.0)]);
+    assert_eq!(
+        &time[..8],
+        [
+            "op1.env.attack",
+            "op1.env.decay",
+            "op1.env.sustain",
+            "op1.env.release",
+            "op1.env.initial",
+            "op1.env.peak",
+            "op1.env.timeByVel",
+            "op1.env.timeByKey",
+        ],
+        "{time:?}"
+    );
+    assert_eq!(
+        &time[8..14],
+        ["lfo2Rate", "lfo2Amount", "filterFreq", "filterRes", "spread", "volume"],
+        "the always-visible dials follow the page's: {time:?}"
+    );
+    assert!(!time.iter().any(|id| id == "op1.coarse" || id == "panel.op"), "not a dial: {time:?}");
+
+    let rates = dials_with("fm-synth", &[("op1.envMode".to_string(), 0.0)]);
+    assert_eq!(
+        &rates[..8],
+        ["op1.rate1", "op1.rate2", "op1.rate3", "op1.rate4", "op1.level1", "op1.level2", "op1.level3", "op1.level4"],
+        "{rates:?}"
+    );
+}
+
+/// Every dial on the FM Synth's panel is the SDK's native widget, with no hand-drawn dial: the
+/// envelope's first eight dials draw from the theme and carry no drawing of their own (#1718).
+#[test]
+fn the_fm_synths_dials_are_native_widgets() {
+    let panel = panel("fm-synth").unwrap();
+    let canvas = panel.ui.as_ref().unwrap();
+    for id in [
+        "op1.env.attack_time",
+        "op1.env.decay_time",
+        "op1.env.sustain_time",
+        "op1.env.release_time",
+        "op1.env.initial_time",
+        "op1.env.peak_time",
+        "op1.env.timeByVel_time",
+        "op1.env.timeByKey_time",
+        "lfo2Rate_main_low",
+        "lfo2Rate_main_high",
+        "lfo2Amount_main",
+        "filterFreq_main",
+        "filterRes_main",
+        "spread",
+        "volume",
+    ] {
+        let control = canvas.controls.iter().find(|c| c.id == id).unwrap_or_else(|| panic!("the dial {id}"));
+        assert!(matches!(control.widget, Some(Widget::Dial { .. })), "{id}: {:?}", control.widget);
+        assert!(control.drawing.is_empty(), "{id} draws no dial by hand");
+    }
+}

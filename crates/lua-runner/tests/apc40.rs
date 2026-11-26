@@ -21,6 +21,7 @@ struct Command {
     device: Option<String>,
     param: Option<String>,
     value: Option<f64>,
+    normalized: Option<f64>,
     gesture: Option<String>,
 }
 
@@ -110,6 +111,7 @@ impl Fake {
                         device,
                         param: text_field("param"),
                         value: field("value").and_then(|v| number(&v)),
+                        normalized: field("normalized").and_then(|v| number(&v)),
                         gesture: args.get(2).and_then(text),
                     });
                     Ok(true)
@@ -196,6 +198,7 @@ impl Fake {
             ("dial7", "continuous", 0.0, 1.0, 0.0),
             ("dial8", "continuous", 0.0, 1.0, 0.0),
             ("dial9", "continuous", 0.0, 1.0, 0.0),
+            ("attack", "continuous", 0.0005, 60.0, 0.001),
         ];
         let list = self.lua.create_table().unwrap();
         for (index, (id, kind, min, max, value)) in params.iter().enumerate() {
@@ -205,13 +208,15 @@ impl Fake {
             param.set("min", *min).unwrap();
             param.set("max", *max).unwrap();
             param.set("value", *value).unwrap();
+            let normalized = if *id == "attack" { 0.5 } else { (*value - *min) / (*max - *min) };
+            param.set("normalized", normalized).unwrap();
             param.set("unit", "").unwrap();
             list.set(index + 1, param).unwrap();
         }
         device.set("params", list).unwrap();
         let dials = self.lua.create_table().unwrap();
         for (index, id) in
-            ["dial6", "gain", "balance", "width", "midSide", "bassMonoFrequency", "dial7", "dial8", "dial9"]
+            ["dial6", "gain", "balance", "width", "midSide", "bassMonoFrequency", "dial7", "dial8", "dial9", "attack"]
                 .iter()
                 .enumerate()
         {
@@ -274,14 +279,16 @@ fn the_device_knobs_turn_the_selected_devices_parameters_in_banks_of_eight() {
     assert_eq!(command.track, Some(1), "{command:?}");
     assert_eq!(command.device.as_deref(), Some("0"), "{command:?}");
     assert_eq!(command.param.as_deref(), Some("dial6"), "{command:?}");
-    assert!((command.value.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
+    assert_eq!(command.value, None, "a dial with a normalized position: {command:?}");
+    assert!((command.normalized.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
     assert_eq!(command.gesture.as_deref(), Some("apc40-mkii device 1:0:dial6"), "{command:?}");
 
     // The panel's second dial is Gain; the switch between them in the parameter list is skipped.
     fake.knob(1, 127);
     let command = fake.last_command();
     assert_eq!(command.param.as_deref(), Some("gain"), "{command:?}");
-    assert!((command.value.unwrap_or_default() - 35.0).abs() < 1e-6, "{command:?}");
+    assert_eq!(command.value, None, "{command:?}");
+    assert!((command.normalized.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
     // Bank right, then the first knob: the ninth dial.
     fake.press(61);
     fake.knob(0, 127);
@@ -292,7 +299,29 @@ fn the_device_knobs_turn_the_selected_devices_parameters_in_banks_of_eight() {
     fake.knob(0, 0);
     let command = fake.last_command();
     assert_eq!(command.param.as_deref(), Some("dial6"), "{command:?}");
-    assert!(command.value.unwrap_or_default() < 0.001, "{command:?}");
+    assert!(command.normalized.unwrap_or_default() < 0.001, "{command:?}");
+}
+
+/// A logarithmic dial sends the reading's normalized position, not a linear value: its knob
+/// position is the panel's, and its ring draws that same position (#1718).
+#[test]
+fn a_log_dial_sends_and_draws_its_normalized_position() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    // Bank right: its second knob is the stand-in's tenth dial, the logarithmic attack.
+    let before = fake.sends.borrow().len();
+    fake.press(61);
+    assert!(
+        fake.sends.borrow()[before..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
+        "the reading's 0.5 draws at 64: {:?}",
+        &fake.sends.borrow()[before..]
+    );
+    fake.knob(1, 64);
+    let command = fake.last_command();
+    assert_eq!(command.param.as_deref(), Some("attack"), "{command:?}");
+    assert_eq!(command.value, None, "{command:?}");
+    assert!((command.normalized.unwrap_or_default() - 64.0 / 127.0).abs() < 1e-6, "{command:?}");
 }
 
 #[test]

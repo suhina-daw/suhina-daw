@@ -178,8 +178,12 @@ local function last_bank()
     return math.floor((#dials - 1) / KNOBS)
 end
 
--- A parameter's value as a ring position: 0 at its minimum, 127 at its maximum.
+-- A parameter's position on its panel's dial as a ring position: the reading's normalized
+-- position (0 to 1) where it has one, else its value across its range.
 local function ring_position(param)
+    if type(param.normalized) == "number" then
+        return math.floor(math.max(0, math.min(1, param.normalized)) * 127 + 0.5)
+    end
     local min, max, value = param.min, param.max, param.value
     if type(min) ~= "number" or type(max) ~= "number" or type(value) ~= "number" or max <= min then
         return 0
@@ -540,19 +544,26 @@ local function cc_received(channel, controller, value)
         end
         suhina.command("track.setVolume", { tracks = { id }, db = db }, "apc40-mkii volume " .. id)
     elseif controller >= 16 and controller <= 23 and channel == 0 then
-        -- The device knobs: the bank's dials, the knob's 0-127 scaled onto the dial's own range. One gesture per knob and parameter, so a turn is one undo step.
+        -- The device knobs: the bank's dials, the knob's 0-127. A dial with a normalized
+        -- position (a built-in's, from its panel) sends that position, so a logarithmic time
+        -- moves smoothly; an older reading's dial scales the knob onto its range instead. One
+        -- gesture per knob and parameter, so a turn is one undo step.
         local device = selected_device()
         local param = knob_param(controller - 16)
         if device == nil or param == nil or type(param.min) ~= "number" or type(param.max) ~= "number" then
             return
         end
-        local scaled = param.min + (value / 127) * (param.max - param.min)
-        suhina.command("device.setParam", {
+        local args = {
             track = selection.track,
             device = device.path,
             param = param.id,
-            value = scaled,
-        }, "apc40-mkii device " .. tostring(selection.track) .. ":" .. tostring(device.path) .. ":" .. tostring(param.id))
+        }
+        if type(param.normalized) == "number" then
+            args.normalized = value / 127
+        else
+            args.value = param.min + (value / 127) * (param.max - param.min)
+        end
+        suhina.command("device.setParam", args, "apc40-mkii device " .. tostring(selection.track) .. ":" .. tostring(device.path) .. ":" .. tostring(param.id))
         knob_reported(controller, value)
     elseif controller >= 48 and controller <= 55 and channel == 0 then
         local id = mixer_track(controller - 48)
