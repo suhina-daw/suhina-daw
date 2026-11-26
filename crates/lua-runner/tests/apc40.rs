@@ -317,11 +317,17 @@ fn a_log_dial_sends_and_draws_its_normalized_position() {
         "the reading's 0.5 draws at 64: {:?}",
         &fake.sends.borrow()[before..]
     );
+    let after_knob = fake.sends.borrow().len();
     fake.knob(1, 64);
     let command = fake.last_command();
     assert_eq!(command.param.as_deref(), Some("attack"), "{command:?}");
     assert_eq!(command.value, None, "{command:?}");
     assert!((command.normalized.unwrap_or_default() - 64.0 / 127.0).abs() < 1e-6, "{command:?}");
+    assert!(
+        !fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
+        "the turn does not write the ring: {:?}",
+        &fake.sends.borrow()[after_knob..]
+    );
 }
 
 #[test]
@@ -375,7 +381,10 @@ fn a_knobs_own_report_is_not_written_back_to_its_ring() {
     fake.knob(1, 64);
     let after_knob = fake.sends.borrow().len();
     let gain = -150.0 + (64.0 / 127.0) * 185.0;
-    fake.selection_with_gain(4, 1, 0, gain);
+    // The turn has to settle before a reading can write; the knob's own position never is.
+    for _ in 0..12 {
+        fake.selection_with_gain(4, 1, 0, gain);
+    }
     assert!(
         !fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
         "the knob's own ring is not yanked: {:?}",

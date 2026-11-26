@@ -47,11 +47,13 @@ panel shows, left to right and top to bottom, then the dials that stay on every 
 other pages' — in banks of eight (`device.setParam`, one gesture each), Device left/right step
 along the chain (`device.selectPrevious`, `device.selectNext`), Bank left/right take the next or
 previous eight dials, and Device On/Off switches the device (`device.setEnabled`). A knob sends
-its dial's normalized position, so a logarithmic time or frequency moves smoothly, and a page or
-operator change in the window moves the bank with it. Switches and choices stay on the device's
-panel. Each knob's ring shows its dial's position, the bank arrows light where there is another
-page, the device arrows while a device is selected, and the track select buttons light for the
-selected track.
+its dial's normalized position, so a logarithmic time or frequency moves with the panel's dial,
+and a page or operator change in the window moves the bank with it. While a knob turns, the
+script leaves its ring to the knob: a host ring write resets the encoder's own value, and the
+next report would jump. The ring goes to the dial's position when the bank or device changes, or
+when a value comes from elsewhere. Switches and choices stay on the device's panel. The bank
+arrows light where there is another page, the device arrows while a device is selected, and the
+track select buttons light for the selected track.
 
 Not yet: the sends, user mode, crossfader, Device Lock, the Clip/Dev and Detail View buttons,
 the tempo encoder, nudge, tap tempo, session record and shift; blinking queued pads; and the

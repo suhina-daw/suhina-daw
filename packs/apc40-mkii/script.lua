@@ -50,6 +50,10 @@ local ON, OFF_BUTTON, STOP_LIT, STOP_TRIGGERED = 127, 0, 1, 2
 -- types on CC 24-31; DEVICE < > on notes 58-59, BANK < > on notes 60-61, DEV. ON/OFF on note
 -- 62; the TRACK SELECT buttons on note 51 of each track's channel, MASTER on note 80).
 local KNOBS = 8
+-- How many selection looks after a knob's last report count as still turning: the ring is not
+-- written while it turns, because a ring write resets an absolute encoder's own value and the
+-- next report would jump.
+local KNOB_SETTLE = 12
 local DEVICE_LEFT, DEVICE_RIGHT, BANK_LEFT, BANK_RIGHT, DEVICE_ON_OFF = 58, 59, 60, 61, 62
 local TRACK_SELECT, MASTER_SELECT = 51, 80
 
@@ -363,6 +367,9 @@ end
 -- a recent report is that echo, not a change, and writing it yanks the ring backward mid-turn.
 -- Only a value the knob never reported (a change made in the window or by a command) writes.
 local knob_recent = {}
+-- The dial each controller last showed, and how many looks it has left before it has settled.
+local knob_shown = {}
+local knob_turn = {}
 
 local function knob_reported(controller, value)
     local list = knob_recent[controller]
@@ -391,20 +398,37 @@ end
 -- single-dot style), the device arrows while a device is selected, the bank arrows where there
 -- is another page, and Device On/Off whether the device is on.
 local function refresh_device()
+    local device = selected_device()
+    local device_key = device ~= nil and (tostring(selection.track) .. ":" .. tostring(device.path)) or ""
     for knob = 0, KNOBS - 1 do
+        local controller = 16 + knob
         local param = knob_param(knob)
         if param ~= nil and type(param.min) == "number" and type(param.max) == "number" then
             led_cc(24 + knob, 1)
             local position = ring_position(param)
-            if not knob_saw(16 + knob, position) then
-                led_cc(16 + knob, position)
+            local shown = device_key .. ":" .. tostring(param.id)
+            local turning = knob_turn[controller] or 0
+            -- A new dial is not the old knob's echo: put the ring at it. While the knob turns,
+            -- leave the ring to the knob, so its next report is not reset elsewhere. Only a
+            -- value from elsewhere writes, once the turn has settled.
+            if shown ~= knob_shown[controller] then
+                led_cc(controller, position)
+                knob_reported(controller, position)
+                knob_turn[controller] = 0
+            elseif turning > 0 then
+                knob_turn[controller] = turning - 1
+            elseif not knob_saw(controller, position) then
+                led_cc(controller, position)
+                knob_reported(controller, position)
             end
+            knob_shown[controller] = shown
         else
             led_cc(24 + knob, 0)
             led_cc(16 + knob, 0)
+            knob_shown[controller] = nil
+            knob_turn[controller] = nil
         end
     end
-    local device = selected_device()
     led(0, DEVICE_LEFT, device ~= nil and ON or OFF_BUTTON)
     led(0, DEVICE_RIGHT, device ~= nil and ON or OFF_BUTTON)
     led(0, BANK_LEFT, bank > 0 and ON or OFF_BUTTON)
@@ -565,6 +589,7 @@ local function cc_received(channel, controller, value)
         end
         suhina.command("device.setParam", args, "apc40-mkii device " .. tostring(selection.track) .. ":" .. tostring(device.path) .. ":" .. tostring(param.id))
         knob_reported(controller, value)
+        knob_turn[controller] = KNOB_SETTLE
     elseif controller >= 48 and controller <= 55 and channel == 0 then
         local id = mixer_track(controller - 48)
         if id == nil then

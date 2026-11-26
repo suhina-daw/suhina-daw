@@ -92,8 +92,11 @@ A controller's knob takes a dial from `dials` and sends `device.setParam` with `
 (0 to 1) — the position its panel's dial shows — instead of `value`. The parameter's own scale
 (linear, logarithmic or a gain law) turns it into the unit, and the reading carries the same
 `normalized` for the ring, so a logarithmic time or frequency moves smoothly instead of jumping
-between the ends of a linear value range. A controller maps the page the panel shows, and a page
-or operator change in the window moves its dials with it because the reading carries the page.
+between the ends of a linear value range. A controller writes a dial's ring only when the dial
+changes or the value comes from elsewhere: an absolute encoder's ring write resets its own value,
+and writing it during a turn makes the next report jump. A controller maps the page the panel
+shows, and a page or operator change in the window moves its dials with it because the reading
+carries the page.
 
 The FM Synth is the first such panel: its page 0, operator 1 envelope dials (attack, decay,
 sustain, release, initial, peak, by vel and by key) come first, then the always-visible LFO rate
