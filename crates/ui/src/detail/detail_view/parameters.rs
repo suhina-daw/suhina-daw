@@ -469,7 +469,16 @@ pub(super) fn knob(
             i32::from(i.key_pressed(egui::Key::ArrowUp) || i.key_pressed(egui::Key::ArrowRight))
                 - i32::from(i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowLeft))
         });
-        let step = if style.step > 0.0 { style.step } else { (max - min) * 0.01 };
+        // A parameter in semitones (a pitch, a range) steps a semitone, and with Shift an octave,
+        // as the clip panel's pitch and a canvas's semitone dial do.
+        let shift = ui.input(|i| i.modifiers.shift);
+        let step = if parameter.unit == "st" {
+            if shift { widgets::OCTAVE } else { 1.0 }
+        } else if style.step > 0.0 {
+            style.step
+        } else {
+            (max - min) * 0.01
+        };
         *value = (*value + f64::from(direction) * step).clamp(min, max);
     }
     let mut position = if logarithmic { (*value / min).ln() / (max / min).ln() } else { (*value - min) / (max - min) };

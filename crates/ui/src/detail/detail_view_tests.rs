@@ -2457,3 +2457,44 @@ fn sidechain_to_searches_the_keyed_devices() {
     assert_eq!(set.len(), 1, "{:?}", harness.state());
     assert_eq!((&set[0].params["track"], &set[0].params["source"]), (&json!(17), &json!(1)));
 }
+
+/// A device's knob in semitones (the Pitch MIDI effect's Pitch and Range), clicked, steps a
+/// semitone with an arrow key and an octave with Shift; a knob in other units keeps its step.
+#[test]
+fn a_semitone_knob_steps_an_octave_with_shift() {
+    let knob_of = |unit: &str| GraphParameter {
+        text: String::new(),
+        default: 0.0,
+        control: suhina_device_sdk::ParameterControl::Knob,
+        unit: unit.into(),
+        id: "pitch".into(),
+        name: "Pitch".into(),
+        min: -128.0,
+        max: 128.0,
+        value: 0.0,
+        ui: suhina_device_sdk::ParameterUi::default(),
+    };
+    for (unit, wanted) in [("st", [1.0, 13.0]), ("", [2.56, 5.12])] {
+        let parameter = knob_of(unit);
+        let mut harness =
+            egui_kittest::Harness::builder().allow_missing_glyphs().with_size(egui::vec2(80.0, 80.0)).build_ui_state(
+                move |ui, value: &mut f64| {
+                    let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(40.0));
+                    let _ = parameters::knob(ui, &parameter, rect, None, value);
+                },
+                0.0,
+            );
+        harness.run();
+        let center = Pos2::new(30.0, 30.0);
+        harness.hover_at(center);
+        harness.drag_at(center);
+        harness.drop_at(center);
+        harness.run();
+        harness.key_press(egui::Key::ArrowUp);
+        harness.run();
+        assert!((*harness.state() - wanted[0]).abs() < 1e-9, "{unit:?}: an arrow: {}", harness.state());
+        harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowUp);
+        harness.run();
+        assert!((*harness.state() - wanted[1]).abs() < 1e-9, "{unit:?}: Shift and an arrow: {}", harness.state());
+    }
+}
