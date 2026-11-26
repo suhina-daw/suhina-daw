@@ -26,8 +26,8 @@ covers:
   updated. The script's device control section is tested against a stand-in Suhina
   (`crates/lua-runner/tests/apc40.rs`): the dials, the bank pages, the switches left out, a
   plug-in's sliders taking the knobs in its panel's order, and the device arrows change the
-  selected device (#1679); a scene launch button lights green while its scene plays and
-  toggles between launching and stopping it. The whole script's run through the supervisor — the mode
+  selected device (#1679); a clip pad takes the clip's colour, and a scene launch button
+  lights green while its scene plays and toggles between launching and stopping it. The whole script's run through the supervisor — the mode
   message, a press of each strip button, the LEDs — follows.
 
 ## What ships

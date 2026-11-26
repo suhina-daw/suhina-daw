@@ -310,6 +310,12 @@ impl Fake {
     /// The launcher grid's scenes, each with its id, and no clips: enough for the scene
     /// launch buttons and their lights.
     fn launcher_grid(&self, scenes: &[(u64, &str)]) {
+        self.launcher_grid_with_color(scenes, None);
+    }
+
+    /// The same grid with the clips' colour, as `project.launcher` gives the slot's own or its
+    /// track's.
+    fn launcher_grid_with_color(&self, scenes: &[(u64, &str)], color: Option<&str>) {
         let grid = self.lua.create_table().unwrap();
         let list = self.lua.create_table().unwrap();
         for (index, (id, name)) in scenes.iter().enumerate() {
@@ -329,6 +335,9 @@ impl Fake {
                 let slot = self.lua.create_table().unwrap();
                 if track < 2 {
                     slot.set("clip", "Clip").unwrap();
+                    if let Some(color) = color {
+                        slot.set("color", color).unwrap();
+                    }
                 }
                 slot.set("stop_button", true).unwrap();
                 slots.set(scene + 1, slot).unwrap();
@@ -491,6 +500,40 @@ fn the_track_and_master_select_buttons_set_the_selection() {
     let command = fake.last_command();
     assert_eq!(command.id, "track.select", "{command:?}");
     assert_eq!(command.track_name.as_deref(), Some("main"), "{command:?}");
+}
+
+/// A clip pad takes the colour the window gives its clip — the clip's own or its track's —
+/// snapped to the hardware's palette, not a fixed white (#1677).
+#[test]
+fn the_clip_pads_take_the_colours_the_window_shows() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    let before = fake.sends.borrow().len();
+    fake.launcher_grid_with_color(&[(10, "Intro")], Some("#ff0000"));
+    let sent = fake.sends.borrow()[before..].to_vec();
+    assert!(
+        sent.iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 32, 5].as_slice()),
+        "the first track's clip is red: {sent:?}"
+    );
+    assert!(
+        sent.iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 33, 5].as_slice()),
+        "the second track's clip is red too: {sent:?}"
+    );
+    let before = fake.sends.borrow().len();
+    fake.launcher_grid_with_color(&[(10, "Intro")], Some("#00ff00"));
+    let sent = fake.sends.borrow()[before..].to_vec();
+    assert!(
+        sent.iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 32, 21].as_slice()),
+        "the palette's green: {sent:?}"
+    );
+    // A clip the project gives no colour is the old white.
+    let before = fake.sends.borrow().len();
+    fake.launcher_grid_with_color(&[(10, "Intro")], None);
+    assert!(
+        fake.sends.borrow()[before..].iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 32, 3].as_slice()),
+        "no colour is white: {:?}",
+        &fake.sends.borrow()[before..]
+    );
 }
 
 /// A scene launch button lights green while any track plays its scene, and a press on a lit

@@ -237,6 +237,76 @@ local function mixer_track(track)
     return column.track
 end
 
+-- The protocol's RGB colour table, in velocity order 0 to 127: the palette the pads and scene
+-- buttons draw. A track's or clip's colour is snapped to its nearest colour, so a pad shows the
+-- colour the window shows rather than a fixed white (#1677).
+local APC_RGB_HEX = ""
+    .. "000000 1e1e1e 7f7f7f ffffff ff4c4c ff0000 590000 190000 ffbd6c ff5400 591d00 271b00 ffff4c ffff00 595900 191900 "
+    .. "88ff4c 54ff00 1d5900 142b00 4cff4c 00ff00 005900 001900 4cff5e 00ff19 00590d 001902 4cff88 00ff55 00591d 001f12 "
+    .. "4cffb7 00ff99 005935 001912 4cc3ff 00a9ff 004152 001019 4c88ff 0055ff 001d59 000819 4c4cff 0000ff 000059 000019 "
+    .. "874cff 5400ff 190064 0f0030 ff4cff ff00ff 590059 190019 ff4c87 ff0054 59001d 220013 ff1500 993500 795100 436400 "
+    .. "033900 005735 00547f 0000ff 00454f 2500cc 7f7f7f 202020 ff0000 bdff2d afed06 64ff09 108b00 00ff87 00a9ff 002aff "
+    .. "3f00ff 7a00ff b21a7d 402100 ff4a00 88e106 72ff15 00ff00 3bff26 59ff71 38ffcc 5b8aff 3151c6 877fe9 d31dff ff005d "
+    .. "ff7f00 b9b000 90ff00 835d07 392b00 144c10 0d5038 15152a 16205a 693c1c a8000a de513d d86a1c ffe126 9ee12f 67b50f "
+    .. "1e1e30 dcff6b 80ffbd 9a99ff 8e66ff 404040 757575 e0ffff a00000 350000 1ad000 074200 b9b000 3f3100 b35f00 4b1502 "
+local APC_RGB = {}
+for hex in APC_RGB_HEX:gmatch("%x+") do
+    APC_RGB[#APC_RGB + 1] = {
+        tonumber(hex:sub(1, 2), 16),
+        tonumber(hex:sub(3, 4), 16),
+        tonumber(hex:sub(5, 6), 16),
+    }
+end
+
+local color_cache = {}
+
+-- A `#rrggbb` text as its three numbers, or nil for anything else.
+local function hex_rgb(text)
+    if type(text) ~= "string" or #text ~= 7 or text:sub(1, 1) ~= "#" then
+        return nil
+    end
+    local r = tonumber(text:sub(2, 3), 16)
+    local g = tonumber(text:sub(4, 5), 16)
+    local b = tonumber(text:sub(6, 7), 16)
+    if r == nil or g == nil or b == nil then
+        return nil
+    end
+    return r, g, b
+end
+
+-- The palette velocity nearest a colour, by its squared distance.
+local function nearest_color(r, g, b)
+    local best, best_distance = WHITE, math.huge
+    for velocity = 0, #APC_RGB - 1 do
+        local color = APC_RGB[velocity + 1]
+        local dr, dg, db = r - color[1], g - color[2], b - color[3]
+        local distance = dr * dr + dg * dg + db * db
+        if distance < best_distance then
+            best, best_distance = velocity, distance
+        end
+    end
+    return best
+end
+
+-- A clip's colour as a pad velocity: the nearest palette colour, dimmed when the clip is off.
+local function pad_color(text, dim)
+    local key = text .. (dim and " dim" or "")
+    local known = color_cache[key]
+    if known ~= nil then
+        return known
+    end
+    local r, g, b = hex_rgb(text)
+    local velocity = WHITE
+    if r ~= nil then
+        if dim then
+            r, g, b = r * 0.25, g * 0.25, b * 0.25
+        end
+        velocity = nearest_color(r, g, b)
+    end
+    color_cache[key] = velocity
+    return velocity
+end
+
 local function pad_velocity(track, scene)
     local column = column_state(track)
     if column ~= nil then
@@ -252,6 +322,10 @@ local function pad_velocity(track, scene)
         if column_grid ~= nil then
             local slot = column_grid.slots and column_grid.slots[scene + 1] or nil
             if slot ~= nil and not is_nil(slot.clip) then
+                local color = slot.color
+                if not is_nil(color) and type(color) == "string" then
+                    return pad_color(color, slot.enabled == false)
+                end
                 if slot.enabled == false then
                     return DIM
                 end

@@ -34,7 +34,9 @@ affiliation with Akai, and the name says what hardware the script is for — no 
 
 ## What it wires, and what it does not yet
 
-Wired: the clip grid (`clip.launch`, a slot's stop button for an empty slot), the scene
+Wired: the clip grid (`clip.launch`, a slot's stop button for an empty slot; each pad shows its
+clip's own or its track's colour, goes green while it plays, yellow while it is queued and dims
+when it is disabled), the scene
 buttons (`scene.launch`, and `scene.stop` on a lit one — a button lights green while its scene
 plays and goes blank when stopped), the track stop, the activator (`track.setMute`), solo
 (`track.setSolo`), record arm (`track.setArm`), the track select buttons and master select
