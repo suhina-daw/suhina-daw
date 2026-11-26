@@ -2852,16 +2852,33 @@ pub(crate) fn show(
         }
         let focused = response.has_focus();
         remember_keyboard_owner(&response);
-        let (dx, dy, button, fine) = ui.input(|i| {
+        // In a docked panel the window takes egui's focus from every control but a text field at
+        // each frame's start, so the shortcuts keep the keys: a value control takes the arrows
+        // (Shift with them too) and a typed number the way every value control does, once clicked,
+        // until a click elsewhere (`widgets::value_keys`), docked or in a device's own window. It
+        // takes the arrow events, so the focus's own reading below sees none of them twice.
+        let takes_values = !matches!(
+            control.gesture,
+            UiGesture::Toggle | UiGesture::Momentary | UiGesture::Set(_) | UiGesture::Tab(_) | UiGesture::Menu
+        );
+        let (held_steps, held_shift, typed) =
+            if takes_values { crate::kit::widgets::value_keys(ui, &response) } else { (0, false, None) };
+        let typed_value = typed.and_then(|t| t.trim().replace(',', ".").parse::<f64>().ok());
+        let (mut dx, mut dy, button, fine) = ui.input(|i| {
             (
                 i32::from(focused && i.key_pressed(egui::Key::ArrowRight))
                     - i32::from(focused && i.key_pressed(egui::Key::ArrowLeft)),
                 i32::from(focused && i.key_pressed(egui::Key::ArrowUp))
                     - i32::from(focused && i.key_pressed(egui::Key::ArrowDown)),
                 focused && (i.key_down(egui::Key::Space) || i.key_down(egui::Key::Enter)),
-                if i.modifiers.shift { 0.1 } else { 1.0 },
+                if i.modifiers.shift || held_shift { 0.1 } else { 1.0 },
             )
         });
+        if control.y.is_some() {
+            dy += held_steps;
+        } else {
+            dx += held_steps;
+        }
         let held_id = response.id.with("held");
         let held = response.is_pointer_button_down_on() || button;
         let was_held = ui.ctx().data_mut(|d| {
@@ -3104,10 +3121,18 @@ pub(crate) fn show(
             if response.double_clicked() {
                 value = p.default;
             }
+            // A number typed and Enter: the value itself, for the control's own parameter (its
+            // upright binding, else its sideways one).
+            let primary = (axis == 1) == control.y.is_some();
+            let typed_here = typed_value.filter(|v| primary && v.is_finite());
+            if let Some(typed) = typed_here {
+                value = typed.clamp(p.min, p.max);
+            }
             // Reuse the SDK's discrete/range rules through the shared command.
-            let changed = next != old || response.double_clicked() || step_click != 0;
+            let changed = next != old || response.double_clicked() || step_click != 0 || typed_here.is_some();
             let interacting = response.clicked()
                 || response.dragged()
+                || typed_here.is_some()
                 || dx != 0
                 || dy != 0
                 || (control.gesture == UiGesture::Momentary && (held || was_held));
