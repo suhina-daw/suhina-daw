@@ -609,8 +609,8 @@ fn the_fm_synths_envelope_dials_follow_the_chosen_model() {
         "{time:?}"
     );
     assert_eq!(
-        &time[8..14],
-        ["lfo2Rate", "lfo2Amount", "filterFreq", "filterRes", "spread", "volume"],
+        &time[8..15],
+        ["lfo2Rate", "lfo2Amount", "filterFreq", "filterRes", "spread", "volume", "random.amount"],
         "the always-visible dials follow the page's: {time:?}"
     );
     assert!(!time.iter().any(|id| id == "op1.coarse" || id == "panel.op"), "not a dial: {time:?}");
@@ -645,6 +645,7 @@ fn the_fm_synths_dials_are_native_widgets() {
         "filterRes_main",
         "spread",
         "volume",
+        "random.amount",
     ] {
         let control = canvas.controls.iter().find(|c| c.id == id).unwrap_or_else(|| panic!("the dial {id}"));
         assert!(matches!(control.widget, Some(Widget::Dial { .. })), "{id}: {:?}", control.widget);

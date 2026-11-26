@@ -1047,8 +1047,8 @@ def compact():
     controls.append(dial("spread", "Spread", 941.0, 4.0, percent("spread"), " %"))
     controls.append(dial("volume", "Volume", 941.0, 84.0, par("volume"), " dB", 1))
     controls.append(random_button("random", "Random", [995.0, 4.0, 56.0, 24.0]))
-    controls.append(field("random.amount", "Amount", [995.0, 32.0, 56.0, 32.0], percent("random.amount"), " %"))
-    controls.append(more("random_settings", 8, [995.0, 68.0, 56.0, 20.0]))
+    controls.append(dial("random.amount", "Amount", 995.0, 30.0, percent("random.amount"), " %", w=56.0, h=64.0))
+    controls.append(more("random_settings", 8, [995.0, 98.0, 56.0, 20.0]))
     controls.append(meter("meter", [1053.0, 4.0, 24.0, h - 8.0]))
     return {"size": [w, h], "viewport_size": None, "background": PANEL, "assets": [], "layers": [], "controls": controls,
             "hidden_parameters": every_parameter(), "accent_on": True,

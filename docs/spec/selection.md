@@ -96,8 +96,8 @@ or operator change in the window is not followed yet (below).
 
 The FM Synth is the first such panel: its page 0, operator 1 envelope dials (attack, decay,
 sustain, release, initial, peak, by vel and by key) come first, then the always-visible LFO rate
-and amount, filter frequency and resonance, Spread and Volume dials; banks page through the
-rest. The LFO's Rate dial computes its hertz from the stored position, and a controller's ring
+and amount, filter frequency and resonance, Spread, Volume and Random amount dials; banks page
+through the rest. The LFO's Rate dial computes its hertz from the stored position, and a controller's ring
 uses the same normalized position either way ([FM Synth](fm-synth.md#panel), #1718).
 
 ## The window follows
