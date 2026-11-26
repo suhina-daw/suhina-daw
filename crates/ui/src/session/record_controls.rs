@@ -269,7 +269,10 @@ pub fn count_in_menu(ui: &mut Ui, rect: Rect, bars: u8, actions: &mut Vec<Action
                 .selected_text(egui::RichText::new(shown).font(mono.clone()).color(crate::kit::element::value_ink())),
             |ui| {
                 for (value, name) in COUNT_INS {
-                    ui.selectable_value(&mut chosen, value, egui::RichText::new(name).font(mono.clone()));
+                    if crate::kit::menu::item(ui, name, chosen == value).clicked() {
+                        chosen = value;
+                        ui.close();
+                    }
                 }
             },
         )

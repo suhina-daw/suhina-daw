@@ -148,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn png_pixels_keep_authored_colours_and_alpha_and_reject_bombs_or_corruption() {
+    fn png_pixels_keep_authored_colors_and_alpha_and_reject_bombs_or_corruption() {
         let source = fixture(2, 2, [20, 80, 160, 128]);
         let image = raster(&source, 4, 3).unwrap();
         assert_eq!(image.size, [4, 3]);

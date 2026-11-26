@@ -1,9 +1,9 @@
 ---
 description: How the browser behaves: places, categories, search, the tree, previewing, dragging samples, MIDI files, devices, presets and plug-ins into the project, pins, recent items, tags, tag folders, collapsible and reorderable sections
-read_when: browser, quick add, quick-add palette, Ctrl+P, add by name, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, colour tags, tag folders, tag ids, collapsible sections, section order, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
+read_when: browser, quick add, quick-add palette, Ctrl+P, add by name, library, samples, drag from the browser, drop files, preview, audition, search, folders, pinned, recent, color tags, tag folders, tag ids, collapsible sections, section order, track.add, clip.addFiles, library commands, preview.play, MIDI file import, .mid, presets, .syx, .sd, new track, empty area
 type: spec
 status: draft
-last_verified: 2026-11-15
+last_verified: 2026-11-23
 covers:
   - crates/library/**
   - crates/media/src/midi.rs
@@ -44,7 +44,7 @@ project.
   none at first.
 - **Place:** what the sidebar offers: Pinned, the Recent groups and the folders.
 - **Library:** the folders, the index of the files in them, the pins, the recent items and the
-  colour tags. It belongs to Suhina, not to a project (like the plug-in library).
+  color tags. It belongs to Suhina, not to a project (like the plug-in library).
 
 ## Kinds of files
 
@@ -100,8 +100,8 @@ commits; Escape or a release on empty sidebar space cancels. The Tags section's 
 offers **New folder** ([#1254] › Tag folders), so a library reaches
 its first folder from the mouse alone, and makes a tag of its own beside it: the same
 palette and New tag field a folder's or a tag's menu carries ([#1254] review), the pick
-colouring the tag, no pick taking the named colours' next
-([Where tags come from](#colour-tags)). An added tag or tag folder shows
+coloring the tag, no pick taking the named colors' next
+([Where tags come from](#color-tags)). An added tag or tag folder shows
 itself, from any menu that adds one: the add opens the Tags section when it is closed, the
 way a folder's add opens the folder, and the sidebar scrolls just far enough to show the new
 row ([#1254] review). The
@@ -117,10 +117,10 @@ reopens.
   Browser › Recent's kinds set to Chips, chips over the list while Recent is chosen.
 - **Tags:** one row per tag (#1196), the forest's rows with each level's folders on top and
   tags under them, each in the forest's own order
-  ([Colour tags](#colour-tags)): the tag's colour dot, its name and, at the right, how many
+  ([Color tags](#color-tags)): the tag's color dot, its name and, at the right, how many
   items carry it. A tag that no item carries still shows, dimmed, so a new tag can be found
   before it is used; its row's right-click menu (and the footer dots for the same tags) are
-  the other ways to its actions ([Colour tags](#colour-tags)). A tag can live inside a **tag
+  the other ways to its actions ([Color tags](#color-tags)). A tag can live inside a **tag
   folder**: the folder's row draws a chevron that opens or closes it, holds tags and folders
   under it (to 4 levels deep), and its right-click menu renames it, adds a tag or a folder
   under it, and removes it — asking first, saying how many rows move up ([#1254] › Tag
@@ -148,7 +148,7 @@ folders hold any kind.
   per vendor, *Unknown vendor* last), then each added folder.
 
 With a place selected the tree is that place: the folder's contents, the pinned items, the
-recent group's items or a tag's items (a flat list, [Colour tags](#colour-tags)).
+recent group's items or a tag's items (a flat list, [Color tags](#color-tags)).
 
 **The category filter** narrows what the tree shows: Samples, MIDI and Presets show files of
 that kind and the folders that hold any (by the index; a folder not indexed yet is shown);
@@ -167,7 +167,7 @@ out: `grandpiano` finds `Grand Pianos`, `kick01` finds `Kick 01.wav`, and `grand
 first word, then names with a word that starts with it, then the rest; shorter names first,
 then by name. Each row shows the folder it is in after the name.
 
-**Rows:** a chevron for what opens, the type icon, the name, the colour tag dots after it and
+**Rows:** a chevron for what opens, the type icon, the name, the color tag dots after it and
 on the right the duration of a sample (`0:04.2`, read when the row is first shown) or the kind
 of a device ("instrument", "effect", the plug-in's format). A folder or a heading opens and
 closes with a click on its chevron (every click toggles; the second click of a rapid pair is a
@@ -191,12 +191,16 @@ selected or under the pointer; clicking it previews the sample (a second click s
 *Adding without dragging*); on a project file it opens the project as a project dropped on the
 window does (Settings › Projects and backups › Open projects in).
 
-**Right-click menu:** Pin or Unpin; Tag ▸ — both act on every selected item when the row is one of the selection, as Copy to folder… does, the label then counting them ("Unpin 6 items") and a tag ticked when every one carries it ([#1254] review) — (each tag as a painted checkbox, ticked when set, its colour's swatch and its name; a
+**Right-click menu:** Pin or Unpin; Tag ▸ — both act on every selected item when the row is one of the selection, as Copy to folder… does, the label then counting them ("Unpin 6 items") and a tag ticked when every one carries it ([#1254] review) — (each tag as a painted checkbox, ticked when set, its color's swatch and its name; a
 click anywhere on the entry sets or clears it; a *New tag…* field that
-makes a tag in the next default colour and sets it at once — clicks inside the menu, in the
+makes a tag in the next default color and sets it at once — clicks inside the menu, in the
 field included, do not close it; a click outside does, and every button closes it by its
-action); Show in folder (a file: selects its folder
-as the place); Refresh (a folder: lists it again from disk).
+action); Go to folder (a file: selects its folder
+as the place, in the browser); **Show in Explorer** (**Show in Finder** on macOS, **Show in folder**
+on Linux: the file or folder in the system's file manager, the file selected there; on Linux the
+desktop's file manager is asked through its `org.freedesktop.FileManager1` service to select it,
+and where none answers its folder is opened with `xdg-open`); Refresh (a folder: lists it again
+from disk).
 
 ## Search field keys
 
@@ -344,7 +348,7 @@ A clip's length is the end of its last note rounded up to a whole bar (at least 
 
 **A Stems file** becomes a group named after it, holding a track for the master (muted, so
 nothing sounds twice; unmute it to compare or to play the track whole) and one track per stem,
-named and coloured from the file. Each track gets a clip of its part from the dropped beat or
+named and colored from the file. Each track gets a clip of its part from the dropped beat or
 in the dropped scene, all with the master's tempo, so the parts stay locked together. The file's
 mastering compressor and limiter go on the group, which runs them over the sum of the stems
 ([ADR 0004](../decisions/0004-built-in-devices.md) › 10); switched off when the file has them
@@ -430,7 +434,7 @@ it is a place to drop, and the status line says what a drop there does.
 - **Copy** is `library.copyTo`, as Copy to folder… does. **Move** is `library.moveTo`: each file
   is renamed into the folder when both are on one drive, or copied and the original removed once
   the copy is whole. A name taken in the folder gets a number (`Kick 2.wav`); nothing is
-  overwritten. The file's pin, its places among the recent items and its colour tags go with it,
+  overwritten. The file's pin, its places among the recent items and its color tags go with it,
   and the folders that held it and hold it now are read again, so the list shows it in its new
   place.
 - A file already in that folder, one that is gone, and one an open project plays (its audio
@@ -496,16 +500,16 @@ where things go, `Track: Audio 1 · Bar 17`, or `New track · Bar 17` with no tr
 - **The palette's place:** with the pointer over the Arrangement's lanes when the shortcut is
   pressed, the beat under it, snapped to the grid; anywhere else, the play start marker.
 
-## Colour tags
+## Color tags
 
-Tags have an id, a name and a colour ([#1254] › Tag model). The id comes from 1, is never
+Tags have an id, a name and a color ([#1254] › Tag model). The id comes from 1, is never
 reused, and is shared with tag folders; items, folders and the order refer to a tag by its id,
 so a rename rewrites only the name and everything that carried the tag keeps carrying it. A
 tag placed as `tag:<name>` stays and `tag:#<id>` means the same by id; a place of several
 joins the ids `tag:#<id>+#<id>` ([#1254] review). There are seven at
-first: Red, Orange, Yellow, Green, Blue, Purple and Grey; a new tag without a colour takes the
-next named colour (the enum behind the seven, then the CSS named colours, with numbering —
-"Red 2" — when a name is already taken). There are seven at first and colours may repeat; two
+first: Red, Orange, Yellow, Green, Blue, Purple and Grey; a new tag without a color takes the
+next named color (the enum behind the seven, then the CSS named colors, with numbering —
+"Red 2" — when a name is already taken). There are seven at first and colors may repeat; two
 tags never share a name. A name is 1 to 64 bytes and never spells an id's selector: `#` over
 one or more ASCII digits and nothing else is the selectors' own shape (`#<id>`), and so are
 such ids joined with `+` (`#1+#2`, a place of several); both are refused at the make and the
@@ -534,7 +538,7 @@ lifts its whole cortège — tags and subfolders — into the parent (the top wh
 menu asks first, saying how many rows move up; a made subfolder opens its target's branch,
 so the new row shows however deeply the target sat, and a tag a folder makes opens the
 folder the same way ([#1254] review). A folder's own menu
-carries the palette beside its New tag field: the pick colours the tag a folder makes, the
+carries the palette beside its New tag field: the pick colors the tag a folder makes, the
 same pick a tag's menu makes ([#1254] review). Each level of the tree indents a step from
 its parent's ([#1254] review), and a few points of air go between the rows where the level
 changes, so the nesting reads like the Pinned section's groups do; a folder's row draws its
@@ -559,7 +563,7 @@ which reaches the first folder from the mouse on any tag.
 
 The rest is as it was with the ids in the rows' place (#1196): a right-click on a tag's dot in
 the footer renames it (a field, Enter, or a click outside the menu; clicks inside that menu do not close it),
-recolours it (the swatches of the track colour palette, [components](../design/components.md#colour-palette), or Select colour…, which opens the theme editor's picker in the menu itself) or removes it — the Remove there asks as the section's row menu does, saying how many items carry it, and the asking goes when the menu closes ([#1250] review); new ones are added from a row's Tag menu or a footer dot's menu — and the add opens the Tags section when it is closed, to show the tag it made ([#1254] review) — up to 64
+recolors it (the swatches of the track color palette, [components](../design/components.md#color-palette), or Select color…, which opens the theme editor's picker in the menu itself) or removes it — the Remove there asks as the section's row menu does, saying how many items carry it, and the asking goes when the menu closes ([#1250] review); new ones are added from a row's Tag menu or a footer dot's menu — and the add opens the Tags section when it is closed, to show the tag it made ([#1254] review) — up to 64
 (Settings › Browser › Tag limit raises it, at most 1024). Any item can carry any
 number of tags; a tag is a 6 px dot after the name. Hovering a dot — the footer's or an item
 row's — says the tag's name: as a tooltip, and in the status bar (the footer's dot adds how
@@ -576,7 +580,7 @@ review), named first no matter the kind, as a `library.search` place of
 or takes it off:
 items with any of the row's tags show; a Ctrl-click on a folder's own row puts its whole
 cortège in the place ([#1254] › Tag folders). A place of several tags is a search place of its
-ids joined: items with any of them, named first, as a single tag's place lists them, and the coloured dots filter it the way they filter a one-tag place: down to its items that carry a filtered tag, never wider than the place ([#1250] review)
+ids joined: items with any of them, named first, as a single tag's place lists them, and the colored dots filter it the way they filter a one-tag place: down to its items that carry a filtered tag, never wider than the place ([#1250] review)
 ([#1254] review). A plain click of a tag a place of several holds sets the place to its tag
 alone ([#1254] review), and a tag the library dropped goes from the browser's states with it:
 a place, a filter or a Shift pick the rows no longer hold reads back as gone ([#1254]
@@ -598,23 +602,23 @@ menu renames it (a field; **Enter** commits, and so does a click outside the men
 erased commits nothing, and a name another tag has is refused, the status bar saying why,
 [#1250] review: the rename that ran under every key lost the field's own typing to the
 name it made),
-recolours —
-the palette's swatches, or **Select colour…**, which opens the theme editor's picker in the
+recolors —
+the palette's swatches, or **Select color…**, which opens the theme editor's picker in the
 menu itself, where a picker of its own would end the menu as a click outside it does —, and
 removes the tag — the first click on Remove asks, saying how many items carry it, and **Keep**
 stands it down; a second click removes the tag from the list and from every item carrying it.
 The menu adds a tag for the section too: a typed **New tag…** name, added with Enter or the
-**Add tag** button beside it, with the colour
+**Add tag** button beside it, with the color
 this menu shows outlined — the tag it was added from shows it —, shown dimmed until
 something carries it; the menu closes when the add lands, and stays for a refused name (the
-status bar says why). A **folder's row's** menu (in place of a colour, since it has none)
+status bar says why). A **folder's row's** menu (in place of a color, since it has none)
 renames the folder live, adds a tag or a folder under it, and removes it with the asking-first
-count ([#1254] › Tag folders). The row's menu can rename, recolour or remove every tag there
+count ([#1254] › Tag folders). The row's menu can rename, recolor or remove every tag there
 is. The
 footer's dots stay as they are (#1196): where the section reaches a tag's items as a
 place, the dots are still the quick filter of whatever list is shown, a search's or a place's
 items included. The section is the one place the tags are kept, so the former tag editor and
-its Edit tags button are gone: adding, renaming, recolouring and removing have their row
+its Edit tags button are gone: adding, renaming, recoloring and removing have their row
 here, and items are tagged from the rows' Tag menu, by the drags, and over the same commands.
 
 ## Where it is kept
@@ -625,7 +629,7 @@ folder's children under it), the tagged items by tag id, the sections' order and
 and the tag limit ([#1254]). A missing file is an empty library. A file kept by an earlier
 shape — tags without ids, `tagged` by tag names — is read in with the ids handed out and its
 name references mapped onto them, and the next save rewrites it in the new shape; parts the
-shape refuses (an unknown group, a tag without a name, a colour that is not `#RRGGBB`, a
+shape refuses (an unknown group, a tag without a name, a color that is not `#RRGGBB`, a
 reference to a tag the folder does not hold) are skipped with a warning; lists longer than
 their limits are cut. The file index is kept beside it (ADR 0012). Panel width, side,
 whether it is shown, auto-play, preview volume, how several files are dropped and the warp mode
@@ -651,7 +655,7 @@ the CLI can do the same.
 | `library.pin`, `library.unpin` | `item` | pins or unpins an item |
 | `library.recent` | `group?` | the recent items of one group or all |
 | `library.tags` | | flat lists of tags and tag folders with their ids; each tag's `folder` and each folder's `parent` is the containing folder's id, or `null` at the top level; also the sections' order and open state, tagged items by id, and the limit |
-| `library.setTag` | `id?`, `name?`, `color?`, `rename?`, `folder?`, `limit?` | adds a tag (a name no tag has, coloured from the named colours when asked without one), or changes one's colour or name — by id (`#<id>`) or by name; `folder` (a tag folder by id `#<id>` or name) makes the new tag directly in it, the top when left out ([#1254] review; a tag the library already has takes no `folder` — its moves go to `library.moveTag`); `limit` sets the most tags there may be |
+| `library.setTag` | `id?`, `name?`, `color?`, `rename?`, `folder?`, `limit?` | adds a tag (a name no tag has, colored from the named colors when asked without one), or changes one's color or name — by id (`#<id>`) or by name; `folder` (a tag folder by id `#<id>` or name) makes the new tag directly in it, the top when left out ([#1254] review; a tag the library already has takes no `folder` — its moves go to `library.moveTag`); `limit` sets the most tags there may be |
 | `library.removeTag` | `id?`, `name?` | removes a tag (by id or name) from the list and every item |
 | `library.tag` | `item`, `tag`, `on` | sets or clears a tag on an item (`tag` by id or name) |
 | `library.addTagFolder` | `name?`, `parent?` | adds a tag folder under `parent` (by id or name) or at the top; the name is unique among its own level's, named "Folder" when left out ([#1254]) |

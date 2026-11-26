@@ -3,7 +3,7 @@ description: How to find out what the running app does around a bug: the trace l
 read_when: debugging, bug hunting, trace, SUHINA_TRACE, --trace, diagnostic log, live debugging, UI lag, slow frame, frame time, stutter, plug-in host log, ARA, Melodyne, playhead jumps, flicker, timing, latency, screen recording, video frames, contact sheet, tester, hang, freeze, working a bug through
 type: howto
 status: current
-last_verified: 2026-11-19
+last_verified: 2026-11-23
 covers:
   - crates/ui-gpu/src/liquid.rs
   - apps/suhina/src/main.rs
@@ -115,7 +115,7 @@ viewport call with fast contents points to native rendering/presentation rather 
 the settings controls. `settings placement` distinguishes native and embedded Settings;
 the outer `dialogs` frame measurement includes the synchronous native presentation wait.
 
-`colour window surface` records the detached colour tool's client rectangle, scale, theme
+`color window surface` records the detached color tool's client rectangle, scale, theme
 fill and native geometry when any changes. It separates a missing/transparent UI fill from
 a native presentation fault and exposes position or scale feedback without pointer logs.
 

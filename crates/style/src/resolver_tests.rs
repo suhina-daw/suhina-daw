@@ -27,8 +27,8 @@ fn cached_snapshot_invalidates_on_dimensions_state_and_source() {
     assert!(Arc::ptr_eq(&replacement, &resolver.resolve(&tree, viewport).unwrap()));
 }
 
-fn note(colour: &str, selected: bool) -> Element {
-    let mut note = Element::new("note", None).with_attribute("color", colour);
+fn note(color: &str, selected: bool) -> Element {
+    let mut note = Element::new("note", None).with_attribute("color", color);
     if selected {
         note.attributes.push(("selected".into(), String::new()));
     }
@@ -49,10 +49,10 @@ fn notes_of_one_identity_share_a_style_until_the_snapshot_changes() {
     let viewport = Viewport { width: 800.0, height: 600.0, reduced_motion: false, light: false };
     let mut resolver = Resolver::new(vec![scope(css)]).unwrap();
     resolver.resolve(&tree, viewport).unwrap();
-    let colours = ["#ff0000", "#00ff00", "#0000ff", "#ffff00"];
+    let colors = ["#ff0000", "#00ff00", "#0000ff", "#ffff00"];
     let mut first = None;
     for index in 0..10_000 {
-        let style = resolver.leaf_style(1, &note(colours[index % 4], index % 3 == 0)).unwrap();
+        let style = resolver.leaf_style(1, &note(colors[index % 4], index % 3 == 0)).unwrap();
         first.get_or_insert(style);
     }
     assert_eq!(resolver.leaf_stats(), LeafStats { hits: 9_992, misses: 8, entries: 8 });

@@ -33,6 +33,7 @@ use suhina_model::{
     TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation,
     max_clip_gain, valid_bpm,
 };
+use suhina_model::{ENVELOPE_RANGE, GRAIN_RANGE, SCATTER_RANGE, SliceAt, SliceTail, WarpSettings};
 use suhina_model::{LaneGroup, LaneLayout, LaneRef, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
 /// The file extension, without the dot.
@@ -43,7 +44,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 15;
+pub const VERSION: u64 = 16;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -296,7 +297,7 @@ fn project_value(p: &Project) -> Value {
                     "name": t.name,
                     "clips": t.clips.iter().map(clip_value).collect::<Vec<_>>(),
                 });
-                // A take's own colour (#989), left out while it takes the palette's.
+                // A take's own color (#989), left out while it takes the palette's.
                 if let Some(Rgb(r, g, b)) = t.color {
                     take["color"] = json!(format!("#{r:02X}{g:02X}{b:02X}"));
                 }
@@ -521,11 +522,16 @@ fn device_value(d: &Device) -> Value {
                 .inputs
                 .iter()
                 .map(|i| {
-                    json!({
+                    let mut input = json!({
                         "port": i.port,
                         "source": { "channel": i.source.channel().0, "tap": i.source.tap().name() },
                         "gain": number(i.gain),
-                    })
+                    });
+                    // Written only when off: a key is read unless it says otherwise.
+                    if !i.enabled {
+                        input["enabled"] = Value::Bool(false);
+                    }
+                    input
                 })
                 .collect();
             map.insert("inputs".into(), Value::Array(inputs));
@@ -656,8 +662,63 @@ fn clip_audio_value(a: &ClipAudio) -> Value {
         if let Some(source) = a.tempo_source {
             map.insert("tempo_source".into(), json!(source.name()));
         }
+        // The stretch modes' settings, only where one differs from its default.
+        // Written as the engine plays them, every number in its range, so a project built in
+        // code with one outside it still saves to a file that reads back.
+        let w = a.warp.held();
+        if w != WarpSettings::default() {
+            map.insert(
+                "warp_settings".into(),
+                json!({
+                    "slice": w.slice.name(),
+                    "tail": w.tail.name(),
+                    "envelope": number(w.envelope),
+                    "grain": number(w.grain),
+                    "scatter": number(w.scatter),
+                }),
+            );
+        }
     }
     out
+}
+
+/// The stretch modes' settings of a clip's audio (version 16 on, optional): each field may be left
+/// out for its default.
+fn read_warp_settings(a: &Map<String, Value>, at: &str) -> Result<WarpSettings, ProjectFileError> {
+    let Some(value) = a.get("warp_settings").filter(|v| !v.is_null()) else { return Ok(WarpSettings::default()) };
+    let at = format!("{at}.warp_settings");
+    let w = object(value, &at)?;
+    let default = WarpSettings::default();
+    let name = |key: &str| -> Result<Option<&str>, ProjectFileError> {
+        match w.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(name)) => Ok(Some(name.as_str())),
+            Some(_) => Err(format!("{at}.{key}: expected a name").into()),
+        }
+    };
+    let slice = match name("slice")? {
+        None => default.slice,
+        Some(n) => SliceAt::from_name(n).ok_or_else(|| ProjectFileError(format!("{at}.slice: {n} is not a slice")))?,
+    };
+    let tail = match name("tail")? {
+        None => default.tail,
+        Some(n) => SliceTail::from_name(n).ok_or_else(|| ProjectFileError(format!("{at}.tail: {n} is not a tail")))?,
+    };
+    let ranged = |key: &str, range: std::ops::RangeInclusive<f64>, fallback: f64| -> Result<f64, ProjectFileError> {
+        let v = float_or(w, key, fallback, &at)?;
+        if range.contains(&v) {
+            Ok(v)
+        } else {
+            Err(format!("{at}.{key}: {v} is outside {} to {}", range.start(), range.end()).into())
+        }
+    };
+    Ok(WarpSettings {
+        slice,
+        tail,
+        envelope: ranged("envelope", ENVELOPE_RANGE, default.envelope)?,
+        grain: ranged("grain", GRAIN_RANGE, default.grain)?,
+        scatter: ranged("scatter", SCATTER_RANGE, default.scatter)?,
+    })
 }
 
 /// One note as the file writes it. `muted` is written only on a muted note and `velocity_range`
@@ -722,7 +783,7 @@ fn clip_value(c: &Clip) -> Value {
         if !c.launch.is_default() {
             map.insert("launch".into(), launch_value(&c.launch));
         }
-        // Only a clip with a colour of its own carries one; the others show their track's.
+        // Only a clip with a color of its own carries one; the others show their track's.
         if let Some(Rgb(r, g, b)) = c.color {
             map.insert("color".into(), json!(format!("#{r:02X}{g:02X}{b:02X}")));
         }
@@ -1518,6 +1579,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
             port: text(input, "port", &at)?,
             source: SignalPoint::Channel { channel: ChannelId(whole(source, "channel", &source_at)?), tap },
             gain: float_or(input, "gain", 1.0, &at)?,
+            enabled: flag(input, "enabled", true, &at)?,
         });
     }
     // An instrument whatever its plug-in is now, from version 15 (#1416); before it the
@@ -1750,6 +1812,7 @@ fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, Projec
         stretch,
         warp_markers,
         tempo_source,
+        warp: read_warp_settings(a, at)?,
     })
 }
 

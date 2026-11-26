@@ -96,6 +96,20 @@ jobs:
           # A pull request is checked out as a merge commit; its first parent is the base.
           fetch-depth: 2
       # docs/INDEX.md and docs/commands.md are generated on main (docs-generated.yml), not checked here.
+      # The theme recordings are written there too: a pull request that edits them would conflict
+      # with every other pull request that changes the views (apps/theme-render/tests/painted.rs).
+      # Deleting one is allowed: a theme taken out of the painted test's list takes its files along.
+      - name: The theme recordings are left to the default branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          edited=$(git diff --name-only --diff-filter=d HEAD^1 HEAD -- apps/theme-render/tests/painted apps/theme-render/tests/cut)
+          if [ -n "$edited" ]; then
+            printf '%s\n' "$edited"
+            echo "::error::A pull request leaves apps/theme-render/tests/painted/ and cut/ alone: they are recorded on the default branch after the merge, and CI flags the looks that differ. Undo with: git checkout origin/$BASE -- apps/theme-render/tests/painted apps/theme-render/tests/cut"
+            exit 1
+          fi
       - name: Front matter and covered paths
         run: python3 scripts/docs.py check
       # What the updater installs and runs comes from this repository (updater-source.yml runs the
@@ -283,17 +297,30 @@ jobs:
       # the next window at that moment has its connection reset.
       # A pull request that changes none of the pack's inputs leaves out its data audits
       # (.config/nextest.toml › ci-pr); the merge queue and main run them.
+      # The theme drawings that differ from the recordings are written to SUHINA_PAINTED_REPORT
+      # rather than failing (apps/theme-render/tests/painted.rs); the step after this flags them.
+      # After the run's summary nextest lists the slow tests (.config/nextest.toml); it has no
+      # level that lists the leaky ones (a test that left a process or handle open) without every
+      # skipped test too, so the step lists their LEAK lines itself, after nextest's list.
       - name: Tests (partition ${{ matrix.partition }} of 3)
         shell: bash
         env:
           PROFILE: ${{ github.event_name == 'pull_request' && needs.changes.outputs.pack != 'true' && 'ci-pr' || 'ci' }}
+          SUHINA_PAINTED_REPORT: ${{ runner.temp }}/painted-report
         run: |
           run=(cargo nextest run --workspace --profile "$PROFILE" --partition "slice:${{ matrix.partition }}/3")
+          log="$RUNNER_TEMP/nextest.log"
+          status=0
           if [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" "${run[@]}"
+            xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" "${run[@]}" 2>&1 | tee "$log" || status=$?
           else
-            "${run[@]}"
+            "${run[@]}" 2>&1 | tee "$log" || status=$?
           fi
+          leaks=$(sed 's/\x1b\[[0-9;]*m//g' "$log" | grep -E '^ *LEAK(-FAIL)? \[' || true)
+          if [ -n "$leaks" ]; then
+            printf '%s\n' "$leaks"
+          fi
+          exit "$status"
       # The engine's tests again with renderers on 4 threads (ADR 0038 › 16): a render on several
       # threads must equal the render on one, bit for bit. A renderer that finds no free lane of
       # the process's pool (past 16 at once) renders alone, and a block with fewer than 4 chains
@@ -316,6 +343,109 @@ jobs:
       - name: Native CLAP and VST3 artifacts through the sandbox host
         if: matrix.partition == 1
         run: python scripts/device_exports.py test
+      # A change to how the built-in themes look is flagged for the reviewer, not failed: the
+      # recordings are written on the default branch after the merge (docs-generated.yml), so a pull
+      # request never edits them and two never conflict on them. Linux only: every system draws the
+      # scenes as on Linux, so the others would repeat the same list. Each partition flags the themes
+      # it ran. A push to the default branch flags nothing: its recordings follow in the bot's commit.
+      #
+      # On a pull request, the flagged themes are drawn again on the base commit (the merge commit's
+      # first parent) and each flagged scene's paint listing is compared with the pull request's, so
+      # the reviewer sees what it paints differently: in the summary cut short, whole in the
+      # artifact below. The last step of the job, since it leaves the base checked out; only the
+      # crates that differ from the base build again.
+      - name: Theme looks that differ from the recordings
+        if: always() && runner.os == 'Linux' && github.event_name != 'push'
+        shell: bash
+        env:
+          REPORT: ${{ runner.temp }}/painted-report
+          BEFORE: ${{ runner.temp }}/painted-before
+          DIFFS: ${{ runner.temp }}/theme-look-diffs
+          COMPARE: ${{ github.event_name == 'pull_request' }}
+        run: |
+          shopt -s nullglob
+          files=("$REPORT"/*.md)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "Every theme paints as recorded."
+            exit 0
+          fi
+          themes=()
+          unavailable=()
+          for f in "${files[@]}"; do themes+=("$(basename "$f" .md)"); done
+          mkdir -p "$DIFFS"
+          if [ "$COMPARE" = true ] && git fetch --quiet --depth=2 origin "$GITHUB_SHA" && git checkout --quiet --detach HEAD^1; then
+            only=$(IFS=,; echo "${themes[*]}")
+            if ! SUHINA_PAINTED_ONLY="$only" SUHINA_PAINTED_DUMP="$BEFORE" cargo nextest run --workspace --profile ci \
+                --no-fail-fast -E 'package(suhina-theme-render) & test(/^painted::themes::/)'; then
+              echo "::notice::The base commit's theme tests did not all pass; the comparison shows what they drew."
+            fi
+            # A listing is `<scene>.<theme>.txt`; a theme id has no dot. A scene the base drew for
+            # none of this theme's scenes was not drawn there at all (its tests did not build or
+            # run), so it has no diff; a scene missing beside others of its theme is new.
+            for after in "$REPORT"/after/*.txt; do
+              name=$(basename "$after" .txt)
+              theme=${name#*.}
+              before="$BEFORE/$name.txt"
+              if [ ! -f "$before" ]; then
+                theme_drawn=("$BEFORE"/*."$theme".txt)
+                if [ ${#theme_drawn[@]} -eq 0 ]; then
+                  unavailable+=("$name")
+                  continue
+                fi
+                before=/dev/null
+              fi
+              # An empty listing is a scene the pull request no longer draws.
+              [ -s "$after" ] || after=/dev/null
+              diff -u --label "base/$name" --label "pull-request/$name" "$before" "$after" > "$DIFFS/$name.diff" || true
+            done
+          else
+            echo "::notice::No comparison with the base commit here; the summary lists the scenes only."
+          fi
+          diffs=("$DIFFS"/*.diff)
+          {
+            echo "### Theme looks that differ from the recordings on the default branch"
+            echo
+            echo "Flagged, not failed: check that the change means these. The recordings are written after the merge."
+            echo
+            cat "${files[@]}"
+            if [ ${#unavailable[@]} -gt 0 ]; then
+              echo
+              echo "The base commit drew none of these themes' scenes, so they have no diff: $(IFS=,; echo "${unavailable[*]}" | sed 's/,/, /g')."
+            fi
+            if [ ${#diffs[@]} -gt 0 ]; then
+              echo
+              echo "#### What the flagged scenes paint differently"
+              echo
+              echo "Each scene's paint listing on the base commit against this pull request's, the first 60 lines; the artifact \`theme-look-diffs-${{ matrix.partition }}\` holds them whole."
+              echo
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # GitHub keeps at most 1 MiB of a step's summary: the diffs stop well before that.
+          for d in "${diffs[@]}"; do
+            if [ "$(stat -c %s "$GITHUB_STEP_SUMMARY")" -gt 600000 ]; then
+              echo "The rest are in the artifact." >> "$GITHUB_STEP_SUMMARY"
+              break
+            fi
+            {
+              echo "<details><summary>$(basename "$d" .diff) ($(grep -c '^[-+][^-+]' "$d" || true) lines differ)</summary>"
+              echo
+              echo '```diff'
+              head -n 60 "$d"
+              echo '```'
+              echo
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+          names=$(IFS=,; echo "${themes[*]}" | sed 's/,/, /g')
+          echo "::warning title=Theme looks changed::${#files[@]} themes paint differently from the recordings ($names); the job summary lists the scenes and what they paint differently."
+      - name: Theme look diffs
+        if: always() && runner.os == 'Linux' && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: theme-look-diffs-${{ matrix.partition }}
+          path: ${{ runner.temp }}/theme-look-diffs/*.diff
+          if-no-files-found: ignore
+          retention-days: 14
 
   # Not part of `ci`: a macOS failure is reported but does not block merging. One runner: the
   # tests are not split here.

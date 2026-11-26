@@ -3,7 +3,7 @@ description: How waveforms are computed and drawn in clips, the browser's previe
 read_when: waveform, peaks, RMS, waveform drawing, zoom, samples, stereo lanes, dB scale, clip waveform, preview waveform, sample map tooltip, frame budget
 type: spec
 status: current
-last_verified: 2026-11-02
+last_verified: 2026-11-23
 covers:
   - crates/ui/src/kit/waveform.rs
   - crates/ui/src/kit/waveform/tests.rs
@@ -60,8 +60,8 @@ The RMS of several buckets is the root of their mean square, weighted by frames.
   left above right, two points apart; shorter, one mixed lane.
 - **Envelope.** Per column, from the highest to the lowest sample, at least a point tall so
   silence shows as a line. It is a filled strip between the columns' tops and bottoms (a
-  triangle mesh) with its top and bottom edges drawn as smoothed lines, in the colour at 55 %.
-  The RMS band, from −RMS to +RMS and never outside the envelope, is drawn over it in the colour
+  triangle mesh) with its top and bottom edges drawn as smoothed lines, in the color at 55 %.
+  The RMS band, from −RMS to +RMS and never outside the envelope, is drawn over it in the color
   itself. Columns outside the file break the strip.
 - **Samples.** When a column covers less than one frame, the samples are joined by a line;
   samples six points apart or more get a dot each.
@@ -70,7 +70,7 @@ The RMS of several buckets is the root of their mean square, weighted by frames.
   Waveforms › Waveform scale; `waveform_scale = linear|db` in `settings.txt`): full scale at
   the edges, 48 dB below it (`DB_RANGE`) and quieter in the middle, so quiet parts show. The
   setting applies to every waveform.
-- **Colours.** A clip uses its track's colour (paler while muted or disabled); the browser's
+- **Colors.** A clip uses its track's color (paler while muted or disabled); the browser's
   preview uses `text.secondary` for the part played and `text.hint` for the rest; the map's
   tooltip `text.secondary`.
 

@@ -10,7 +10,7 @@ use egui::{Color32, Context, Id, Painter, Rect, Stroke, StrokeKind, TextureId, p
 
 use super::{motion, theme};
 
-/// The theme panel colour before main-window background opacity is applied.
+/// The theme panel color before main-window background opacity is applied.
 pub fn set_panel_base(ctx: &Context, color: Color32) {
     ctx.data_mut(|data| data.insert_temp(Id::unique("liquid-panel-base"), color));
 }
@@ -35,7 +35,7 @@ pub fn background_image(ctx: &Context) -> Option<BackgroundImage> {
     ctx.data(|data| data.get_temp::<Option<BackgroundImage>>(Id::unique("liquid-background-image"))).flatten()
 }
 
-/// Surfaces can be enabled independently without changing a colour theme.
+/// Surfaces can be enabled independently without changing a color theme.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Options {
     /// 0 disables the material; 100 is the strongest supported treatment.
@@ -44,7 +44,7 @@ pub struct Options {
     pub clips: u8,
 }
 
-/// The affected surface; track and clip materials retain their content colour.
+/// The affected surface; track and clip materials retain their content color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface {
     Panel,
@@ -735,7 +735,7 @@ fn refraction_mesh(rect: Rect, backdrop: Backdrop, strength: f32) -> egui::Mesh 
     mesh
 }
 
-/// Broad coloured reflection below the narrow rim and above the source fill.
+/// Broad colored reflection below the narrow rim and above the source fill.
 /// Different left/right intensities give a gentle directional light, not a white stripe.
 fn body_mesh(rect: Rect, base: Color32, strength: f32) -> egui::Mesh {
     let mut mesh = egui::Mesh::default();

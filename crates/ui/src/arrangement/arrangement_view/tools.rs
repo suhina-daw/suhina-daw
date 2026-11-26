@@ -84,22 +84,18 @@ pub(super) fn toolbar(ui: &mut Ui, rect: Rect, state: &mut ArrangementViewState)
         let grid = state.grid;
         let keys = state.grid_keys.clone();
         let shown = grid.label();
-        let mono = theme::mono_font(theme::TEXT_SMALL);
-        ui.scope_builder(egui::UiBuilder::new().max_rect(menu), |ui| {
-            let text = egui::RichText::new(format!("{shown}   ")).font(mono).color(crate::kit::element::value_ink());
-            let response = ui.menu_button(text, |ui| {
-                if let Some(picked) = crate::interaction::grid_menu::grid_entries(ui, grid, &keys, &|_| true) {
-                    state.grid = picked;
-                    ui.close();
-                }
-            });
-            crate::interaction::toolbar::menu_arrow(ui, response.response.rect, crate::kit::element::value_ink());
-            let label = format!("Arrangement grid {shown}");
-            response.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
-            response.response.on_hover_text(
-                "The Arrangement's grid: snapping, adaptive or fixed lines, triplets (Ctrl+1 to Ctrl+4)",
-            );
+        // A dropdown, as the lanes' Resize all is: the grid's value, its menu the grid's entries.
+        let label = format!("Arrangement grid {shown}");
+        let response = widgets::button_area(ui, menu, Id::unique("arrangement-grid-menu"), &label);
+        widgets::subtle_dropdown(ui, ui.painter(), menu, &response, &shown, super::panel_surface());
+        egui::Popup::menu(&response).show(|ui| {
+            if let Some(picked) = crate::interaction::grid_menu::grid_entries(ui, grid, &keys, &|_| true) {
+                state.grid = picked;
+                ui.close();
+            }
         });
+        response
+            .on_hover_text("The Arrangement's grid: snapping, adaptive or fixed lines, triplets (Ctrl+1 to Ctrl+4)");
     }
 }
 

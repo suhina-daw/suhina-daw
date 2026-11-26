@@ -1,7 +1,7 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! `var()` in SVG artwork. The SVG renderer reads plain colours only, so a value that is a colour
+//! `var()` in SVG artwork. The SVG renderer reads plain colors only, so a value that is a color
 //! (`color-mix(...)`, `contrast-color(...)`, a name) goes in as the computed `#rrggbb[aa]`.
 use std::{borrow::Cow, collections::BTreeMap};
 
@@ -75,7 +75,7 @@ fn top_level_comma(text: &str) -> Option<usize> {
     None
 }
 
-/// A colour as the renderer reads it; any other value as it is.
+/// A color as the renderer reads it; any other value as it is.
 fn computed(value: &str) -> Cow<'_, str> {
     match crate::value::Color::parse(value.trim()) {
         Ok(crate::value::Color::Rgba([r, g, b, 255])) => Cow::Owned(format!("#{r:02x}{g:02x}{b:02x}")),
@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn colours_go_in_computed_and_other_values_as_they_are() {
+    fn colors_go_in_computed_and_other_values_as_they_are() {
         let svg = r#"<rect fill="var(--mix)" stroke="var(--accent)" stroke-width="var(--width)"/>"#;
         assert_eq!(substitute(svg, &variables()), r##"<rect fill="#800080" stroke="#ff0000" stroke-width="2.5"/>"##);
         assert_eq!(substitute("var(--glass) var(--on-accent)", &variables()), "#0000ff80 #000000");

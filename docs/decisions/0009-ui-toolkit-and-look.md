@@ -4,7 +4,7 @@ read_when: UI toolkit, egui, look and feel, trade dress, design rights, screensh
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-11
+last_verified: 2026-11-23
 covers:
   - apps/suhina/Cargo.toml
   - crates/ui/Cargo.toml
@@ -51,16 +51,16 @@ What the law protects decides how close the UI may get (summary, not legal advic
    control bar.
 2. **Same map, different paint.** The structure and behaviour of each view follow Live as closely
    as useful: where things are, what they do, how they react, which keys do what. The appearance
-   is Suhina's own: colours, typography, control shapes, icons, spacing and the visual language
+   is Suhina's own: colors, typography, control shapes, icons, spacing and the visual language
    of states. [`docs/design/brief.md`](../design/brief.md) lists what stays familiar and what
    must differ.
 3. **Behaviour is specified in words.** Each view has a functional spec under `docs/spec/ui-*.md`
    written from using Live: regions, order, interactions, states, shortcuts. Specs contain no
-   colours, sizes or images from Live.
+   colors, sizes or images from Live.
 4. **Screenshots are a reference for structure, never for the look** (amended 2026-10-12).
    Screenshots of Live may be used, also with a design tool, to see where things are and how
    they behave, as they are for the functional specs. The look is drawn from the design brief:
-   its "Make our own" table decides colours, type, control shapes and states, whatever a
+   its "Make our own" table decides colors, type, control shapes and states, whatever a
    screenshot shows. Screenshots are never traced or committed, and their icons, artwork and
    text are never reused. (The first version of this decision banned screenshots in design
    work altogether; the first design rounds had started from one, and the look was reworked
@@ -70,9 +70,9 @@ What the law protects decides how close the UI may get (summary, not legal advic
    The UI reads playback position, meters and clip states from snapshots the engine publishes
    and never touches the audio thread. UI state (zoom, selection, open panels) is to be
    serialisable, so agents can read it and take offscreen screenshots (an aim, not built yet).
-6. **Design tokens** (colours, spacing, radii, type sizes) live in one theme module, never
-   hard-coded in widgets; the default track colours and the sample map's kind colours are
-   tokens too. The colours come from the theme in use: the built-in one or a JSON
+6. **Design tokens** (colors, spacing, radii, type sizes) live in one theme module, never
+   hard-coded in widgets; the default track colors and the sample map's kind colors are
+   tokens too. The colors come from the theme in use: the built-in one or a JSON
    theme file the user picks and edits ([brief](../design/brief.md) › Themes).
 
 7. **One main window.** Views open in place in the main window, not in windows of their own.

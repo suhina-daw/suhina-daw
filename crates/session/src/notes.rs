@@ -37,7 +37,7 @@ const EPSILON: f64 = 1e-9;
 
 /// Where a clip is: an arrangement lane and the clip's index in it, or a launcher column and
 /// the slot's index in it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ClipAt {
     Arrangement(usize, usize),
     Slot(usize, usize),
@@ -774,7 +774,7 @@ fn velocity_list(params: &Value) -> Result<Option<Vec<f64>>, CommandError> {
 
 /// The quantise grid `params.grid` names, in beats: a value as `launcher.setQuantization` takes it,
 /// with bars as long as the project's time signature makes them.
-fn quantize_step(p: &Project, params: &Value) -> Result<f64, CommandError> {
+pub(crate) fn quantize_step(p: &Project, params: &Value) -> Result<f64, CommandError> {
     let text = Args::new(params).raw_str("grid").ok_or("grid must be a text such as \"1/16\" or \"1/8T\"")?;
     let step = match parse_quantization(text)? {
         Quantization::None => return Err("grid none has no lines to quantise to; give a value such as \"1/16\"".into()),

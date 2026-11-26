@@ -64,7 +64,7 @@ fn alac_file_decodes_losslessly_with_base64_metadata() {
 }
 
 #[test]
-fn metadata_gives_names_colours_and_mastering() {
+fn metadata_gives_names_colors_and_mastering() {
     let info = read_info(&data("tones-aac.stem.mp4")).unwrap();
     assert_eq!(info.tracks, 5);
     let names: Vec<_> = info.stems.iter().map(|s| s.name.as_str()).collect();

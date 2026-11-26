@@ -7,13 +7,17 @@ name: Generated docs
 #     (scripts/docs.py stamp);
 #   - docs/INDEX.md, from the documents' front matter;
 #   - ROADMAP.md › What works now, with each file under docs/works-now/ folded in and deleted
-#     (scripts/works_now.py), so pull requests add a file of their own there rather than editing it.
+#     (scripts/works_now.py), so pull requests add a file of their own there rather than editing it;
+#   - the theme recordings, apps/theme-render/tests/painted/ and cut/: what each built-in theme
+#     paints in each scene now (job `looks`). On a pull request ci.yml flags the looks that differ
+#     from them rather than failing.
 # Pull requests leave all of them alone, so two pull requests never conflict on them (issue #462).
 # A pull request changes only the inputs; ci.yml checks that they render.
 #
-# Two jobs, so the key that may push to main never shares a machine with code from the repository
-# or its dependencies (build scripts, proc macros): `generate` builds and writes the files with no
-# secrets; `publish` runs only git, copies exactly those files and pushes them.
+# Separate jobs, so the key that may push to main never shares a machine with code from the
+# repository or its dependencies (build scripts, proc macros): `generate` and `looks` build and
+# write the files with no secrets; `publish` runs only git, copies exactly those files and pushes
+# them. A theme drawing that fails stops `looks` only: the docs are still published.
 #
 # The push uses a short-lived token of the GitHub App `suhina-docs-bot`, which the main ruleset
 # lets bypass pull requests (the organisation does not allow deploy keys). Setup: the app has
@@ -84,8 +88,35 @@ jobs:
           path: ROADMAP.md
           retention-days: 1
 
+  # The theme recordings, as the default branch draws them now (apps/theme-render/tests/painted.rs).
+  # Every system draws the scenes as on Linux, so one recording made here holds on all of them.
+  looks:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install ALSA headers (cpal)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Record what every built-in theme paints
+        run: cargo test -p suhina-theme-render --test main painted
+        env:
+          SUHINA_BLESS: "1"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: theme-recordings
+          path: |
+            apps/theme-render/tests/painted/*.txt
+            apps/theme-render/tests/cut/*.txt
+          retention-days: 1
+
+  # Runs when the docs were generated, whether or not the theme recordings were.
   publish:
-    needs: generate
+    needs: [generate, looks]
+    if: always() && needs.generate.result == 'success'
     runs-on: ubuntu-latest
     environment: docs-bot
     env:
@@ -95,7 +126,7 @@ jobs:
       - name: Token of the docs bot app
         id: app-token
         if: env.HAS_APP == 'true'
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.DOCS_BOT_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_BOT_PRIVATE_KEY }}
@@ -110,11 +141,32 @@ jobs:
         with:
           name: generated-roadmap
           path: ${{ runner.temp }}/roadmap
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.looks.result == 'success'
+        with:
+          name: theme-recordings
+          path: ${{ runner.temp }}/recordings
       - name: Commit and push when they changed
         env:
           GENERATED: ${{ runner.temp }}/generated
           ROADMAP: ${{ runner.temp }}/roadmap/ROADMAP.md
+          RECORDINGS: ${{ runner.temp }}/recordings
+          LOOKS: ${{ needs.looks.result }}
         run: |
+          if [ "$LOOKS" != success ]; then
+            echo "::warning::The theme recordings were not made (job looks: $LOOKS); only the docs are published."
+          fi
+          # The theme recordings: regular files named as a theme or variant, in painted/ and cut/ only.
+          if [ -d "$RECORDINGS" ]; then
+            (cd "$RECORDINGS" && find . -type f -print0) | while IFS= read -r -d '' rel; do
+              rel=${rel#./}
+              if ! printf '%s\n' "$rel" | grep -Eqx '(painted|cut)/[a-z0-9@-]+\.txt'; then
+                echo "::error::$rel is not a theme recording."
+                exit 1
+              fi
+              cp "$RECORDINGS/$rel" "apps/theme-render/tests/$rel"
+            done
+          fi
           for name in INDEX.md commands.md; do
             source="$GENERATED/$name"
             if [ ! -f "$source" ] || [ -L "$source" ]; then
@@ -149,8 +201,8 @@ jobs:
           fi
           # Only modified (" M") or new ("??") files, never a rename, and only the files generated
           # above; any other document only modified; deleted (" D") only a folded docs/works-now file.
-          if printf '%s\n' "$changed" | grep -Ev '^( M|\?\?) docs/(INDEX|commands)\.md$|^ M docs/.*\.md$|^ M ROADMAP\.md$|^ D docs/works-now/[^/]+/[^/]+\.md$'; then
-            echo "::error::Only the generated docs, last_verified dates and the folded ROADMAP bullets may change (above: anything else)."
+          if printf '%s\n' "$changed" | grep -Ev '^( M|\?\?) docs/(INDEX|commands)\.md$|^ M docs/.*\.md$|^ M ROADMAP\.md$|^ D docs/works-now/[^/]+/[^/]+\.md$|^( M|\?\?) apps/theme-render/tests/(painted|cut)/[a-z0-9@-]+\.txt$'; then
+            echo "::error::Only the generated docs, last_verified dates, the folded ROADMAP bullets and the theme recordings may change (above: anything else)."
             exit 1
           fi
           # In ROADMAP.md, lines only added, and each one a line of a deleted docs/works-now file.
@@ -180,10 +232,11 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/INDEX.md docs/commands.md
           git add -u -- 'docs/*.md' ROADMAP.md
+          git add -- apps/theme-render/tests/painted apps/theme-render/tests/cut
           # The subject starts "Docs: regenerate", which `docs.py stamp` skips (scripts/docs.py).
-          # [skip ci]: the commit changes generated documents only, and starts no workflow on
+          # [skip ci]: the commit changes generated files only, and starts no workflow on
           # main, so it neither queues behind nor holds up the CI run of the merge before it.
-          git commit -m "Docs: regenerate INDEX.md, commands.md and last_verified dates" -m "[skip ci]"
+          git commit -m "Docs: regenerate INDEX.md, commands.md, last_verified dates and theme recordings" -m "[skip ci]"
           if ! git push origin "HEAD:$GITHUB_REF_NAME"; then
             echo "::notice::$GITHUB_REF_NAME moved on during this run; the run for the newer commit regenerates the files."
           fi

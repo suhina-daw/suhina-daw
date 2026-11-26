@@ -179,18 +179,13 @@ impl MenuCx<'_> {
     /// The items, each with its key, grayed out where there is nothing to act on.
     fn entries(&self, ui: &mut Ui, state: &PianoRollState, at: MenuAt) -> Option<Pick> {
         let clip = self.clip;
-        let font = theme::ui_font(theme::TEXT_SMALL);
         let acting = !state.acting().is_empty();
         let notes = !clip.notes.is_empty();
         let mut picked = None;
+        // The kit's compact rows (`kit::menu::action`), each with its key.
         let mut item = |ui: &mut Ui, name: &str, key: Option<&str>, enabled: bool, pick: Pick| {
-            let mut button = egui::Button::new(egui::RichText::new(name).font(font.clone()));
-            if let Some(text) = key.and_then(|k| self.keymap.label(k)) {
-                button = button.shortcut_text(egui::RichText::new(text).font(font.clone()));
-            }
-            let response = ui.add_enabled(enabled, button);
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
-            if response.clicked() {
+            let shown = key.and_then(|k| self.keymap.label(k));
+            if crate::kit::menu::action(ui, name, shown.as_deref(), enabled).clicked() {
                 picked = Some(pick);
                 ui.close();
             }
@@ -201,10 +196,10 @@ impl MenuCx<'_> {
         item(ui, "Paste", Some("selection.paste"), pastes, Pick::Key("selection.paste"));
         item(ui, "Duplicate", Some("selection.duplicate"), acting, Pick::Key("selection.duplicate"));
         item(ui, "Delete", Some("selection.delete"), acting, Pick::Delete);
-        ui.add(egui::Separator::default().spacing(4.0));
+        crate::kit::menu::separator(ui);
         // No Select all: Ctrl+A is quicker.
         item(ui, "Invert selection", None, notes, Pick::InvertSelection);
-        ui.add(egui::Separator::default().spacing(4.0));
+        crate::kit::menu::separator(ui);
         let quantizes = notes && !(state.acting().is_empty() && state.span.is_some());
         item(ui, "Quantize", Some("pianoRoll.quantize"), quantizes, Pick::Key("pianoRoll.quantize"));
         item(ui, "Quantize settings…", None, true, Pick::QuantizeSettings);
@@ -216,13 +211,13 @@ impl MenuCx<'_> {
         // Reverse turns the notes round in time (the Notes tab's Reverse); Invert selection above
         // changes what is selected, not the notes.
         item(ui, "Reverse", None, acting, Pick::Reverse);
-        ui.add(egui::Separator::default().spacing(4.0));
+        crate::kit::menu::separator(ui);
         item(ui, "Loop selection", None, self.selection_span(state).is_some(), Pick::LoopSelection);
         // The start marker and the loop's start only: their ends are dragged on the ruler, and
         // Loop selection sets both of the loop's ends.
         item(ui, "Set start here", None, true, Pick::Marker(RulerPart::StartMarker));
         item(ui, "Set loop start here", None, true, Pick::Marker(RulerPart::LoopStart));
-        ui.add(egui::Separator::default().spacing(4.0));
+        crate::kit::menu::separator(ui);
         let span = state.span.is_some();
         item(
             ui,
@@ -244,7 +239,7 @@ impl MenuCx<'_> {
         item(ui, name, None, splits, pick);
         item(ui, "Set the clip's first beat here", None, self.origin_ok(at), Pick::Origin);
         // No zoom items: Z and Shift+Z are quicker than the menu, which the grid already makes long.
-        ui.add(egui::Separator::default().spacing(4.0));
+        crate::kit::menu::separator(ui);
         // The grid's entries right in the menu, as the toolbar's grid menu holds them: no submenu
         // to open first.
         let keys = grid_key_labels(self.keymap, &PIANO_GRID_KEYS);

@@ -79,7 +79,7 @@ pub const BACKDROP_FILTERED: &[&str] = &["popup", "menu", "dialog", "tooltip", "
 /// The floating elements that read `backdrop-filter` only from a rule naming them alone.
 pub const BARE_FILTERED: &[&str] = &["popup", "menu", "tooltip"];
 
-/// A surface gradient: `none`, or an angle and colour stops (`90deg, #fff2 0%, #0002 100%`).
+/// A surface gradient: `none`, or an angle and color stops (`90deg, #fff2 0%, #0002 100%`).
 fn surface_gradient(text: &str) -> bool {
     let text = text.trim();
     text == "none" || (text.len() <= 1024 && text.contains(',') && !text.contains([';', '{', '}']))
@@ -167,7 +167,7 @@ macro_rules! properties {
 properties! {
     BackgroundImage, "background-image", Gradients, Value::Gradients(Vec::new()), false, "Native linear and repeating linear gradient layers.";
     Color, "color", Color, Value::Color(Color::Rgba([255; 4])), true, "Foreground ink; inherited by child controls.";
-    BackgroundColor, "background-color", Color, Value::Color(Color::Rgba([0; 4])), false, "Surface colour. Desktop opacity is a separate material property.";
+    BackgroundColor, "background-color", Color, Value::Color(Color::Rgba([0; 4])), false, "Surface color. Desktop opacity is a separate material property.";
     AccentColor, "accent-color", Color, Value::Color(Color::Current), true, "Accent of controls: a knob's arc, a switched-on button; inherited.";
     BorderColor, "border-color", Color, Value::Color(Color::Current), false, "Border ink, defaulting to the current foreground.";
     Radius, "radius", Length, Value::Length(Length::Px(0.0)), false, "Corner radius.";
@@ -207,7 +207,7 @@ properties! {
     GridTemplateRows, "grid-template-rows", TrackList, Value::TrackList(Vec::new()), false, "Grid rows: lengths, fr, auto, minmax() and repeat().";
     GridColumn, "grid-column", Placement, Value::Placement([crate::layout::GridLine::Auto; 2]), false, "Grid column lines: a line, a negative line from the end, or span n, and an optional / end.";
     GridRow, "grid-row", Placement, Value::Placement([crate::layout::GridLine::Auto; 2]), false, "Grid row lines, as grid-column.";
-    Transition, "transition", Transitions, Value::Transitions(Vec::new()), false, "Colours, opacity, radius and font size change smoothly: property, duration, easing, delay.";
+    Transition, "transition", Transitions, Value::Transitions(Vec::new()), false, "Colors, opacity, radius and font size change smoothly: property, duration, easing, delay.";
     Animation, "animation", Animations, Value::Animations(Vec::new()), false, "Keyframe animations: name, duration, easing, delay, count, direction, fill.";
     TextAlign, "text-align", Keyword(TEXT_ALIGN), Value::Keyword("start"), true, "Where a control's value text sits: left, center or right.";
     Visibility, "visibility", Keyword(VISIBILITY), Value::Keyword("visible"), true, "hidden keeps the element's space but neither draws it nor lets it take input.";
@@ -221,7 +221,7 @@ properties! {
     BoxShadow, "box-shadow", BoxShadows, Value::Shadows(Vec::new()), false, "Up to four inset/outset surface shadows.";
     TextShadow, "text-shadow", TextShadows, Value::Shadows(Vec::new()), true, "Up to four shadows behind native glyphs.";
     Overflow, "overflow", Keyword(OVERFLOW), Value::Keyword("visible"), false, "hidden (or clip) keeps what the element's children paint, their shadows too, inside its box; regions are hidden.";
-    OutlineWidth, "outline-width", Length, Value::Length(Length::Px(0.0)), false, "Width of a line drawn around the element, outside its border; `outline` sets width, style and colour.";
+    OutlineWidth, "outline-width", Length, Value::Length(Length::Px(0.0)), false, "Width of a line drawn around the element, outside its border; `outline` sets width, style and color.";
     OutlineStyle, "outline-style", Keyword(OUTLINE_STYLE), Value::Keyword("none"), false, "solid draws the outline; none (the default) draws none.";
     OutlineColor, "outline-color", Color, Value::Color(Color::Current), false, "Ink of the outline, defaulting to the current foreground.";
     OutlineOffset, "outline-offset", Length, Value::Length(Length::Px(0.0)), false, "Space between the border and the outline; negative draws it inside.";
@@ -234,16 +234,16 @@ properties! {
     TrackHeaders, "track-headers", Keyword(SIDE), Value::Keyword(""), false, "The side of the Arrangement view its track headers are on.";
     TrackHeight, "track-height", Length, Value::Length(Length::Auto), false, "The height of an Arrangement track that has none of its own, 20 to 400 points.";
     HeaderMinWidth, "header-min-width", Length, Value::Length(Length::Auto), false, "The least width of the Arrangement view's header column, 160 to 520 points.";
-    HeaderTint, "header-tint", Integer, Value::Integer(-1), false, "How strongly a track's colour tints its Arrangement header, 0 to 100.";
+    HeaderTint, "header-tint", Integer, Value::Integer(-1), false, "How strongly a track's color tints its Arrangement header, 0 to 100.";
     ParamLabel, "param-label", Keyword(PARAM_LABEL), Value::Keyword(""), true, "Where a device's generated parameters show their names: left, top or hidden.";
     MeterStyle, "meter-style", Keyword(METER_STYLE), Value::Keyword(""), false, "How level meters draw: continuous, segmented, needle or frames (artwork).";
     MeterSegments, "meter-segments", Integer, Value::Integer(0), false, "Segments of a segmented meter, 4 to 64.";
     MeterIntensity, "meter-intensity", Integer, Value::Integer(-1), false, "How strongly a meter's level shows, 0 to 100.";
     ArtworkFps, "artwork-fps", Integer, Value::Integer(0), false, "Frames per second of animated artwork, 1 to 30.";
     Liquid, "liquid", Text(liquid), Value::Text(String::new()), false, "Glass strengths: auto, or three integers from 0 to 100 for panels, tracks and clips.";
-    PanelGradient, "panel-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the panels: none, or an angle and colour stops.";
-    TrackGradient, "track-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the tracks: none, or an angle and colour stops.";
-    ClipGradient, "clip-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the clips: none, or an angle and colour stops.";
+    PanelGradient, "panel-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the panels: none, or an angle and color stops.";
+    TrackGradient, "track-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the tracks: none, or an angle and color stops.";
+    ClipGradient, "clip-gradient", Text(surface_gradient), Value::Text(String::new()), false, "A gradient over the clips: none, or an angle and color stops.";
     BackdropFilter, "backdrop-filter", Text(backdrop_filter), Value::Text(String::new()), false, "What a popup, menu, dialog, tooltip or Settings does to the window behind it: blur(<length>) or none; on or off for now.";
     Image, "image", Text(artwork_image), Value::Text(String::new()), false, "An element's artwork: url(<file>), or none for no artwork, so the element draws its CSS look.";
     BackdropImage, "backdrop-image", Text(backdrop_image), Value::Text(String::new()), false, "The theme's picture behind the window: none or url(\"<file>.png\").";

@@ -13,12 +13,12 @@ pub(super) fn format_value(value: f64) -> String {
     text.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
-/// An `.sd` colour.
+/// An `.sd` color.
 pub(super) fn rgb([r, g, b]: [u8; 3]) -> egui::Color32 {
     egui::Color32::from_rgb(r, g, b)
 }
 
-/// One parameter in its cell `row`: its panel colour, its label, its control and its value, as
+/// One parameter in its cell `row`: its panel color, its label, its control and its value, as
 /// its `ui` fields say. A change is one `device.setParam`.
 pub(super) fn parameter_cell(
     ui: &mut Ui,
@@ -34,7 +34,7 @@ pub(super) fn parameter_cell(
     let family = if style.monospace { egui::FontFamily::Monospace } else { egui::FontFamily::Proportional };
     let font = egui::FontId::new(style.font_size, family);
     // A parameter's name and value, `device-control[kind="name"]` and `[kind="value"]`, where the
-    // device gives no text colour.
+    // device gives no text color.
     let foreground = style
         .text_color
         .map_or_else(|| crate::kit::element::DEVICE_CONTROL.attribute("kind", "name").look().color(), rgb);
@@ -197,7 +197,11 @@ pub(super) fn parameter_widget(
                     .width(rect.width()),
                 |ui| {
                     for (i, label) in style.options.iter().enumerate() {
-                        ui.selectable_value(&mut *value, i as f64, label);
+                        let chosen = *value == i as f64;
+                        if crate::kit::menu::item(ui, label, chosen).clicked() {
+                            *value = i as f64;
+                            ui.close();
+                        }
                     }
                 },
             )
@@ -434,7 +438,7 @@ pub(super) fn knob(
     let (min, max) = (parameter.min, parameter.max);
     let logarithmic = parameter.control == ParameterControl::LogKnob;
     // `device knob { width }` (or height) sets the knob's size, within its cell; with
-    // `--suhina-param-row` taller rows give it room. Its `accent-color` colours its ring and
+    // `--suhina-param-row` taller rows give it room. Its `accent-color` colors its ring and
     // pointer, unless the device gives an accent of its own.
     let (themed, sheet_accent, hides_pointer) = {
         let knob = crate::kit::element::KNOB.enter();
@@ -446,7 +450,7 @@ pub(super) fn knob(
             hides,
         )
     };
-    // Where neither the device nor the theme colours it: its disc `device-control[kind="knob"]`'s
+    // Where neither the device nor the theme colors it: its disc `device-control[kind="knob"]`'s
     // `background-color`, its ring its `color` and its pointer its `accent-color`.
     let plain = crate::kit::element::DEVICE_CONTROL.attribute("kind", "knob").look();
     let accent = accent.or(sheet_accent);

@@ -1,9 +1,9 @@
 /* Catppuccin Mocha, reduced to a few settings: every token below follows them. */
-@property --ground { syntax: "<color>"; initial-value: #11111B; label: "Background"; group: "Colours"; }
-@property --surface { syntax: "<color>"; initial-value: #181825; label: "Panels"; group: "Colours"; }
-@property --ink { syntax: "<color>"; initial-value: #CDD6F4; label: "Text"; group: "Colours"; }
-@property --tint { syntax: "<color>"; initial-value: #CBA6F7; label: "Accent"; group: "Colours"; }
-@property --highlight { syntax: "<color>"; initial-value: #F9E2AF; label: "Selection"; group: "Colours"; }
+@property --ground { syntax: "<color>"; initial-value: #11111B; label: "Background"; group: "Colors"; }
+@property --surface { syntax: "<color>"; initial-value: #181825; label: "Panels"; group: "Colors"; }
+@property --ink { syntax: "<color>"; initial-value: #CDD6F4; label: "Text"; group: "Colors"; }
+@property --tint { syntax: "<color>"; initial-value: #CBA6F7; label: "Accent"; group: "Colors"; }
+@property --highlight { syntax: "<color>"; initial-value: #F9E2AF; label: "Selection"; group: "Colors"; }
 :root {
   --window-background: var(--ground);
   --panel-background: var(--surface);

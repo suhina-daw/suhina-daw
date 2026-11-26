@@ -3,7 +3,7 @@ description: How recording works: MIDI and audio takes into a clip slot or the a
 read_when: recording, record, take, record button, clip.record, transport.record, count-in, transport.setCountIn, record.state, MIDI recording, audio recording, Recorded folder, latency compensation of a take, overdub, loopback
 type: spec
 status: current
-last_verified: 2026-11-15
+last_verified: 2026-11-23
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/record_tests.rs
@@ -80,11 +80,11 @@ else in a new scene.
 
 ### Into the arrangement
 
-While a take is running, Arrangement shows a growing recording-coloured region on its
+While a take is running, Arrangement shows a growing recording-colored region on its
 track, from its start to the current transport beat. This preview does not create project
 clips or undo entries. The finished clip replaces it after recording ends; notes and
 waveforms are drawn from the finished take. New recorded clips receive the corresponding
-MIDI/audio creation colour without recolouring earlier clips.
+MIDI/audio creation color without recoloring earlier clips.
 
 `transport.record` with `on: true` records every armed track into the arrangement:
 
@@ -104,7 +104,7 @@ MIDI/audio creation colour without recolouring earlier clips.
    where the last pass began, that pass reaches its last note, at least a bar.
 
 While a take records into the arrangement, it is drawn on its track as a clip from where its
-pass began to the playhead, edged in the record colour and named **Recording**, with its notes
+pass began to the playhead, edged in the record color and named **Recording**, with its notes
 or, for audio, its waveform drawn as they come in. After a jump it starts again at the new pass.
 
 ### Take lanes
@@ -123,7 +123,7 @@ greyed. They are where the best parts of each pass are picked and put together o
 - The pointer over a take lane is the text cursor, as for selecting. A single click takes nothing;
   a **double-click** on a piece of a take copies the whole piece onto the track over what is there.
   With **Ctrl** held the take lane takes ordinary clicks: a click adds a piece to the pieces picked
-  or takes it out (each outlined; **Recolor** colours the one clicked), and a drag comps nothing. A
+  or takes it out (each outlined; **Recolor** colors the one clicked), and a drag comps nothing. A
   click without Ctrl lets go of them all. **Delete** deletes the picked pieces
   (`take.deletePieces {track, take, pieces}`, one undo step per take); a take left with no piece
   stays as an empty lane, ready for others to be moved onto, and the track's clips stay.
@@ -152,8 +152,8 @@ greyed. They are where the best parts of each pass are picked and put together o
 - **Drag** across a take from the part of a piece that does not move it: the part dragged over (on
   the grid; Alt for no grid) is copied onto the track over what is there, as new clips that start in the take where the part does. Each copy is
   one undo step.
-- **Right-click** a take's name or lane: **Recolor lane** gives the whole take a colour of its own
-  and its parts on the track with it (`take.setColor`); **Recolor** colours only the piece of the
+- **Right-click** a take's name or lane: **Recolor lane** gives the whole take a color of its own
+  and its parts on the track with it (`take.setColor`); **Recolor** colors only the piece of the
   take the right-click was over (a split take has several) and its parts (`take.setColor` with
   `piece`); **Delete take** removes the lane, and the track's clips stay.
 - **Dragging a piece to another lane** of the track moves it there, over what it covers on that
@@ -173,7 +173,7 @@ greyed. They are where the best parts of each pass are picked and put together o
   of (`take.deleteUnused`).
 - A take lane's header has buttons, as a track's: **✕** deletes the take, **S** solos it (the
   take is heard in place of the track's clips, which grey; not saved and not an undo step,
-  `take.solo`), the colour swatch recolours the lane, and **↑** puts the whole take on the track
+  `take.solo`), the color swatch recolors the lane, and **↑** puts the whole take on the track
   (`take.promote`).
 - A take lane is a child row of its track: as tall as a track that has not been resized, and the
   lanes' zoom (Alt and the wheel) takes it along. Dragging the line under one makes that lane alone
@@ -185,8 +185,8 @@ the same place is a **part** of that take, found by its content and by where in 
 (the passes of an audio take are clips of one file at different offsets; each MIDI pass has a
 content of its own), so nothing extra is stored and a trimmed part keeps its take:
 
-- Each take lane has a colour of its own, the palette's in turn until recoloured, and a part is
-  named after its take ("Drums Take 4") and shows its piece's colour unless it has one of its own; the track's own copy of the last pass is a part of that take too.
+- Each take lane has a color of its own, the palette's in turn until recolored, and a part is
+  named after its take ("Drums Take 4") and shows its piece's color unless it has one of its own; the track's own copy of the last pass is a part of that take too.
 - On each take lane the spans that are on the track are drawn lit and the rest dimmed.
 - **Alt+Up** / **Alt+Down** swap every selected part for the same span of the take above or below,
   in turn round the takes that have something there (`take.swap`), each one undo step.
@@ -224,10 +224,10 @@ content of its own), so nothing extra is stored and a trimmed part keeps its tak
   those are free, or on new lanes; a lane left with nothing stays. A clip that is no part of a take
   moves alone, and a part pasted from another project does not know its takes. A copied part keeps
   playing its take's content until it is edited (copy on write).
-- A take lane's header is drawn in a dark shade of the take's colour with a strip of the colour
-  itself; its pieces are that colour, darkened where the comp does not use them.
+- A take lane's header is drawn in a dark shade of the take's color with a strip of the color
+  itself; its pieces are that color, darkened where the comp does not use them.
 
-Take lanes are saved with the project, a take's own colour with them (the project format,
+Take lanes are saved with the project, a take's own color with them (the project format,
 [`suhina-format.md`](suhina-format.md)); deleting the track deletes its takes. A part on the
 track is a clip like any other: editing it leaves the take as it was.
 
@@ -322,7 +322,7 @@ were ended, without the wait the thread gives a device for frames still on their
 | `transport.setCountIn` | `bars`: 0, 1, 2 or 4 |
 | `take.comp` | `track`, `take` (from 1), `start?`, `end?`: copies the take, or its part from `start` to `end` beats, onto the track over what is there; one undo step |
 | `take.delete` | `track`, `take`: deletes the take lane; one undo step |
-| `take.setColor` | `track`, `take`, `color` (`"#rrggbb"` or null), `piece?` (from 0, in time order): the take's colour and its parts', or one piece's and its parts'; one undo step |
+| `take.setColor` | `track`, `take`, `color` (`"#rrggbb"` or null), `piece?` (from 0, in time order): the take's color and its parts', or one piece's and its parts'; one undo step |
 | `take.solo` | `track`, `take` (from 1, or 0 for none): the take heard in place of the track's clips; not an undo step |
 | `take.promote` | `track`, `take`: every piece of the take put on the track over what is there; one undo step |
 | `take.deleteUnused` | `track`: deletes the take lanes the comp uses nothing of; one undo step |
@@ -338,7 +338,7 @@ step.
 
 - An armed track's empty slots show a round record button at their left edge (**Record on
   Keys (scene 1)** to a screen reader); clicking it runs `clip.record`. A slot recording is
-  filled with the record colour, says **Recording** and its button pulses; clicking it again
+  filled with the record color, says **Recording** and its button pulses; clicking it again
   (**End the recording on …**) ends the take with `clip.launch`.
 - The control bar has a record button right of play and stop (**Record into the
   arrangement**, **Stop recording** while lit), and a **Count-in** menu right of the launch

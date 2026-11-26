@@ -253,6 +253,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "device.setKeyEnabled",
+        label: "Switch a device's key (sidechain) on or off, keeping its source: off, the device hears its own input again",
+        params: &[DEVICE_TRACK, DEVICE, param("enabled", ParamType::Bool, "false switches the key off")],
+        kind: CommandKind::EDIT,
+        run: devices::set_key_enabled,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "device.setEnabledMany",
         label: "Switch several devices of a track on or off as one undo step",
         params: &[DEVICE_TRACK, DEVICES, param("enabled", ParamType::Bool, "false switches the devices off")],

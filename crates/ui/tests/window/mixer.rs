@@ -802,15 +802,15 @@ fn a_group_s_menu_recolors_the_tracks_inside_it() {
         h.state().session().and_then(|s| s.project().tracks.iter().find(|t| t.name == name).cloned())
     };
     let group = track(&harness, "Drums").and_then(|t| t.parent).unwrap();
-    let (name, colour) =
+    let (name, color) =
         harness.state().session().and_then(|s| s.project().track(group).map(|t| (t.name.clone(), t.color))).unwrap();
-    assert_ne!(track(&harness, "Drums").and_then(|t| t.color), colour);
+    assert_ne!(track(&harness, "Drums").and_then(|t| t.color), color);
     harness.get_by_label(&format!("Track {name}")).click_secondary();
     harness.run();
     harness.get_by_label("Recolor group").click();
     harness.run();
     for inside in ["Drums", "Bass"] {
-        assert_eq!(track(&harness, inside).and_then(|t| t.color), colour, "{inside}");
+        assert_eq!(track(&harness, inside).and_then(|t| t.color), color, "{inside}");
     }
 }
 

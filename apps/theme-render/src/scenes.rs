@@ -48,15 +48,14 @@ pub const FIXED: &[(&str, Step)] = &[
     ("piano-roll", piano_roll),
     ("menu", |h| click(h, "File")),
     ("context-menu", context_menu),
-    ("colour-picker", colour_picker),
-    ("colour-picker-field", |h| {
-        colour_picker(h)?;
-        click(h, "Fine adjustment")
+    ("color-picker", color_picker),
+    ("color-picker-field", |h| {
+        color_picker(h)?;
+        click(h, "View: Field")
     }),
-    ("colour-picker-wheel", |h| {
-        colour_picker(h)?;
-        click(h, "Fine adjustment")?;
-        click(h, "View: Wheel")
+    ("color-menu-saved", |h| {
+        context_menu(h)?;
+        click(h, "Next swatches")
     }),
     ("settings", settings),
     ("settings-menu", settings_menu),
@@ -91,7 +90,7 @@ pub const FIXED: &[(&str, Step)] = &[
     ("empty-space-menu", empty_space_menu),
     ("grid-menu", |h| {
         click(h, "Arrangement view")?;
-        click(h, "Clip Beat B on Drums at bar 17")?;
+        double_click(h, "Clip Beat B on Drums at bar 17")?;
         click_containing(h, "Grid value")
     }),
     ("browser", browser),
@@ -105,7 +104,7 @@ pub const FIXED: &[(&str, Step)] = &[
         click(h, "Show Samples")?;
         click(h, "Show the samples laid out by how they sound")
     }),
-    ("clip-midi", |h| click(h, "Select Walk on Bass (scene 2)")),
+    ("clip-midi", |h| double_click(h, "Select Walk on Bass (scene 2)")),
     // The toolbar's menus open (#1549); the grid's is `grid-menu`.
     ("quantize-menu", |h| click(h, "Launch quantisation")),
     ("count-in-menu", |h| click(h, "Count-in")),
@@ -290,6 +289,19 @@ fn click(h: &mut Window, label: &str) -> Result<(), String> {
     settle(h)
 }
 
+/// A double-click on the control labelled `label`: two clicks a frame apart, as a clip's editor
+/// opens (one click only selects the clip). A click elsewhere just before does not make it a
+/// triple-click: clicks count together only in one place.
+fn double_click(h: &mut Window, label: &str) -> Result<(), String> {
+    // A click selects the clip and it is then opened as a double-click opens it: the harness's
+    // frames lie too far apart for egui to take two clicks as one double-click.
+    settle(h)?;
+    h.query_by_label(label).ok_or_else(|| format!("no control labelled {label:?}"))?.click();
+    settle(h)?;
+    h.state_mut().open_selected_clip();
+    settle(h)
+}
+
 /// The first control with `contains` in its label.
 fn click_containing(h: &mut Window, contains: &str) -> Result<(), String> {
     settle(h)?;
@@ -313,13 +325,15 @@ fn context_menu(h: &mut Window) -> Result<(), String> {
     settle(h)
 }
 
-fn colour_picker(h: &mut Window) -> Result<(), String> {
+fn color_picker(h: &mut Window) -> Result<(), String> {
     click(h, "Track Drums")?;
     h.key_press(Key::F2);
     settle(h)?;
-    // Populate history through successful choices, as in the real window.
-    click(h, "Palette #2fd9c4")?;
-    click(h, "Palette #ff9a3c")?;
+    // A saved color, and a palette color chosen, as in the real window.
+    let palette = suhina_session::colors::PALETTE;
+    click(h, &suhina_ui::interaction::color_picker::swatch_name("Palette", palette[6]))?;
+    click(h, "Save current color")?;
+    click(h, &suhina_ui::interaction::color_picker::swatch_name("Palette", palette[0]))?;
     h.remove_cursor();
     settle(h)
 }
@@ -355,7 +369,7 @@ fn arrangement(h: &mut Window) -> Result<(), String> {
 
 fn piano_roll(h: &mut Window) -> Result<(), String> {
     click(h, "Arrangement view")?;
-    click(h, "Clip Beat B on Drums at bar 17")?;
+    double_click(h, "Clip Beat B on Drums at bar 17")?;
     h.remove_cursor();
     settle(h)
 }
@@ -376,10 +390,10 @@ fn browser_search(h: &mut Window) -> Result<(), String> {
     settle(h)
 }
 
-/// An audio clip's panel: the clip of an audio track chosen in the Arrangement.
+/// An audio clip's panel: the clip of an audio track opened in the Arrangement.
 fn clip_audio(h: &mut Window) -> Result<(), String> {
     click(h, "Arrangement view")?;
-    click(h, "Clip Loop on Loop at bar 1")?;
+    double_click(h, "Clip Loop on Loop at bar 1")?;
     h.remove_cursor();
     settle(h)
 }
@@ -451,7 +465,7 @@ fn with_audio() -> Result<App, String> {
         clips: vec![clip],
     });
     let _ = project.assign_ids();
-    project.fill_track_colours();
+    project.fill_track_colors();
     let mut app = crate::fixed_app();
     app.set_browser_open(false);
     app.set_session(suhina_session::Session::new(project), &[]);

@@ -4,12 +4,12 @@
 use super::*;
 use crate::settings::settings_view::NewTheme;
 
-/// Every colour token's colour in the colour map `colors`, Suhina Studio's where it sets none.
+/// Every color token's color in the color map `colors`, Suhina Studio's where it sets none.
 fn effective(colors: &theme::Colors) -> Vec<egui::Color32> {
     theme::TOKENS.iter().map(|(key, _)| theme::color_in(colors, &theme::variable_name(key))).collect()
 }
 
-/// The colours the theme `id` paints with: Suhina Studio's when there is no such theme.
+/// The colors the theme `id` paints with: Suhina Studio's when there is no such theme.
 fn shown(themes: &Themes, id: &str) -> Vec<egui::Color32> {
     effective(&themes.get(id).map(|theme| theme.colors.clone()).unwrap_or_default())
 }
@@ -112,7 +112,7 @@ fn a_saved_edit_of_a_built_in_variant_wins_and_goes_when_its_file_goes() {
     assert_eq!(shown(&themes, "nord@snow-storm"), original);
 }
 
-/// A theme of its own with one quick control, `--tint` (a colour the accent follows), and a variant
+/// A theme of its own with one quick control, `--tint` (a color the accent follows), and a variant
 /// of it, Warm.
 fn ink() -> Themes {
     let sheet = "@property --tint { syntax: \"<color>\"; initial-value: #112233; label: \"Accent\"; }\n\
@@ -146,7 +146,7 @@ fn an_edit_is_a_draft_drawn_at_once_and_written_only_on_save() {
     assert!(themes.edited("ink@warm") && themes.view("ink@warm").edited);
     assert!(themes.take_actions().is_empty(), "nothing is written while editing");
     // A value its property does not accept changes nothing.
-    themes.request("ink@warm", tint("not a colour"));
+    themes.request("ink@warm", tint("not a color"));
     assert_eq!(themes.get("ink@warm").unwrap().color("accent"), RED);
     assert_eq!(themes.request("ink@warm", ThemeRequest::Save), None);
     let actions = themes.take_actions();
@@ -404,7 +404,7 @@ fn moving_a_control_of_a_built_in_theme_copies_it() {
     assert_eq!(
         themes.get("nord-custom").unwrap().color("accent"),
         themes.get("nord@snow-storm").unwrap().color("accent"),
-        "the copy keeps the variant's colours"
+        "the copy keeps the variant's colors"
     );
 }
 
@@ -414,7 +414,7 @@ fn moving_a_control_of_a_built_in_theme_copies_it() {
 fn a_toolbar_copy_of_a_built_in_theme_leaves_the_unsaved_draft_out() {
     let mut themes = Themes::default();
     let saved = themes.get("nord@snow-storm").unwrap().color("accent");
-    // Accent, the control that colours `accent`.
+    // Accent, the control that colors `accent`.
     let name = "--tint".to_string();
     let value = "#ff0000";
     assert_ne!(saved, RED, "Nord's accent is not red to begin with");
@@ -491,7 +491,7 @@ fn a_toolbar_edit_during_a_draft_saves_the_entry_not_the_draft() {
     assert_eq!(saves.len(), 1, "{saves:?}");
     assert_eq!(saves[0].0, "ink@warm");
     assert_eq!(saves[0].1, 9, "the toolbar change is written");
-    assert_ne!(saves[0].2, RED, "the unsaved colour is not");
+    assert_ne!(saves[0].2, RED, "the unsaved color is not");
     let drawn = themes.get("ink@warm").unwrap();
     assert_eq!((drawn.skin.segments, drawn.color("accent")), (9, RED), "the draft keeps both");
 

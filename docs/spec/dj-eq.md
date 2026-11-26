@@ -3,7 +3,7 @@ description: The built-in three-band DJ EQ - its bands, gains, kills, crossovers
 read_when: dj eq, three-band eq, band split, kill, crossover, linkwitz-riley, importing the three-band EQ, FilterEQ3 elements
 type: spec
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-23
 covers:
   - devices/dj-eq/**
   - crates/als/src/devices.rs
@@ -64,7 +64,7 @@ bands of both sides are always built; a silenced or killed band is multiplied, n
   magnitude: with crossovers at 500 Hz and 2 kHz the sum dips −0.75 dB at 653 Hz in the 24 dB
   setting and −2.14 dB at 528 Hz in the 48 dB one, both around the low crossover; the dip at the
   high crossover is smaller (−0.07 dB at 2 kHz in the 24 dB setting, none in the 48 dB one). This
-  is the colour the counterpart's manual describes as an analogue filter cascade; it is part of
+  is the color the counterpart's manual describes as an analogue filter cascade; it is part of
   the device (Decisions 2).
 - **Gain and kill.** A band's gain is a plain multiplier of its own response: nothing else moves.
   A kill drives the band's gain to 0, the same as the gain's bottom of the range. In the
@@ -104,7 +104,7 @@ Each entry: what was chosen, what it costs, why.
    import is exact without them.
 2. **The measured band split, not a textbook flat crossover.** No all-pass on the low band: the
    three bands at 0 dB keep the measured dip at the low crossover instead of summing flat. Cost:
-   the flat setting is coloured by up to −0.75 dB (24 dB setting) or −2.14 dB (48 dB setting) at
+   the flat setting is colored by up to −0.75 dB (24 dB setting) or −2.14 dB (48 dB setting) at
    the low crossover, and about 1 % less CPU than an all-pass split would be. Why: the
    measurements reproduce the band shapes and the 0 dB sums this way to 0.01 dB, and the earlier
    guess of an all-pass was wrong.

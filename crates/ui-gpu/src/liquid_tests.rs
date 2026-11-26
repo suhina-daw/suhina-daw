@@ -218,7 +218,7 @@ fn gpu_preserves_constants_blurs_in_linear_light_and_updates_current_frame() {
     let constant = pixels(&liquid);
     let center = (32 * 64 + 32) * 4;
     for (actual, expected) in constant[center..center + 4].iter().zip([100_u8, 150, 200, 255]) {
-        assert!(actual.abs_diff(expected) <= 3, "constant colour changed: {actual} vs {expected}");
+        assert!(actual.abs_diff(expected) <= 3, "constant color changed: {actual} vs {expected}");
     }
     draw(64.0, 1);
     let checker = pixels(&liquid);

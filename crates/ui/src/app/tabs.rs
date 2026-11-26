@@ -38,8 +38,8 @@ impl App {
         self.arrangement.returns_hidden = returns_hidden;
         self.arrangement.waveform_zoom = waveform_zoom;
         self.arrangement.waveform_appearance = self.settings.view.waveform;
-        self.arrangement.audio_colour_strength = self.settings.view.audio_colour_strength;
-        self.arrangement.header_colour_strength = self.settings.view.header_colour_strength;
+        self.arrangement.audio_color_strength = self.settings.view.audio_color_strength;
+        self.arrangement.header_color_strength = self.settings.view.header_color_strength;
         self.arrangement.header_width = header_width;
         self.selected_device = stash.selected_device;
         self.revision = stash.revision.wrapping_add(1);
@@ -66,6 +66,9 @@ impl App {
         self.device_carry = None;
         ctx.data_mut(|d| d.remove::<(TrackId, usize)>(egui::Id::unique(crate::interaction::drop::DEVICE_CARRY)));
         self.arrangement.cancel_gesture();
+        // The audio editor's marker drag and its zoom belong to a clip of the project being left;
+        // a clip of the same address in the next one must not take the drag's release.
+        self.audio_editor.forget_clip();
         self.stash_shown();
         for gone in self.stashes.keys().copied().filter(|id| self.projects.get(*id).is_none()).collect::<Vec<_>>() {
             self.stashes.remove(&gone);
@@ -217,7 +220,7 @@ impl App {
             );
             let fill = motion::mix(idle, crate::kit::style_class::surface_or(fill_of("panel")), lit);
             element.paint_with(&painter, tab, crate::kit::element::Native { radius: 0.0, fill });
-            // The shown tab stands out unless a rule colours the tab itself; the row's `color` does not.
+            // The shown tab stands out unless a rule colors the tab itself; the row's `color` does not.
             let text = element.own_color_or(motion::mix(caption, ink, lit));
             widgets::paint_text(
                 &painter,

@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The strip over the piano roll while several MIDI clips are picked (› Several clips picked): each
-//! clip as a bar in its track's colour where it lies in time, a click giving it the focus, and the
+//! clip as a bar in its track's color where it lies in time, a click giving it the focus, and the
 //! Focus switch that keeps the focus on the clip picked first.
 
 use super::*;
 
-/// How strongly a clip's bar shows its colour while another has the focus.
+/// How strongly a clip's bar shows its color while another has the focus.
 const OTHER_BAR: f32 = 0.5;
 
 /// Draws the strip in `row`, the whole width of the piano roll, and takes its clicks.
