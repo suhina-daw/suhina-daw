@@ -494,6 +494,15 @@ impl Projects {
         self.session_mut(None).map(Session::take_view_actions).unwrap_or_default()
     }
 
+    /// The Launcher windows control surfaces show in the active project.
+    pub fn control_surface_windows(&self) -> Vec<crate::ControlSurfaceWindow> {
+        self.tabs
+            .active
+            .and_then(|id| self.get(id))
+            .map(|session| session.control_surface_windows().to_vec())
+            .unwrap_or_default()
+    }
+
     /// Chooses the output players open on from now on; [`Projects::reopen_output`] moves the
     /// playing one there. The device keeps the input chosen with it, for the next time it is
     /// chosen ([`Projects::remembered_input`]).

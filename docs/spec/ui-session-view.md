@@ -271,6 +271,15 @@ control bar shows the time signature playing, and its position counts bars in it
 scene can change it. Dragging or typing into the control bar's time signature changes the project's
 ([tempo map](tempo-map.md#editing-in-the-window)).
 
+### Control surfaces
+
+A surface program reports the part of the Launcher it shows with `surface.setWindow`: its first
+track and scene, and the tracks and scenes it has room for. The view outlines those slots in a
+2 px theme color — the first surface in the theme's recording red, the second in its accent, the
+third in its selection color — clipped to the tracks and scenes there are, so the APC40 MkII's
+8×5 box follows its Bank Select arrows. It is not saved and records no undo step; a surface
+that has not reported one draws nothing.
+
 ### Launch keys
 
 **Suhina:** a computer key can launch a slot, a scene or a track's stop button

@@ -428,6 +428,31 @@ pub fn show(
         let below_headers = Rect::from_min_max(Pos2::new(empty.left(), header.bottom() + 1.0), empty.max);
         empty_space(ui, &painter, below_headers, actions);
     }
+    // Each control surface's window: the slots it shows, outlined in a theme color. The first
+    // (the APC40 MkII) is the theme's recording red, as a controller's ring is; more surfaces
+    // take the accent and the selection color in turn.
+    let slot_painter = painter.with_clip_rect(body.intersect(tracks_clip));
+    for (index, surface) in grid.control_surfaces.iter().enumerate() {
+        let Some(first) = spans.get(surface.track) else { continue };
+        let last_index = (surface.track + surface.tracks).min(spans.len());
+        let scene_end = (surface.scene + surface.scenes).min(grid.scenes.len());
+        if last_index <= surface.track || scene_end <= surface.scene {
+            continue;
+        }
+        let Some(last) = spans.get(last_index - 1) else { continue };
+        let left = first.1.min;
+        let right = last.1.max;
+        let top = bands.top + surface.scene as f32 * slot_pitch();
+        let bottom = top + (scene_end - surface.scene) as f32 * slot_pitch() - 1.0;
+        let outline = Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, bottom));
+        let color = match index % 3 {
+            0 => crate::kit::element::error_ink(),
+            1 => crate::kit::element::accent_ink(),
+            _ => crate::kit::selection::fill(&crate::kit::element::SESSION.enter())
+                .unwrap_or_else(crate::kit::element::accent_ink),
+        };
+        slot_painter.rect_stroke(outline.shrink(0.5), 0.0, egui::Stroke::new(2.0, color), StrokeKind::Inside);
+    }
     if let Some(probe) = state.drop.as_mut() {
         let row_of = |y: f32| ((y - bands.top) / slot_pitch()).floor().max(0.0) as usize;
         if probe.devices && !probe.files && !probe.clip {

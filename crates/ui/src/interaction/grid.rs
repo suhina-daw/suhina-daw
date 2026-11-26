@@ -223,6 +223,8 @@ pub struct TrackGrid {
     /// audio input menus; set by the app.
     pub input_channels: u16,
     pub scenes: Vec<Scene>,
+    /// The Launcher windows control surfaces show, for their outlines; set by the app.
+    pub control_surfaces: Vec<suhina_session::ControlSurfaceWindow>,
     pub running: bool,
     /// Beats since the transport started.
     pub beat: f64,
@@ -434,6 +436,7 @@ impl TrackGrid {
             key_readers: crate::interaction::menus::key_readers(project),
             input_channels: 0,
             scenes,
+            control_surfaces: Vec::new(),
             running,
             beat,
             tempo_bpm,

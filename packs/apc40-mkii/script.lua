@@ -76,6 +76,8 @@ local grid, state, strips, selection, record_state, audio_state = nil, nil, nil,
 
 -- The first track and scene the 5x8 window shows, moved by the Bank Select arrows.
 local track_offset, scene_offset = 0, 0
+-- The window last reported to the window, so a box follows it without a command on every look.
+local reported_window = nil
 
 -- The encoders' mode: pan, a return track's sends, or the user's own. In sends mode the sends
 -- are paged: pressing Sends again takes the next one.
@@ -733,6 +735,26 @@ local function refresh_device()
     led(0, BANK_LOCK, bank_locked and ON or OFF_BUTTON)
 end
 
+-- Tells the window which slots this surface sees, for its outline in the Launcher.
+local function report_window()
+    if is_nil(grid) then
+        return
+    end
+    local key = tostring(grid) .. ":" .. tostring(track_offset) .. ":" .. tostring(scene_offset)
+    if key == reported_window then
+        return
+    end
+    reported_window = key
+    suhina.command("surface.setWindow", {
+        id = "apc40-mkii",
+        name = "APC40 MkII",
+        track = track_offset,
+        scene = scene_offset,
+        tracks = 8,
+        scenes = 5,
+    })
+end
+
 local function max_track_offset()
     if is_nil(grid) then
         return 0
@@ -812,6 +834,7 @@ local function refresh()
     led(0, 90, metronome_velocity())
     led(0, MASTER_SELECT, (not is_nil(selection) and selection.track_name == "Main") and ON or OFF_BUTTON)
     refresh_device()
+    report_window()
 end
 
 local function scroll(track_delta, scene_delta)

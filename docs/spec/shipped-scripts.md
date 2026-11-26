@@ -30,8 +30,9 @@ covers:
   green while its scene plays and toggles between launching and stopping it, the top-right
   controls switch the encoders, record the arrangement or a slot, set the tempo by tap, knob
   or nudge, set the cue level, and move the 5x8 window with the Bank Select arrows (five scenes
-  and eight tracks while Shift is held), the device section locks its device and holds its
-  bank, and Clip/Dev View and Detail View queue the window's actions. The whole
+  and eight tracks while Shift is held), the Launcher outlines that window, the device section
+  locks its device and holds its bank, and Clip/Dev View and Detail View queue the window's
+  actions. The whole
   script's run through the supervisor — the mode
   message, a press of each strip button, the LEDs — follows.
 

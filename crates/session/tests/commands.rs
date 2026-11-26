@@ -1996,3 +1996,24 @@ fn view_commands_queue_the_windows_actions() {
     );
     assert!(session.take_view_actions().is_empty(), "the window took them once");
 }
+
+/// A control surface reports the Launcher window it shows, and the window reads it back.
+#[test]
+fn a_control_surface_reports_its_launcher_window() {
+    let mut session = Session::new(project());
+    let reported = run(
+        &mut session,
+        "surface.setWindow",
+        json!({ "id": "apc40-mkii", "name": "APC40 MkII", "track": 2, "scene": 1, "tracks": 8, "scenes": 5 }),
+    )
+    .unwrap();
+    assert_eq!(reported["scene"], 1, "{reported}");
+    let windows = session.control_surface_windows();
+    assert_eq!(windows.len(), 1);
+    assert_eq!((windows[0].track, windows[0].scene, windows[0].tracks, windows[0].scenes), (2, 1, 8, 5));
+    // The same surface moves its window; it does not add a second one.
+    run(&mut session, "surface.setWindow", json!({ "id": "apc40-mkii", "track": 3, "scene": 0 })).unwrap();
+    let windows = session.control_surface_windows();
+    assert_eq!(windows.len(), 1);
+    assert_eq!((windows[0].track, windows[0].name.as_str()), (3, "apc40-mkii"));
+}

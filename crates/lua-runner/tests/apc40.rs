@@ -975,6 +975,25 @@ fn shift_makes_the_bank_select_arrows_jump() {
     assert_eq!(fake.last_command().track, Some(8), "one track left after Shift: {:?}", fake.last_command());
 }
 
+/// The Launcher box follows the surface's window: the script reports where it starts, and the
+/// Bank Select arrows move it.
+#[test]
+fn the_launcher_window_is_reported_to_the_window() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.launcher_grid_big(&[(10, "A"), (11, "B"), (12, "C"), (13, "D"), (14, "E"), (15, "F")]);
+    let command = fake.last_command();
+    assert_eq!(command.id, "surface.setWindow", "{command:?}");
+    assert_eq!((command.track, command.scene), (Some(0), Some(0)), "{command:?}");
+    fake.press(95);
+    let command = fake.last_command();
+    assert_eq!(command.id, "surface.setWindow", "{command:?}");
+    assert_eq!((command.track, command.scene), (Some(0), Some(1)), "{command:?}");
+    fake.press(96);
+    let command = fake.last_command();
+    assert_eq!((command.track, command.scene), (Some(1), Some(1)), "{command:?}");
+}
+
 /// CC 15 sets the crossfader, and a track's note 66 button toggles A and B; the strip reading
 /// lights it yellow on A and red on B.
 #[test]

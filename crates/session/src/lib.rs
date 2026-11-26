@@ -245,6 +245,19 @@ impl From<suhina_model::IdsExhausted> for CommandError {
     }
 }
 
+/// The part of the Launcher a control surface shows: its first track and scene and the size of
+/// its window, in tracks and scenes. A surface program reports it (`surface.setWindow`), and the
+/// window draws its outline over the slots.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlSurfaceWindow {
+    pub id: String,
+    pub name: String,
+    pub track: usize,
+    pub scene: usize,
+    pub tracks: usize,
+    pub scenes: usize,
+}
+
 /// An edit that is only a device parameter's new value, which a playing engine can take
 /// without a new graph.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -295,6 +308,9 @@ pub struct Session {
     /// run at its next frame: a surface program's buttons reach the detail area this way. Not
     /// saved, not an undo step.
     pub(crate) view_actions: Vec<(String, serde_json::Value)>,
+    /// The Launcher windows control surfaces show (`surface.setWindow`), for the window to draw
+    /// their outlines. Not saved, not an undo step.
+    pub(crate) control_surfaces: Vec<ControlSurfaceWindow>,
     /// The audio input a new audio track takes, and an armed one that hears none: the
     /// default track input of Settings › Audio while an input device is chosen, else none
     /// ([`Session::set_default_input`], ADR 0017).
@@ -355,6 +371,7 @@ impl Session {
             take_solo: None,
             selection: selection::Selection::default(),
             view_actions: Vec::new(),
+            control_surfaces: Vec::new(),
             default_input: suhina_model::InputChannels::None,
             defaulted: Vec::new(),
             library_base: None,
@@ -392,6 +409,20 @@ impl Session {
     /// Takes the window actions a command asked for, for the window to run this frame.
     pub fn take_view_actions(&mut self) -> Vec<(String, serde_json::Value)> {
         std::mem::take(&mut self.view_actions)
+    }
+
+    /// Sets or moves the Launcher window a control surface shows, by its id.
+    pub fn set_control_surface_window(&mut self, window: ControlSurfaceWindow) {
+        if let Some(known) = self.control_surfaces.iter_mut().find(|known| known.id == window.id) {
+            *known = window;
+        } else if self.control_surfaces.len() < 16 {
+            self.control_surfaces.push(window);
+        }
+    }
+
+    /// The Launcher windows control surfaces show.
+    pub fn control_surface_windows(&self) -> &[ControlSurfaceWindow] {
+        &self.control_surfaces
     }
 
     /// Sets the audio input new audio tracks take from now on ([`Projects`] keeps it in line

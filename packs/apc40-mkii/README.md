@@ -50,7 +50,8 @@ armed tracks to record (a second press on the recording slot ends its take), and
 armed or a slot take runs; Tap Tempo takes its taps' spacing, the tempo encoder turns a BPM a
 click, and Nudge −/+ step it. The cue level knob sets the cue's volume (`output.setCueVolume`,
 one dB a click), and the four Bank Select arrows move the 5x8 window one scene up or down and
-one track left or right.
+one track left or right; the Launcher outlines the slots the APC40 sees in the theme's recording
+color, and the outline follows the arrows (`surface.setWindow`).
 
 The device control section follows the selection the window, commands and agents share
 (`project.selection`, #1679): the eight knobs turn the selected device's dials — the page its

@@ -3495,6 +3495,7 @@ impl App {
             grid.click_route = s.click_route();
             grid.input_channels =
                 s.player().and_then(suhina_session::Player::output_info).map_or(0, |i| i.input_channels);
+            grid.control_surfaces = s.control_surface_windows().to_vec();
             for column in &mut grid.columns {
                 column.armed = s.is_armed(column.track);
                 column.recording = s.recording_slot(column.track);

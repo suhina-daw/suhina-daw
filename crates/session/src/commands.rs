@@ -33,6 +33,7 @@ mod registry;
 mod returns;
 mod scene;
 mod selection;
+mod surface;
 pub(crate) mod take;
 mod tempo;
 mod time_signature;
@@ -706,6 +707,7 @@ static NAMESPACES: &[&[CommandSpec]] = &[
     mapping::COMMANDS,
     scene::COMMANDS,
     selection::COMMANDS,
+    surface::COMMANDS,
     view::COMMANDS,
     device::COMMANDS,
     preview::COMMANDS,
