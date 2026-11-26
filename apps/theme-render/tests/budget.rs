@@ -111,10 +111,9 @@ use suhina_theme_render::{Subject, scenes};
 /// by the same: the Main strip's crossfader and each track strip's A/B/off button, each a styled
 /// level bar or button (485 and 463, 747 and 726; 497 and 476, 759 and 739 on Windows).
 ///
-/// On Windows the window's three buttons are `button` elements a sheet styles (they were egui
-/// buttons with no frame), 3 more nodes in the Launcher and 1 in the FM synth, on top of
-/// #1678's counts (500 and 760); their identities are shared with the other buttons', so the
-/// recorded identities stay.
+/// On Windows the window's three controls are `window-button` elements a sheet styles (they were
+/// egui buttons with no frame and are deliberately not `button`s), 3 more nodes in the Launcher
+/// and 1 in the FM synth, on top of #1678's counts (500 and 760); the recorded identities stay.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
