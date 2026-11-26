@@ -136,6 +136,18 @@ fn advance(renderer: &mut Renderer, frames: usize) {
     }
 }
 
+/// The engine's state is a reading: it changes nothing, and a surface program's reads and
+/// subscriptions run only reading commands, so `launcher.state` must be one (#1677).
+#[test]
+fn the_launcher_state_is_a_read_a_surface_can_watch() {
+    let (mut session, _) = playing();
+    let spec = commands().iter().find(|c| c.id == "launcher.state").unwrap();
+    assert_eq!(spec.kind, CommandKind::READ, "the engine's state is a reading");
+    let before = session.project().clone();
+    run(&mut session, "launcher.state", json!({})).unwrap();
+    assert_eq!(session.project(), &before, "reading the state changed nothing");
+}
+
 #[test]
 fn transport_commands_need_a_player() {
     let mut session = crate::support::toned(project());

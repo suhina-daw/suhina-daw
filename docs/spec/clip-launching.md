@@ -321,9 +321,9 @@ keeps them in `controller_mappings` ([Suhina format](suhina-format.md)).
   keep following the map.
 - **Commands.** Every action is a command (`clip.launch`, `clip.release`, `scene.launch`, `track.stop`,
   `launcher.stopAll`, `launcher.setQuantization`, `launcher.backToArrangement`,
-  `transport.play`, `transport.stop`, `transport.setPosition`, `transport.setMetronome`,
-  `launcher.state`), sent to the audio thread through a lock-free queue and applied at the start
-  of the next audio block. `launcher.state` reports the time signature playing and the position
+  `transport.play`, `transport.stop`, `transport.setPosition`, `transport.setMetronome`), sent
+  to the audio thread through a lock-free queue and applied at the start of the next audio
+  block. `launcher.state` reads what it reports: the time signature playing and the position
   counted in it. **Suhina:**
   `launcher.state` also reports the browser's preview (`preview`: playing, seconds), which plays
   beside the launcher and never changes it ([ADR 0011](../decisions/0011-preview-and-added-audio.md)),
