@@ -29,17 +29,21 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
 /// Most window actions a session holds before a window drains them.
 const MAX_VIEW_ACTIONS: usize = 8;
 
-fn queue(session: &mut Session, id: &str, params: Value) -> Value {
-    if session.view_actions.len() < MAX_VIEW_ACTIONS {
-        session.view_actions.push((id.to_string(), params));
+fn queue(session: &mut Session, id: &str, params: Value) -> Result<Value, CommandError> {
+    if session.view_actions.len() >= MAX_VIEW_ACTIONS {
+        return Err(format!(
+            "the window already has {MAX_VIEW_ACTIONS} actions waiting; try again after its next frame"
+        )
+        .into());
     }
-    json!({ "queued": true })
+    session.view_actions.push((id.to_string(), params));
+    Ok(json!({ "queued": true }))
 }
 
 fn toggle_detail(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
-    Ok(queue(session, "view.detail", json!({})))
+    queue(session, "view.detail", json!({}))
 }
 
 fn toggle_devices(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
-    Ok(queue(session, "view.devices", json!({})))
+    queue(session, "view.devices", json!({}))
 }

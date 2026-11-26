@@ -341,6 +341,12 @@ impl Projects {
     /// wherever the next look comes from, never dropped.
     pub(crate) fn poll_programs(&mut self) {
         let drained = self.extensions.drain_events();
+        // A window belongs to a running surface program: a removed, crashed or stopped-at-its-
+        // boundary one leaves no outline behind. The next report brings a restart's back.
+        let running = self.extensions.running_programs();
+        for open in &mut self.tabs.open {
+            open.session.retain_control_surface_windows(&running);
+        }
         // The commands of one gesture stream: the newest stands for the run — the earlier
         // values of a fader's move are history the moment the next one lands, and the undo
         // step they shared is unchanged — while each of them is answered either way, so the
@@ -749,6 +755,9 @@ impl Projects {
         self.suspend_active()?;
         self.tabs.open.push(Open { id, name, session });
         self.tabs.active = Some(id);
+        // Opening a project is an active-project change like a tab switch: even a reading that
+        // matches the previous project's must reach the surface programs again.
+        self.extensions.forget_subscription_values();
         Ok(id)
     }
 
@@ -1199,6 +1208,11 @@ impl Projects {
     /// a drag that outran it ([`Session::catch_up_player`]).
     pub fn poll_plugins(&mut self) -> Vec<String> {
         let mut notices = Vec::new();
+        // Let subscriptions read what the takes are now; the notices stay queued until the
+        // window's own poll below, so a program's `record.state` cannot take them first.
+        if let Some(session) = self.tabs.active.and_then(|id| self.get_mut(id)) {
+            session.poll_recording_keeping_notices();
+        }
         self.poll_programs();
         if let Some(session) = self.tabs.active.and_then(|id| self.get_mut(id)) {
             session.catch_up_player();
@@ -1629,4 +1643,43 @@ fn stream_target(id: &str, params: &Value) -> Value {
 /// not.
 fn same_target(id: &str, a: &Value, b: &Value) -> bool {
     stream_target(id, a) == stream_target(id, b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Opening a project forgets every subscription's last value, so a reading equal to the
+    /// previous project's still reaches the surface programs.
+    #[test]
+    fn opening_a_project_forgets_subscription_values() {
+        let mut projects = Projects::default();
+        projects.add(Session::new(suhina_model::Project::default()), None).unwrap();
+        projects.extensions.remember_subscription_value("apc40-mkii", 1, json!({ "same": true }));
+        assert!(projects.extensions.subscription_value_is_remembered("apc40-mkii", 1));
+        projects.add(Session::new(suhina_model::Project::default()), None).unwrap();
+        assert!(!projects.extensions.subscription_value_is_remembered("apc40-mkii", 1));
+    }
+
+    /// A window whose surface program is no longer running is dropped; nothing draws an
+    /// outline for a removed or stopped controller.
+    #[test]
+    fn a_stopped_surface_loses_its_window() {
+        let mut session = Session::new(suhina_model::Project::default());
+        session
+            .set_control_surface_window(crate::ControlSurfaceWindow {
+                id: "apc40-mkii".into(),
+                name: "APC40 MkII".into(),
+                track: 0,
+                scene: 0,
+                tracks: 8,
+                scenes: 5,
+            })
+            .unwrap();
+        let mut projects = Projects::default();
+        projects.add(session, None).unwrap();
+        assert_eq!(projects.control_surface_windows().len(), 1);
+        projects.poll_plugins();
+        assert!(projects.control_surface_windows().is_empty(), "no running surface keeps it");
+    }
 }

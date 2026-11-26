@@ -211,7 +211,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "device.read",
-        label: "Read one device on a track: the entry project.selection gives the selected device — its parameters, dials and a running plug-in's generated panel — for a controller locked to it",
+        label: "Read one device on a track: the entry project.selection gives the selected device — its parameters, dials and a running plug-in's generated panel — for a controller locked to it; null when the track or device is gone",
         params: &[DEVICE_TRACK, DEVICE],
         kind: CommandKind::READ,
         run: devices::read_device,

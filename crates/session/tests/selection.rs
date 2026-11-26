@@ -55,6 +55,11 @@ fn selecting_a_track_selects_its_first_device_with_its_parameters() {
     assert_eq!(read["track"], track.0);
     let one = run(&mut session, "device.read", json!({ "track": track.0, "device": 0 })).unwrap();
     assert_eq!(one, picked["device"], "device.read answers the selection's entry");
+    // A device or track that is gone reads as nothing, so a live lock can release.
+    let gone = run(&mut session, "device.read", json!({ "track": track.0, "device": 99 })).unwrap();
+    assert_eq!(gone, Value::Null);
+    let gone = run(&mut session, "device.read", json!({ "track": 999, "device": 0 })).unwrap();
+    assert_eq!(gone, Value::Null);
 }
 
 /// A dial's normalized position is the panel's, not a linear share of the value: half of the FM

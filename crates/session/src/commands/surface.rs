@@ -49,7 +49,7 @@ fn set_window(session: &mut Session, params: &Value) -> Result<Value, CommandErr
         scene,
         tracks,
         scenes,
-    });
+    })?;
     Ok(json!({
         "id": id,
         "name": name,

@@ -731,14 +731,57 @@ pub(crate) fn device_entry(session: &mut Session, track: suhina_model::TrackId, 
     Some(entry)
 }
 
-/// `device.read {track, device}`: one device's entry, as the selection would give it.
+/// `device.read {track, device}`: one device's entry, as the selection would give it, or null
+/// when the track or device it names is gone. A controller locked to a device follows it with a
+/// subscription, and a refused read pushes no state: null is how a removal reaches the lock.
 pub(crate) fn read_device(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
-    let track = track_or_main_id(&session.project, params)?;
-    let path = {
-        let channel = device_channel(session, params)?;
-        device_path(&channel.devices, params, "device")?
+    let track = match Args::new(params).value("track") {
+        Some(Value::Number(n)) => {
+            let id = n.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("track id must be a whole number")?;
+            let id = suhina_model::TrackId(id);
+            if id == suhina_model::TrackId::MAIN && session.project.main_channel().is_some()
+                || session.project.track(id).is_some()
+            {
+                id
+            } else {
+                return Ok(Value::Null);
+            }
+        }
+        Some(Value::String(_)) => match track_or_main_id(&session.project, params) {
+            Ok(track) => track,
+            Err(_) => return Ok(Value::Null),
+        },
+        _ => return Err("track must be a track id or name, or \"main\" for the main channel".into()),
     };
-    device_entry(session, track, &path).ok_or_else(|| "the device is missing".into())
+    let Some(channel) = session.project.channel_of_track(track) else { return Ok(Value::Null) };
+    let path = match Args::new(params).value("device") {
+        Some(Value::Object(named)) => {
+            let id = named
+                .get("id")
+                .and_then(Value::as_u64)
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or("device must be a device index, a path such as \"2/1/0\", or {\"id\": a device_id}")?;
+            let Some((path, _)) = suhina_model::walk_devices(&channel.devices)
+                .into_iter()
+                .find(|(_, device)| device.id.0 == id && device.id.is_some())
+            else {
+                return Ok(Value::Null);
+            };
+            path
+        }
+        Some(value) => match crate::device_groups::parse_path(&value) {
+            Some(path) if path.len() % 2 == 1 => path,
+            Some(_) => return Ok(Value::Null),
+            None => {
+                return Err("device must be a device index, a path such as \"2/1/0\", or {\"id\": a device_id}".into());
+            }
+        },
+        None => return Err("device must be a device index, a path such as \"2/1/0\", or {\"id\": a device_id}".into()),
+    };
+    if device_at(&channel.devices, &path).is_none() {
+        return Ok(Value::Null);
+    }
+    Ok(device_entry(session, track, &path).unwrap_or(Value::Null))
 }
 
 /// A plug-in's parameters as its generated panel draws them (#679), with the `dials` a
@@ -755,7 +798,9 @@ pub(crate) fn plugin_panel_params(device: &Device, list: &[suhina_plugins::Param
     let mut params = Vec::with_capacity(shown.len());
     let mut dials = Vec::new();
     for p in shown {
-        let stored = device.params.iter().find(|stored| param_id(&stored.id) == Some(p.id));
+        // The engine keeps the last value a duplicate parameter id carries, so the reading
+        // shows that one too.
+        let stored = device.params.iter().rev().find(|stored| param_id(&stored.id) == Some(p.id));
         let value = stored.map_or(p.value, |stored| stored.value).clamp(p.min, p.max);
         let toggle = p.steps == 1 && p.min == 0.0 && p.max == 1.0;
         if !toggle {
@@ -1878,7 +1923,9 @@ fn set_plugin_param(
     let value = plugin_value(session, track, path, id, value)?;
     let channel = device_channel(session, params)?;
     let device = device_at_mut(&mut channel.devices, path).ok_or("the device is missing")?;
-    match device.params.iter_mut().find(|p| param_id(&p.id) == Some(id)) {
+    // A project or preset may name one parameter twice; the engine keeps the last, so a set
+    // updates that one rather than leaving the audible value behind.
+    match device.params.iter_mut().rev().find(|p| param_id(&p.id) == Some(id)) {
         Some(stored) => {
             stored.id = id.to_string();
             stored.value = value;
@@ -2061,7 +2108,7 @@ pub(crate) fn take_in_param_edits(
         if by_hand {
             off |= crate::automation::override_lane(&mut device.automation, |l| param_id(&l.param) == Some(*id));
         }
-        match device.params.iter_mut().find(|p| param_id(&p.id) == Some(*id)) {
+        match device.params.iter_mut().rev().find(|p| param_id(&p.id) == Some(*id)) {
             Some(stored) if stored.value != *value => {
                 stored.value = *value;
                 changed = true;

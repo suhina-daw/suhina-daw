@@ -340,6 +340,8 @@ pub struct FileAccess {
 
 /// Files kept decoded ahead of the commands that use them.
 const MAX_DECODED: usize = 16;
+/// Most control surfaces whose Launcher windows one project keeps.
+const MAX_CONTROL_SURFACES: usize = 16;
 /// A device panel's note for a file the project names outside where its audio may be read from.
 const DEVICE_FILE_OUTSIDE: &str =
     "the file is outside the project's folder and what Suhina trusts: choose it again to load it";
@@ -411,18 +413,29 @@ impl Session {
         std::mem::take(&mut self.view_actions)
     }
 
-    /// Sets or moves the Launcher window a control surface shows, by its id.
-    pub fn set_control_surface_window(&mut self, window: ControlSurfaceWindow) {
+    /// Sets or moves the Launcher window a control surface shows, by its id. At most
+    /// [`MAX_CONTROL_SURFACES`] windows are kept; one past that is refused rather than silently
+    /// left without an outline.
+    pub fn set_control_surface_window(&mut self, window: ControlSurfaceWindow) -> Result<(), CommandError> {
         if let Some(known) = self.control_surfaces.iter_mut().find(|known| known.id == window.id) {
             *known = window;
-        } else if self.control_surfaces.len() < 16 {
+        } else if self.control_surfaces.len() >= MAX_CONTROL_SURFACES {
+            return Err(format!("at most {MAX_CONTROL_SURFACES} control surfaces can report a window").into());
+        } else {
             self.control_surfaces.push(window);
         }
+        Ok(())
     }
 
     /// The Launcher windows control surfaces show.
     pub fn control_surface_windows(&self) -> &[ControlSurfaceWindow] {
         &self.control_surfaces
+    }
+
+    /// Drops the windows of surfaces whose programs are no longer running, so an outline
+    /// disappears with its controller and while a stopped script has not reported again.
+    pub fn retain_control_surface_windows(&mut self, running: &[String]) {
+        self.control_surfaces.retain(|window| running.iter().any(|id| id == &window.id));
     }
 
     /// Sets the audio input new audio tracks take from now on ([`Projects`] keeps it in line
@@ -1305,7 +1318,7 @@ impl Session {
         if let Some(value) = lane.and_then(|l| l.value_at(beat.max(0.0), stepped, &suhina_model::automation::Plain)) {
             return Some(value);
         }
-        device.params.iter().find(|p| suhina_engine::param_id(&p.id) == Some(id)).map(|p| p.value)
+        device.params.iter().rev().find(|p| suhina_engine::param_id(&p.id) == Some(id)).map(|p| p.value)
     }
 
     /// The plug-in parameters the user moved in a plug-in's own editor since the last call

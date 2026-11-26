@@ -606,6 +606,23 @@ impl Extensions {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn remember_subscription_value(&mut self, program: &str, token: u64, value: Value) {
+        self.subs.push(Sub {
+            program: program.to_string(),
+            token,
+            handle: 0,
+            cmd: "project.info".into(),
+            params: Value::Null,
+            last: Some(value),
+        });
+    }
+
+    #[cfg(test)]
+    pub(crate) fn subscription_value_is_remembered(&self, program: &str, token: u64) -> bool {
+        self.subs.iter().any(|sub| sub.program == program && sub.token == token && sub.last.is_some())
+    }
+
     /// Takes the reads' results in, and says what to push: a `state` for every subscription
     /// whose value changed from the last one sent — the first read after a subscribe always
     /// has. A refused read pushes nothing; the next look reads again.
@@ -817,6 +834,18 @@ impl Extensions {
         }
         self.subs.retain(|sub| sub.program != id);
         self.claims_epoch += 1;
+    }
+
+    /// The ids of the surface programs whose scripts are running, for the windows only they
+    /// may keep.
+    pub(crate) fn running_programs(&self) -> Vec<String> {
+        self.known
+            .iter()
+            .filter(|extension| {
+                extension.state == State::Running && !extension.script_stopped && extension.program.is_some()
+            })
+            .map(|extension| extension.id.clone())
+            .collect()
     }
 
     /// What each running program claims, for the MIDI router: the extension's id, its

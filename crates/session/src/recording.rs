@@ -377,7 +377,13 @@ impl Session {
     /// clip should play to play. Call it often: the window does every frame, through
     /// [`crate::Projects::poll_plugins`]. Returns what the user should hear about.
     pub fn poll_recording(&mut self) -> Vec<String> {
-        self.poll_recording_after(SETTLE)
+        self.poll_recording_after(SETTLE, true)
+    }
+
+    /// Polls as [`Session::poll_recording`] does, but leaves the notices in the session's queue
+    /// so a surface program's `record.state` reading and the window can both see them.
+    pub(crate) fn poll_recording_keeping_notices(&mut self) {
+        let _ = self.poll_recording_after(SETTLE, false);
     }
 
     /// Waits for the recording threads to take in what the engine has recorded so far, then polls
@@ -388,11 +394,11 @@ impl Session {
     pub fn sync_recording(&mut self, finish: bool) -> Vec<String> {
         let settle = if finish { Duration::ZERO } else { SETTLE };
         // The first poll tells the threads where takes end; the second reads what they made of it.
-        let mut notices = self.poll_recording_after(settle);
+        let mut notices = self.poll_recording_after(settle, true);
         for thread in &self.live.recording.threads {
             thread.sync(finish);
         }
-        notices.extend(self.poll_recording_after(settle));
+        notices.extend(self.poll_recording_after(settle, true));
         notices
     }
 
@@ -403,7 +409,7 @@ impl Session {
         self.live.recording.notices.extend(notices);
     }
 
-    fn poll_recording_after(&mut self, settle: Duration) -> Vec<String> {
+    fn poll_recording_after(&mut self, settle: Duration, take_notices: bool) -> Vec<String> {
         for thread in &self.live.recording.threads {
             while let Some(report) = thread.report() {
                 match report {
@@ -497,7 +503,11 @@ impl Session {
             self.live.recording.engine_on = false;
         }
         self.resume_slots(now_clock);
-        std::mem::take(&mut self.live.recording.notices)
+        if take_notices {
+            std::mem::take(&mut self.live.recording.notices)
+        } else {
+            self.live.recording.notices.clone()
+        }
     }
 
     /// Tells the recording thread where each audio take ends, as soon as that is known, so it
@@ -1150,7 +1160,9 @@ pub(crate) fn set_count_in(session: &mut Session, params: &Value) -> Result<Valu
 
 /// `record.state`.
 pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
-    let notices = session.poll_recording();
+    // A reading changes nothing: the frame's poll finishes takes and leaves its notices for
+    // both this reading and the window, rather than a subscription taking them first.
+    let notices = session.live.recording.notices.clone();
     let count_in = session.player().map_or(0.0, |p| p.monitor().count_in_beats());
     let p = session.project();
     let takes: Vec<Value> = session
@@ -1178,4 +1190,21 @@ pub(crate) fn record_state(session: &mut Session, _: &Value) -> Result<Value, Co
         "count_in_left": (count_in * 1000.0).round() / 1000.0,
         "notices": notices,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A reading reports the pending notices but leaves them for the window's own poll: a
+    /// surface program's subscription cannot take a recording warning first.
+    #[test]
+    fn record_state_reports_notices_without_taking_them() {
+        let mut session = Session::new(Project::default());
+        session.live.recording.notices.push("the disk is full".into());
+        let read = record_state(&mut session, &json!({})).unwrap();
+        assert_eq!(read["notices"], json!(["the disk is full"]));
+        assert_eq!(session.poll_recording(), ["the disk is full"], "the window still hears it");
+        assert_eq!(record_state(&mut session, &json!({})).unwrap()["notices"], json!([]));
+    }
 }

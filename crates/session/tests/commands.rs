@@ -1995,6 +1995,14 @@ fn view_commands_queue_the_windows_actions() {
         vec![("view.detail".to_string(), json!({})), ("view.devices".to_string(), json!({}))]
     );
     assert!(session.take_view_actions().is_empty(), "the window took them once");
+    // The queue is bounded, and a ninth action is refused rather than silently lost while the
+    // caller is told it was queued.
+    for _ in 0..8 {
+        run(&mut session, "view.detail", json!({})).unwrap();
+    }
+    let full = run(&mut session, "view.detail", json!({})).unwrap_err();
+    assert!(full.to_string().contains("waiting"), "{full}");
+    assert_eq!(session.take_view_actions().len(), 8);
 }
 
 /// A control surface reports the Launcher window it shows, and the window reads it back.
@@ -2016,4 +2024,13 @@ fn a_control_surface_reports_its_launcher_window() {
     let windows = session.control_surface_windows();
     assert_eq!(windows.len(), 1);
     assert_eq!((windows[0].track, windows[0].name.as_str()), (3, "apc40-mkii"));
+    // A seventeenth distinct surface is refused instead of appearing to report a window that
+    // the session silently dropped.
+    for id in 2..=16 {
+        run(&mut session, "surface.setWindow", json!({ "id": format!("surface-{id}"), "track": 0, "scene": 0 }))
+            .unwrap();
+    }
+    let full = run(&mut session, "surface.setWindow", json!({ "id": "surface-17", "track": 0, "scene": 0 }));
+    assert!(full.is_err(), "{full:?}");
+    assert_eq!(session.control_surface_windows().len(), 16);
 }

@@ -305,7 +305,9 @@ were ended, without the wait the thread gives a device for frames still on their
 
 - **A full disk, or a file that cannot be written**, ends that take: what was written so far is
   kept and becomes the clip when the take ends, and the reason is reported (a notice in the
-  window's status line, `notices` in `record.state`).
+  window's status line, `notices` in `record.state`). A surface program subscribed to
+  `record.state` cannot take the notice first: the reading reports it without draining it, and
+  the window still shows it.
 - **A lost device** (the output fails or is opened again) ends every take the same way, keeping
   what was recorded. An input device that goes away while the output plays on records silence.
 - **More input than the ring holds** (the writer thread could not keep up for seconds) is
@@ -328,7 +330,7 @@ were ended, without the wait the thread gives a device for frames still on their
 | `take.deleteUnused` | `track`: deletes the take lanes the comp uses nothing of; one undo step |
 | `take.swap` | `clip`, `direction` (`up` or `down`): the part replaced by the same span of the next take that has something there; one undo step |
 | `take.moveCut` | `clip`, `to`: moves the cut between the part and the one right after it; one undo step |
-| `record.state` | Whether the arrangement records, the takes running (track, slot or arrangement, audio or MIDI, start and end beat, notes so far, frames written, file), the count-in setting and the beats it has left, notices |
+| `record.state` | A reading: whether the arrangement records, the takes running (track, slot or arrangement, audio or MIDI, start and end beat, notes so far, frames written, file), the count-in setting, the beats it has left and pending notices; it finishes no take and drains no notice |
 
 `clip.launch` on a slot that records ends its take; `transport.stop` ends every take. All of
 them are transport commands: none is undone itself, and the clip each take makes is one undo
