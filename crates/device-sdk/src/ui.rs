@@ -771,7 +771,8 @@ impl DeviceUi {
                             && c.x.is_none()
                             && c.y.is_some()
                             && readout.as_ref().is_none_or(|readout| {
-                                readout.value.validate(&readouts, 0, &mut expression_budget).is_ok()
+                                readout.prefix.len() + readout.suffix.len() <= 256
+                                    && readout.value.validate(&readouts, 0, &mut expression_budget).is_ok()
                             })
                     }
                     Widget::ValueMenu { choices } => {
