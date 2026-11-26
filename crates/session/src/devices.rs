@@ -707,6 +707,40 @@ pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
     value
 }
 
+/// One device's entry as `project.selection` gives the selected one: `device_json` plus, for a
+/// running plug-in, the parameter list its generated panel draws (#1679). A controller locked
+/// to a device reads it with `device.read`, so the device section keeps its live values while
+/// the selection moves elsewhere.
+pub(crate) fn device_entry(session: &mut Session, track: suhina_model::TrackId, path: &[usize]) -> Option<Value> {
+    let device = session
+        .project
+        .channel_of_track(track)
+        .and_then(|channel| suhina_model::device_at(&channel.devices, path))
+        .cloned()?;
+    let mut entry = device_json(path, &device);
+    if is_plugin(&device.kind) {
+        session.list_plugin_params_at(track, path);
+        if let Some(report) = session.plugin_report_at(track, path)
+            && let Some(list) = report.params.as_deref()
+        {
+            let (params, dials) = plugin_panel_params(&device, list);
+            entry["params"] = params;
+            entry["dials"] = dials;
+        }
+    }
+    Some(entry)
+}
+
+/// `device.read {track, device}`: one device's entry, as the selection would give it.
+pub(crate) fn read_device(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let track = track_or_main_id(&session.project, params)?;
+    let path = {
+        let channel = device_channel(session, params)?;
+        device_path(&channel.devices, params, "device")?
+    };
+    device_entry(session, track, &path).ok_or_else(|| "the device is missing".into())
+}
+
 /// A plug-in's parameters as its generated panel draws them (#679), with the `dials` a
 /// controller's knobs turn: every parameter the panel shows, in its order, with the value the
 /// project keeps for it or the one the plug-in listed. A switch is left out of `dials`, as a

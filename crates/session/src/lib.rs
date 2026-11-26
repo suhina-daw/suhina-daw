@@ -291,6 +291,10 @@ pub struct Session {
     /// device of its chain — what controllers, mappings and agents point at. Not saved, not an
     /// undo step.
     pub(crate) selection: selection::Selection,
+    /// Window actions a command asked for (`view.detail`, `view.devices`), for the window to
+    /// run at its next frame: a surface program's buttons reach the detail area this way. Not
+    /// saved, not an undo step.
+    pub(crate) view_actions: Vec<(String, serde_json::Value)>,
     /// The audio input a new audio track takes, and an armed one that hears none: the
     /// default track input of Settings › Audio while an input device is chosen, else none
     /// ([`Session::set_default_input`], ADR 0017).
@@ -350,6 +354,7 @@ impl Session {
             live: live_input::LiveInput::default(),
             take_solo: None,
             selection: selection::Selection::default(),
+            view_actions: Vec::new(),
             default_input: suhina_model::InputChannels::None,
             defaulted: Vec::new(),
             library_base: None,
@@ -382,6 +387,11 @@ impl Session {
     /// The library's root, when it was set ([`Session::set_library_base`]).
     pub fn library_base(&self) -> Option<&Path> {
         self.library_base.as_deref()
+    }
+
+    /// Takes the window actions a command asked for, for the window to run this frame.
+    pub fn take_view_actions(&mut self) -> Vec<(String, serde_json::Value)> {
+        std::mem::take(&mut self.view_actions)
     }
 
     /// Sets the audio input new audio tracks take from now on ([`Projects`] keeps it in line

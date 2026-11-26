@@ -210,6 +210,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "device.read",
+        label: "Read one device on a track: the entry project.selection gives the selected device — its parameters, dials and a running plug-in's generated panel — for a controller locked to it",
+        params: &[DEVICE_TRACK, DEVICE],
+        kind: CommandKind::READ,
+        run: devices::read_device,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "device.rename",
         label: "Rename a device: the name its panel, the menus and its editor's window show; a plug-in is still found by its own name",
         params: &[

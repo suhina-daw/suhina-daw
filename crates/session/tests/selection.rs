@@ -49,10 +49,12 @@ fn selecting_a_track_selects_its_first_device_with_its_parameters() {
         let param = params.iter().find(|p| p["id"] == id).unwrap_or_else(|| panic!("dial {id} in {picked}"));
         assert!(matches!(param["kind"].as_str(), Some("continuous" | "integer")), "a dial, not a switch: {param}");
     }
-    // The reading agrees with the command's answer.
+    // The reading agrees with the command's answer, and one device reads the same directly.
     let read = selection(&mut session);
     assert_eq!(read["device"]["device_id"], picked["device"]["device_id"], "{read}");
     assert_eq!(read["track"], track.0);
+    let one = run(&mut session, "device.read", json!({ "track": track.0, "device": 0 })).unwrap();
+    assert_eq!(one, picked["device"], "device.read answers the selection's entry");
 }
 
 /// A dial's normalized position is the panel's, not a linear share of the value: half of the FM

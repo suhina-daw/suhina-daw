@@ -89,7 +89,9 @@ agent attached to the app may run them (the selection is project state, not sett
   turn them in the same order. The value is the project's where it keeps one and the plug-in's
   otherwise; the list is refreshed in the background as the panel's is, and a plug-in that is
   not running, or has not listed yet, shows the stored values. `device.pluginParams` lists the
-  same parameters for an agent or a command.
+  same parameters for an agent or a command, and `device.read { track, device }` answers one
+  device's same entry: a controller's Device Lock reads its device live while the selection
+  moves elsewhere.
 - With nothing selected, both are nothing and the parameters are empty.
 
 ### A controller's dials

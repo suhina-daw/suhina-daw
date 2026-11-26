@@ -84,28 +84,11 @@ fn selected_json(session: &mut Session) -> Value {
         .unwrap_or_else(|| "Main".to_string());
     value["track_name"] = json!(name);
     let Some(path) = session.selection.device_path(&session.project) else { return value };
-    let Some(device) = session
-        .project
-        .channel_of_track(track)
-        .and_then(|channel| suhina_model::device_at(&channel.devices, &path))
-        .cloned()
-    else {
-        return value;
-    };
-    let mut entry = crate::devices::device_json(&path, &device);
-    if crate::devices::is_plugin(&device.kind) {
-        // Its panel follows the parameters it lists; a selection read keeps that list fresh,
-        // as the detail area does, so a controller maps the sliders the window shows.
-        session.list_plugin_params_at(track, &path);
-        if let Some(report) = session.plugin_report_at(track, &path)
-            && let Some(list) = report.params.as_deref()
-        {
-            let (params, dials) = crate::devices::plugin_panel_params(&device, list);
-            entry["params"] = params;
-            entry["dials"] = dials;
-        }
+    // Its panel follows the parameters it lists; a selection read keeps that list fresh, as the
+    // detail area does, so a controller maps the sliders the window shows.
+    if let Some(entry) = crate::devices::device_entry(session, track, &path) {
+        value["device"] = entry;
     }
-    value["device"] = entry;
     value
 }
 

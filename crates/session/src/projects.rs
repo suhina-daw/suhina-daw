@@ -488,6 +488,12 @@ impl Projects {
         &self.devices.output_choice
     }
 
+    /// Takes the window actions the active project's commands asked for, for the window's next
+    /// frame.
+    pub fn take_view_actions(&mut self) -> Vec<(String, Value)> {
+        self.session_mut(None).map(Session::take_view_actions).unwrap_or_default()
+    }
+
     /// Chooses the output players open on from now on; [`Projects::reopen_output`] moves the
     /// playing one there. The device keeps the input chosen with it, for the next time it is
     /// chosen ([`Projects::remembered_input`]).

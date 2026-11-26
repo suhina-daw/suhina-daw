@@ -37,6 +37,7 @@ pub(crate) mod take;
 mod tempo;
 mod time_signature;
 mod track;
+mod view;
 pub(crate) use track::parse_input_channels;
 mod transport;
 
@@ -705,6 +706,7 @@ static NAMESPACES: &[&[CommandSpec]] = &[
     mapping::COMMANDS,
     scene::COMMANDS,
     selection::COMMANDS,
+    view::COMMANDS,
     device::COMMANDS,
     preview::COMMANDS,
     branch::COMMANDS,

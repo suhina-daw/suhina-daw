@@ -3438,6 +3438,15 @@ impl App {
         self.frame_trace.mark("export");
         self.poll_plugins(ui.ctx());
         self.frame_trace.mark("plug-ins");
+        // A surface program's View buttons reach the window as commands; run their window
+        // actions now (the commands only queue them).
+        let mut view_actions = Vec::new();
+        for (id, _) in self.projects.take_view_actions() {
+            self.do_action(&id, &mut view_actions);
+        }
+        for action in view_actions {
+            self.run(&action);
+        }
         self.tick_backups(ui.ctx());
         self.frame_trace.mark("backups");
         // The sample map's analysis goes on in the background; take in what it finished.

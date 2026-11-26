@@ -1981,3 +1981,18 @@ fn several_tracks_delete_as_one_undo_step() {
         assert_eq!(session.project(), &built, "{wrong} changes nothing");
     }
 }
+
+/// The View buttons are commands: they queue the window's own action, which the window runs at
+/// its next frame.
+#[test]
+fn view_commands_queue_the_windows_actions() {
+    let mut session = Session::new(project());
+    let queued = run(&mut session, "view.detail", json!({})).unwrap();
+    assert_eq!(queued["queued"], true, "{queued}");
+    run(&mut session, "view.devices", json!({})).unwrap();
+    assert_eq!(
+        session.take_view_actions(),
+        vec![("view.detail".to_string(), json!({})), ("view.devices".to_string(), json!({}))]
+    );
+    assert!(session.take_view_actions().is_empty(), "the window took them once");
+}
