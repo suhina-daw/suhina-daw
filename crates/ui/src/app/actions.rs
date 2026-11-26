@@ -1456,7 +1456,19 @@ impl App {
     /// Sets the session's selection from the window's, after a click or a key moved it
     /// (`docs/spec/selection.md` › The window follows): the window runs the same commands a
     /// script or an agent would, so both point at the same track and device.
-    pub(super) fn publish_session_selection(&mut self) {
+    /// `window_before` is what the window pointed at when the frame began, after following the
+    /// session: only a change from that is the window's to publish.
+    pub(super) fn publish_session_selection(
+        &mut self,
+        window_before: (Option<TrackId>, Option<(TrackId, detail_view::DeviceAt)>),
+    ) {
+        // A command the frame ran — a surface program's, the CLI's, MCP's — can move the
+        // session's selection before the window has followed it. The window still shows the old
+        // one, and publishing that would undo the command (a controller's Device arrow would
+        // step and spring back).
+        if self.window_selection() == window_before {
+            return;
+        }
         let Some(track) = self.selected_track() else { return };
         let Some(session) = self.session() else { return };
         if session.project().channel_of_track(track).is_none() {
@@ -1470,6 +1482,12 @@ impl App {
         if session.selected_device_path().as_deref() != Some(at.0.as_slice()) {
             self.run(&Action::new("device.select", json!({ "track": picked_track.0, "device": at.value() })));
         }
+    }
+
+    /// What the window points at for the selection: its primary track and the device picked in
+    /// the chain. The window's own multi-picks are not part of it.
+    pub(super) fn window_selection(&self) -> (Option<TrackId>, Option<(TrackId, detail_view::DeviceAt)>) {
+        (self.selected_track(), self.selected_device.clone())
     }
 }
 

@@ -80,6 +80,9 @@ agent attached to the app may run them (the selection is project state, not sett
 
 - A command from the CLI or MCP moves the window: the track highlight and the device chain's
   shown device follow at the next frame.
+- A command that moves the selection while a frame is drawn — a surface program's device arrow,
+  a CLI or MCP call — is the session's: the frame's end does not publish the window's older
+  pick, so the next frame shows the command's selection instead of springing back to it.
 - A click that selects a track or picks a device sets the same selection — the window runs the
   commands, as it runs every action.
 - Each open project keeps its own selection, so switching tabs switches it.
