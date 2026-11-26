@@ -42,14 +42,16 @@ each), the master fader (`mixer.setMainVolume`) and the pan encoders (`track.set
 gesture each) with their rings.
 
 The device control section follows the selection the window, commands and agents share
-(`project.selection`, #1679): the eight knobs turn the selected device's dials — its continuous
-parameters, in the order its panel reads them: left to right, top to bottom — in banks of eight
-(`device.setParam`, one gesture each), Device left/right step
+(`project.selection`, #1679): the eight knobs turn the selected device's dials — the page its
+panel shows, left to right and top to bottom, then the dials that stay on every page, then the
+other pages' — in banks of eight (`device.setParam`, one gesture each), Device left/right step
 along the chain (`device.selectPrevious`, `device.selectNext`), Bank left/right take the next or
-previous eight dials, and Device On/Off switches the device (`device.setEnabled`). Switches and
-choices stay on the device's panel. Each knob's ring shows its dial's position, the bank arrows
-light where there is another page, the device arrows while a device is selected, and the track
-select buttons light for the selected track.
+previous eight dials, and Device On/Off switches the device (`device.setEnabled`). A knob sends
+its dial's normalized position, so a logarithmic time or frequency moves smoothly, and a page or
+operator change in the window moves the bank with it. Switches and choices stay on the device's
+panel. Each knob's ring shows its dial's position, the bank arrows light where there is another
+page, the device arrows while a device is selected, and the track select buttons light for the
+selected track.
 
 Not yet: the sends, user mode, crossfader, Device Lock, the Clip/Dev and Detail View buttons,
 the tempo encoder, nudge, tap tempo, session record and shift; blinking queued pads; and the
