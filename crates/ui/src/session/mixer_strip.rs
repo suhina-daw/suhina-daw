@@ -521,7 +521,7 @@ pub fn show(
     // Sends first, so a dragged send's level can stand where the pan's value is.
     let sending = parts.sends.and_then(|row| send_knobs(ui, painter, row, column, state, id, actions));
     if let Some(row) = parts.pan {
-        pan_row(ui, painter, row, parts.assign, column, sending, state, id, actions);
+        pan_row(ui, painter, row, column, sending, state, id, actions);
     }
     if let Some(rect) = parts.assign {
         assign_button(ui, painter, rect, column, id, actions);
@@ -1431,7 +1431,6 @@ fn pan_row(
     ui: &Ui,
     painter: &egui::Painter,
     row: Rect,
-    assign: Option<Rect>,
     column: &Column,
     _sending: Option<(String, f64)>,
     state: &mut SessionViewState,
@@ -1440,8 +1439,7 @@ fn pan_row(
 ) {
     let style = crate::kit::element::PAN.id("mixer-pan").enter();
     let track = column.track;
-    let knob_rect =
-        assign.map_or(row, |a| Rect::from_min_max(row.min, Pos2::new((a.left() - 2.0).max(row.left()), row.max.y)));
+    let knob_rect = row;
     state.value_areas.push(knob_rect);
     let pan_response = widgets::value_area(
         ui,
