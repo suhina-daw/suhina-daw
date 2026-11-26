@@ -46,7 +46,8 @@ gesture) and each track's A/B button (`track.setCrossfadeAssign`), the eight fad
 encoders with their rings: Pan (the track's pan), Sends (a return's send, paged with another
 Sends press) and User (left to the user), each button lighting its mode. Record records the
 arrangement (`transport.record`) and lights while it does; Session Record arms empty pads on
-armed tracks to record, and lights while armed or a slot take runs; Tap Tempo takes its taps'
+armed tracks to record (a second press on the recording slot ends its take), and lights while
+armed or a slot take runs; Tap Tempo takes its taps'
 spacing, the tempo encoder turns a BPM a click, and Nudge −/+ step it.
 
 The device control section follows the selection the window, commands and agents share

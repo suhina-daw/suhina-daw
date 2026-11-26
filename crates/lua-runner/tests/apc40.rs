@@ -419,9 +419,27 @@ impl Fake {
 
     /// The record state, as `record.state` gives it: whether the arrangement records.
     fn record_state(&self, arrangement: bool) {
+        self.record_state_with(arrangement, None);
+    }
+
+    /// The same with a take running into `track`'s slot of `scene`, for the second press.
+    fn record_slot_take(&self, track: u32, scene: u32) {
+        self.record_state_with(false, Some((track, scene)));
+    }
+
+    fn record_state_with(&self, arrangement: bool, slot_take: Option<(u32, u32)>) {
         let state = self.lua.create_table().unwrap();
         state.set("arrangement", arrangement).unwrap();
-        state.set("takes", self.lua.create_table().unwrap()).unwrap();
+        let takes = self.lua.create_table().unwrap();
+        if let Some((track, scene)) = slot_take {
+            let take = self.lua.create_table().unwrap();
+            take.set("track", track).unwrap();
+            let into = self.lua.create_table().unwrap();
+            into.set("scene", scene).unwrap();
+            take.set("into", into).unwrap();
+            takes.set(1, take).unwrap();
+        }
+        state.set("takes", takes).unwrap();
         let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
         handler.call::<()>((5u64, state)).unwrap();
     }
@@ -746,11 +764,17 @@ fn the_record_and_session_buttons_toggle_their_lights() {
     assert_eq!(command.id, "clip.record", "{command:?}");
     assert_eq!(command.track, Some(7), "{command:?}");
     assert_eq!(command.scene, Some(0), "{command:?}");
+    // The take running, the same pad ends it; the Session Record light already says a take runs.
+    fake.record_slot_take(7, 0);
+    fake.press(32);
+    assert_eq!(fake.last_command().id, "clip.launch", "{:?}", fake.commands());
     // Disarmed for session record, the same empty pad with a stop button stops the track.
+    fake.record_state(false);
     fake.press(102);
     fake.press(32);
     assert_eq!(fake.last_command().id, "clip.launch", "{:?}", fake.commands());
     // The record button stops the arrangement once the state says it records.
+    fake.record_state(true);
     fake.press(93);
     let command = fake.last_command();
     assert_eq!(command.id, "transport.record", "{command:?}");

@@ -322,6 +322,19 @@ local function tap_tempo(timestamp)
     end
 end
 
+-- Whether a track's slot is the one its take records into, so a second press ends it.
+local function slot_recording(track, scene)
+    if record_state == nil or type(record_state.takes) ~= "table" then
+        return false
+    end
+    for _, take in ipairs(record_state.takes) do
+        if take.track == track and type(take.into) == "table" and take.into.scene == scene then
+            return true
+        end
+    end
+    return false
+end
+
 -- Whether a scene or arrangement take is recording, for the Session Record light.
 local function session_recording()
     if session_record then
@@ -722,9 +735,14 @@ local function press(channel, note, timestamp)
         if slot == nil then
             return
         end
-        -- An empty slot records on an armed track while Session Record is armed; otherwise an
-        -- empty one with a stop button stops the track, and one without does nothing.
+        -- A second press on the slot a take records into ends it; an empty slot records on an
+        -- armed track while Session Record is armed; otherwise an empty one with a stop button
+        -- stops the track, and one without does nothing.
         if is_nil(slot.clip) then
+            if slot_recording(id, scene) then
+                suhina.command("clip.launch", { track = id, scene = scene })
+                return
+            end
             local strip = strip_of(track)
             if session_record and strip ~= nil and strip.armed == true then
                 suhina.command("clip.record", { track = id, scene = scene })
