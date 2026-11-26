@@ -205,7 +205,11 @@ fn a_strip_dragged_and_let_go_keeps_its_new_value() {
         harness.hover_at(dial - Vec2::new(0.0, dy));
         harness.step();
     }
-    let dragged = value(&harness.state().0, "a1Frequency");
+    // The value the drag sent last (the harness applies it at the next frame's start).
+    let sent = |h: &egui_kittest::Harness<'_, (Vec<GraphParameter>, Vec<Action>)>| {
+        h.state().1.iter().rev().find(|a| a.params["param"] == "a1Frequency").and_then(|a| a.params["value"].as_f64())
+    };
+    let dragged = sent(&harness).unwrap_or(start);
     assert!(dragged > start, "the drag up raised it: {start} -> {dragged}");
     harness.drop_at(dial - Vec2::new(0.0, 40.0));
     harness.step();
