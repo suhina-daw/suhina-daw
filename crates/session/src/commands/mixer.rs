@@ -29,7 +29,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "mixer.levels",
         label: "Read the level meters of the playing engine: the main output's and each track's peak and RMS level per side in dB (null for silence), and whether it clipped",
         params: &[],
-        kind: CommandKind::TRANSPORT,
+        // A reading: a surface program's meters follow it (#1677).
+        kind: CommandKind::READ,
         run: meters::levels,
         policy: Policy::DEFAULT,
     },
