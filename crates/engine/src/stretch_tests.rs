@@ -191,6 +191,80 @@ fn an_offset_past_the_loop_end_starts_at_the_loop_start() {
     assert_eq!(summary, [(0.0, 1000.0, 2000.0), (1.0, 2000.0, 4000.0)]);
 }
 
+/// A grain that runs on past a loop pass's end reads the next pass from the loop's start, as the
+/// spectral stretcher's input does, never the file past the loop.
+#[test]
+fn grains_read_the_next_loop_pass_past_a_loop_end() {
+    // A ramp at 8 kHz (the least rate a voice takes), each frame its own number, longer than the
+    // loop's end in the file. Beats 0–4 are 0–2 s, beats 4–6 2–4 s; loop beats 2–6.
+    const SR: u32 = 8_000;
+    let samples = (0..5 * SR as usize).map(|i| i as f32 / 100_000.0).collect();
+    let data = Arc::new(AudioData { sample_rate: SR, channels: 1, samples });
+    let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Texture);
+    let frame = |f: f64| (f / 100_000.0) as f32;
+    // Eight beats from beat 3: the loop is passed and comes round again.
+    let Some(voice) = StretchVoice::new(&with(&clip(8.0, 3.0, Some((2.0, 6.0))), &r), Arc::clone(&data), 120.0, SR)
+    else {
+        panic!("no voice")
+    };
+    // The stream (as `playlist_follows_markers_and_loops` lays it out, at 8 kHz): its frame
+    // 19 999 is the file's 31 999, the loop's last; frame 20 000 is the loop's start again, file
+    // frame 8 000.
+    assert_eq!(voice.stream_frame(19_999.0, 0), frame(31_999.0));
+    assert_eq!(voice.stream_frame(20_000.0, 0), frame(8_000.0), "the next pass, not file frame 32 000");
+    let between = voice.stream_sample(19_999.5, 0);
+    assert!((between - (frame(31_999.0) + frame(8_000.0)) / 2.0).abs() < 1e-6, "{between}");
+    // A clip that ends in its first loop pass (two beats from beat 3, in a loop of beats 2–6): past
+    // the last piece the stream is silent, not the file past the loop.
+    let Some(short) = StretchVoice::new(&with(&clip(2.0, 3.0, Some((2.0, 6.0))), &r), Arc::clone(&data), 120.0, SR)
+    else {
+        panic!("no voice")
+    };
+    let end = short.pieces.last().map_or(0.0, |p| p.stream_start + (p.src_end - p.src_start));
+    assert!(short.stream_frame(end - 1.0, 0) > 0.0, "the clip's last frame sounds");
+    assert_eq!(short.stream_frame(end + 10.0, 0), 0.0, "past the last pass, silence");
+}
+
+/// Where a Rhythmic slice must stop: the end of the stretch of file the clip's time plays in, past
+/// the warp segments that follow on in the file, at the loop's end; unbounded for a clip that
+/// neither loops nor repeats.
+#[test]
+fn slices_stop_at_the_end_of_the_stretch_the_clip_plays_in() {
+    const SR: u32 = 8_000;
+    let data = Arc::new(AudioData { sample_rate: SR, channels: 1, samples: vec![0.0; 5 * SR as usize] });
+    let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Rhythmic);
+    // Eight beats from beat 3, loop beats 2–6: beats 3–4 (file 12 000–16 000) and 4–6 (16 000–
+    // 32 000) follow on in the file, and the loop jumps back after file frame 32 000.
+    let Some(looped) = StretchVoice::new(&with(&clip(8.0, 3.0, Some((2.0, 6.0))), &r), Arc::clone(&data), 120.0, SR)
+    else {
+        panic!("no voice")
+    };
+    assert_eq!(looped.run_end(0), 32_000.0, "beat 3: on through beat 4 to the loop's end");
+    assert_eq!(looped.run_end(u64::from(SR)), 32_000.0, "beat 5");
+    // The second pass (from 1.5 s of output, the loop's start again) ends at the loop's end too.
+    assert_eq!(looped.run_end(u64::from(SR) * 2), 32_000.0);
+    let Some(plain) = StretchVoice::new(&with(&clip(4.0, 0.0, None), &r), data, 120.0, SR) else { panic!("no voice") };
+    assert_eq!(plain.run_end(0), f64::INFINITY);
+}
+
+/// A position that is not finite (an extreme transpose can make one infinite) reads silence,
+/// never NaN: `at - at.floor()` of infinity is NaN, which reached the stretcher's output.
+#[test]
+fn a_position_that_is_not_finite_reads_silence() {
+    // 8 kHz, the least rate a voice takes.
+    let samples = (0..40_000).map(|i| i as f32 / 80_000.0).collect();
+    let data = Arc::new(AudioData { sample_rate: 8000, channels: 1, samples });
+    let r = region(&[(0.0, 0.0), (4.0, 2.0), (6.0, 4.0)], StretchMode::Texture);
+    let Some(voice) = StretchVoice::new(&with(&clip(4.0, 0.0, None), &r), data, 120.0, 8000) else {
+        panic!("no voice")
+    };
+    for at in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+        assert_eq!(voice.sample_at(at, 0), 0.0, "{at}");
+        assert_eq!(voice.stream_sample(at, 0), 0.0, "{at}");
+        assert_eq!(voice.stream_frame(at, 0), 0.0, "{at}");
+    }
+}
+
 /// Clicks every `every` seconds: a 2 ms burst at full scale, silence between.
 fn clicks(every: f64, seconds: f64, sample_rate: u32) -> Arc<AudioData> {
     let frames = (seconds * f64::from(sample_rate)) as usize;
@@ -371,7 +445,172 @@ fn unusable_clips_get_no_voice() {
     assert!(StretchVoice::new(&with(&clip(1.0, 0.0, None), &unity), data.clone(), 120.0, 48_000).is_none());
     let repitch = region(&[(0.0, 0.0), (2.0, 0.9)], StretchMode::Repitch);
     assert!(StretchVoice::new(&with(&clip(1.0, 0.0, None), &repitch), data.clone(), 120.0, 48_000).is_none());
-    // 1 beat holding 0.02 s at 120 bpm: 0.04x speed, too slow to stretch.
-    let extreme = region(&[(0.0, 0.0), (1.0, 0.02)], StretchMode::Smooth);
+    // 1 beat holding 0.005 s at 120 bpm: 0.01x speed, slower than the stretcher is given.
+    let extreme = region(&[(0.0, 0.0), (1.0, 0.005)], StretchMode::Smooth);
     assert!(StretchVoice::new(&with(&clip(1.0, 0.0, None), &extreme), data, 120.0, 48_000).is_none());
+}
+
+/// The frequency of `left` (a mono signal) between `from` and `to` samples, from its zero
+/// crossings.
+fn crossing_hz(left: &[f32], from: usize, to: usize, rate: u32) -> f64 {
+    let part = left.get(from..to).unwrap_or_default();
+    let crossings = part.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count();
+    crossings as f64 / 2.0 / ((to - from) as f64 / f64::from(rate))
+}
+
+/// A segment squeezed or stretched far past what a narrower range allowed keeps its pitch: a
+/// stretching mode never re-pitches a clip because one warp marker was dragged close to another.
+#[test]
+fn a_segment_far_faster_or_slower_than_its_audio_keeps_its_pitch() {
+    let rate = 48_000;
+    // 4 beats (2 s at 120 BPM) of 20 s of audio is 10x; of 0.1 s it is 1/20x.
+    for (seconds, label) in [(20.0_f64, "10x"), (0.1, "1/20x")] {
+        let data = sine(440.0, seconds.max(1.0), rate);
+        let r = region(&[(0.0, 0.0), (4.0, seconds)], StretchMode::Smooth);
+        let c = clip(4.0, 0.0, None);
+        let voice = StretchVoice::new(&with(&c, &r), data, 120.0, rate);
+        assert!(voice.is_some(), "{label}: stretched, not re-pitched");
+        let Some(mut voice) = voice.map(StretchVoice::prepared) else { continue };
+        let mut out = vec![0.0f32; 2 * 2 * rate as usize];
+        for block in out.chunks_mut(2 * 512) {
+            voice.render(block);
+        }
+        let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|[l, _]| *l).collect();
+        let hz = crossing_hz(&left, rate as usize / 4, rate as usize * 3 / 2, rate);
+        assert!((hz - 440.0).abs() < 440.0 * 0.06, "{label}: {hz} Hz, not 440");
+    }
+}
+
+/// Rhythmic keeps a beat as a cut when no cut is within half a beat of it, half a beat measured
+/// from that beat's own neighbours: uneven warp markers squeeze some beats close together in the
+/// file, and a mean spacing hid the beat between two close ones (#1540).
+#[test]
+fn a_beat_between_close_markers_is_still_cut() {
+    // Markers at (beat, frame) (0, 0), (2, 0.2) and (4, 2.2): the beats fall at these frames.
+    let fill = [0.0, 0.1, 0.2, 1.2, 2.2];
+    // The markers are cuts; no transients.
+    let near = [0.0, 0.2, 2.2];
+    assert_eq!(beats_without_a_cut(&fill, &near, f64::INFINITY), vec![0.1, 1.2], "the beat at 0.1 is not hidden by 0");
+    // An even grid keeps its behavior: a cut within half a beat hides the beat, one further out
+    // does not.
+    let even = [0.0, 1.0, 2.0, 3.0];
+    assert_eq!(beats_without_a_cut(&even, &[1.4], f64::INFINITY), vec![0.0, 2.0, 3.0]);
+    assert_eq!(beats_without_a_cut(&even, &[1.6], f64::INFINITY), vec![0.0, 1.0, 3.0]);
+    assert_eq!(beats_without_a_cut(&even, &[], f64::INFINITY), even.to_vec());
+}
+
+/// A lone beat (the file holds one) has no neighbours to measure half a beat from: it measures
+/// from the warp map's beat length there, so a far cut no longer hides it.
+#[test]
+fn a_lone_beat_measures_half_a_beat_from_the_warp_map() {
+    // One beat at frame 5, four frames long: a cut 5 frames off is past half a beat, 1 is not.
+    assert_eq!(beats_without_a_cut(&[5.0], &[0.0], 4.0), vec![5.0]);
+    assert_eq!(beats_without_a_cut(&[5.0], &[4.0], 4.0), Vec::<f64>::new());
+    // Half a second of a file at two beats a second: one beat on its grid, its length from
+    // the map.
+    let markers = [(0.0, 0.25), (4.0, 2.25)];
+    let fill = grid_frames(&markers, 1.0, (0.0, 0.5), 0.5, 1000.0);
+    assert_eq!(fill, vec![250.0]);
+    assert_eq!(beat_frames_at(&markers, 250.0, 1000.0), 500.0);
+}
+
+/// The grid of a short clip far into a long file covers where it plays: a grid from the file's
+/// start stopped at the cap (25 000 beats at 1/32) long before it got there.
+#[test]
+fn a_short_clip_far_into_a_long_file_gets_its_note_cuts() {
+    // 120 bpm: two beats a second, over a file of 20 000 s (40 000 beats).
+    let markers = [(0.0, 0.0), (2.0, 1.0)];
+    let (every, seconds, rate) = (0.125, 20_000.0, 1000.0);
+    let whole = grid_frames(&markers, every, (f64::NAN, f64::NAN), seconds, rate);
+    assert_eq!(whole.len(), MAX_CUTS, "the whole file is capped");
+    assert!(whole.last().is_some_and(|f| *f < 19_000.0 * rate), "and never gets to 19 000 s");
+    let reached = grid_frames(&markers, every, (19_000.0, 19_001.0), seconds, rate);
+    // Every 1/32 note of the second played, and two on either side.
+    assert_eq!(reached.len(), 16 + 1 + 4);
+    assert_eq!(reached.first().copied(), Some(19_000.0 * rate - 2.0 * 62.5));
+    assert_eq!(reached.last().copied(), Some(19_001.0 * rate + 2.0 * 62.5));
+}
+
+/// A Rhythmic clip whose loop is shorter than the slice it sits in plays the slice's start on
+/// every pass, with each tail: the clip's time jumping back to the loop's start starts the slice
+/// again, though it is the same slice (#1540).
+#[test]
+fn a_rhythmic_loop_inside_one_slice_plays_its_start_on_every_pass() {
+    // At 8 kHz, a click on every beat of the file: beats 0–8 are 0–2 s (a beat is 2 000 file
+    // frames), played at 120 bpm, so at half the file's speed. Slices on every quarter note (the
+    // warp markers at frames 0 and 16 000, and every beat), with no transients: the slice at beat
+    // 2 runs from file frame 4 000 to 6 000. The loop, beats 2–2.5, is file frames 4 000–5 000:
+    // no slice starts inside it, and its first frame is a click.
+    const SR: u32 = 8_000;
+    let data = clicks(0.25, 3.0, SR);
+    for tail in [SliceTail::Off, SliceTail::Loop, SliceTail::BackAndForth] {
+        let r = ClipAudio {
+            warp: WarpSettings { slice: SliceAt::Quarter, tail, ..WarpSettings::default() },
+            ..region(&[(0.0, 0.0), (8.0, 2.0)], StretchMode::Rhythmic)
+        };
+        // Eight passes of half a beat (0.25 s each), from the loop's start.
+        let c = clip(4.0, 2.0, Some((2.0, 2.5)));
+        let mut voice = StretchVoice::new(&with(&c, &r), Arc::clone(&data), 120.0, SR).unwrap().prepared();
+        let mut out = vec![0.0f32; 2 * 2 * SR as usize];
+        for block in out.chunks_mut(2 * 500) {
+            voice.render(block);
+        }
+        let found = onsets(&out, SR);
+        assert_eq!(found.len(), 8, "{tail:?}: {found:?}");
+        for (k, at) in found.iter().enumerate() {
+            let pass = k as f64 * 0.25;
+            assert!((at - pass).abs() < 0.003, "{tail:?}: pass {k} at {pass} s, a click at {at} s: {found:?}");
+        }
+    }
+}
+
+/// A looped Texture clip on its last pass reads nothing past the loop: a grain that runs on past
+/// the clip's end reads silence, where reading the file played what follows the loop.
+#[test]
+fn a_looped_texture_clip_reads_nothing_past_the_loop_on_its_last_pass() {
+    // At 8 kHz, a file silent up to the loop's end (frame 8 000, 1 s) and loud after it. Beats 0–8
+    // are 0–2 s, played at 120 bpm: half the file's speed, so each 60 ms grain reads ahead of the
+    // clip's time, past a pass's end in its last moments.
+    const SR: u32 = 8_000;
+    let samples = (0..3 * SR as usize).map(|i| if i < SR as usize { 0.0 } else { 0.5 }).collect();
+    let data = Arc::new(AudioData { sample_rate: SR, channels: 1, samples });
+    let r = region(&[(0.0, 0.0), (8.0, 2.0)], StretchMode::Texture);
+    let render = |c: &Clip, frames: usize| {
+        let mut voice = StretchVoice::new(&with(c, &r), Arc::clone(&data), 120.0, SR).unwrap().prepared();
+        let mut out = vec![0.0f32; 2 * frames];
+        for block in out.chunks_mut(2 * 500) {
+            voice.render(block);
+        }
+        out
+    };
+    let peak = |s: &[f32]| s.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    // Loop beats 2–4 (file frames 4 000–8 000), two passes of 1 s from the loop's start, rendered
+    // to the clip's end: the first pass's grains go on into the second pass, the last pass's into
+    // silence.
+    let looped = render(&clip(4.0, 2.0, Some((2.0, 4.0))), 2 * SR as usize);
+    assert!(peak(&looped) < 1e-6, "{}", peak(&looped));
+    // The same beats without a loop read on into the file, so the file past the loop is heard at
+    // the end: the render above would hear it too if its grains read the file.
+    let plain = render(&clip(2.0, 2.0, None), SR as usize);
+    let tail = plain.get(plain.len() - 2 * 480..).unwrap_or_default();
+    assert!(peak(tail) > 0.05, "{}", peak(tail));
+}
+
+/// Grain at its longest (400 ms) is played whole at the highest file rate a voice takes, as at a
+/// lower one: at 192 kHz a cap of 65 536 frames cut it to about 341 ms, so every value above that
+/// sounded the same.
+#[test]
+fn the_longest_grain_is_whole_at_the_highest_file_rate() {
+    for (rate, want) in [(48_000u32, 19_200usize), (*STRETCH_SAMPLE_RATES.end(), 76_800)] {
+        // Twice the file's speed, so the voice stretches rather than reading the file as it is.
+        let mut audio = region(&[(0.0, 0.0), (2.0, 2.0)], StretchMode::Tonal);
+        audio.warp.grain = *GRAIN_RANGE.end();
+        let Some(voice) =
+            StretchVoice::new(&with(&clip(2.0, 0.0, None), &audio), sine(440.0, 2.0, rate), 120.0, 48_000)
+        else {
+            panic!("no voice at {rate} Hz")
+        };
+        let Engine::Grains(grains) = voice.spec().build().stretch else { panic!("Tonal plays grains") };
+        assert_eq!(grains.grain_frames(), want, "{rate} Hz");
+    }
 }

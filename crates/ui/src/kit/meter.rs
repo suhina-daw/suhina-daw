@@ -187,7 +187,7 @@ pub fn show(
             return;
         }
     }
-    // The level's colours: `meter-level { color }` up to the top's last stretch, and
+    // The level's colors: `meter-level { color }` up to the top's last stretch, and
     // `meter-level[kind="hot"]` in it.
     let (normal, hot) = {
         let level = super::element::METER_LEVEL.look();
@@ -241,7 +241,7 @@ pub fn show(
         if peak > 0.0 {
             level_el.level_glow(&ink, part(0.0, peak));
         }
-        // The peak dimmer, the RMS level in the full colour over it.
+        // The peak dimmer, the RMS level in the full color over it.
         for (to, alpha) in [(peak, 0.45), (rms, 1.0)] {
             if to <= 0.0 {
                 continue;

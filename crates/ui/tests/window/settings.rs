@@ -72,7 +72,7 @@ fn settings_change_right_away_and_are_handed_out_to_be_saved() {
 }
 
 #[test]
-fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
+fn a_theme_picked_in_settings_colors_the_window_and_is_saved() {
     let mut harness = window(demo_app());
     let mut colors = theme::Colors::new();
     colors.insert("accent".into(), egui::Color32::from_rgb(0x12, 0xAB, 0x9F));
@@ -155,7 +155,7 @@ fn a_theme_picked_in_settings_colours_the_window_and_is_saved() {
         },
     };
     harness.state_mut().put_theme(&ctx, edited);
-    // The colours come from the style sheet's variables, from the next frame on.
+    // The colors come from the style sheet's variables, from the next frame on.
     harness.run();
     assert_eq!(live("accent"), colors["accent"]);
 

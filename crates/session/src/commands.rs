@@ -453,7 +453,7 @@ pub struct CommandSpec<T: 'static = Session> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Policy {
     /// An edit the player hears, so the playing graph is rebuilt after it. `false` for an edit
-    /// that changes only what is shown (a name, a colour, a marker): the graph is kept.
+    /// that changes only what is shown (a name, a color, a marker): the graph is kept.
     pub heard: bool,
     /// Hard to undo or slow to redo, so a backup is written just before it when backups are set
     /// to critical operations (`docs/spec/backups.md`).
@@ -488,7 +488,7 @@ impl Policy {
     pub const fn replacing(live: &'static [&'static str]) -> Self {
         Self { gesture_replaces: live, ..Self::DEFAULT }
     }
-    /// An edit only seen: a name, a colour, a marker.
+    /// An edit only seen: a name, a color, a marker.
     pub const UNHEARD: Self = Self { heard: false, ..Self::DEFAULT };
     /// Backed up before it runs.
     pub const CRITICAL: Self = Self { critical: true, ..Self::DEFAULT };

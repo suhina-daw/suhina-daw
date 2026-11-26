@@ -8,7 +8,7 @@
 //! `AudioPool`; what a file in the browser is (`info`: kind by extension, length, tempo and key
 //! from metadata and the name), standard MIDI files (`midi`: notes per MIDI track, every count
 //! capped) tempo detection for loops (`tempo`) (browser spec (`docs/spec/browser.md`)), and Stems
-//! files (`stems`: the master and each stem as audio, with their names, colours and mastering
+//! files (`stems`: the master and each stem as audio, with their names, colors and mastering
 //! settings; spec (`docs/spec/stems-format.md`)). Writing the files an export renders (`write`: one
 //! entry point for WAV with dithering, FLAC, Ogg Vorbis and MP3; export spec
 //! (`docs/spec/export.md`) › Formats).

@@ -10,8 +10,8 @@
 //!
 //! **The cache key** is the parent's index and the leaf's whole identity: its kind, id, classes,
 //! states, attributes (a clip's `color`), object and host variables. Notes that share these share
-//! one style, so a piano roll of thousands of notes in one clip's colour costs a few entries,
-//! and an arrangement costs one entry per distinct clip colour and state.
+//! one style, so a piano roll of thousands of notes in one clip's color costs a few entries,
+//! and an arrangement costs one entry per distinct clip color and state.
 //!
 //! **Invalidation** follows the snapshot. A leaf's style depends on its ancestors, which it
 //! inherits from and which selectors test, and, when a sheet relates siblings (`+`, `~`), on

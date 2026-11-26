@@ -39,7 +39,7 @@ fn native(rect: Rect, header: Header) -> Parts {
     let mut parts = Parts::default();
     let mut band_left = rect.left();
     let indent = (0..header.ancestors).map(|level| nesting_band_width(level) + 2.0).sum::<f32>();
-    let indent_room = (rect.width() - COLOUR_BAND - 3.0 * PAD - meter::WIDTH - 114.0).max(0.0);
+    let indent_room = (rect.width() - COLOR_BAND - 3.0 * PAD - meter::WIDTH - 114.0).max(0.0);
     let indent_scale = if indent > 0.0 { (indent_room / indent).min(1.0) } else { 1.0 };
     for level in 0..header.ancestors {
         band_left += nesting_band_width(level) * indent_scale + 2.0 * indent_scale;

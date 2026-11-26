@@ -25,7 +25,7 @@ impl App {
             && !dialog
             && !(self.settings_open && !self.page.window)
             && !ui.ctx().text_edit_focused()
-            && !self.colour_window_owns_keyboard(ui.ctx());
+            && !self.color_window_owns_keyboard(ui.ctx());
         let lost = ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::WindowFocused(false))));
         let Some(project) = self.projects.active().and_then(|id| self.projects.get(id)).map(Session::project) else {
             return;
@@ -85,6 +85,7 @@ impl App {
             || self.ara_prompt.is_some()
             || self.group_removal.is_some()
             || self.missing.open
+            || self.audio_reset_shown
             || self.about_open
             || self.theme_import.is_some()
             || !self.agent_asks.is_empty()
@@ -119,7 +120,7 @@ impl App {
         // A prompt waiting on a stored edit (the ARA one) included: a key that changed the
         // project meanwhile would leave that edit naming what is gone.
         if ui.ctx().egui_wants_keyboard_input()
-            || self.colour_window_owns_keyboard(ui.ctx())
+            || self.color_window_owns_keyboard(ui.ctx())
             || self.dialog_holds_actions()
             || (self.settings_open && self.page.capture.is_some())
             || widgets::value_active(ui.ctx())
@@ -146,7 +147,7 @@ impl App {
         self.escape_twice = self.double_escape(ui);
         // The piano roll's own keys only while it has the keyboard; the selected slot's keys
         // only while it does not, as the two share keys.
-        let notes = self.piano_roll.focused;
+        let notes = self.piano_roll.focused || self.audio_editor_has_keyboard();
         let pressed = ui.input_mut(|i| {
             self.keymap.pressed(i, |id| {
                 if notes {
@@ -156,6 +157,10 @@ impl App {
                 }
             })
         });
+        // The window reports Ctrl+V only while the system clipboard holds text
+        // (`keymap::clipboard_keys`): the copy and cut commands that ran put a line there
+        // (`App::run`, `clipboard_line`), so a key that copied nothing (the audio editor holding
+        // the keys, nothing selected, a command refused) leaves the clipboard as it was.
         for action in pressed {
             self.do_action(&action, actions);
         }

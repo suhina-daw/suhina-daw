@@ -52,6 +52,8 @@ use crate::stretch::StretchVoice;
 const AHEAD_SECONDS: f64 = 0.5;
 /// Project frames a voice renders per call.
 const BLOCK_FRAMES: usize = 1024;
+/// Most threads the stretch work is shared among ([`StretchThread`]).
+pub(crate) const MAX_SHARDS: usize = 4;
 /// How long the worker thread sleeps when every ring is full.
 const IDLE: Duration = Duration::from_millis(1);
 /// How far past the playhead, in rings' lengths, voices are rendered ahead at all.
@@ -95,8 +97,11 @@ struct Shared {
     /// Rewind generations: `requested` by the audio side, `paused` once the worker has stopped
     /// pushing for it, `drained` once the audio side has emptied every ring for it.
     requested: AtomicU64,
-    paused: AtomicU64,
+    /// One per shard of the worker ([`StretchWorker::split`]): each says it has stopped pushing.
+    paused: [AtomicU64; MAX_SHARDS],
     drained: AtomicU64,
+    /// How many shards the worker was split into (0 before a split: one).
+    shards: std::sync::atomic::AtomicUsize,
     /// The arrangement frame the voices move to for the requested generation.
     seek_to: AtomicU64,
     /// Frames the audio thread needed that were not ready.
@@ -118,8 +123,24 @@ struct Shared {
     handed_from: Vec<AtomicU64>,
 }
 
+impl Shared {
+    /// How many shards hold the voices: each must say it paused for a rewind.
+    fn shard_count(&self) -> usize {
+        self.shards.load(Ordering::Acquire).clamp(1, MAX_SHARDS)
+    }
+
+    /// Whether every shard has stopped pushing for rewind generation `requested`.
+    fn all_paused(&self, requested: u64) -> bool {
+        self.paused.iter().take(self.shard_count()).all(|p| p.load(Ordering::Acquire) == requested)
+    }
+}
+
 /// One voice on the worker side.
 struct Writer {
+    /// Its index among the graph's voices: its jump, handover slot and reader.
+    index: usize,
+    /// Its clip's id: which stretch thread renders it ([`StretchWorker::split`]).
+    clip: u32,
     voice: StretchVoice,
     producer: Producer<f32>,
     /// What the voice plays ([`voice_key`] of its clip): equal keys render the same frames.
@@ -155,6 +176,21 @@ struct Reader {
     rewound: bool,
     /// The jump ahead asked for and not yet drained, if any.
     jumping: Option<u64>,
+    /// How many blocks past the playhead its next jump goes: [`JUMP_BLOCKS`], doubled by each
+    /// jump that still left it behind (up to what the ring holds), and back to [`JUMP_BLOCKS`]
+    /// once a read is whole. A voice whose start-up (its stretcher built and seeked) takes longer
+    /// than one jump's lead never caught up with a fixed one: each jump landed behind again and
+    /// the clip stayed silent until the transport stopped.
+    jump_blocks: u64,
+    /// Its last jump landed ahead of the playhead, so a voice behind again since was late
+    /// because the lead was too short: only then does the next jump go further. A jump that
+    /// completed after the playhead had already passed its target (the worker stalled) says
+    /// nothing about the lead, and doubling on it pushed the voice's return late.
+    landed_ahead: bool,
+    /// A jump completed and no read has judged yet where it landed: [`AheadReader::service`]
+    /// completes most of them, before the block's read, so the read that follows sets
+    /// `landed_ahead` from its own playhead, whichever of the two finished the jump.
+    landed: bool,
     /// Its track is heard (not muted, not left out by a solo): a start waits for it.
     heard: bool,
     /// The clip the voice plays, by its id: a new graph's voice for the same clip takes over
@@ -190,6 +226,8 @@ pub struct StretchWorker {
     scratch: Vec<f32>,
     /// A ring's length in frames.
     ring: u64,
+    /// Which shard of its graph's voices it renders ([`StretchWorker::split`]); 0 when whole.
+    shard: usize,
 }
 
 impl StretchWorker {
@@ -204,7 +242,9 @@ impl StretchWorker {
         let requested = self.shared.requested.load(Ordering::Acquire);
         if requested != self.generation {
             // Stop pushing, wait for the audio side to empty the rings, then rewind.
-            self.shared.paused.store(requested, Ordering::Release);
+            if let Some(paused) = self.shared.paused.get(self.shard) {
+                paused.store(requested, Ordering::Release);
+            }
             if self.shared.drained.load(Ordering::Acquire) != requested {
                 return false;
             }
@@ -219,8 +259,8 @@ impl StretchWorker {
         let mut did = false;
         let passes: &[u64] = if due_only { &[urgent] } else { &[urgent, horizon] };
         for &pass in passes {
-            for (index, writer) in self.writers.iter_mut().enumerate() {
-                let Some(jump) = self.shared.jumps.get(index) else { continue };
+            for writer in self.writers.iter_mut() {
+                let Some(jump) = self.shared.jumps.get(writer.index) else { continue };
                 // A voice behind the playhead is done, unless it was moved for a loop's wrap: it
                 // has a jump to follow, or frames to render from where it jumped to.
                 let moved = jump.requested.load(Ordering::Acquire) != writer.jumped || writer.produced < writer.length;
@@ -252,7 +292,8 @@ impl StretchWorker {
         }
         let mut by_key: std::collections::HashMap<u64, usize> =
             before.writers.iter().enumerate().map(|(index, w)| (w.key, index)).collect();
-        for (index, writer) in self.writers.iter_mut().enumerate() {
+        for writer in self.writers.iter_mut() {
+            let index = writer.index;
             let Some(old_index) = by_key.remove(&writer.key) else { continue };
             let (Some(old), Some(slot)) = (before.writers.get_mut(old_index), self.shared.adopted.get(index)) else {
                 continue;
@@ -270,7 +311,7 @@ impl StretchWorker {
                 handed_jump.store(old.jumped, Ordering::Release);
             }
             if let Some(handed_from) = self.shared.handed_from.get(index) {
-                handed_from.store(old_index as u64, Ordering::Release);
+                handed_from.store(old.index as u64, Ordering::Release);
             }
             // Claimed first, or the audio side has swapped the graph in already: then this
             // voice starts afresh, as its reader keeps its own ring.
@@ -290,6 +331,44 @@ impl StretchWorker {
         }
     }
 
+    /// Shares the voices out among `shards` workers (at most [`MAX_SHARDS`]), one for each
+    /// stretch thread, by their clips' ids: ids run on from one clip to the next, so a multitrack's
+    /// clips are shared out evenly (by the voices' keys, a hash, eight clips on two threads went
+    /// seven to one), and a clip stays on its thread through its edits, so the next graph's voice
+    /// of it, with the same key, is on the thread that renders it now and is taken over there
+    /// (`adopt_from`). Every shard
+    /// takes part in a rewind (each says it paused), an empty one too. Before any thread has it.
+    pub(crate) fn split(mut self, shards: usize) -> Vec<StretchWorker> {
+        let count = shards.clamp(1, MAX_SHARDS);
+        self.shared.shards.store(count, Ordering::Release);
+        if count == 1 {
+            return vec![self];
+        }
+        let mut parts: Vec<StretchWorker> = (0..count)
+            .map(|shard| StretchWorker {
+                writers: Vec::new(),
+                shared: Arc::clone(&self.shared),
+                generation: self.generation,
+                scratch: vec![0.0; BLOCK_FRAMES * 2],
+                ring: self.ring,
+                shard,
+            })
+            .collect();
+        for writer in self.writers.drain(..) {
+            let shard = writer.clip as usize % count;
+            if let Some(part) = parts.get_mut(shard) {
+                part.writers.push(writer);
+            }
+        }
+        parts
+    }
+
+    /// Whether the graph this worker renders for is gone: only its shards still hold the state
+    /// the reader shared with them.
+    fn orphaned(&self) -> bool {
+        Arc::strong_count(&self.shared) <= self.shared.shard_count()
+    }
+
     /// Works until every ring is full.
     pub fn fill(&mut self) {
         while self.work() {}
@@ -305,7 +384,8 @@ impl StretchWorker {
     /// Moves every voice to arrangement frame `to`: the clips playing there to that point, the
     /// later ones to their start.
     fn move_to(&mut self, to: u64) {
-        for (writer, jump) in self.writers.iter_mut().zip(&self.shared.jumps) {
+        for writer in self.writers.iter_mut() {
+            let Some(jump) = self.shared.jumps.get(writer.index) else { continue };
             // A twin rests at its end again: its clip's first voice plays from here.
             let local = if writer.twin { writer.length } else { to.saturating_sub(writer.start).min(writer.length) };
             writer.seek_to = (local < writer.length).then_some(local);
@@ -364,114 +444,186 @@ fn render_block(writer: &mut Writer, scratch: &mut [f32]) -> bool {
 /// Workers that can wait to join the thread.
 const INBOX: usize = 8;
 
-/// A thread running [`StretchWorker`]s and the launcher's [`Preparer`]s, one of each per graph
-/// (ADR 0005): they join through [`StretchThread::add`] and [`StretchThread::add_preparer`] and
-/// leave once their graph has been dropped (or, for a preparer, swapped out). Dropping the handle
-/// stops the thread.
-pub(crate) struct StretchThread {
-    stop: Arc<AtomicBool>,
+/// One thread of the [`StretchThread`] pool: the shard of each graph's voices it renders, and
+/// (the first only) the launcher's preparers.
+struct Lane {
     handle: Option<JoinHandle<()>>,
     inbox: Producer<StretchWorker>,
-    preparers: Producer<Preparer>,
     #[cfg(test)]
     sync: std::sync::mpsc::Sender<std::sync::mpsc::Sender<()>>,
 }
 
+/// The threads running [`StretchWorker`]s and the launcher's [`Preparer`]s (ADR 0005): each
+/// graph's worker is split into one shard per thread ([`StretchWorker::split`]), so the stretched
+/// clips of a multitrack are rendered on several cores at once (one thread took them all, and
+/// eight songs warped together fell behind and stuttered). Each shard joins its thread through
+/// [`StretchThread::add`] and leaves once its graph has been dropped; the first thread also runs
+/// the preparers ([`StretchThread::add_preparer`]), which leave once swapped out. Dropping the
+/// handle stops the threads.
+pub(crate) struct StretchThread {
+    stop: Arc<AtomicBool>,
+    lanes: Vec<Lane>,
+    preparers: Producer<Preparer>,
+}
+
+/// How many threads the stretch work is shared among: the cores but two (the audio thread and the
+/// window's), from one to [`MAX_SHARDS`].
+fn stretch_threads() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get().saturating_sub(2)).clamp(1, MAX_SHARDS)
+}
+
 impl StretchThread {
     pub(crate) fn spawn() -> std::io::Result<Self> {
+        Self::spawn_with(stretch_threads())
+    }
+
+    /// [`StretchThread::spawn`] with `count` threads.
+    pub(crate) fn spawn_with(count: usize) -> std::io::Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
-        let stop_flag = Arc::clone(&stop);
-        let (inbox, mut incoming) = RingBuffer::<StretchWorker>::new(INBOX);
-        let (preparers, mut incoming_preparers) = RingBuffer::<Preparer>::new(INBOX);
-        #[cfg(test)]
-        let (sync, requests) = std::sync::mpsc::channel::<std::sync::mpsc::Sender<()>>();
-        let handle = std::thread::Builder::new().name("suhina-stretch".into()).spawn(move || {
-            let mut workers: Vec<StretchWorker> = Vec::new();
-            let mut preparing: Vec<Preparer> = Vec::new();
+        let (preparers, incoming_preparers) = RingBuffer::<Preparer>::new(INBOX);
+        let mut incoming_preparers = Some(incoming_preparers);
+        let mut lanes = Vec::new();
+        for number in 0..count.clamp(1, MAX_SHARDS) {
+            let stop_flag = Arc::clone(&stop);
+            let (inbox, incoming) = RingBuffer::<StretchWorker>::new(INBOX);
+            let preparers_here = incoming_preparers.take();
             #[cfg(test)]
-            let mut pending = None;
-            while !stop_flag.load(Ordering::Relaxed) {
-                // Observe the request before draining the inboxes: a test's acknowledgement
-                // must include the workers it queued before asking to synchronize.
+            let (sync, requests) = std::sync::mpsc::channel::<std::sync::mpsc::Sender<()>>();
+            let name = if number == 0 { "suhina-stretch".to_string() } else { format!("suhina-stretch-{number}") };
+            let spawned = std::thread::Builder::new().name(name).spawn(move || {
                 #[cfg(test)]
-                if pending.is_none() {
-                    pending = requests.try_recv().ok();
+                run_lane(&stop_flag, incoming, preparers_here, requests);
+                #[cfg(not(test))]
+                run_lane(&stop_flag, incoming, preparers_here);
+            });
+            let handle = match spawned {
+                Ok(handle) => handle,
+                Err(error) => {
+                    // The threads already started would otherwise run for ever: nothing holds
+                    // their stop flag once this returns.
+                    stop_lanes(&stop, &mut lanes);
+                    return Err(error);
                 }
-                while let Ok(mut worker) = incoming.pop() {
-                    // The graph it replaces is the newest one here: its voices carry over.
-                    if let Some(before) = workers.last_mut() {
-                        worker.adopt_from(before);
-                    }
-                    workers.push(worker);
-                }
-                while let Ok(mut preparer) = incoming_preparers.pop() {
-                    // The same: the voices the newest graph has may be taken over at the swap.
-                    if let Some(before) = preparing.last() {
-                        preparer.follow(before);
-                    }
-                    preparing.push(preparer);
-                }
-                // A worker whose reader (its graph) is gone has nobody to render for.
-                workers.retain(|w| Arc::strong_count(&w.shared) > 1);
-                preparing.retain(|p| !p.finished());
-                let mut did = false;
-                for worker in &mut workers {
-                    did |= worker.work();
-                }
-                // One launcher voice a round (a few milliseconds), so the rings above keep
-                // filling: one the audio side asked for, else the newest graph's next.
-                let asked = preparing.iter_mut().rev().any(|p| p.work(true));
-                did |= asked || preparing.iter_mut().rev().any(|p| p.work(false));
-                if !did {
-                    #[cfg(test)]
-                    {
-                        if let Some(done) = pending.take() {
-                            let _ = done.send(());
-                        }
-                        // A sync request wakes the idle thread without waiting for a timer.
-                        // Tests that do not synchronize still get the normal idle cadence.
-                        std::thread::park_timeout(IDLE);
-                    }
-                    #[cfg(not(test))]
-                    std::thread::sleep(IDLE);
-                }
-            }
-        })?;
-        Ok(Self {
-            stop,
-            handle: Some(handle),
-            inbox,
-            preparers,
-            #[cfg(test)]
-            sync,
-        })
+            };
+            lanes.push(Lane {
+                handle: Some(handle),
+                inbox,
+                #[cfg(test)]
+                sync,
+            });
+        }
+        Ok(Self { stop, lanes, preparers })
     }
 
     /// Waits until all work queued before this call can make no more progress without the
-    /// renderer. Only the test driver calls this, between audio blocks, never `process`.
+    /// renderer, on every thread. Only the test driver calls this, between audio blocks, never
+    /// `process`.
     #[cfg(test)]
     pub(crate) fn sync(&self) {
-        let (done, finished) = std::sync::mpsc::channel();
-        self.sync.send(done).expect("stretch thread accepts the sync request");
-        self.handle.as_ref().expect("stretch thread is running").thread().unpark();
-        finished.recv().expect("stretch thread finishes the queued work");
+        let mut waits = Vec::new();
+        for lane in &self.lanes {
+            let (done, finished) = std::sync::mpsc::channel();
+            lane.sync.send(done).expect("stretch thread accepts the sync request");
+            lane.handle.as_ref().expect("stretch thread is running").thread().unpark();
+            waits.push(finished);
+        }
+        for finished in waits {
+            finished.recv().expect("stretch thread finishes the queued work");
+        }
     }
 
-    /// Hands a graph's worker to the thread.
+    /// Hands a graph's worker to the threads, a shard to each.
     pub(crate) fn add(&mut self, worker: StretchWorker) -> Result<(), crate::ControlError> {
-        self.inbox.push(worker).map_err(|_| crate::ControlError::StretchBusy)
+        // Room on every thread first: a graph is all there or not at all.
+        if self.lanes.iter().any(|lane| lane.inbox.is_full()) {
+            return Err(crate::ControlError::StretchBusy);
+        }
+        let shards = worker.split(self.lanes.len());
+        for (lane, shard) in self.lanes.iter_mut().zip(shards) {
+            lane.inbox.push(shard).map_err(|_| crate::ControlError::StretchBusy)?;
+        }
+        Ok(())
     }
 
-    /// Hands a graph's launcher preparer to the thread.
+    /// Hands a graph's launcher preparer to the first thread.
     pub(crate) fn add_preparer(&mut self, preparer: Preparer) -> Result<(), crate::ControlError> {
         self.preparers.push(preparer).map_err(|_| crate::ControlError::StretchBusy)
     }
 }
 
+/// One stretch thread's loop: takes the shards (and, on the first, the preparers) handed to it,
+/// works them round by round, and sleeps a little when nothing had room.
+fn run_lane(
+    stop: &AtomicBool,
+    mut incoming: Consumer<StretchWorker>,
+    mut incoming_preparers: Option<Consumer<Preparer>>,
+    #[cfg(test)] requests: std::sync::mpsc::Receiver<std::sync::mpsc::Sender<()>>,
+) {
+    let mut workers: Vec<StretchWorker> = Vec::new();
+    let mut preparing: Vec<Preparer> = Vec::new();
+    #[cfg(test)]
+    let mut pending = None;
+    while !stop.load(Ordering::Relaxed) {
+        // Observe the request before draining the inboxes: a test's acknowledgement must include
+        // the workers it queued before asking to synchronize.
+        #[cfg(test)]
+        if pending.is_none() {
+            pending = requests.try_recv().ok();
+        }
+        while let Ok(mut worker) = incoming.pop() {
+            // The graph it replaces is the newest one here: its voices carry over.
+            if let Some(before) = workers.last_mut() {
+                worker.adopt_from(before);
+            }
+            workers.push(worker);
+        }
+        if let Some(incoming_preparers) = incoming_preparers.as_mut() {
+            while let Ok(mut preparer) = incoming_preparers.pop() {
+                // The same: the voices the newest graph has may be taken over at the swap.
+                if let Some(before) = preparing.last() {
+                    preparer.follow(before);
+                }
+                preparing.push(preparer);
+            }
+        }
+        // A worker whose reader (its graph) is gone has nobody to render for.
+        workers.retain(|w| !w.orphaned());
+        preparing.retain(|p| !p.finished());
+        let mut did = false;
+        for worker in &mut workers {
+            did |= worker.work();
+        }
+        // One launcher voice a round (a few milliseconds), so the rings above keep filling: one
+        // the audio side asked for, else the newest graph's next.
+        let asked = preparing.iter_mut().rev().any(|p| p.work(true));
+        did |= asked || preparing.iter_mut().rev().any(|p| p.work(false));
+        if !did {
+            #[cfg(test)]
+            {
+                if let Some(done) = pending.take() {
+                    let _ = done.send(());
+                }
+                // A sync request wakes the idle thread without waiting for a timer. Tests that do
+                // not synchronize still get the normal idle cadence.
+                std::thread::park_timeout(IDLE);
+            }
+            #[cfg(not(test))]
+            std::thread::sleep(IDLE);
+        }
+    }
+}
+
 impl Drop for StretchThread {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(handle) = self.handle.take() {
+        stop_lanes(&self.stop, &mut self.lanes);
+    }
+}
+
+/// Stops the threads of `lanes` and waits for them to finish.
+fn stop_lanes(stop: &AtomicBool, lanes: &mut [Lane]) {
+    stop.store(true, Ordering::Relaxed);
+    for lane in lanes {
+        if let Some(handle) = lane.handle.take() {
             #[cfg(test)]
             handle.thread().unpark();
             // A worker that panicked has nothing left to clean up.
@@ -548,6 +700,9 @@ impl AheadReader {
                 next: at,
                 rewound: false,
                 jumping: None,
+                jump_blocks: JUMP_BLOCKS,
+                landed_ahead: false,
+                landed: false,
                 heard: true,
                 clip,
                 fade,
@@ -560,6 +715,8 @@ impl AheadReader {
                 is_twin,
             });
             writers.push(Writer {
+                index: writers.len(),
+                clip,
                 voice,
                 producer,
                 key,
@@ -582,6 +739,7 @@ impl AheadReader {
             generation: 0,
             scratch: vec![0.0; BLOCK_FRAMES * 2],
             ring: frames as u64,
+            shard: 0,
         };
         let fade_frames = ((FADE_SECONDS * f64::from(sample_rate)) as u64).max(1);
         Self { readers, shared, ring_frames: frames as u64, fade_frames, inline: Some(worker) }
@@ -641,6 +799,11 @@ impl AheadReader {
             std::mem::swap(&mut reader.consumer, &mut old.consumer);
             std::mem::swap(&mut reader.ring, &mut old.ring);
             reader.next = old.next;
+            // The lead its jumps go by comes along with where it is: a voice still catching up
+            // after a jump keeps its longer lead instead of starting over from the shortest.
+            reader.jump_blocks = old.jump_blocks;
+            reader.landed_ahead = old.landed_ahead;
+            reader.landed = old.landed;
             reader.rewound = old.rewound;
             reader.on_twin = old.on_twin;
             reader.jumping = None;
@@ -872,9 +1035,11 @@ impl AheadReader {
         }
         if let Some(worker) = self.inline.as_mut() {
             // Nothing else pushes: the reader stands in for the worker's side of the handshake.
-            worker.shared.paused.store(requested, Ordering::Release);
+            if let Some(paused) = worker.shared.paused.first() {
+                paused.store(requested, Ordering::Release);
+            }
         }
-        if self.shared.paused.load(Ordering::Acquire) != requested {
+        if !self.shared.all_paused(requested) {
             return;
         }
         let to = self.shared.seek_to.load(Ordering::Acquire);
@@ -888,6 +1053,10 @@ impl AheadReader {
                 if reader.is_twin { reader.length } else { to.saturating_sub(reader.start).min(reader.length) };
             reader.rewound = !reader.is_twin;
             reader.on_twin = false;
+            // A rewind starts the voice afresh: its jumps go the usual way again.
+            reader.jump_blocks = JUMP_BLOCKS;
+            reader.landed_ahead = false;
+            reader.landed = false;
             // A jump under way is void: the rewind moves the voice.
             if reader.jumping.take().is_some() {
                 let requested = jump.requested.load(Ordering::Acquire);
@@ -945,6 +1114,10 @@ impl AheadReader {
             self.shared.underruns.fetch_add(wanted, Ordering::Relaxed);
             return 0;
         }
+        // The first read after a jump completed, here or in `service`, judges where it landed.
+        if std::mem::take(&mut reader.landed) {
+            reader.landed_ahead = reader.next >= from;
+        }
         if reader.rewound {
             if reader.consumer.slots() == 0 {
                 return 0;
@@ -968,12 +1141,19 @@ impl AheadReader {
             // that waited at the loop end). Reading on would be silent until the playhead came
             // round to it, a whole pass; it jumps back to the playhead instead.
             // Past the lead a jump of its own puts it ahead by (below), so that jump plays on.
-            let lead = wanted + (JUMP_BLOCKS + 2) * BLOCK_FRAMES as u64;
+            let lead = wanted + (reader.jump_blocks + 2) * BLOCK_FRAMES as u64;
             let ahead = reader.next > from.saturating_add(lead) && !reader.rewound;
             let behind = reader.next < from && from - reader.next > BLOCK_FRAMES as u64 && reader.consumer.slots() == 0;
             if ahead || behind {
+                // Behind again after a jump that landed in time: this one goes further, within
+                // the ring. The first jump, and one after a stale landing, keep the lead.
+                if behind && std::mem::take(&mut reader.landed_ahead) {
+                    let most = (self.ring_frames / BLOCK_FRAMES as u64).saturating_sub(2).max(JUMP_BLOCKS);
+                    reader.jump_blocks = reader.jump_blocks.saturating_mul(2).min(most);
+                }
+                reader.landed_ahead = false;
                 let requested = jump.requested.load(Ordering::Acquire) + 1;
-                let to = from + wanted + JUMP_BLOCKS * BLOCK_FRAMES as u64;
+                let to = from + wanted + reader.jump_blocks * BLOCK_FRAMES as u64;
                 jump.to.store(to, Ordering::Release);
                 jump.requested.store(requested, Ordering::Release);
                 reader.jumping = Some(requested);
@@ -994,6 +1174,9 @@ impl AheadReader {
         reader.next += frames as u64;
         if (frames as u64) < wanted {
             self.shared.underruns.fetch_add(wanted - frames as u64, Ordering::Relaxed);
+        } else {
+            reader.jump_blocks = JUMP_BLOCKS;
+            reader.landed_ahead = false;
         }
         frames
     }
@@ -1085,6 +1268,7 @@ fn complete_jump(reader: &mut Reader, jump: &Jump) -> bool {
     }
     reader.next = jump.to.load(Ordering::Acquire).min(reader.length);
     reader.jumping = None;
+    reader.landed = true;
     reader.rewound = false;
     jump.drained.store(requested, Ordering::Release);
     true
@@ -1113,6 +1297,12 @@ pub(crate) fn voice_key(
     region.pool_key().hash(&mut hasher);
     (clip.audio.warped, clip.audio.transpose.to_bits()).hash(&mut hasher);
     std::mem::discriminant(&clip.audio.stretch).hash(&mut hasher);
+    // The mode's settings: a changed grain, scatter, slice, tail or envelope is heard at once.
+    let warp = clip.audio.warp;
+    (warp.slice.name(), warp.tail.name()).hash(&mut hasher);
+    for value in [warp.envelope, warp.grain, warp.scatter] {
+        value.to_bits().hash(&mut hasher);
+    }
     for marker in &clip.audio.warp_markers {
         (marker.time.to_bits(), marker.audio_time.to_bits()).hash(&mut hasher);
     }
@@ -1120,106 +1310,5 @@ pub(crate) fn voice_key(
 }
 
 #[cfg(test)]
-mod handover_tests {
-    use super::*;
-    use suhina_model::{AudioRegion, Clip, ClipAudio, ContentId, StretchMode, WarpMarker};
-
-    const SR: u32 = 48_000;
-    const LENGTH: u64 = 2 * SR as u64;
-
-    /// A reader of one stretched voice: two seconds of a sine, warped to four beats at 100 bpm.
-    fn reader() -> AheadReader {
-        let samples = (0..2 * SR as usize).map(|i| (i as f32 * 0.05).sin() * 0.5).collect();
-        let data = Arc::new(crate::AudioData { sample_rate: SR, channels: 1, samples });
-        let audio = ClipAudio {
-            warped: true,
-            stretch: StretchMode::Smooth,
-            warp_markers: vec![WarpMarker { time: 0.0, audio_time: 0.0 }, WarpMarker { time: 4.0, audio_time: 2.0 }],
-            ..ClipAudio::default()
-        };
-        let clip = Clip { audio, ..Clip::new(ContentId(1), 0.0, 4.0) };
-        let Some(voice) = StretchVoice::new(&clip, data, 100.0, SR) else { panic!("no voice") };
-        AheadReader::new(vec![(voice, 0, LENGTH, 7, 1)], Vec::new(), SR)
-    }
-
-    /// The new graph's reader after its worker took the voice over and the swap, with a jump
-    /// asked for on the old graph in between when `jump_between`.
-    fn swapped(jump_between: bool) -> AheadReader {
-        let (mut old, mut new) = (reader(), reader());
-        let (Some(mut old_worker), Some(mut new_worker)) = (old.take_worker_unfilled(), new.take_worker_unfilled())
-        else {
-            panic!("no workers")
-        };
-        new_worker.adopt_from(&mut old_worker);
-        assert_ne!(new.shared.adopted[0].load(Ordering::Acquire), 0, "handed over");
-        if jump_between {
-            // As `read` asks for one when the voice fell too far behind.
-            old.shared.jumps[0].to.store(30_000, Ordering::Release);
-            old.shared.jumps[0].requested.store(1, Ordering::Release);
-            old.readers[0].jumping = Some(1);
-        }
-        new.adopt_from(&mut old, 0);
-        new
-    }
-
-    #[test]
-    fn a_handed_over_voice_plays_on_from_where_it_was() {
-        let new = swapped(false);
-        assert_eq!(new.readers[0].jumping, None);
-    }
-
-    #[test]
-    fn a_jump_the_old_graph_asked_for_after_the_handover_is_asked_for_again() {
-        // The new writer renders the ring now and never saw the old graph's jump: the new
-        // graph jumps the voice to the same frame, so the ring and the reader line up again.
-        let new = swapped(true);
-        assert_eq!(new.readers[0].jumping, Some(1));
-        assert_eq!(new.shared.jumps[0].to.load(Ordering::Acquire), 30_000);
-        assert_eq!(new.shared.jumps[0].requested.load(Ordering::Acquire), 1);
-    }
-
-    #[test]
-    fn a_voice_with_a_jump_under_way_is_handed_over_and_jumps_again() {
-        // A jump asked for before the worker hands the voice over: the voice still goes to the
-        // new graph, which asks for the same jump, instead of starting afresh.
-        let (mut old, mut new) = (reader(), reader());
-        let (Some(mut old_worker), Some(mut new_worker)) = (old.take_worker_unfilled(), new.take_worker_unfilled())
-        else {
-            panic!("no workers")
-        };
-        old.shared.jumps[0].to.store(30_000, Ordering::Release);
-        old.shared.jumps[0].requested.store(1, Ordering::Release);
-        old.readers[0].jumping = Some(1);
-        new_worker.adopt_from(&mut old_worker);
-        assert_ne!(new.shared.adopted[0].load(Ordering::Acquire), 0, "handed over");
-        new.adopt_from(&mut old, 0);
-        assert_eq!(new.readers[0].jumping, Some(1), "the jump is asked for again");
-        assert_eq!(new.shared.jumps[0].to.load(Ordering::Acquire), 30_000);
-    }
-
-    #[test]
-    fn a_voice_ahead_of_the_playhead_jumps_back_to_it() {
-        // Left at a loop's end while the playhead went round to its start (a swap after a wrap
-        // could read a clip from that voice again): silent until the playhead came round to it,
-        // a whole pass, unless it moves.
-        let mut reader = reader();
-        let _ = reader.take_worker_unfilled();
-        reader.readers[0].next = 60_000;
-        let mut out = vec![0.0; 512];
-        reader.read(0, 1_000, &mut out);
-        assert!(reader.readers[0].jumping.is_some(), "it jumps");
-        let to = reader.shared.jumps[0].to.load(Ordering::Acquire);
-        assert!((1_000..10_000).contains(&to), "to just past the playhead: {to}");
-    }
-
-    #[test]
-    fn new_samples_under_the_same_pool_key_are_another_voice() {
-        let region = AudioRegion::new("sine.wav");
-        let clip = Clip::new(ContentId(1), 0.0, 4.0);
-        let audio = || Arc::new(crate::AudioData { sample_rate: SR, channels: 1, samples: vec![0.0; 16] });
-        let (a, b) = (audio(), audio());
-        let key = |data: &Arc<crate::AudioData>| voice_key(&clip, &region, data, (0, LENGTH), 1);
-        assert_eq!(key(&a), key(&a));
-        assert_ne!(key(&a), key(&b), "the voice of the old samples is not taken over");
-    }
-}
+#[path = "ahead_tests.rs"]
+mod handover_tests;

@@ -403,9 +403,9 @@ fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, short: &st
     let response = widgets::button_area(ui, row, Id::unique(("midi-tools-check", name)), format!("{name}: {state}"));
     let side = CHECK.min(row.height());
     let mark = Rect::from_min_size(Pos2::new(row.left(), row.center().y - side / 2.0), Vec2::splat(side));
-    let colours = widgets::toggle_colors(ui, &response, on);
+    let colors = widgets::toggle_colors(ui, &response, on);
     let ink =
-        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, mark, &response, on, Some(colours), !on);
+        button_face(ui, crate::kit::element::BUTTON, "panel-toggle", painter, mark, &response, on, Some(colors), !on);
     if on {
         let at = |x: f32, y: f32| Pos2::new(mark.left() + side * x, mark.top() + side * y);
         let line = egui::Stroke::new(1.5, ink);
@@ -414,14 +414,14 @@ fn check_box(ui: &Ui, painter: &egui::Painter, row: Rect, name: &str, short: &st
     }
     let text = Rect::from_min_max(Pos2::new(mark.right() + 6.0, row.top()), row.max);
     // Its words: `label`'s own `color` where a rule gives one, else brightening under the pointer.
-    let colour = crate::kit::element::LABEL
+    let color = crate::kit::element::LABEL
         .attribute("kind", "check")
         .response(&response)
         .enter()
         .hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::color);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let shown = check_text(name, short, text.width(), |t| widgets::text_width(ui, t, font.clone()));
-    widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, font, colour);
+    widgets::text_in(painter, text, Align2::LEFT_CENTER, shown, font, color);
     response.clicked()
 }
 
@@ -521,12 +521,12 @@ fn notes_tab(
 /// sets the clip's scale (`clip.setScale`) and fits the notes to it (`note.fitToScale`).
 fn fit_to_a_new_scale(response: &egui::Response, tools: &Tools<'_>, actions: &mut Vec<Action>) {
     egui::Popup::menu(response).show(|ui| {
-        ui.label(egui::RichText::new("Set the clip's scale").font(theme::ui_font(theme::TEXT_TINY)));
+        crate::kit::menu::heading(ui, "Set the clip's scale");
         for mode in ScaleMode::ALL {
-            ui.menu_button(mode.label(), |ui| {
+            crate::kit::menu::submenu(ui, mode.label(), false, |ui| {
                 for (index, name) in ROOT_NAMES.iter().enumerate() {
                     let root = crate::detail::piano_roll::pitch_class_name(u8::try_from(index).unwrap_or(0));
-                    if ui.button(root).clicked() {
+                    if crate::kit::menu::entry(ui, root, None, true).clicked() {
                         let mut scale = tools.address.clone();
                         scale["root"] = json!(name);
                         scale["mode"] = json!(mode.name());
@@ -855,8 +855,8 @@ fn transform_tab(
     let response =
         widgets::button_area(ui, apply, Id::unique("midi-tools-apply"), &apply_text).on_hover_text(chosen.hint());
     let ink = if enabled {
-        let colours = widgets::toggle_colors(ui, &response, true);
-        button_face(ui, crate::kit::element::BUTTON, "panel", painter, apply, &response, false, Some(colours), false)
+        let colors = widgets::toggle_colors(ui, &response, true);
+        button_face(ui, crate::kit::element::BUTTON, "panel", painter, apply, &response, false, Some(colors), false)
     } else {
         disabled_face(painter, apply);
         super::hint_ink()

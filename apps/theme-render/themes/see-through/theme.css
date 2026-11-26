@@ -1,4 +1,4 @@
-/* See-through test: a test theme, not one to use. Every colour lets the desktop through, and the
+/* See-through test: a test theme, not one to use. Every color lets the desktop through, and the
    button and fader artwork is round, so the pixels around it show what the window leaves there. */
 :root {
   --window-background: rgb(16 24 40 / 45%);

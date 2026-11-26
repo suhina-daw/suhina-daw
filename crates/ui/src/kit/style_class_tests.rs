@@ -9,7 +9,7 @@ fn a_dialog_panel_takes_only_its_own_background() {
     let token = egui::Color32::from_rgb(1, 2, 3);
     assert_eq!(own_background_or(token), token);
     let window = egui::Color32::from_rgb(200, 200, 200);
-    // An enclosing window's colour is not the dialog's own.
+    // An enclosing window's color is not the dialog's own.
     assert_eq!(with_surface(window, || own_background_or(token)), token);
 }
 
@@ -111,7 +111,7 @@ fn drag_pointer_overrides_the_setting_for_the_controls_inside_it() {
 }
 
 #[test]
-fn a_colour_change_made_while_drawing_inside_style_scopes_holds_from_the_next_frame() {
+fn a_color_change_made_while_drawing_inside_style_scopes_holds_from_the_next_frame() {
     let ctx = egui::Context::default();
     let changed = egui::Color32::from_rgb(40, 50, 60);
     skin::configure(&skin::Skin { css: Some("browser { color: #123456; }".into()), ..Default::default() });
@@ -161,7 +161,7 @@ fn ordinary_widget_style_preserves_ui_identity_and_restores_caller() {
 fn descendant_styles_are_scoped_and_inherited() {
     let seen = frames("browser { color: #123456; } browser button { color: #ABCDEF; }", || {
         let browser = test_el("browser").enter();
-        // An element with no rule of its own takes its parent's text colour, as CSS inherits it.
+        // An element with no rule of its own takes its parent's text color, as CSS inherits it.
         let in_browser = test_el("project-tabs").look().color();
         let in_button = {
             let _button = test_el("button").enter();
@@ -174,7 +174,7 @@ fn descendant_styles_are_scoped_and_inherited() {
     assert_eq!(seen.0, theme::parse_hex("#123456").unwrap());
     assert_eq!(seen.1, theme::parse_hex("#ABCDEF").unwrap());
     assert_eq!(seen.2, seen.0);
-    assert_ne!(seen.3, seen.0, "outside the browser its colour is gone");
+    assert_ne!(seen.3, seen.0, "outside the browser its color is gone");
 }
 
 // The root's `Visuals` come from the sheet (#1442).
@@ -267,7 +267,7 @@ fn a_rule_that_matches_only_below_a_width_reaches_the_root_visuals_after_the_res
 }
 
 #[test]
-fn a_colour_change_such_as_the_window_s_opacity_reaches_the_root_visuals() {
+fn a_color_change_such_as_the_window_s_opacity_reaches_the_root_visuals() {
     let ctx = egui::Context::default();
     for css in ["", "menu { border-radius: 4px; }"] {
         let before = root_after(&ctx, css, 800.0);
@@ -335,7 +335,7 @@ fn looking_up_the_root_visuals_adds_nothing_to_the_style_tree() {
 }
 
 #[test]
-fn a_rule_that_gives_only_a_border_colour_keeps_the_outline_s_width() {
+fn a_rule_that_gives_only_a_border_color_keeps_the_outline_s_width() {
     let fallback = theme::palette_visuals_for(theme::studio);
     let hairline = fallback.widgets.noninteractive.bg_stroke.width;
     assert!(hairline > 0.0, "egui draws its separators with this stroke");
@@ -374,7 +374,7 @@ fn egui_s_lines_are_not_a_disabled_button() {
 #[test]
 fn a_line_made_transparent_takes_no_room() {
     // egui keeps a stroke's width whether or not it is seen (a panel's separator), so a line a
-    // theme hides with a transparent colour alone would still leave a gap (#1487).
+    // theme hides with a transparent color alone would still leave a gap (#1487).
     let ctx = egui::Context::default();
     let v = root_after(
         &ctx,
@@ -386,7 +386,7 @@ fn a_line_made_transparent_takes_no_room() {
     assert_eq!(v.window_stroke, egui::Stroke::NONE);
     // A widget's outline takes no room: it keeps its width.
     assert_eq!(v.widgets.inactive.bg_stroke.color, egui::Color32::TRANSPARENT);
-    // Hidden by one rule and coloured by a later one, a line is seen at the width it had: it is
+    // Hidden by one rule and colored by a later one, a line is seen at the width it had: it is
     // made width 0 only once every rule is written.
     let v = root_after(
         &ctx,
@@ -398,7 +398,7 @@ fn a_line_made_transparent_takes_no_room() {
 }
 
 #[test]
-fn a_scoped_ui_takes_a_colour_only_border_rule_with_the_width_it_had() {
+fn a_scoped_ui_takes_a_color_only_border_rule_with_the_width_it_had() {
     skin::configure(&skin::Skin { css: Some("button { border-color: #ff0000; }".into()), ..Default::default() });
     let ctx = egui::Context::default();
     let mut seen = None;
@@ -518,7 +518,7 @@ fn a_rule_for_every_button_is_not_the_selection_s() {
 }
 
 #[test]
-fn the_root_visuals_are_built_again_only_when_the_styles_or_the_colours_changed() {
+fn the_root_visuals_are_built_again_only_when_the_styles_or_the_colors_changed() {
     let ctx = egui::Context::default();
     let css = "menu { border-radius: 4px; }";
     root_after(&ctx, css, 800.0);
@@ -529,7 +529,7 @@ fn the_root_visuals_are_built_again_only_when_the_styles_or_the_colours_changed(
     assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a new width resets the styles");
     ctx.all_styles_mut(|style| style.visuals.window_fill = mark);
     theme::use_colors(&ctx, &[("accent".to_owned(), rgb(4, 5, 6))].into());
-    assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a colour change rebuilds them");
+    assert_ne!(frames_in(&ctx, 500.0).window_fill, mark, "a color change rebuilds them");
     theme::use_colors(&ctx, &theme::Colors::new());
     skin::configure(&skin::Skin::default());
 }

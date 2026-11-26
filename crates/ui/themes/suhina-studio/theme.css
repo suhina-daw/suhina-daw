@@ -1,9 +1,9 @@
 /* Suhina, reduced to a few settings: every token below follows them. */
-@property --ground { syntax: "<color>"; initial-value: #1D1C1A; label: "Background"; group: "Colours"; }
-@property --surface { syntax: "<color>"; initial-value: #252421; label: "Panels"; group: "Colours"; }
-@property --ink { syntax: "<color>"; initial-value: #ECE8E1; label: "Text"; group: "Colours"; }
-@property --tint { syntax: "<color>"; initial-value: #A6A3FF; label: "Accent"; group: "Colours"; }
-@property --highlight { syntax: "<color>"; initial-value: #E3C86A; label: "Selection"; group: "Colours"; }
+@property --ground { syntax: "<color>"; initial-value: #1D1C1A; label: "Background"; group: "Colors"; }
+@property --surface { syntax: "<color>"; initial-value: #252421; label: "Panels"; group: "Colors"; }
+@property --ink { syntax: "<color>"; initial-value: #ECE8E1; label: "Text"; group: "Colors"; }
+@property --tint { syntax: "<color>"; initial-value: #A6A3FF; label: "Accent"; group: "Colors"; }
+@property --highlight { syntax: "<color>"; initial-value: #E3C86A; label: "Selection"; group: "Colors"; }
 :root {
   --window-background: var(--ground);
   --panel-background: var(--surface);

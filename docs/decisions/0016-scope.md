@@ -4,7 +4,7 @@ read_when: scope of the project, what Suhina does not aim at, out of scope, buil
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-05
+last_verified: 2026-11-24
 ---
 
 # 0016: Scope: what Suhina aims at, what it leaves out, and the build order
@@ -63,7 +63,9 @@ the missing parts in. It does not schedule the work.
 5. **Suhina describes itself in its own terms.** The roadmap, the README and this ADR list areas
    and features under Suhina's names. Comparisons with other products, where the maintainers make
    them for planning, are kept out of the repository; format specs still say which format they read
-   (AGENTS.md rule 9). The README's status figure is the one thing drawn from that planning: the
+   (AGENTS.md rule 9). The README's opening line is the one exception: it names the DAW whose
+   workflow Suhina's is comparable to, because that is how people looking for one find it, and
+   says nothing more of it. The README's status figure is the one thing drawn from that planning: the
    maintainers' feature list, kept in a private repository, is counted into done, started and
    to-do features per Suhina area, drawn there and published to the public
    [suhina-status](https://github.com/suhina-daw/suhina-status), which the README shows. Only

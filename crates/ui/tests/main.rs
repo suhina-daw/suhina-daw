@@ -43,7 +43,7 @@ mod settings_window;
 mod short_panes;
 mod slot_launch;
 mod temp_dir;
-mod track_colour;
+mod track_color;
 mod waveforms;
 mod window;
 

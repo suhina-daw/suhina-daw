@@ -138,6 +138,9 @@ impl App {
                 self.ask_pick(PickField::CopyToFolder);
             }
         }
+        if let Some(path) = out.reveal {
+            self.reveal = Some(path);
+        }
         if out.toggle_autoplay {
             self.settings.preview_autoplay = !self.settings.preview_autoplay;
             self.settings_changed = true;

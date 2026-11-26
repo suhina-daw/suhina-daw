@@ -9,17 +9,17 @@ use suhina_engine::model::{
     AudioInput, ClipId, InputChannels, MidiInput, MidiPort, Monitor, Rgb, TimeSignature, TrackId,
 };
 
-use crate::interaction::colour_picker;
-use crate::kit::theme;
+use crate::interaction::color_picker;
 use crate::kit::widgets::Action;
+use crate::kit::{menu, theme};
 use crate::settings::keymap::shown;
 
 /// What a track's menu needs to know.
 pub struct TrackMenu<'a> {
     pub track: TrackId,
     pub name: &'a str,
-    /// The colour the track shows, outlined among the swatches.
-    pub colour: Rgb,
+    /// The color the track shows, outlined among the swatches.
+    pub color: Rgb,
     pub is_group: bool,
     /// A return track: new tracks from its menu go after the regular tracks.
     pub is_return: bool,
@@ -132,7 +132,7 @@ pub fn sidechain_choices(
             json!({ "track": track.0, "device": device, "source": source.0, "tap": tap.name(), "gain": gain }),
         )
     };
-    if ui.selectable_label(key.is_none(), "None").clicked() {
+    if menu::item(ui, "None", key.is_none()).clicked() {
         if key.is_some() {
             actions.push(Action::new("device.clearKey", json!({ "track": track.0, "device": device })));
         }
@@ -142,7 +142,7 @@ pub fn sidechain_choices(
     egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
         for (source, name) in &side.sources {
             let on = key.is_some_and(|k| k.track == *source);
-            if ui.selectable_label(on, name).clicked() {
+            if menu::item(ui, name, on).clicked() {
                 if !on {
                     actions.push(set(*source, tap, gain));
                 }
@@ -151,26 +151,27 @@ pub fn sidechain_choices(
         }
     });
     if side.sources.is_empty() {
-        ui.label("No other track to read");
+        menu::hint(ui, "No other track to read");
     }
     let Some(key) = key else { return };
-    ui.separator();
+    menu::separator(ui);
     for choice in suhina_engine::model::TapPoint::ALL {
-        if ui.selectable_label(key.tap == choice, tap_label(choice)).clicked() {
+        if menu::item(ui, tap_label(choice), key.tap == choice).clicked() {
             if key.tap != choice {
                 actions.push(set(key.track, choice, key.gain_db));
             }
             ui.close();
         }
     }
-    ui.separator();
+    menu::separator(ui);
     // The key's level: a drag or a typed value, one undo step when it is let go.
     let id = Id::unique(("key-gain", track, device.to_string()));
     let mut draft: f64 = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(key.gain_db.max(-60.0));
     let response = ui
         .horizontal(|ui| {
-            ui.label("Gain");
-            ui.add(egui::DragValue::new(&mut draft).range(-60.0..=24.0).speed(0.1).suffix(" dB").max_decimals(1))
+            crate::kit::controls::text(ui, "Gain");
+            let number = egui::DragValue::new(&mut draft).range(-60.0..=24.0).speed(0.1).suffix(" dB").max_decimals(1);
+            crate::kit::widgets::number_input(ui, None, number)
         })
         .inner;
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, "Sidechain gain"));
@@ -254,9 +255,8 @@ pub fn audio_is(input: &AudioInput, params: &serde_json::Value) -> bool {
 /// The choices of a track's audio input (ADR 0017): none, each channel of the input device,
 /// each neighbouring pair; then its monitoring. A pick runs `track.setAudioInput`.
 pub fn audio_input_choices(ui: &mut Ui, track: TrackId, input: &AudioInput, channels: u16, actions: &mut Vec<Action>) {
-    let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
     let mut pick = |ui: &mut Ui, label: &str, on: bool, params: serde_json::Value| {
-        if ui.selectable_label(on, text(label)).clicked() && !on {
+        if menu::item(ui, label, on).clicked() && !on {
             let mut params = params;
             params["track"] = json!(track.0);
             actions.push(Action::new("track.setAudioInput", params));
@@ -267,9 +267,9 @@ pub fn audio_input_choices(ui: &mut Ui, track: TrackId, input: &AudioInput, chan
         pick(ui, &label, audio_is(input, &params), params);
     }
     if channels == 0 {
-        ui.label(text("No input device: choose one in Settings › Audio"));
+        menu::hint(ui, "No input device: choose one in Settings › Audio");
     }
-    ui.separator();
+    menu::separator(ui);
     for (label, params) in audio_monitor_picks() {
         pick(ui, label, audio_is(input, &params), params);
     }
@@ -307,19 +307,15 @@ pub fn midi_monitor_explanation(monitor: Monitor) -> &'static str {
 
 /// Input monitoring is independent of record arm and headphone cue.
 pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actions: &mut Vec<Action>) {
-    // `popup` styles the menu, `button[checked]` its chosen row.
-    let style = crate::kit::element::POPUP.enter();
-    let mut styled_ui = style.ui(ui);
-    let ui = &mut *styled_ui;
     ui.set_min_width(280.0);
     ui.set_max_width(280.0);
-    ui.label(egui::RichText::new("Hear your MIDI keyboard").strong());
-    ui.separator();
+    menu::heading(ui, "Hear your MIDI keyboard");
+    menu::separator(ui);
     let mut explained = monitor;
     for (mode, value, text) in
         [(Monitor::Auto, "auto", "Automatic"), (Monitor::In, "in", "Always on"), (Monitor::Off, "off", "Off")]
     {
-        let response = ui.selectable_label(monitor == mode, text);
+        let response = menu::item(ui, text, monitor == mode);
         if response.hovered() || response.has_focus() {
             explained = mode;
         }
@@ -330,16 +326,11 @@ pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actio
             ui.close();
         }
     }
-    ui.separator();
-    ui.allocate_ui(egui::vec2(280.0, 30.0), |ui| {
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(midi_monitor_explanation(explained))
-                    .small()
-                    .color(crate::kit::element::caption_ink()),
-            )
-            .wrap(),
-        );
+    menu::separator(ui);
+    // Two lines' room whichever is explained, so the menu keeps its height as the pointer moves.
+    let (room, _) = ui.allocate_exact_size(egui::vec2(280.0, 30.0), egui::Sense::hover());
+    ui.scope_builder(egui::UiBuilder::new().max_rect(room), |ui| {
+        menu::note(ui, midi_monitor_explanation(explained), Some(280.0));
     });
 }
 
@@ -347,12 +338,8 @@ pub fn midi_monitor_choices(ui: &mut Ui, track: TrackId, monitor: Monitor, actio
 /// chosen, if it is not there now), none; then every channel or one. A pick runs
 /// `track.setMidiInput`.
 pub fn midi_input_choices(ui: &mut Ui, track: TrackId, input: &MidiInput, ports: &[String], actions: &mut Vec<Action>) {
-    let style = crate::kit::element::POPUP.enter();
-    let mut styled_ui = style.ui(ui);
-    let ui = &mut *styled_ui;
-    let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
     let mut pick = |ui: &mut Ui, label: &str, on: bool, params: serde_json::Value| {
-        if ui.selectable_label(on, text(label)).clicked() && !on {
+        if menu::item(ui, label, on).clicked() && !on {
             let mut params = params;
             params["track"] = json!(track.0);
             actions.push(Action::new("track.setMidiInput", params));
@@ -369,27 +356,29 @@ pub fn midi_input_choices(ui: &mut Ui, track: TrackId, input: &MidiInput, ports:
         pick(ui, &label, input.port == MidiPort::Named(name.clone()), json!({ "port": name }));
     }
     pick(ui, "No input", input.port == MidiPort::Nothing, json!({ "port": "none" }));
-    ui.separator();
+    menu::separator(ui);
     pick(ui, "All channels", input.channel.is_none(), json!({ "channel": 0 }));
-    egui::Grid::new(("midi-channels", track.0)).spacing(Vec2::splat(2.0)).show(ui, |ui| {
-        for channel in 1..=16u8 {
-            pick(ui, &format!("Ch {channel}"), input.channel == Some(channel), json!({ "channel": channel }));
-            if channel % 4 == 0 {
-                ui.end_row();
+    // The sixteen channels four to a row, each a quarter of the menu's width.
+    let cell = Vec2::new(((ui.available_width() - 6.0) / 4.0).max(40.0), theme::ROW);
+    for row in 0..4u8 {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for channel in row * 4 + 1..=row * 4 + 4 {
+                let on = input.channel == Some(channel);
+                ui.allocate_ui(cell, |ui| pick(ui, &format!("Ch {channel}"), on, json!({ "channel": channel })));
             }
-        }
-    });
-    ui.separator();
+        });
+    }
+    menu::separator(ui);
     midi_monitor_choices(ui, track, input.monitor, actions);
 }
 
-/// The menu of a track header or column: name, colour, group, ungroup, move into or out of a
+/// The menu of a track header or column: name, color, group, ungroup, move into or out of a
 /// group, delete.
 pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) {
     let track = menu.track.0;
     // A compact menu: as wide as its widest item needs, never the window's width.
     ui.set_min_width(180.0);
-    ui.set_max_width(220.0);
     ui.spacing_mut().item_spacing.y = 2.0;
     ui.spacing_mut().button_padding.y = 2.0;
 
@@ -411,35 +400,47 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     }
     ui.data_mut(|d| d.insert_temp(id, text));
 
-    // Colour: the palette every colour choice offers.
-    // A colour picked with several tracks selected colours them all.
+    // Color: the palette every color choice offers.
+    // A color picked with several tracks selected colors them all.
     let single = [menu.track];
     let selected = if menu.selection.contains(&menu.track) { menu.selection } else { &single };
-    colour_picker::track_row(ui, menu.colour, selected, actions);
-    // A group's tracks, at any depth, and their clips: its colour, so the group reads as one in
+    color_picker::track_row(ui, menu.color, selected, actions);
+    // A group's tracks, at any depth, and their clips: its color, so the group reads as one in
     // every view.
-    if menu.is_group && ui.button("Recolor group").clicked() {
-        // The colour the group shows: one it was never given is worked out from its place.
-        let params = json!({ "track": track, "color": colour_picker::hex(menu.colour), "clips": true });
+    if menu.is_group && menu::entry(ui, "Recolor group", None, true).clicked() {
+        // The color the group shows: one it was never given is worked out from its place.
+        let params = json!({ "track": track, "color": color_picker::hex(menu.color), "clips": true });
         actions.push(Action::new("track.colorGroup", params));
         ui.close();
     }
-    // The track's clips: back to the track's colour, or named after it.
-    if ui.button("Assign track color to all clips").clicked() {
-        actions.push(Action::new("clip.setColor", json!({ "track": track, "color": "none" })));
+    // The track's clips, or with several tracks selected every one's: back to their track's
+    // color, or named after it; one undo step for them all (one gesture).
+    let now = ui.input(|i| i.time);
+    let each = |id: &'static str, params: &dyn Fn(u32) -> serde_json::Value, actions: &mut Vec<Action>| {
+        let gesture = (selected.len() > 1).then(|| crate::interaction::commands::gesture(format_args!("{id} {now}")));
+        for t in selected {
+            let mut own = params(t.0);
+            if let Some(gesture) = &gesture {
+                own["gesture"] = gesture.clone();
+            }
+            actions.push(Action::new(id, own));
+        }
+    };
+    if menu::entry(ui, "Assign track color to all clips", None, true).clicked() {
+        each("clip.setColor", &|t| json!({ "track": t, "color": "none" }), actions);
         ui.close();
     }
-    if ui.button("Assign track name to clips").clicked() {
-        actions.push(Action::new("track.renameClips", json!({ "track": track })));
+    if menu::entry(ui, "Assign track name to clips", None, true).clicked() {
+        each("track.renameClips", &|t| json!({ "track": t }), actions);
         ui.close();
     }
     if let Some((input, channels)) = menu.audio {
-        ui.menu_button(format!("Audio input: {}", audio_input_text(input)), |ui| {
+        menu::submenu(ui, &format!("Audio input: {}", audio_input_text(input)), false, |ui| {
             audio_input_choices(ui, menu.track, input, channels, actions);
         });
     }
     if let Some((input, ports)) = menu.midi {
-        ui.menu_button(format!("MIDI input: {}", midi_input_text(input)), |ui| {
+        menu::submenu(ui, &format!("MIDI input: {}", midi_input_text(input)), false, |ui| {
             midi_input_choices(ui, menu.track, input, ports, actions);
         });
     }
@@ -448,7 +449,7 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
     let readers: Vec<&KeyReader> =
         menu.key_readers.iter().filter(|r| !r.refused.contains(&menu.track) && !menu.is_group).collect();
     if !readers.is_empty() {
-        ui.menu_button("Sidechain to", |ui| {
+        menu::submenu(ui, "Sidechain to", false, |ui| {
             ui.set_min_width(240.0);
             // A search field over a list that scrolls, as the parameter chooser has: a project
             // with many keyed devices listed them all, taller than the screen.
@@ -465,7 +466,8 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
             }
             ui.data_mut(|d| d.insert_temp(query_id.with("frame"), frame));
             let mut query: String = ui.data(|d| d.get_temp(query_id)).unwrap_or_default();
-            let field = ui.add(
+            let field = crate::kit::widgets::text_input(
+                ui,
                 egui::TextEdit::singleline(&mut query)
                     .id(query_id.with("field"))
                     .hint_text("Search devices")
@@ -488,11 +490,11 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
             let height = (ui.ctx().content_rect().height() * 0.5).max(120.0);
             egui::ScrollArea::vertical().max_height(height).auto_shrink([true, true]).show(ui, |ui| {
                 if shown.is_empty() {
-                    ui.label(egui::RichText::new("No device matches").color(crate::kit::element::hint_ink()));
+                    menu::hint(ui, "No device matches");
                 }
                 for reader in shown {
                     let on = reader.source == Some(menu.track);
-                    if ui.selectable_label(on, &reader.label).clicked() {
+                    if menu::item(ui, &reader.label, on).clicked() {
                         let at = json!({ "track": reader.track.0, "device": reader.device });
                         if on {
                             actions.push(Action::new("device.clearKey", at));
@@ -511,30 +513,30 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
             });
         });
     }
-    ui.separator();
+    menu::separator(ui);
 
     let selected = menu.selection.contains(&menu.track) && menu.selection.len() > 1;
     // The selection when this track is among it, else this track alone.
     let tracks: Vec<u32> = if selected { menu.selection.iter().map(|t| t.0).collect() } else { vec![track] };
     let group_label = if selected { "Group selected tracks" } else { "Group" };
-    if ui.add(egui::Button::new(group_label).shortcut_text(shown("Ctrl+G"))).clicked() {
+    if menu::entry(ui, group_label, Some(&shown("Ctrl+G")), true).clicked() {
         actions.push(Action::new("track.group", json!({ "tracks": tracks })));
         ui.close();
     }
     // A folder only gathers the tracks in view; they play as before (#1416).
     let folder_label = if selected { "Put selected tracks in a folder" } else { "Put in a folder" };
-    if ui.button(folder_label).clicked() {
+    if menu::entry(ui, folder_label, None, true).clicked() {
         actions.push(Action::new("track.folder", json!({ "tracks": tracks })));
         ui.close();
     }
-    if menu.is_group && ui.button("Ungroup").clicked() {
+    if menu.is_group && menu::entry(ui, "Ungroup", None, true).clicked() {
         actions.push(Action::new("track.ungroup", json!({ "track": track })));
         ui.close();
     }
     if !menu.into.is_empty() {
-        ui.menu_button("Move into group", |ui| {
+        menu::submenu(ui, "Move into group", false, |ui| {
             for (group, name) in menu.into {
-                if ui.button(name).clicked() {
+                if menu::entry(ui, name, None, true).clicked() {
                     actions.push(Action::new("track.setGroup", json!({ "track": track, "group": group.0 })));
                     ui.close();
                 }
@@ -542,14 +544,14 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
         });
     }
     if let Some(out) = &menu.out
-        && ui.button("Move out of group").clicked()
+        && menu::entry(ui, "Move out of group", None, true).clicked()
     {
         actions.push(out.clone());
         ui.close();
     }
-    ui.separator();
+    menu::separator(ui);
     insert_items(ui, (!menu.is_return).then_some(menu.track), actions);
-    ui.separator();
+    menu::separator(ui);
     // Cut, copy and duplicate take the selected tracks when this one is among them (#919).
     if !menu.is_return {
         for (label, keys, command) in [
@@ -557,19 +559,19 @@ pub fn track_menu(ui: &mut Ui, menu: &TrackMenu<'_>, actions: &mut Vec<Action>) 
             ("Copy", "Ctrl+C", "track.copy"),
             ("Duplicate", "Ctrl+D", "track.duplicate"),
         ] {
-            if ui.add(egui::Button::new(label).shortcut_text(shown(keys))).clicked() {
+            if menu::entry(ui, label, Some(&shown(keys)), true).clicked() {
                 actions.push(Action::new(command, json!({ "tracks": tracks })));
                 ui.close();
             }
         }
-        if ui.add_enabled(menu.tracks_copied, egui::Button::new("Paste").shortcut_text(shown("Ctrl+V"))).clicked() {
+        if menu::entry(ui, "Paste", Some(&shown("Ctrl+V")), menu.tracks_copied).clicked() {
             actions.push(Action::new("track.paste", json!({ "after": track })));
             ui.close();
         }
-        ui.separator();
+        menu::separator(ui);
     }
     // On a selected track it deletes the selection, as Cut does, in one undo step (#1188).
-    if ui.button("Delete track").clicked() {
+    if menu::entry(ui, "Delete track", None, true).clicked() {
         actions.push(Action::new("track.delete", json!({ "tracks": tracks })));
         ui.close();
     }
@@ -581,7 +583,7 @@ pub fn insert_items(ui: &mut Ui, after: Option<TrackId>, actions: &mut Vec<Actio
     for (kind, label, keys) in
         [("audio", "Insert audio track", "Ctrl+T"), ("midi", "Insert MIDI track", "Ctrl+Shift+T")]
     {
-        if ui.add(egui::Button::new(label).shortcut_text(shown(keys))).clicked() {
+        if menu::entry(ui, label, Some(&shown(keys)), true).clicked() {
             let mut params = json!({ "kind": kind });
             if let Some(after) = after {
                 params["after"] = json!(after.0);
@@ -590,7 +592,7 @@ pub fn insert_items(ui: &mut Ui, after: Option<TrackId>, actions: &mut Vec<Actio
             ui.close();
         }
     }
-    if ui.button("Insert return track").clicked() {
+    if menu::entry(ui, "Insert return track", None, true).clicked() {
         actions.push(Action::new("return.add", json!({})));
         ui.close();
     }
@@ -606,7 +608,7 @@ fn name_field_on(ui: &Ui) -> bool {
 
 /// The Rename item: the window asks for the clip's new name (`ui.renameClip`), as Ctrl+R does.
 fn rename_item(ui: &mut Ui, target: serde_json::Value, name: &str, actions: &mut Vec<Action>) {
-    if ui.add(egui::Button::new("Rename").shortcut_text(shown("Ctrl+R"))).clicked() {
+    if menu::entry(ui, "Rename", Some(&shown("Ctrl+R")), true).clicked() {
         let mut params = target;
         params["name"] = json!(name);
         actions.push(Action::new("ui.renameClip", params));
@@ -643,27 +645,22 @@ pub fn clip_menu(
     }
     let list: Vec<serde_json::Value> = clips.iter().map(|(_, clip)| json!({ "clip": clip.0 })).collect();
     ui.set_min_width(140.0);
-    // The clips' colour: a swatch or any colour, or back to their tracks' colour.
-    // One command for them all: one undo step, and a large selection takes it at once.
-    if let Some(pick) = colour_picker::swatch_row(ui, None) {
-        actions.push(Action::new(
-            "clip.setColorMany",
-            json!({ "clips": list.clone(), "color": colour_picker::hex(pick.colour) }),
-        ));
-        pick.close_menu(ui);
-    }
-    if ui.button("Track colour").clicked() {
+    // The clips' color: the track menu's palette and More colors, or back to their tracks'
+    // color. One command for them all: one undo step, and a large selection takes it at once.
+    let ids: Vec<_> = clips.iter().map(|(_, clip)| *clip).collect();
+    color_picker::clip_row(ui, None, &ids, actions);
+    if menu::entry(ui, "Track color", None, true).clicked() {
         actions.push(Action::new("clip.setColorMany", json!({ "clips": list.clone(), "color": "none" })));
         ui.close();
     }
-    ui.separator();
+    menu::separator(ui);
     // One clip in the menu (a click on it, or the only one selected): Rename, or with the
     // setting on a field that renames it, applied with Enter or Rename, as a slot's clip's is.
     if let [(_, clip)] = clips
         && !name_field_on(ui)
     {
         rename_item(ui, json!({ "clip": clip.0 }), name, actions);
-        ui.separator();
+        menu::separator(ui);
     } else if let [(_, clip)] = clips {
         let id = Id::unique(("clip-rename", clip.0));
         let mut draft: String = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_else(|| name.to_string());
@@ -673,18 +670,20 @@ pub fn clip_menu(
         field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename clip {}", name)));
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         // An empty draft clears the name: the command takes it.
-        if (enter || ui.button("Rename").clicked()) && draft.trim() != name.trim() {
+        // Drawn every frame, Enter or not, so the rows under it keep their place.
+        let clicked = menu::entry(ui, "Rename", None, true).clicked();
+        if (enter || clicked) && draft.trim() != name.trim() {
             actions.push(Action::new("clip.rename", json!({ "clip": clip.0, "name": draft.trim() })));
             ui.ctx().data_mut(|d| d.remove::<String>(id));
             ui.close();
         }
-        ui.separator();
+        menu::separator(ui);
     }
-    if ui.add(egui::Button::new("Copy").shortcut_text(shown("Ctrl+C"))).clicked() {
+    if menu::entry(ui, "Copy", Some(&shown("Ctrl+C")), true).clicked() {
         actions.push(Action::new("clip.copy", json!({ "clips": list.clone() })));
         ui.close();
     }
-    if ui.add(egui::Button::new("Duplicate").shortcut_text(shown("Ctrl+D"))).clicked() {
+    if menu::entry(ui, "Duplicate", Some(&shown("Ctrl+D")), true).clicked() {
         let mut params = json!({ "clips": list.clone() });
         if stack {
             params["stack"] = json!(true);
@@ -692,7 +691,7 @@ pub fn clip_menu(
         actions.push(Action::new("clip.duplicate", params));
         ui.close();
     }
-    if ui.button("Duplicate linked").clicked() {
+    if menu::entry(ui, "Duplicate linked", None, true).clicked() {
         let mut params = json!({ "clips": list.clone(), "linked": true });
         if stack {
             params["stack"] = json!(true);
@@ -701,20 +700,20 @@ pub fn clip_menu(
         ui.close();
     }
     // Clips that play the same notes or audio, not yet linked: one content from now on.
-    if linkable && ui.button("Link").clicked() {
+    if linkable && menu::entry(ui, "Link", None, true).clicked() {
         actions.push(Action::new("clip.link", json!({ "clips": list.clone() })));
         ui.close();
     }
-    if linked && ui.button("Unlink").clicked() {
+    if linked && menu::entry(ui, "Unlink", None, true).clicked() {
         actions.push(Action::new("clip.unlink", json!({ "clips": list.clone() })));
         ui.close();
     }
     let mute = if enabled { "Mute" } else { "Unmute" };
-    if ui.add(egui::Button::new(mute).shortcut_text("0")).clicked() {
+    if menu::entry(ui, mute, Some("0"), true).clicked() {
         actions.push(Action::new("clip.setEnabled", json!({ "clips": list.clone(), "enabled": !enabled })));
         ui.close();
     }
-    if ui.add(egui::Button::new("Delete").shortcut_text("Del")).clicked() {
+    if menu::entry(ui, "Delete", Some("Del"), true).clicked() {
         actions.push(Action::new("clip.delete", json!({ "clips": list })));
         ui.close();
     }
@@ -734,15 +733,15 @@ pub fn clip_edit_menu(
     actions: &mut Vec<Action>,
 ) {
     let (start, length) = span;
-    ui.separator();
+    menu::separator(ui);
     let inside = at.filter(|beat| *beat > start && *beat < start + length);
-    if ui.add_enabled(inside.is_some(), egui::Button::new("Split here")).clicked()
+    if menu::entry(ui, "Split here", None, inside.is_some()).clicked()
         && let Some(beat) = inside
     {
         actions.push(Action::new("clip.split", json!({ "clip": clip.0, "at": beat })));
         ui.close();
     }
-    if ui.add(egui::Button::new("Consolidate").shortcut_text(shown("Ctrl+J"))).clicked() {
+    if menu::entry(ui, "Consolidate", Some(&shown("Ctrl+J")), true).clicked() {
         actions.push(Action::new("clip.consolidate", json!({ "track": track.0, "start": joined.0, "end": joined.1 })));
         ui.close();
     }
@@ -751,14 +750,14 @@ pub fn clip_edit_menu(
 /// The part of an audio clip's menu on a track whose plug-in edits clips (ARA): open the clip
 /// in that plug-in's editor (`view.araEditor`, which the window does).
 pub fn ara_menu(ui: &mut Ui, track: TrackId, clip: ClipId, plugin: &str, edited: bool, actions: &mut Vec<Action>) {
-    ui.separator();
+    menu::separator(ui);
     // The clip's own ARA plug-in (#990): it plays through it once edited with it.
     let open = if edited { format!("Open in {plugin}") } else { format!("Edit with {plugin}") };
-    if ui.add(egui::Button::new(open).shortcut_text("Alt+M")).clicked() {
+    if menu::entry(ui, &open, Some("Alt+M"), true).clicked() {
         actions.push(Action::new("view.araEditor", json!({ "track": track.0, "clip": clip.0 })));
         ui.close();
     }
-    if edited && ui.button(format!("Stop editing with {plugin}")).clicked() {
+    if edited && menu::entry(ui, &format!("Stop editing with {plugin}"), None, true).clicked() {
         actions.push(Action::new("clip.setAra", json!({ "clips": [{ "clip": clip.0 }], "on": false })));
         ui.close();
     }
@@ -803,16 +802,16 @@ pub fn scene_menu(ui: &mut Ui, menu: &SceneMenu<'_>, actions: &mut Vec<Action>) 
         }
         ui.data_mut(|d| d.insert_temp(id, text));
     }
-    ui.separator();
-    if ui.button("Insert scene below").clicked() {
+    menu::separator(ui);
+    if menu::entry(ui, "Insert scene below", None, true).clicked() {
         actions.push(Action::new("scene.insert", json!({ "scene": scene })));
         ui.close();
     }
-    if ui.button("Duplicate scene").clicked() {
+    if menu::entry(ui, "Duplicate scene", None, true).clicked() {
         actions.push(Action::new("scene.duplicate", json!({ "scene": scene - 1 })));
         ui.close();
     }
-    if ui.add_enabled(!menu.only, egui::Button::new("Delete scene")).clicked() {
+    if menu::entry(ui, "Delete scene", None, !menu.only).clicked() {
         actions.push(Action::new("scene.delete", json!({ "scene": scene - 1 })));
         ui.close();
     }
@@ -939,7 +938,7 @@ pub fn time_signature_menu(
         return;
     }
     ui.data_mut(|d| d.insert_temp(id, text));
-    ui.separator();
+    menu::separator(ui);
     if time_signature_list(ui, bar, current, same, actions) {
         ui.data_mut(|d| d.remove::<String>(id));
     }
@@ -958,7 +957,7 @@ pub fn time_signature_list(
     ui.set_min_width(72.0);
     for (numerator, denominator) in TIME_SIGNATURES {
         let on = current.numerator == numerator && current.denominator == denominator;
-        if ui.selectable_label(on, format!("{numerator}/{denominator}")).clicked() {
+        if menu::item(ui, &format!("{numerator}/{denominator}"), on).clicked() {
             actions.extend(signature_choice(bar, current, same, json!(numerator), json!(denominator)));
             ui.close();
             return true;
@@ -1005,12 +1004,12 @@ pub fn device_menu(
         return;
     }
     ui.data_mut(|d| d.insert_temp(id, text));
-    ui.separator();
+    menu::separator(ui);
     // The key it reads (sidechain), as the panel's Sidechain button chooses it.
     if let Some(side) = sidechain {
         let label = side.key.as_ref().map_or("Sidechain: none".to_owned(), |k| format!("Sidechain: {}", k.name));
-        ui.menu_button(label, |ui| sidechain_choices(ui, track, &device, side, actions));
-        ui.separator();
+        menu::submenu(ui, &label, false, |ui| sidechain_choices(ui, track, &device, side, actions));
+        menu::separator(ui);
     }
     // Save as preset (`device.savePreset`, docs/decisions/0036-library-and-shipped-content.md ›
     // 5): the menu stays open while the name is typed, as a rename's field does.
@@ -1021,7 +1020,9 @@ pub fn device_menu(
         ui.ctx().data_mut(|d| d.insert_temp(id, draft.clone()));
         field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Preset name for {name}")));
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        if (enter || ui.button("Save as preset…").clicked()) && !draft.trim().is_empty() {
+        // Drawn every frame, Enter or not, so the rows under it keep their place.
+        let clicked = menu::entry(ui, "Save as preset…", None, true).clicked();
+        if (enter || clicked) && !draft.trim().is_empty() {
             actions.push(Action::new(
                 "device.savePreset",
                 json!({ "track": track.0, "device": device, "name": draft.trim() }),
@@ -1030,40 +1031,53 @@ pub fn device_menu(
             ui.close();
         }
     }
-    if ui.add(egui::Button::new("Group").shortcut_text(shown("Ctrl+G"))).clicked() {
+    if menu::entry(ui, "Group", Some(&shown("Ctrl+G")), true).clicked() {
         actions.push(Action::new("device.group", json!({ "track": track.0, "device": device })));
         ui.close();
     }
     if let Some(branches) = branches {
-        if ui.add_enabled(branches == 1, egui::Button::new("Ungroup").shortcut_text(shown("Ctrl+Shift+G"))).clicked() {
+        if menu::entry(ui, "Ungroup", Some(&shown("Ctrl+Shift+G")), branches == 1).clicked() {
             actions.push(Action::new("device.ungroup", json!({ "track": track.0, "device": device })));
             ui.close();
         }
-        if ui.button("Add branch").clicked() {
+        if menu::entry(ui, "Add branch", None, true).clicked() {
             actions.push(Action::new("branch.add", json!({ "track": track.0, "device": device })));
             ui.close();
         }
     }
-    if ui.button("Duplicate device").clicked() {
+    if menu::entry(ui, "Duplicate device", None, true).clicked() {
         actions.push(Action::new("device.duplicate", json!({ "track": track.0, "device": device })));
         ui.close();
     }
-    if ui.button("Remove device").clicked() {
+    if menu::entry(ui, "Remove device", None, true).clicked() {
         actions.push(Action::new("device.remove", json!({ "track": track.0, "device": device })));
         ui.close();
     }
 }
 
+/// A clip slot's menu. `clip` is the slot's clip and its own color, if it has one: the palette
+/// and More colors color it as the arrangement clip's menu does, and Track color hands it back to
+/// its track's.
+#[allow(clippy::too_many_arguments)]
 pub fn slot_menu(
     ui: &mut Ui,
     track: TrackId,
     scene: usize,
     name: &str,
-    has_clip: bool,
+    clip: Option<(ClipId, Option<Rgb>)>,
     can_paste: bool,
     actions: &mut Vec<Action>,
 ) {
+    let has_clip = clip.is_some();
     ui.set_min_width(140.0);
+    if let Some((clip, color)) = clip {
+        color_picker::clip_row(ui, color, &[clip], actions);
+        if menu::entry(ui, "Track color", None, true).clicked() {
+            actions.push(Action::new("clip.setColor", json!({ "clip": clip.0, "color": "none" })));
+            ui.close();
+        }
+        menu::separator(ui);
+    }
     // Rename, or with the setting on the clip's name typed to rename: applied with Enter or
     // Rename, as a marker's is.
     if has_clip && !name_field_on(ui) {
@@ -1077,143 +1091,29 @@ pub fn slot_menu(
         field.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, format!("Rename clip {}", name)));
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         // An empty draft clears the name: the command takes it.
-        if (enter || ui.button("Rename").clicked()) && draft.trim() != name.trim() {
+        // Drawn every frame, Enter or not, so the rows under it keep their place.
+        let clicked = menu::entry(ui, "Rename", None, true).clicked();
+        if (enter || clicked) && draft.trim() != name.trim() {
             actions.push(Action::new("clip.rename", json!({ "track": track.0, "scene": scene, "name": draft.trim() })));
             ui.ctx().data_mut(|d| d.remove::<String>(id));
             ui.close();
         }
     }
-    if ui.add_enabled(has_clip, egui::Button::new("Copy").shortcut_text(shown("Ctrl+C"))).clicked() {
+    if menu::entry(ui, "Copy", Some(&shown("Ctrl+C")), has_clip).clicked() {
         actions.push(Action::new("clip.copy", json!({ "track": track.0, "scene": scene })));
         ui.close();
     }
-    if ui.add_enabled(can_paste, egui::Button::new("Paste").shortcut_text(shown("Ctrl+V"))).clicked() {
+    if menu::entry(ui, "Paste", Some(&shown("Ctrl+V")), can_paste).clicked() {
         actions.push(Action::new("clip.paste", json!({ "track": track.0, "scene": scene })));
         ui.close();
     }
     // A MIDI or an audio clip alike, as the Delete key takes a selected slot's (#842).
-    if ui.add_enabled(has_clip, egui::Button::new("Delete").shortcut_text("Del")).clicked() {
+    if menu::entry(ui, "Delete", Some("Del"), has_clip).clicked() {
         actions.push(Action::new("clip.delete", json!({ "track": track.0, "scene": scene })));
         ui.close();
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The strip's dropdown and the track's menu both offer the same list, pairs included: with
-    /// no device open, the first eight channels, mono and one pair each, are there to set a
-    /// project with before the interface arrives.
-    #[test]
-    fn audio_input_picks_offer_monos_and_pairs() {
-        let picks = audio_input_picks(&AudioInput::default(), 0);
-        let labels: Vec<&str> = picks.iter().map(|(l, _)| l.as_str()).collect();
-        assert!(labels.contains(&"In 1"), "{labels:?}");
-        assert!(labels.contains(&"In 8"), "{labels:?}");
-        assert!(labels.contains(&"In 1/2"), "{labels:?}");
-        assert!(labels.contains(&"In 3/4"), "{labels:?}");
-        let ticked = audio_is(&AudioInput::default(), &picks[0].1);
-        assert!(ticked, "no device yet, so no input ticked");
-        let monitors = audio_monitor_picks();
-        assert_eq!(monitors.len(), 3);
-    }
-
-    #[test]
-    fn an_audio_clip_is_edited_with_the_ara_plug_in_and_can_stop() {
-        use egui_kittest::Harness;
-        use egui_kittest::kittest::Queryable;
-        // Not edited yet: Edit with, which opens it there.
-        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
-            |ui, actions: &mut Vec<Action>| ara_menu(ui, TrackId(2), ClipId(7), "Tune", false, actions),
-            Vec::new(),
-        );
-        harness.run();
-        assert!(harness.query_by_label_contains("Stop editing").is_none());
-        harness.get_by_label_contains("Edit with Tune").click();
-        harness.run();
-        let action = &harness.state()[0];
-        assert_eq!((action.id, action.params.clone()), ("view.araEditor", json!({ "track": 2, "clip": 7 })));
-        drop(harness);
-        // Edited: Open in, and Stop editing with, which takes the clip off it (#990).
-        let mut harness = Harness::builder().allow_missing_glyphs().with_size(egui::vec2(300.0, 120.0)).build_ui_state(
-            |ui, actions: &mut Vec<Action>| ara_menu(ui, TrackId(2), ClipId(7), "Tune", true, actions),
-            Vec::new(),
-        );
-        harness.run();
-        harness.get_by_label_contains("Open in Tune");
-        harness.get_by_label_contains("Stop editing with Tune").click();
-        harness.run();
-        let action = &harness.state()[0];
-        assert_eq!(
-            (action.id, action.params.clone()),
-            ("clip.setAra", json!({ "clips": [{ "clip": 7 }], "on": false }))
-        );
-    }
-
-    #[test]
-    fn scene_fields_become_commands() {
-        let action = |field, text| scene_field_action(field, 2, text).map(|a| (a.id, a.params));
-        assert_eq!(action("name", " Drop "), Some(("scene.rename", json!({ "scene": 2, "name": "Drop" }))));
-        assert_eq!(action("tempo", "128"), Some(("scene.setTempo", json!({ "scene": 2, "bpm": 128.0 }))));
-        assert_eq!(action("tempo", ""), Some(("scene.setTempo", json!({ "scene": 2 }))));
-        assert_eq!(
-            action("signature", "7/8"),
-            Some(("scene.setTimeSignature", json!({ "scene": 2, "numerator": 7, "denominator": 8 })))
-        );
-        assert_eq!(action("signature", " "), Some(("scene.setTimeSignature", json!({ "scene": 2 }))));
-        // Not a number: sent as text, so the command's error says what is wrong.
-        assert_eq!(action("tempo", "fast"), Some(("scene.setTempo", json!({ "scene": 2, "bpm": "fast" }))));
-        assert_eq!(action("colour", "red"), None);
-    }
-
-    /// A time signature from a menu: the start signature at bar 1, a change at a later bar
-    /// (#1259, #1264); typed text that is not a signature goes to the command as it is.
-    #[test]
-    fn a_time_signature_becomes_the_command_for_its_bar() {
-        let four = TimeSignature { numerator: 4, denominator: 4 };
-        let typed =
-            |bar, text| typed_time_signature_action(bar, four, SameSignature::Nothing, text).map(|a| (a.id, a.params));
-        assert_eq!(
-            typed(1, " 6/8 "),
-            Some(("transport.setTimeSignature", json!({ "numerator": 6, "denominator": 8 })))
-        );
-        assert_eq!(
-            typed(5, "15 / 16"),
-            Some(("timeSignature.add", json!({ "bar": 5, "numerator": 15, "denominator": 16 })))
-        );
-        assert_eq!(
-            typed(1, "waltz"),
-            Some(("transport.setTimeSignature", json!({ "numerator": "waltz", "denominator": "" })))
-        );
-        assert_eq!(typed(3, "  "), None);
-        let picked = time_signature_action(0, json!(3), json!(4));
-        assert_eq!(
-            (picked.id, picked.params),
-            ("transport.setTimeSignature", json!({ "numerator": 3, "denominator": 4 }))
-        );
-    }
-
-    /// The signature already in effect: nothing where it is set, a change of its own at a bar
-    /// that only inherits it, and the tempo map again while a launched scene's drives the clock.
-    #[test]
-    fn the_signature_in_effect_does_what_its_place_needs() {
-        let four = TimeSignature { numerator: 4, denominator: 4 };
-        let choose = |bar, same| signature_choice(bar, four, same, json!(4), json!(4)).map(|a| (a.id, a.params));
-        assert_eq!(choose(1, SameSignature::Nothing), None);
-        assert_eq!(
-            choose(9, SameSignature::Set),
-            Some(("timeSignature.add", json!({ "bar": 9, "numerator": 4, "denominator": 4 })))
-        );
-        assert_eq!(choose(1, SameSignature::FollowMap), Some(("transport.followTempoMap", json!({}))));
-        assert_eq!(
-            typed_time_signature_action(9, four, SameSignature::Set, "4/4").map(|a| a.id),
-            Some("timeSignature.add")
-        );
-        // Another signature is set whatever `same` says.
-        assert_eq!(
-            signature_choice(1, four, SameSignature::FollowMap, json!(3), json!(4)).map(|a| a.id),
-            Some("transport.setTimeSignature")
-        );
-    }
-}
+#[path = "menus_tests.rs"]
+mod tests;

@@ -3,7 +3,7 @@ description: Version 6 of the data-only Suhina device graph format, SDK, track l
 read_when: .sd, Suhina device, device graph, device SDK, community effect, visual node, device UI
 type: spec
 status: current
-last_verified: 2026-11-18
+last_verified: 2026-11-23
 covers:
   - crates/device-sdk/src/builtin.rs
   - crates/device-sdk/Cargo.toml
@@ -297,7 +297,7 @@ Both axes scroll when the authored canvas exceeds the viewport. Explicit cells m
 parameters later in the array draw later. Layout is stored as data in the embedded graph.
 
 Optional RGB triplets `ui.accent`, `ui.background`, `ui.panel_color` and `ui.text_color` style controls, frames
-and text. Omitted colours follow the Suhina theme. `ui.font_size` is 8..48 (default 12),
+and text. Omitted colors follow the Suhina theme. `ui.font_size` is 8..48 (default 12),
 `ui.monospace` selects the font family, and `ui.corner_radius` is 0..128 (default 4).
 `ui.shape` is rounded (default), square or pill; knobs use their circular body by default
 and a square body for square. `ui.label_position` is left (default), top or hidden;
@@ -316,7 +316,7 @@ These fields are optional and old files retain automatic placement. Authors must
 cell space for labels and controls. Untrusted geometry is checked before UI rendering;
 there is no executable UI code, external font loading or arbitrary drawing script.
 
-`background` colours widget bodies; `panel_color` colours the entire cell independently.
+`background` colors widget bodies; `panel_color` colors the entire cell independently.
 
 For a compact knob use `size: [40,40]`, `label_position: "hidden"`, `show_value: false`.
 

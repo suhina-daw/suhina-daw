@@ -265,15 +265,15 @@ fn a_theme_is_told_a_painted_element_takes_no_padding_in_percent() {
 }
 
 #[test]
-fn a_saved_theme_writes_only_the_colours_it_sets_and_reads_back_the_same() {
+fn a_saved_theme_writes_only_the_colors_it_sets_and_reads_back_the_same() {
     let meta = || super::super::theme::ThemeMeta::new("Two", super::super::theme::DEFAULT_SWATCH);
     let (theme, warnings) =
         super::super::theme::from_folder(meta(), ":root { --accent: #123456; --recording: #ABCDEF; }");
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(theme.colors.keys().map(String::as_str).collect::<Vec<_>>(), ["accent", "recording"]);
     for written in [sheet(&theme, None), export(&theme)] {
-        let colours: Vec<&str> = written.lines().filter(|line| line.trim_start().starts_with("--")).collect();
-        assert_eq!(colours.len(), 2, "{written}");
+        let colors: Vec<&str> = written.lines().filter(|line| line.trim_start().starts_with("--")).collect();
+        assert_eq!(colors.len(), 2, "{written}");
         assert!(written.contains("--accent: #123456") && written.contains("--recording: #ABCDEF"), "{written}");
     }
     let (again, warnings) = super::super::theme::from_folder(meta(), &sheet(&theme, None));
@@ -285,16 +285,16 @@ fn a_saved_theme_writes_only_the_colours_it_sets_and_reads_back_the_same() {
 }
 
 #[test]
-fn a_theme_that_sets_no_colour_writes_no_colour_block() {
+fn a_theme_that_sets_no_color_writes_no_color_block() {
     let theme = Theme::default();
     assert!(!sheet(&theme, None).contains(":root"), "{}", sheet(&theme, None));
     assert!(!export(&theme).contains(":root"), "{}", export(&theme));
 }
 
 #[test]
-fn a_colour_variable_is_kept_by_its_one_name() {
+fn a_color_variable_is_kept_by_its_one_name() {
     // `--window.background` is not the custom property `--window-background`: a name with a dot
-    // does not name a token, and no second entry for the same colour is kept.
+    // does not name a token, and no second entry for the same color is kept.
     let mut theme = Theme::default();
     let warnings = apply(&mut theme, ":root { --window.background: #FF0000; --window-background: #00FF00; }");
     assert!(theme.colors.keys().all(|name| !name.contains('.')), "{:?}", theme.colors);

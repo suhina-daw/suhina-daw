@@ -3,7 +3,7 @@ description: Tempo and time-signature changes over the song (the tempo map): ste
 read_when: tempo map, tempo change, tempo ramp, time signature, time-signature change, change the time signature, meter, bars, beats to samples, beat to frame, tempo.addPoint, timeSignature.add, transport.setTimeSignature, bar ruler, control bar signature
 type: spec
 status: current
-last_verified: 2026-11-15
+last_verified: 2026-11-23
 covers:
   - crates/model/src/tempo.rs
   - crates/engine/src/tempo.rs
@@ -230,7 +230,7 @@ Every edit here is one of the commands above and one undo step.
   (`timeSignature.delete`).
 - **A signature change's line on the ruler** drags sideways with the primary button; it lands on the bar line nearest
   the pointer when released (`timeSignature.move`), never on bar 1, and a line in the accent
-  colour shows where while it moves. Released on its own bar, nothing changes. Clicked, it seeks
+  color shows where while it moves. Released on its own bar, nothing changes. Clicked, it seeks
   as the ruler does; right-clicked, it opens the ruler's menu, with *Remove the time-signature
   change at bar N*. Pointed at, it says what it sets.
 - **A change's text** ("3/4", a tempo) stands after the bar number of its bar line, and only

@@ -194,7 +194,7 @@ fn a_slot_records_from_the_next_bar_and_plays_its_take_looped() {
 #[test]
 fn the_arrangement_records_after_the_count_in() {
     let mut rig = rig(project());
-    rig.session.set_new_clips_take_track_colour(false);
+    rig.session.set_new_clips_take_track_color(false);
     rig.run("track.setArm", json!({ "track": 1, "armed": true })).unwrap();
     rig.run("transport.setCountIn", json!({ "bars": 1 })).unwrap();
     let started = rig.run("transport.record", json!({ "on": true })).unwrap();
@@ -228,7 +228,7 @@ fn the_arrangement_records_after_the_count_in() {
     assert_eq!(lane.clips.len(), 1);
     let clip = &lane.clips[0];
     assert_ne!(clip.id.0, 0, "the take's clip has an id the clip commands take");
-    assert_eq!(clip.color, Some(suhina_session::colours::MIDI));
+    assert_eq!(clip.color, Some(suhina_session::colors::MIDI));
     // It ends where the playhead was when asked: within a block of beat 3.
     assert!(close(clip.start, 0.0) && (clip.length - 3.0).abs() < 0.02, "{clip:?}");
     let got = notes(p.content(clip.content).unwrap());
@@ -470,10 +470,10 @@ fn moving_back_while_recording_keeps_each_pass_as_a_take_and_the_latest_plays() 
     assert!(clips.iter().all(|c| c.id.0 != 0), "comped clips have ids: {clips:?}");
     rig.run("edit.undo", json!({})).unwrap();
     assert_eq!(lane_clips(&rig.session, 1)[0].content, second.content);
-    // A part comped with the take lane's colour shows it on the track (#953).
+    // A part comped with the take lane's color shows it on the track (#953).
     rig.run("take.comp", json!({ "track": 1, "take": 1, "start": 0.0, "end": 1.0, "color": "#33aa55" })).unwrap();
-    let coloured = lane_clips(&rig.session, 1);
-    assert_eq!(coloured.iter().find(|c| close(c.start, 0.0)).and_then(|c| c.color), Some(Rgb(0x33, 0xaa, 0x55)));
+    let colored = lane_clips(&rig.session, 1);
+    assert_eq!(colored.iter().find(|c| close(c.start, 0.0)).and_then(|c| c.color), Some(Rgb(0x33, 0xaa, 0x55)));
     assert!(rig.run("take.comp", json!({ "track": 1, "take": 1, "color": "green" })).is_err());
     rig.run("edit.undo", json!({})).unwrap();
     // A take can be deleted; the track keeps its clips.

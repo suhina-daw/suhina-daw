@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! What a scene paints, as text: one line per shape of its last frame, in paint order, with its
-//! place, size and colours. A change that should leave a theme's look alone leaves this listing
+//! place, size and colors. A change that should leave a theme's look alone leaves this listing
 //! alone, so its digest, held by theme in `tests/painted/`, checks "looks the same" without a GPU (#1023).
 //!
 //! Places and sizes are rounded to a quarter of a point, so a last-bit difference in a system's
-//! `sin` or `cos` between machines does not change a listing; colours are exact.
+//! `sin` or `cos` between machines does not change a listing; colors are exact.
 
 use std::fmt::Write;
 
@@ -127,7 +127,7 @@ fn shape(out: &mut String, ctx: &egui::Context, depth: usize, shape: &Shape) {
                     // A path as Linux writes it: a dialog joins its folder and file with the
                     // system's separator, `\` on Windows.
                     let text = job.text.get(s.byte_range.start.0..s.byte_range.end.0).unwrap_or("").replace('\\', "/");
-                    // The whole format: font, colours, background, italics, lines, alignment.
+                    // The whole format: font, colors, background, italics, lines, alignment.
                     format!("{text:?} {:?}", s.format)
                 })
                 .collect();
@@ -220,7 +220,7 @@ pub struct Drawing {
 
 /// `scene` drawn in `subject`: driven, settled, then one more frame.
 ///
-/// Drawn on a thread of its own, whose window state (the colour map, the style engine, the user
+/// Drawn on a thread of its own, whose window state (the color map, the style engine, the user
 /// sheet) starts afresh and goes with it: one drawing never depends on the one before, and the
 /// caller's state is left alone. The window looks like Linux whichever system draws it
 /// ([`suhina_ui::kit::platform`]): shortcuts as `Ctrl+C`, Settings' plug-in formats and notes as

@@ -4,7 +4,7 @@ read_when: changing the model, track, channel, clip content, lane, pattern, impo
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-06
+last_verified: 2026-11-23
 covers:
   - crates/model/src/lib.rs
   - crates/model/src/scale.rs
@@ -263,7 +263,7 @@ version 9 and reads an older file's region state into every clip of that content
   format keeps its own: a VST2 plug-in's state is the standard VST2 bank (`.fxb`), which other
   hosts and a VST3 version of the plug-in read (ADR 0006, decision 8).
 - Arrangement markers are a beat and a name: what a Live Set's locators hold, and what
-  DAWproject's arrangement `Markers` (a time and a name, with an optional colour) hold.
+  DAWproject's arrangement `Markers` (a time and a name, with an optional color) hold.
 - The core will grow (automation, tempo maps, comping). Each addition is checked
   against at least two formats before it lands, so it does not bake in one DAW's assumptions.
 - Positions are `f64` beats in the core. If rounding errors appear against tick-based formats

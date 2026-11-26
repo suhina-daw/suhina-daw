@@ -166,11 +166,8 @@ pub(super) fn piano_clip_from(project: &Project, track: TrackId, clip: &Clip) ->
         })
         .reduce(f64::min);
     let position = project.tracks.iter().position(|t| t.id == track)?;
-    let color = project
-        .tracks
-        .get(position)
-        .map(|track| track_colour(track, position))
-        .unwrap_or(suhina_session::colours::MIDI);
+    let color =
+        project.tracks.get(position).map(|track| track_color(track, position)).unwrap_or(suhina_session::colors::MIDI);
     let ts = project.transport.time_signature;
     let bar_beats =
         if ts.denominator == 0 { 4.0 } else { f64::from(ts.numerator.max(1)) * 4.0 / f64::from(ts.denominator) };

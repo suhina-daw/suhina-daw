@@ -1,9 +1,9 @@
 /* High Contrast, reduced to a few settings: every token below follows them. */
-@property --ground { syntax: "<color>"; initial-value: #000000; label: "Background"; group: "Colours"; }
-@property --surface { syntax: "<color>"; initial-value: #0A0A0A; label: "Panels"; group: "Colours"; }
-@property --ink { syntax: "<color>"; initial-value: #FFFFFF; label: "Text"; group: "Colours"; }
-@property --tint { syntax: "<color>"; initial-value: #FFD400; label: "Accent"; group: "Colours"; }
-@property --highlight { syntax: "<color>"; initial-value: #FFD400; label: "Selection"; group: "Colours"; }
+@property --ground { syntax: "<color>"; initial-value: #000000; label: "Background"; group: "Colors"; }
+@property --surface { syntax: "<color>"; initial-value: #0A0A0A; label: "Panels"; group: "Colors"; }
+@property --ink { syntax: "<color>"; initial-value: #FFFFFF; label: "Text"; group: "Colors"; }
+@property --tint { syntax: "<color>"; initial-value: #FFD400; label: "Accent"; group: "Colors"; }
+@property --highlight { syntax: "<color>"; initial-value: #FFD400; label: "Selection"; group: "Colors"; }
 :root {
   --window-background: var(--ground);
   --panel-background: var(--surface);

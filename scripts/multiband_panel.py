@@ -7,8 +7,8 @@ The layout follows the design boards D (fitted to the device row) and E (the exp
 panels are drawn from expressions over the device's parameters and its live values (`readout`:
 per band its level and gain change, the output meter and the input spectrum), so the bands,
 crossovers, thresholds, curves and the signal follow the sound. Crossovers and thresholds are
-handles dragged in the band view. Every colour follows the theme: text, panel, control, border and
-accent are the SDK's theme colours, and the display, the band colours and the gain line are theme
+handles dragged in the band view. Every color follows the theme: text, panel, control, border and
+accent are the SDK's theme colors, and the display, the band colors and the gain line are theme
 tokens (`--device-display`, `--device-series-1..3`, `--device-highlight`) a theme may set.
 Run from the repository root: python scripts/multiband_panel.py
 """
@@ -24,7 +24,7 @@ PANEL = [3, 1, 2, 255]
 CONTROL = [3, 1, 3, 255]
 BORDER = [3, 1, 4, 255]
 ACCENT = [3, 1, 5, 255]
-# Theme tokens (THEME_TOKENS): their CSS property or the design's colour.
+# Theme tokens (THEME_TOKENS): their CSS property or the design's color.
 DISPLAY = [3, 0, 1, 255]
 HIGHLIGHT = [3, 0, 5, 255]
 SPECTRUM_COLOR = [3, 0, 6, 255]
@@ -217,7 +217,7 @@ def band_view(x0, y0, w, h, big=False):
         gain_y = add(zero, cut)
         draws.append(rect(left, zero, sub(right, left), cut, tint(HIGHLIGHT, 40)))
         draws.append(line([left, gain_y], [right, gain_y], HIGHLIGHT, 2.0 if big else 1.8))
-    # Thresholds: dashed in the band's colour, a ring on the above one in the middle of its band.
+    # Thresholds: dashed in the band's color, a ring on the above one in the middle of its band.
     for i, (bid, _, color) in enumerate(BANDS):
         left, right = xs[i], xs[i + 1]
         above = level_y(par(f"{bid}AboveThreshold"), y0, h)
@@ -234,7 +234,7 @@ def band_view(x0, y0, w, h, big=False):
         draws.append(circle([x, y0 + h - (16.0 if big else 12.0)], 7.0 if big else 5.0, ACCENT))
         draws.append(text(add(x, -46.0), y0 + h - (34.0 if big else 28.0), "", ACCENT, value_size, parameter=pid,
                           fmt="frequency", decimals=0))
-    # Band names with their gain change; the chosen band's is boxed in its colour.
+    # Band names with their gain change; the chosen band's is boxed in its color.
     for i, (bid, name, color) in enumerate(BANDS):
         left = xs[i]
         chosen = equal(par("band"), float(i))
@@ -464,7 +464,7 @@ def ott():
 
 
 def band_meters(cid, bounds, visible=None):
-    """Each band's own output peak, after its gain: a bar in the band's colour under its letter, on
+    """Each band's own output peak, after its gain: a bar in the band's color under its letter, on
     the output meter's scale (`meterRange`), which dragging changes here too."""
     _, _, w, h = bounds
     top, bottom = 30.0, h - 6.0

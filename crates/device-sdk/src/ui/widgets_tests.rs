@@ -3,6 +3,35 @@
 
 use super::*;
 #[test]
+fn the_compressor_display_takes_no_binding_and_needs_the_compressors_parameters() {
+    let control = |y: Option<UiBinding>| CustomControl {
+        widget: Some(Widget::CompressorDisplay),
+        id: "display".into(),
+        name: "Compressor display".into(),
+        tooltip: String::new(),
+        bounds: [0., 0., 316., 168.],
+        visible_when: None,
+        gesture: UiGesture::Drag,
+        x: None,
+        y,
+        drawing: vec![],
+    };
+    let parameters: Vec<Parameter> = ["threshold", "ratio", "knee", "output", "mix"]
+        .iter()
+        .map(|id| Parameter::new(*id, *id, (0., 1.), 0.))
+        .collect();
+    let ui = DeviceUi { controls: vec![control(None)], ..DeviceUi::default() };
+    assert!(ui.validate(&parameters).is_ok());
+    assert!(ui.controls[0].drawings().is_empty(), "the host draws it");
+    let ui = DeviceUi { controls: vec![control(Some(UiBinding::new("threshold")))], ..DeviceUi::default() };
+    assert!(ui.validate(&parameters).is_err(), "it edits the parameters by id, not through a binding");
+    let ui = DeviceUi { controls: vec![control(None)], ..DeviceUi::default() };
+    assert!(
+        ui.validate(&parameters[..4]).is_err(),
+        "without the compressor's parameters it is no compressor's display"
+    );
+}
+#[test]
 fn the_eq_curves_display_takes_no_binding_and_draws_nothing_of_its_own() {
     let control = |x: Option<UiBinding>, y: Option<UiBinding>| CustomControl {
         widget: Some(Widget::EqCurve),
