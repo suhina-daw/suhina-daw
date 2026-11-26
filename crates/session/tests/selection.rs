@@ -39,6 +39,14 @@ fn selecting_a_track_selects_its_first_device_with_its_parameters() {
         assert!(param["unit"].is_string(), "{param}");
         assert!(param["kind"].is_string(), "a controller tells its dials from its switches: {param}");
     }
+    // The dials a controller's knobs take, in the panel's order.
+    let dials = picked["device"]["dials"].as_array().unwrap_or_else(|| panic!("the dials: {picked}"));
+    assert!(!dials.is_empty(), "{picked}");
+    for id in dials {
+        let id = id.as_str().unwrap_or_default();
+        let param = params.iter().find(|p| p["id"] == id).unwrap_or_else(|| panic!("dial {id} in {picked}"));
+        assert!(matches!(param["kind"].as_str(), Some("continuous" | "integer")), "a dial, not a switch: {param}");
+    }
     // The reading agrees with the command's answer.
     let read = selection(&mut session);
     assert_eq!(read["device"]["device_id"], picked["device"]["device_id"], "{read}");

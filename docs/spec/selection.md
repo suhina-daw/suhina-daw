@@ -73,8 +73,12 @@ agent attached to the app may run them (the selection is project state, not sett
   `min`, `max`, `unit` and `kind` beside `id` and `value` (`continuous`, `integer`, `toggle` or
   `choice`) — the registry held them, and the `.sd` devices' branch of the reading already
   emitted its own `control` — so a controller's knob can take the continuous dials and leave the
-  switches to the panel, scale onto the unit and draw the position; a plug-in's are its stored
-  values, and `device.pluginParams` is the way to its full list.
+  switches to the panel, scale onto the unit and draw the position. A built-in also carries
+  `dials`: the parameter ids its knobs can turn, in the order its compact panel reads them —
+  left to right and top to bottom, then the dials the generated list places under the canvas in
+  parameter order — so a controller's knobs follow the device's layout, not its parameter
+  order. A plug-in's parameters are its stored values, and `device.pluginParams` is the way to
+  its full list.
 - With nothing selected, both are nothing and the parameters are empty.
 
 ## The window follows
