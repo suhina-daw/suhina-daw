@@ -1,7 +1,9 @@
 -- The Akai APC40 MkII as a Suhina surface program: the 5x8 clip grid, the scene launch
--- buttons, the per-track stop, activator, solo and record-arm buttons, the transport's play and
--- metronome buttons, and the mixer — the eight faders, the master fader and the pan encoders
--- with their LED rings — with feedback on every button.
+-- buttons, the per-track stop, activator, solo, record-arm and select buttons, the transport's
+-- play and metronome buttons, the device control section — the eight knobs on the selected
+-- device's parameter bank, Device and Bank left/right, Device On/Off, and the master select —
+-- and the mixer, the eight faders, the master fader and the pan encoders with their LED rings,
+-- with feedback on every button.
 --
 -- Suhina's own, written from public documentation alone (the repository's clean-room rules):
 -- Akai's public *APC40 Mk2 Communication Protocol v1.2* (January 19, 2015) for the note and CC
@@ -41,10 +43,22 @@ local OFF, DIM, WHITE, RED, YELLOW, GREEN = 0, 2, 3, 5, 13, 21
 -- off, 1 lit, 2 triggered.
 local ON, OFF_BUTTON, STOP_LIT, STOP_TRIGGERED = 127, 0, 1, 2
 
+-- The device control section (the protocol document's DEVICE KNOB 1-8 on CC 16-23, their ring
+-- types on CC 24-31; DEVICE < > on notes 58-59, BANK < > on notes 60-61, DEV. ON/OFF on note
+-- 62; the TRACK SELECT buttons on note 51 of each track's channel, MASTER on note 80).
+local KNOBS = 8
+local DEVICE_LEFT, DEVICE_RIGHT, BANK_LEFT, BANK_RIGHT, DEVICE_ON_OFF = 58, 59, 60, 61, 62
+local TRACK_SELECT, MASTER_SELECT = 51, 80
+
 -- What the subscriptions last reported: the grid (which slots hold clips, which have stop
--- buttons), the launcher's state (what plays and what is queued, the transport), and the
--- tracks (mute, solo, armed, pan).
-local grid, state, strips = nil, nil, nil
+-- buttons), the launcher's state (what plays and what is queued, the transport), the tracks
+-- (mute, solo, armed, pan), and the selection (the selected track and device, #1679).
+local grid, state, strips, selection = nil, nil, nil, nil
+
+-- The bank of eight parameters the device knobs show: 0 for the first eight, 1 for the next,
+-- and back to 0 when another device is selected.
+local bank = 0
+local bank_device = nil
 
 -- What each LED last had, so a refresh writes only what changed; and the output port.
 local leds = {}
@@ -56,6 +70,65 @@ local kinds = {}
 -- JSON null crosses as suhina.null, which is neither nil nor false.
 local function is_nil(value)
     return value == nil or value == suhina.null
+end
+
+-- The selected device from the selection reading, or nil with nothing selected.
+local function selected_device()
+    if is_nil(selection) or is_nil(selection.device) then
+        return nil
+    end
+    return selection.device
+end
+
+-- Every parameter the selected device lists, in the order its panel shows them.
+local function device_params()
+    local device = selected_device()
+    if device == nil or is_nil(device.params) then
+        return nil
+    end
+    return device.params
+end
+
+-- The device the bank belongs to, so another one starts at its first bank.
+local function device_key()
+    local device = selected_device()
+    if device == nil then
+        return nil
+    end
+    return tostring(selection.track) .. ":" .. tostring(device.path)
+end
+
+-- The parameter a knob (0-7) shows in the open bank, or nil past the device's last one.
+local function knob_param(knob)
+    local params = device_params()
+    if params == nil then
+        return nil
+    end
+    return params[bank * KNOBS + knob + 1]
+end
+
+-- The last bank the device has: the one holding its last parameter.
+local function last_bank()
+    local params = device_params()
+    if params == nil or #params == 0 then
+        return 0
+    end
+    return math.floor((#params - 1) / KNOBS)
+end
+
+-- A parameter's value as a ring position: 0 at its minimum, 127 at its maximum.
+local function ring_position(param)
+    local min, max, value = param.min, param.max, param.value
+    if type(min) ~= "number" or type(max) ~= "number" or type(value) ~= "number" or max <= min then
+        return 0
+    end
+    local position = (value - min) / (max - min) * 127
+    if position < 0 then
+        return 0
+    elseif position > 127 then
+        return 127
+    end
+    return math.floor(position + 0.5)
 end
 
 local function strip_of(track)
@@ -219,6 +292,28 @@ local function led_cc(controller, value)
     end
 end
 
+-- The device section's lights: each knob's ring shows its parameter's position in the bank (the
+-- single-dot style), the device arrows while a device is selected, the bank arrows where there
+-- is another page, and Device On/Off whether the device is on.
+local function refresh_device()
+    for knob = 0, KNOBS - 1 do
+        local param = knob_param(knob)
+        if param ~= nil and type(param.min) == "number" and type(param.max) == "number" then
+            led_cc(24 + knob, 1)
+            led_cc(16 + knob, ring_position(param))
+        else
+            led_cc(24 + knob, 0)
+            led_cc(16 + knob, 0)
+        end
+    end
+    local device = selected_device()
+    led(0, DEVICE_LEFT, device ~= nil and ON or OFF_BUTTON)
+    led(0, DEVICE_RIGHT, device ~= nil and ON or OFF_BUTTON)
+    led(0, BANK_LEFT, bank > 0 and ON or OFF_BUTTON)
+    led(0, BANK_RIGHT, bank < last_bank() and ON or OFF_BUTTON)
+    led(0, DEVICE_ON_OFF, (device ~= nil and device.enabled == true) and ON or OFF_BUTTON)
+end
+
 local function refresh()
     for track = 0, TRACKS - 1 do
         for scene = 0, SCENES - 1 do
@@ -228,6 +323,9 @@ local function refresh()
         led(track, 50, activator_velocity(track))
         led(track, 49, solo_velocity(track))
         led(track, 48, arm_velocity(track))
+        -- The track select buttons are radio style: the selected track's is lit.
+        local id = mixer_track(track)
+        led(track, TRACK_SELECT, (id ~= nil and not is_nil(selection) and selection.track == id) and ON or OFF_BUTTON)
         -- The pan ring: pan spread style, then the position (0 at full left, 127 full right).
         led_cc(56 + track, 3)
         local strip = strip_of(track)
@@ -247,6 +345,8 @@ local function refresh()
     end
     led(0, 91, play_velocity())
     led(0, 90, metronome_velocity())
+    led(0, MASTER_SELECT, (not is_nil(selection) and selection.track_name == "Main") and ON or OFF_BUTTON)
+    refresh_device()
 end
 
 -- A press: pads and scenes launch, the track buttons act, the transport runs.
@@ -281,6 +381,31 @@ local function press(channel, note)
         end
     elseif channel == 0 and note == 90 then
         suhina.command("transport.setMetronome", { on = not (state ~= nil and state.metronome == true) })
+    elseif channel == 0 and note == DEVICE_LEFT then
+        suhina.command("device.selectPrevious")
+    elseif channel == 0 and note == DEVICE_RIGHT then
+        suhina.command("device.selectNext")
+    elseif channel == 0 and note == BANK_LEFT then
+        if bank > 0 then
+            bank = bank - 1
+            refresh()
+        end
+    elseif channel == 0 and note == BANK_RIGHT then
+        if bank < last_bank() then
+            bank = bank + 1
+            refresh()
+        end
+    elseif channel == 0 and note == DEVICE_ON_OFF then
+        local device = selected_device()
+        if device ~= nil then
+            suhina.command("device.setEnabled", {
+                track = selection.track,
+                device = device.path,
+                enabled = device.enabled ~= true,
+            })
+        end
+    elseif channel == 0 and note == MASTER_SELECT then
+        suhina.command("track.select", { track = "main" })
     elseif channel >= 0 and channel < TRACKS then
         local id = mixer_track(channel)
         if id == nil then
@@ -299,8 +424,9 @@ local function press(channel, note)
             -- Record arm takes one track, not a list.
             local armed = not (strip ~= nil and strip.armed == true)
             suhina.command("track.setArm", { track = id, armed = armed })
+        elseif note == TRACK_SELECT then
+            suhina.command("track.select", { track = id })
         end
-        -- note 51 (track select) waits for the selection to reach the window (#1679).
     end
 end
 
@@ -317,6 +443,21 @@ local function cc_received(channel, controller, value)
             db = math.floor((-60 + (value / 127) * 66) * 10) / 10
         end
         suhina.command("track.setVolume", { tracks = { id }, db = db }, "apc40-mkii volume " .. id)
+    elseif controller >= 16 and controller <= 23 and channel == 0 then
+        -- The device knobs: the bank's parameters, the knob's 0-127 scaled onto the parameter's
+        -- own range. One gesture per knob and parameter, so a turn is one undo step.
+        local device = selected_device()
+        local param = knob_param(controller - 16)
+        if device == nil or param == nil or type(param.min) ~= "number" or type(param.max) ~= "number" then
+            return
+        end
+        local scaled = param.min + (value / 127) * (param.max - param.min)
+        suhina.command("device.setParam", {
+            track = selection.track,
+            device = device.path,
+            param = param.id,
+            value = scaled,
+        }, "apc40-mkii device " .. tostring(selection.track) .. ":" .. tostring(device.path) .. ":" .. tostring(param.id))
     elseif controller >= 48 and controller <= 55 and channel == 0 then
         local id = mixer_track(controller - 48)
         if id == nil then
@@ -359,6 +500,14 @@ suhina.on_state(function(token, value)
         state = value
     elseif kind == "strips" then
         strips = value
+    elseif kind == "selection" then
+        selection = value
+        -- Another device starts at its first bank, as the controller's focus does.
+        local key = device_key()
+        if key ~= bank_device then
+            bank_device = key
+            bank = 0
+        end
     end
     refresh()
 end)
@@ -376,3 +525,4 @@ end)
 kinds[suhina.subscribe("project.launcher")] = "grid"
 kinds[suhina.subscribe("launcher.state")] = "state"
 kinds[suhina.subscribe("project.tracks")] = "strips"
+kinds[suhina.subscribe("project.selection")] = "selection"

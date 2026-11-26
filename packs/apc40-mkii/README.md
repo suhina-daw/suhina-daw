@@ -1,9 +1,11 @@
 # APC40 MkII — Suhina's surface program
 
 The Akai APC40 MkII as a Suhina surface program: the 5x8 clip grid, the scene launch buttons,
-the per-track stop, activator (mute), solo and record-arm buttons, the transport's play and
-metronome buttons, and the mixer — the eight track faders, the master fader and the pan
-encoders with their LED rings — with feedback on every button.
+the per-track stop, activator (mute), solo, record-arm and select buttons, the transport's play
+and metronome buttons, the device control section — the eight knobs on the selected device's
+parameter bank, Device and Bank left/right, Device On/Off, and the master select — and the
+mixer, the eight track faders, the master fader and the pan encoders with their LED rings, with
+feedback on every button.
 
 Suhina ships it: the files ride inside the executable and unpack into the library's
 `Scripts/MIDI/apc40-mkii/` folder, and the app installs the program into its extensions store so
@@ -31,12 +33,20 @@ affiliation with Akai, and the name says what hardware the script is for — no 
 
 Wired: the clip grid (`clip.launch`, a slot's stop button for an empty slot), the scene
 buttons (`scene.launch`), the track stop, the activator (`track.setMute`), solo
-(`track.setSolo`), record arm (`track.setArm`), play/stop and the metronome, the eight faders
-(`track.setVolume`, one gesture each), the master fader (`mixer.setMainVolume`) and the pan
-encoders (`track.setPan`, one gesture each) with their rings.
+(`track.setSolo`), record arm (`track.setArm`), the track select buttons and master select
+(`track.select`), play/stop and the metronome, the eight faders (`track.setVolume`, one gesture
+each), the master fader (`mixer.setMainVolume`) and the pan encoders (`track.setPan`, one
+gesture each) with their rings.
 
-Not yet: the track-select and master-select buttons and the device control section (they wait
-for the selection, #1679); the sends, user mode, crossfader, device controls, tempo encoder,
-nudge, tap tempo, session record and shift; blinking queued pads; and the clip's own colour on
-its pad (a slot with a clip lights white, its track's states light green, yellow, red and
-grey).
+The device control section follows the selection the window, commands and agents share
+(`project.selection`, #1679): the eight knobs turn the selected device's parameters in banks of
+eight (`device.setParam`, one gesture each), Device left/right step along the chain
+(`device.selectPrevious`, `device.selectNext`), Bank left/right take the next or previous eight
+parameters, and Device On/Off switches the device (`device.setEnabled`). Each knob's ring shows
+its parameter's position, the bank arrows light where there is another page, the device arrows
+while a device is selected, and the track select buttons light for the selected track.
+
+Not yet: the sends, user mode, crossfader, Device Lock, the Clip/Dev and Detail View buttons,
+the tempo encoder, nudge, tap tempo, session record and shift; blinking queued pads; and the
+clip's own colour on its pad (a slot with a clip lights white, its track's states light green,
+yellow, red and grey).

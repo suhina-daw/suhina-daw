@@ -23,7 +23,10 @@ covers:
   `Scripts/MIDI/` folder at every start — each file only when it is missing — and the store
   install, with its tests: the shipped content installs when the store does not hold it, a
   removal is remembered, and only a copy still carrying exactly the recorded content is
-  updated. The script's end-to-end run through the supervisor follows.
+  updated. The script's device control section is tested against a stand-in Suhina
+  (`crates/lua-runner/tests/apc40.rs`): the eight knobs, the bank pages and the device arrows
+  change the selected device (#1679). The whole script's run through the supervisor — the mode
+  message, a press of each strip button, the LEDs — follows.
 
 ## What ships
 
@@ -77,10 +80,12 @@ one; ADR 0019 › 10).
   while adding the library's folder back is what brings it in, an edited copy — or the user's
   own extension under the id — is left alone, an untouched copy is replaced when the app
   carries a newer version, and a failure is not fatal.
-- The shipped script: the end-to-end tests every surface program gets
-  (`crates/lua-runner/tests/programs.rs`), run against the pack's files — it starts, the mode
-  message goes out when the ports open, a press of each strip button sends its command, and the
-  LEDs follow the project.
+- The shipped script's device section (`crates/lua-runner/tests/apc40.rs`): the pack's script
+  runs against a stand-in Suhina; the eight knobs, the bank pages and the device arrows are
+  driven and the commands and rings they send are checked (#1679).
+- The whole shipped script, end to end (`crates/lua-runner/tests/programs.rs`), run against the
+  pack's files: the mode message goes out when the ports open, a press of each strip button sends
+  its command, and the LEDs follow the project.
 - The start: a fresh library gets the `Scripts/MIDI/` folder and the store entry, and a removed
   shipped script stays removed on the next start.
 

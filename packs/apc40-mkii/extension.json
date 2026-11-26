@@ -16,7 +16,7 @@
   "programs": [
     {
       "path": "script.lua",
-      "sha256": "ffe71b87c60544ea8712de84aadb61319f625af0623c8681a33a2455847a8e97"
+      "sha256": "946375d49d8c305b0d9ddf472241d9eae8ba92e677031f4050771fd9dc49282f"
     }
   ],
   "ports": [
