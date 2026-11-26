@@ -7,7 +7,10 @@ last_verified: 2026-11-21
 covers:
   - crates/session/src/selection.rs
   - crates/session/src/commands/selection.rs
+  - crates/session/src/commands/device.rs
+  - crates/session/src/devices.rs
   - crates/session/src/commands.rs
+  - crates/device-registry/src/lib.rs
   - crates/ui/src/app.rs
   - crates/ui/src/app/actions.rs
 ---
@@ -77,9 +80,24 @@ agent attached to the app may run them (the selection is project state, not sett
   `dials`: the parameter ids its knobs can turn, in the order its compact panel reads them —
   left to right and top to bottom, then the dials the generated list places under the canvas in
   parameter order — so a controller's knobs follow the device's layout, not its parameter
-  order. A plug-in's parameters are its stored values, and `device.pluginParams` is the way to
+  order. A dial also carries `normalized`: the position its panel's dial shows, 0 to 1, beside
+  `value`. A plug-in's parameters are its stored values, and `device.pluginParams` is the way to
   its full list.
 - With nothing selected, both are nothing and the parameters are empty.
+
+### A controller's dials
+
+A controller's knob takes a dial from `dials` and sends `device.setParam` with `normalized`
+(0 to 1) — the position its panel's dial shows — instead of `value`. The parameter's own scale
+(linear, logarithmic or a gain law) turns it into the unit, and the reading carries the same
+`normalized` for the ring, so a logarithmic time or frequency moves smoothly instead of jumping
+between the ends of a linear value range. A controller maps the page the device opens on; a page
+or operator change in the window is not followed yet (below).
+
+The FM Synth is the first such panel: its page 0, operator 1 envelope dials (attack, decay,
+sustain, release, initial, peak, by vel and by key) come first, then the always-visible LFO,
+filter, Spread, Volume and Random dials; banks page through the rest
+([FM Synth](fm-synth.md#panel), #1718).
 
 ## The window follows
 
@@ -109,3 +127,5 @@ agent attached to the app may run them (the selection is project state, not sett
 - Stepping into a device group's branches with the next/previous commands (a device inside one
   is selected by path).
 - Saving the selection with the project, or naming it in `project.info`.
+- A controller following a device panel's page or operator change in the window; it maps the
+  page the panel opens on.
