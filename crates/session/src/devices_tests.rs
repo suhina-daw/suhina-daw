@@ -44,10 +44,14 @@ fn a_plugins_generated_panel_gives_its_sliders_to_the_knobs() {
     hidden.hidden = true;
     let mut read_only = param(5, "Read only", 0.0, 1.0, 0.0, 0, false);
     read_only.read_only = true;
+    let mut cutoff = param(2, "Cutoff", 0.0, 1.0, 0.1, 0, false);
+    cutoff.text = "0.1".into();
+    let mut shape = param(3, "Shape", 0.0, 3.0, 1.0, 3, true);
+    shape.text = "1".into();
     let list = vec![
         param(1, "Bypass", 0.0, 1.0, 0.0, 1, false),
-        param(2, "Cutoff", 0.0, 1.0, 0.1, 0, false),
-        param(3, "Shape", 0.0, 3.0, 1.0, 3, true),
+        cutoff,
+        shape,
         hidden,
         read_only,
         param(6, "Flat", 0.5, 0.5, 0.5, 0, false),
@@ -63,6 +67,8 @@ fn a_plugins_generated_panel_gives_its_sliders_to_the_knobs() {
     assert_eq!(params[0]["kind"], "toggle", "{}", params[0]);
     assert_eq!(params[1]["kind"], "continuous", "{}", params[1]);
     assert_eq!(params[2]["kind"], "continuous", "a list drawn as a slider: {}", params[2]);
+    assert_eq!(params[1]["text"], "", "the plug-in's text is for its own value: {}", params[1]);
+    assert_eq!(params[2]["text"], "1", "an unchanged value keeps its text: {}", params[2]);
     assert_eq!(params[3]["name"], "7", "an unnamed parameter names its id: {}", params[3]);
     // A switch stays on the panel; every slider is a dial, in the same order.
     assert_eq!(dials, json!([2, 3, 7]));

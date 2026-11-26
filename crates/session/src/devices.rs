@@ -721,13 +721,8 @@ pub(crate) fn plugin_panel_params(device: &Device, list: &[suhina_plugins::Param
     let mut params = Vec::with_capacity(shown.len());
     let mut dials = Vec::new();
     for p in shown {
-        let value = device
-            .params
-            .iter()
-            .rev()
-            .find(|stored| param_id(&stored.id) == Some(p.id))
-            .map_or(p.value, |stored| stored.value)
-            .clamp(p.min, p.max);
+        let stored = device.params.iter().find(|stored| param_id(&stored.id) == Some(p.id));
+        let value = stored.map_or(p.value, |stored| stored.value).clamp(p.min, p.max);
         let toggle = p.steps == 1 && p.min == 0.0 && p.max == 1.0;
         if !toggle {
             dials.push(json!(p.id));
@@ -740,7 +735,8 @@ pub(crate) fn plugin_panel_params(device: &Device, list: &[suhina_plugins::Param
             "max": p.max,
             "default": p.default.clamp(p.min, p.max),
             "value": value,
-            "text": p.text,
+            // The plug-in's own text only while it stands for the value the panel shows.
+            "text": if stored.is_none_or(|stored| stored.value == p.value) { p.text.clone() } else { String::new() },
             "steps": p.steps,
             "list": p.list,
             "automatable": p.automatable,
