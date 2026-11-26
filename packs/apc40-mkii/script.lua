@@ -1,27 +1,29 @@
 -- The Akai APC40 MkII as a Suhina surface program: the 5x8 clip grid, the scene launch
 -- buttons, the per-track stop, activator, solo, record-arm and select buttons, the transport's
 -- play and metronome buttons, the device control section — the eight knobs on the selected
--- device's parameter bank, Device and Bank left/right, Device On/Off, and the master select —
+-- device's dials in banks of eight, Device and Bank left/right, Device On/Off, and the master
+-- select —
 -- and the mixer, the eight faders, the master fader and the pan encoders with their LED rings,
 -- with feedback on every button.
 --
 -- Suhina's own, written from public documentation alone (the repository's clean-room rules):
 -- Akai's public *APC40 Mk2 Communication Protocol v1.2* (January 19, 2015) for the note and CC
 -- map, the RGB values and the Application/Configuration message that puts the device in the
--- mode the document names Ableton Live (0x41), and Akai's public MIDI implementation chart for
--- the control map. See README.md beside this file. Suhina content: CC0-1.0.
+-- mode the document names Alternate Ableton Live (0x42), and Akai's public MIDI implementation
+-- chart for the control map. See README.md beside this file. Suhina content: CC0-1.0.
 
 local TRACKS = 8
 local SCENES = 5
 
 -- The device wakes in its Generic mode, where the activator, solo and record-arm buttons are
--- latching toggles that drive their own lights; Ableton Live mode (0x41) makes every button
--- momentary — a press is always note-on 127, a release note-off — and hands the buttons' LEDs
--- to the host. The message is the Application/Configuration identifier of the protocol
--- document; its trailing bytes are the host application's version, as the document and the
--- public examples send. The mode lasts until the device is powered off, so it goes out
--- whenever the ports are (re)opened.
-local LIVE_MODE = string.char(0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41, 0x09, 0x07, 0x01, 0xF7)
+-- latching toggles that drive their own lights. The document's Alternate Ableton Live Mode
+-- (0x42) makes every button momentary — a press is always note-on 127, a release note-off —
+-- and hands every LED to the host, so a knob's ring follows its parameter without the device's
+-- own ring updates fighting them. The message is the Application/Configuration identifier of
+-- the protocol document; its trailing bytes are the host application's version, as the
+-- document and the public examples send. The mode lasts until the device is powered off, so it
+-- goes out whenever the ports are (re)opened.
+local LIVE_MODE = string.char(0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x42, 0x09, 0x07, 0x01, 0xF7)
 
 -- The note that lights the pad of (track, scene): the chart numbers clip launch 1 at the
 -- bottom-left, left to right, bottom row first — note 0 is track 1, scene 5 (the bottom), and
@@ -89,6 +91,45 @@ local function device_params()
     return device.params
 end
 
+-- The controls a knob can turn: a built-in's continuous or whole-number parameter, an .sd
+-- device's slider or knob, and a group's own continuous parameters. Switches, buttons and
+-- choices stay on the panel, where a press is a press and not a knob's half turn.
+local DIAL_CONTROLS = {
+    knob = true,
+    log_knob = true,
+    slider = true,
+    log_slider = true,
+    number = true,
+    vertical_slider = true,
+    integer = true,
+}
+
+local function is_dial(param)
+    if not is_nil(param.kind) then
+        return param.kind == "continuous" or param.kind == "integer"
+    end
+    if not is_nil(param.control) then
+        return DIAL_CONTROLS[param.control] == true
+    end
+    -- A group's parameters and an older reading carry no kind: a range is a dial.
+    return type(param.min) == "number" and type(param.max) == "number"
+end
+
+-- The selected device's dials, in the order its panel lists them.
+local function device_dials()
+    local params = device_params()
+    if params == nil then
+        return nil
+    end
+    local dials = {}
+    for _, param in ipairs(params) do
+        if is_dial(param) then
+            dials[#dials + 1] = param
+        end
+    end
+    return dials
+end
+
 -- The device the bank belongs to, so another one starts at its first bank.
 local function device_key()
     local device = selected_device()
@@ -100,20 +141,20 @@ end
 
 -- The parameter a knob (0-7) shows in the open bank, or nil past the device's last one.
 local function knob_param(knob)
-    local params = device_params()
-    if params == nil then
+    local dials = device_dials()
+    if dials == nil then
         return nil
     end
-    return params[bank * KNOBS + knob + 1]
+    return dials[bank * KNOBS + knob + 1]
 end
 
 -- The last bank the device has: the one holding its last parameter.
 local function last_bank()
-    local params = device_params()
-    if params == nil or #params == 0 then
+    local dials = device_dials()
+    if dials == nil or #dials == 0 then
         return 0
     end
-    return math.floor((#params - 1) / KNOBS)
+    return math.floor((#dials - 1) / KNOBS)
 end
 
 -- A parameter's value as a ring position: 0 at its minimum, 127 at its maximum.
@@ -292,7 +333,7 @@ local function led_cc(controller, value)
     end
 end
 
--- The device section's lights: each knob's ring shows its parameter's position in the bank (the
+-- The device section's lights: each knob's ring shows its dial's position in the bank (the
 -- single-dot style), the device arrows while a device is selected, the bank arrows where there
 -- is another page, and Device On/Off whether the device is on.
 local function refresh_device()
@@ -444,8 +485,7 @@ local function cc_received(channel, controller, value)
         end
         suhina.command("track.setVolume", { tracks = { id }, db = db }, "apc40-mkii volume " .. id)
     elseif controller >= 16 and controller <= 23 and channel == 0 then
-        -- The device knobs: the bank's parameters, the knob's 0-127 scaled onto the parameter's
-        -- own range. One gesture per knob and parameter, so a turn is one undo step.
+        -- The device knobs: the bank's dials, the knob's 0-127 scaled onto the dial's own range. One gesture per knob and parameter, so a turn is one undo step.
         local device = selected_device()
         local param = knob_param(controller - 16)
         if device == nil or param == nil or type(param.min) ~= "number" or type(param.max) ~= "number" then

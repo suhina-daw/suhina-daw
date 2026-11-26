@@ -177,25 +177,28 @@ impl Fake {
         device.set("enabled", true).unwrap();
         // The Utility's parameters in the order its panel lists them: the first bank's eight,
         // then Invert Left (the ninth) and the rest.
+        // Nine dials with switches and a choice between them: the knobs take the dials only,
+        // and the bank's next page holds the ninth.
         let params = [
-            ("gain", -150.0, 35.0, 0.0),
-            ("balance", -1.0, 1.0, 0.0),
-            ("width", 0.0, 4.0, 1.0),
-            ("midSide", -1.0, 1.0, 0.0),
-            ("mono", 0.0, 1.0, 0.0),
-            ("bassMono", 0.0, 1.0, 0.0),
-            ("bassMonoFrequency", 50.0, 500.0, 120.0),
-            ("invertLeft", 0.0, 1.0, 0.0),
-            ("invertRight", 0.0, 1.0, 0.0),
-            ("channel", 0.0, 3.0, 0.0),
-            ("dcFilter", 0.0, 1.0, 0.0),
-            ("mute", 0.0, 1.0, 0.0),
-            ("bassMonoListen", 0.0, 1.0, 0.0),
+            ("gain", "continuous", -150.0, 35.0, 0.0),
+            ("mono", "toggle", 0.0, 1.0, 0.0),
+            ("balance", "continuous", -1.0, 1.0, 0.0),
+            ("width", "continuous", 0.0, 4.0, 1.0),
+            ("midSide", "continuous", -1.0, 1.0, 0.0),
+            ("bassMonoFrequency", "continuous", 50.0, 500.0, 120.0),
+            ("invertLeft", "toggle", 0.0, 1.0, 0.0),
+            ("invertRight", "toggle", 0.0, 1.0, 0.0),
+            ("channel", "choice", 0.0, 3.0, 0.0),
+            ("dial6", "continuous", 0.0, 1.0, 0.0),
+            ("dial7", "continuous", 0.0, 1.0, 0.0),
+            ("dial8", "continuous", 0.0, 1.0, 0.0),
+            ("dial9", "continuous", 0.0, 1.0, 0.0),
         ];
         let list = self.lua.create_table().unwrap();
-        for (index, (id, min, max, value)) in params.iter().enumerate() {
+        for (index, (id, kind, min, max, value)) in params.iter().enumerate() {
             let param = self.lua.create_table().unwrap();
             param.set("id", *id).unwrap();
+            param.set("kind", *kind).unwrap();
             param.set("min", *min).unwrap();
             param.set("max", *max).unwrap();
             param.set("value", *value).unwrap();
@@ -236,8 +239,8 @@ impl Fake {
         self.commands.borrow().iter().map(|c| c.id.clone()).collect()
     }
 
-    fn knob(&self, value: u8) {
-        self.message(&[0xB0, 16, value]);
+    fn knob(&self, knob: u8, value: u8) {
+        self.message(&[0xB0, 16 + knob, value]);
     }
 
     fn press(&self, note: u8) {
@@ -252,8 +255,8 @@ fn the_device_knobs_turn_the_selected_devices_parameters_in_banks_of_eight() {
     // The selection the window and commands share: track 1, the Utility at path 0.
     fake.selection(4, 1, 0);
 
-    // The first knob, full: the Utility's Gain at its maximum, in dB.
-    fake.knob(127);
+    // The first knob, full: the first dial, Gain, at its maximum, in dB.
+    fake.knob(0, 127);
     let command = fake.last_command();
     assert_eq!(command.id, "device.setParam", "{command:?}");
     assert_eq!(command.track, Some(1), "{command:?}");
@@ -262,16 +265,20 @@ fn the_device_knobs_turn_the_selected_devices_parameters_in_banks_of_eight() {
     assert!((command.value.unwrap_or_default() - 35.0).abs() < 1e-6, "{command:?}");
     assert_eq!(command.gesture.as_deref(), Some("apc40-mkii device 1:0:gain"), "{command:?}");
 
-    // Bank right, then the same knob: the ninth parameter, Invert Right.
-    fake.press(61);
-    fake.knob(127);
+    // The second knob skips the toggle between the first two dials: Balance, not Mono.
+    fake.knob(1, 127);
     let command = fake.last_command();
-    assert_eq!(command.param.as_deref(), Some("invertRight"), "{command:?}");
+    assert_eq!(command.param.as_deref(), Some("balance"), "{command:?}");
+    // Bank right, then the first knob: the ninth dial.
+    fake.press(61);
+    fake.knob(0, 127);
+    let command = fake.last_command();
+    assert_eq!(command.param.as_deref(), Some("dial9"), "{command:?}");
     assert!((command.value.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
 
     // Bank left, then the first knob at zero: Gain at its minimum.
     fake.press(60);
-    fake.knob(0);
+    fake.knob(0, 0);
     let command = fake.last_command();
     assert_eq!(command.param.as_deref(), Some("gain"), "{command:?}");
     assert!(command.value.unwrap_or_default() < -100.0, "{command:?}");
@@ -302,6 +309,20 @@ fn the_track_and_master_select_buttons_set_the_selection() {
     let command = fake.last_command();
     assert_eq!(command.id, "track.select", "{command:?}");
     assert_eq!(command.track_name.as_deref(), Some("main"), "{command:?}");
+}
+
+/// The alternate Live mode hands every LED to the host, so a knob's ring follows its parameter
+/// without the device's own ring updates fighting it.
+#[test]
+fn the_program_hands_every_led_to_the_host() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x42];
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.starts_with(&mode)),
+        "the alternate Live mode is sent: {:?}",
+        fake.sends.borrow()
+    );
 }
 
 #[test]

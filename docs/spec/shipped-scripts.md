@@ -24,8 +24,8 @@ covers:
   install, with its tests: the shipped content installs when the store does not hold it, a
   removal is remembered, and only a copy still carrying exactly the recorded content is
   updated. The script's device control section is tested against a stand-in Suhina
-  (`crates/lua-runner/tests/apc40.rs`): the eight knobs, the bank pages and the device arrows
-  change the selected device (#1679). The whole script's run through the supervisor — the mode
+  (`crates/lua-runner/tests/apc40.rs`): the dials, the bank pages, the switches left out and the
+  device arrows change the selected device (#1679). The whole script's run through the supervisor — the mode
   message, a press of each strip button, the LEDs — follows.
 
 ## What ships
@@ -44,8 +44,9 @@ one; ADR 0019 › 10).
   content, AGENTS.md rule 14).
 - A controller's **proprietary modes** are put right by a message its public protocol document
   describes. The APC40 MkII's script sends, when its ports open, the Application/Configuration
-  identifier that puts the device in the mode the document names Ableton Live (0x41): every
-  button momentary, the button LEDs the host's own. The document, and the behaviour it comes
+  identifier that puts the device in the mode the document names Alternate Ableton Live (0x42):
+  every button momentary, every LED the host's own, so the device knobs' rings follow their
+  parameters without the device's own ring updates. The document, and the behaviour it comes
   from, are cited in the script's README.
 
 ## Where it lands, and what runs
@@ -81,8 +82,8 @@ one; ADR 0019 › 10).
   own extension under the id — is left alone, an untouched copy is replaced when the app
   carries a newer version, and a failure is not fatal.
 - The shipped script's device section (`crates/lua-runner/tests/apc40.rs`): the pack's script
-  runs against a stand-in Suhina; the eight knobs, the bank pages and the device arrows are
-  driven and the commands and rings they send are checked (#1679).
+  runs against a stand-in Suhina; the dials, the bank pages, the switches left out and the device
+  arrows are driven and the commands and rings they send are checked (#1679).
 - The whole shipped script, end to end (`crates/lua-runner/tests/programs.rs`), run against the
   pack's files: the mode message goes out when the ports open, a press of each strip button sends
   its command, and the LEDs follow the project.

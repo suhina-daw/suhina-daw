@@ -3,7 +3,8 @@
 The Akai APC40 MkII as a Suhina surface program: the 5x8 clip grid, the scene launch buttons,
 the per-track stop, activator (mute), solo, record-arm and select buttons, the transport's play
 and metronome buttons, the device control section — the eight knobs on the selected device's
-parameter bank, Device and Bank left/right, Device On/Off, and the master select — and the
+dials in banks of eight, Device and Bank left/right, Device On/Off, and the master select — and
+the
 mixer, the eight track faders, the master fader and the pan encoders with their LED rings, with
 feedback on every button.
 
@@ -19,8 +20,9 @@ Suhina's own, written from public documentation alone — the repository's clean
   of note numbers and controller numbers to the controls and LEDs, the RGB colours by velocity,
   the place of the per-track buttons (notes 48–52 on the track's own MIDI channel), and the
   **Application/Configuration message** the script sends when its ports open — the one that puts
-  the device in the mode the document names Ableton Live (0x41): every button momentary, a
-  press always note-on 127 with note-off on release, and the buttons' LEDs the host's. The
+  the device in the mode the document names Alternate Ableton Live (0x42): every button
+  momentary, a press always note-on 127 with note-off on release, and every LED the host's, so
+  the device knobs' rings follow their parameters without the device's own ring updates. The
   device wakes in its Generic mode, where the activator, solo and record-arm buttons latch and
   drive their own lights; the message is sent at every start, as the document prescribes.
 - **Akai's public APC40 MkII MIDI implementation chart**: the control map the notation follows.
@@ -39,12 +41,13 @@ each), the master fader (`mixer.setMainVolume`) and the pan encoders (`track.set
 gesture each) with their rings.
 
 The device control section follows the selection the window, commands and agents share
-(`project.selection`, #1679): the eight knobs turn the selected device's parameters in banks of
-eight (`device.setParam`, one gesture each), Device left/right step along the chain
-(`device.selectPrevious`, `device.selectNext`), Bank left/right take the next or previous eight
-parameters, and Device On/Off switches the device (`device.setEnabled`). Each knob's ring shows
-its parameter's position, the bank arrows light where there is another page, the device arrows
-while a device is selected, and the track select buttons light for the selected track.
+(`project.selection`, #1679): the eight knobs turn the selected device's dials — its continuous
+parameters — in banks of eight (`device.setParam`, one gesture each), Device left/right step
+along the chain (`device.selectPrevious`, `device.selectNext`), Bank left/right take the next or
+previous eight dials, and Device On/Off switches the device (`device.setEnabled`). Switches and
+choices stay on the device's panel. Each knob's ring shows its dial's position, the bank arrows
+light where there is another page, the device arrows while a device is selected, and the track
+select buttons light for the selected track.
 
 Not yet: the sends, user mode, crossfader, Device Lock, the Clip/Dev and Detail View buttons,
 the tempo encoder, nudge, tap tempo, session record and shift; blinking queued pads; and the
