@@ -92,8 +92,8 @@ A controller's knob takes a dial from `dials` and sends `device.setParam` with `
 (0 to 1) — the position its panel's dial shows — instead of `value`. The parameter's own scale
 (linear, logarithmic or a gain law) turns it into the unit, and the reading carries the same
 `normalized` for the ring, so a logarithmic time or frequency moves smoothly instead of jumping
-between the ends of a linear value range. A controller maps the page the device opens on; a page
-or operator change in the window is not followed yet (below).
+between the ends of a linear value range. A controller maps the page the panel shows, and a page
+or operator change in the window moves its dials with it because the reading carries the page.
 
 The FM Synth is the first such panel: its page 0, operator 1 envelope dials (attack, decay,
 sustain, release, initial, peak, by vel and by key) come first, then the always-visible LFO rate
@@ -129,5 +129,3 @@ uses the same normalized position either way ([FM Synth](fm-synth.md#panel), #17
 - Stepping into a device group's branches with the next/previous commands (a device inside one
   is selected by path).
 - Saving the selection with the project, or naming it in `project.info`.
-- A controller following a device panel's page or operator change in the window; it maps the
-  page the panel opens on.

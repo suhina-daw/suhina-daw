@@ -170,3 +170,20 @@ fn the_main_channel_is_selectable() {
     let moved = run(&mut session, "track.selectNext", json!({})).unwrap();
     assert_eq!(moved["track"], session.project().tracks[0].id.0, "{moved}");
 }
+
+/// The controller's dials follow the page the panel shows: a page change in the window changes
+/// the reading's `dials`, and a controller following the reading takes the new page (#1718).
+#[test]
+fn a_page_change_moves_the_controllers_dials() {
+    let (mut session, track) = with_devices();
+    run(&mut session, "track.select", json!({ "track": track.0 })).unwrap();
+    let before = selection(&mut session);
+    let before_dials = before["device"]["dials"].as_array().unwrap().clone();
+    assert_eq!(before_dials[0], "op1.env.attack", "{before}");
+    run(&mut session, "device.setParam", json!({ "track": track.0, "device": 0, "param": "panel.page", "value": 8 }))
+        .unwrap();
+    let after = selection(&mut session);
+    let after_dials = after["device"]["dials"].as_array().unwrap();
+    assert_ne!(after_dials, &before_dials, "{after}");
+    assert_eq!(after_dials[0], "random.amount", "the Random page's own dial: {after}");
+}

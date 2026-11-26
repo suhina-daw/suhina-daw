@@ -104,7 +104,7 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
   device SDK's `Dial` (the one the DJ EQ and the other panels use) with its label, decimals and
   number format, rather than drawing the dial in the layout. The theme draws it, as it draws every
   other dial. The panel's page and operator still choose which dials show; a controller maps the
-  dials of the page the device opens on, left to right and top to bottom, and then the
+  dials of the page the panel shows, left to right and top to bottom, and then the
   always-visible LFO rate and amount, filter frequency and resonance, Spread, Volume and Random
   amount dials, then the other pages' dials. The LFO's Rate dial shows the hertz its range gives
   the stored 0 to 1, through the dial's computed readout. Its knobs send the dial's normalized

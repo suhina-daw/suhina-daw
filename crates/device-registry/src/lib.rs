@@ -249,9 +249,8 @@ pub fn dials(id: &str) -> Vec<String> {
 /// [`dials`] with the reading's values: the page and operator the panel shows (the hidden
 /// `panel.page` and `panel.op` parameters) and the model a page's dials follow (the FM Synth's
 /// ADSR or Rates envelope) choose which dials come first. The other pages' dials follow, then a
-/// compact panel with no native dials falls back to its continuous parameters. The window
-/// publishes a selection when its track or device changes, so a controller maps the page the
-/// panel opened on until it reads the selection again.
+/// compact panel with no native dials falls back to its continuous parameters. A controller
+/// follows the reading, so a page or operator change in the window moves its dials with it.
 pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
     let Some(info) = info(id) else { return Vec::new() };
     let value = |id: &str| -> f64 {
