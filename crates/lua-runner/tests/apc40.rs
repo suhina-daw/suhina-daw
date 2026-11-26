@@ -34,14 +34,26 @@ struct Command {
     gesture: Option<String>,
 }
 
+/// The Utility-like fixture's dials, in the panel's order.
+const DIALS: &[&str] =
+    &["dial6", "gain", "balance", "width", "midSide", "bassMonoFrequency", "dial7", "dial8", "dial9", "attack"];
+
 /// What the script sent to its output port.
 type Sends = Rc<RefCell<Vec<(String, Vec<u8>)>>>;
+
+/// The stand-in's current tempo and cue level, which `read`s answer: a command changes these
+/// before its answer, while a subscription can trail them.
+struct Engine {
+    tempo: f64,
+    cue_db: Option<f64>,
+}
 
 /// A stand-in Suhina: records commands and send-backs, and answers the script's subscriptions.
 struct Fake {
     lua: Lua,
     commands: Rc<RefCell<Vec<Command>>>,
     sends: Sends,
+    engine: Rc<RefCell<Engine>>,
 }
 
 impl Fake {
@@ -49,6 +61,7 @@ impl Fake {
         let lua = Lua::new();
         let commands = Rc::new(RefCell::new(Vec::new()));
         let sends = Rc::new(RefCell::new(Vec::new()));
+        let engine = Rc::new(RefCell::new(Engine { tempo: 120.0, cue_db: None }));
         let suhina = lua.create_table().unwrap();
         // JSON null: a value that is neither nil nor false, as the runner's `suhina.null`.
         suhina.set("null", lua.create_table().unwrap()).unwrap();
@@ -104,6 +117,7 @@ impl Fake {
         suhina.set("midi", midi).unwrap();
 
         let recorded = Rc::clone(&commands);
+        let current = Rc::clone(&engine);
         suhina
             .set(
                 "command",
@@ -136,7 +150,7 @@ impl Fake {
                         Value::String(s) => Some(s.to_string_lossy().to_string()),
                         _ => None,
                     });
-                    recorded.borrow_mut().push(Command {
+                    let command = Command {
                         id,
                         track: count("track"),
                         tracks,
@@ -157,7 +171,17 @@ impl Fake {
                         pan: field("pan").and_then(|v| number(&v)),
                         return_track: count("return"),
                         gesture: args.get(2).and_then(text),
-                    });
+                    };
+                    let mut current = current.borrow_mut();
+                    if command.id == "transport.setTempo"
+                        && let Some(bpm) = command.bpm
+                    {
+                        current.tempo = bpm;
+                    } else if command.id == "output.setCueVolume" {
+                        current.cue_db = command.db;
+                    }
+                    drop(current);
+                    recorded.borrow_mut().push(command);
                     Ok(true)
                 })
                 .unwrap(),
@@ -187,7 +211,35 @@ impl Fake {
             )
             .unwrap();
         suhina.set("unsubscribe", lua.create_function(|_, _: Value| Ok(())).unwrap()).unwrap();
-        suhina.set("read", lua.create_function(|_, _: Variadic<Value>| Ok((Value::Nil, Value::Nil))).unwrap()).unwrap();
+        let readable = Rc::clone(&engine);
+        suhina
+            .set(
+                "read",
+                lua.create_function(move |lua, args: Variadic<Value>| {
+                    let id = args.first().and_then(text).unwrap_or_default();
+                    let current = readable.borrow();
+                    let value = match id.as_str() {
+                        "launcher.state" => {
+                            let state = lua.create_table()?;
+                            state.set("tempo_bpm", current.tempo)?;
+                            Value::Table(state)
+                        }
+                        "audio.info" => {
+                            let state = lua.create_table()?;
+                            let chosen = lua.create_table()?;
+                            if let Some(db) = current.cue_db {
+                                chosen.set("cue_db", db)?;
+                            }
+                            state.set("chosen", chosen)?;
+                            Value::Table(state)
+                        }
+                        _ => Value::Nil,
+                    };
+                    Ok((value, Value::Nil))
+                })
+                .unwrap(),
+            )
+            .unwrap();
         for name in ["on_port_message", "on_state", "on_ports"] {
             suhina
                 .set(
@@ -201,7 +253,7 @@ impl Fake {
         }
         lua.globals().set("suhina", suhina).unwrap();
         lua.load(script).exec().unwrap();
-        Self { lua, commands, sends }
+        Self { lua, commands, sends, engine }
     }
 
     /// The ports opening, with one output to send LEDs on.
@@ -220,11 +272,36 @@ impl Fake {
 
     /// The same with the first dial's Gain at `gain`, for the ring guard.
     fn selection_with_gain(&self, token: u64, track: u32, path: u32, gain: f64) {
+        self.selection_with_id(token, track, path, 1_000 + u64::from(track) * 100 + u64::from(path), gain);
+    }
+
+    /// The same selection with an explicit device identity, for replacing a device at one path.
+    fn selection_with_id(&self, token: u64, track: u32, path: u32, device_id: u64, gain: f64) {
+        self.selection_with_dials(token, track, path, device_id, gain, DIALS);
+    }
+
+    /// The same selection with the dials the replacement device has.
+    fn selection_with_dials(&self, token: u64, track: u32, path: u32, device_id: u64, gain: f64, dials: &[&str]) {
         let selection = self.lua.create_table().unwrap();
         selection.set("track", track).unwrap();
         selection.set("track_name", "Drums").unwrap();
+        selection.set("device", self.selection_device(path, device_id, gain, dials)).unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((token, selection)).unwrap();
+    }
+
+    /// The locked device's next state, with an explicit identity at the locked path.
+    fn locked_device_with_id(&self, path: u32, device_id: u64) {
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((7u64, self.selection_device(path, device_id, 0.0, DIALS))).unwrap();
+    }
+
+    /// One Utility-like device reading at `path`, with `device_id`, its first dial's Gain at
+    /// `gain`, and `dials` in the panel's order.
+    fn selection_device(&self, path: u32, device_id: u64, gain: f64, panel_dials: &[&str]) -> mlua::Table {
         let device = self.lua.create_table().unwrap();
         device.set("path", path).unwrap();
+        device.set("device_id", device_id).unwrap();
         device.set("enabled", true).unwrap();
         // Nine dials with switches and a choice between them, in parameter order; the dials
         // list is the panel's own order, which a knob follows instead.
@@ -259,17 +336,11 @@ impl Fake {
         }
         device.set("params", list).unwrap();
         let dials = self.lua.create_table().unwrap();
-        for (index, id) in
-            ["dial6", "gain", "balance", "width", "midSide", "bassMonoFrequency", "dial7", "dial8", "dial9", "attack"]
-                .iter()
-                .enumerate()
-        {
+        for (index, id) in panel_dials.iter().enumerate() {
             dials.set(index + 1, *id).unwrap();
         }
         device.set("dials", dials).unwrap();
-        selection.set("device", device).unwrap();
-        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
-        handler.call::<()>((token, selection)).unwrap();
+        device
     }
 
     /// A running plug-in's selection, as `project.selection` gives it: numeric parameter ids,
@@ -435,8 +506,14 @@ impl Fake {
         self.launcher_state_tempo(playing, 120.0);
     }
 
-    /// The launcher's state with the tempo its `tempo_bpm` reports.
+    /// The launcher's state with the tempo its `tempo_bpm` reports, as the engine now has it.
     fn launcher_state_tempo(&self, playing: &[(u32, u32)], tempo_bpm: f64) {
+        self.engine.borrow_mut().tempo = tempo_bpm;
+        self.report_launcher_state_tempo(playing, tempo_bpm);
+    }
+
+    /// The same reading without changing the engine: feedback the subscription delivers late.
+    fn report_launcher_state_tempo(&self, playing: &[(u32, u32)], tempo_bpm: f64) {
         let state = self.lua.create_table().unwrap();
         state.set("running", true).unwrap();
         state.set("tempo_bpm", tempo_bpm).unwrap();
@@ -465,8 +542,15 @@ impl Fake {
         self.record_state_with(false, Some((track, scene)));
     }
 
-    /// The audio output's state: the cue's level in dB, or null for silence.
+    /// The audio output's state: the cue's level in dB, or null for silence, as the engine now
+    /// has it.
     fn audio_info(&self, cue_db: Option<f64>) {
+        self.engine.borrow_mut().cue_db = cue_db;
+        self.report_audio_info(cue_db);
+    }
+
+    /// The same reading without changing the engine: cue feedback the subscription delivers late.
+    fn report_audio_info(&self, cue_db: Option<f64>) {
         let state = self.lua.create_table().unwrap();
         let chosen = self.lua.create_table().unwrap();
         if let Some(db) = cue_db {
@@ -915,6 +999,28 @@ fn the_tempo_knob_nudge_and_tap_tempo_set_the_tempo() {
     assert!((command.bpm.unwrap_or_default() - 120.0).abs() < 1e-6, "{command:?}");
 }
 
+/// Relative steps read the value the engine now has rather than matching delayed feedback:
+/// reversed bursts can repeat a target, and an edit elsewhere can return to the burst's start.
+#[test]
+fn relative_tempo_steps_follow_the_engine_not_an_echo() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.launcher_state_tempo(&[], 120.0);
+    // 121, 122, then back to 121: feedback for the first two arrives after all three commands
+    // and repeats the final value, which must not make the next click skip to 123.
+    fake.press(101);
+    fake.press(101);
+    fake.press(100);
+    fake.report_launcher_state_tempo(&[], 121.0);
+    fake.report_launcher_state_tempo(&[], 122.0);
+    fake.press(101);
+    assert!((fake.last_command().bpm.unwrap_or_default() - 122.0).abs() < 1e-6, "{:?}", fake.last_command());
+    // An edit elsewhere back to the burst's start is the base for the next click.
+    fake.launcher_state_tempo(&[], 120.0);
+    fake.press(101);
+    assert!((fake.last_command().bpm.unwrap_or_default() - 121.0).abs() < 1e-6, "{:?}", fake.last_command());
+}
+
 /// The cue level is a relative knob: a dB a click, silence at its bottom and +12 at its top.
 #[test]
 fn the_cue_knob_steps_the_cue_volume() {
@@ -940,6 +1046,25 @@ fn the_cue_knob_steps_the_cue_volume() {
     fake.audio_info(None);
     fake.message(&[0xB0, 47, 1]);
     assert!((fake.last_command().db.unwrap_or_default() + 59.0).abs() < 1e-6, "{:?}", fake.last_command());
+}
+
+/// The cue steps read the output now too: repeated delayed feedback and an edit back to the
+/// starting level cannot make the next click skip a step.
+#[test]
+fn relative_cue_steps_follow_the_output_not_an_echo() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.audio_info(Some(0.0));
+    fake.message(&[0xB0, 47, 1]);
+    fake.message(&[0xB0, 47, 1]);
+    fake.message(&[0xB0, 47, 127]);
+    fake.report_audio_info(Some(1.0));
+    fake.report_audio_info(Some(2.0));
+    fake.message(&[0xB0, 47, 1]);
+    assert!((fake.last_command().db.unwrap_or_default() - 2.0).abs() < 1e-6, "{:?}", fake.last_command());
+    fake.audio_info(Some(0.0));
+    fake.message(&[0xB0, 47, 1]);
+    assert!((fake.last_command().db.unwrap_or_default() - 1.0).abs() < 1e-6, "{:?}", fake.last_command());
 }
 
 /// The four Bank Select arrows move the 5x8 window over the launcher: scenes up and down,
@@ -1062,6 +1187,33 @@ fn the_bank_lock_holds_the_parameter_bank() {
     assert_eq!(fake.last_command().param.as_deref(), Some("dial6"), "{:?}", fake.last_command());
 }
 
+/// Replacing a locked device at the same path is another device: its bank starts over, or is
+/// held within its own last bank, even though the selection's path did not move.
+#[test]
+fn a_device_replaced_at_the_same_path_reconciles_the_bank() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection_with_id(4, 1, 0, 10, 0.0);
+    fake.press(61);
+    fake.press(63);
+    fake.selection_with_id(4, 1, 0, 11, 0.0);
+    fake.locked_device_with_id(0, 11);
+    fake.knob(0, 127);
+    assert_eq!(fake.last_command().param.as_deref(), Some("dial6"), "{:?}", fake.last_command());
+
+    // With Bank Lock the old bank is held only while the replacement has one.
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection_with_id(4, 1, 0, 12, 0.0);
+    fake.press(61);
+    fake.press(103);
+    fake.press(63);
+    fake.selection_with_dials(4, 1, 0, 13, 0.0, &["gain"]);
+    fake.locked_device_with_id(0, 13);
+    fake.knob(0, 127);
+    assert_eq!(fake.last_command().param.as_deref(), Some("gain"), "{:?}", fake.last_command());
+}
+
 /// Held Shift makes the Bank Select arrows jump five scenes and eight tracks.
 #[test]
 fn shift_makes_the_bank_select_arrows_jump() {
@@ -1160,6 +1312,30 @@ fn the_program_uses_the_live_mode() {
     assert!(
         fake.sends.borrow().iter().any(|(_, bytes)| bytes.starts_with(&mode)),
         "the alternate Live mode is sent: {:?}",
+        fake.sends.borrow()
+    );
+}
+
+/// A project change that moves another track under the encoders forgets the old track's echo
+/// history, as scrolling does: a centered pan still moves the hardware from the knob's old end.
+#[test]
+fn a_project_driven_window_move_refreshes_the_encoder_rings() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.strips(&[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    fake.launcher_grid_big(&[(10, "A"), (11, "B"), (12, "C"), (13, "D"), (14, "E"), (15, "F")]);
+    fake.press(96);
+    // The first encoder reports a centered pan and then its other end; the hardware is now at
+    // 0 while the old track's echo history still contains 64.
+    fake.message(&[0xB0, 48, 64]);
+    fake.message(&[0xB0, 48, 0]);
+    fake.sends.borrow_mut().clear();
+    // Deleting a track leaves eight, so the window clamps from offset 1 to 0. The first
+    // encoder now shows the first track's centered pan.
+    fake.launcher_grid_tracks(&[(10, "A"), (11, "B"), (12, "C"), (13, "D"), (14, "E"), (15, "F")], None, true, 8);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 48, 64].as_slice()),
+        "the new track's ring is written: {:?}",
         fake.sends.borrow()
     );
 }

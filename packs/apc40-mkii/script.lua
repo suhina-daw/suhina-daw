@@ -87,13 +87,6 @@ local send_index = 0
 local session_record = false
 -- The taps whose spacing makes the tap tempo, in microseconds, at most the last four.
 local tap_times = {}
--- The tempo and cue levels this script asked for, oldest first, and the reading the burst
--- started from. A burst of relative clicks arrives before the next state reading, so each
--- click steps from its own target rather than from the stale subscribed value; a reading that
--- matches an earlier target, or the burst's base, is feedback still on its way.
-local tempo_targets, tempo_anchor = {}, nil
-local cue_targets, cue_anchor = {}, nil
-
 -- The bank of eight parameters the device knobs show: 0 for the first eight, 1 for the next,
 -- and back to 0 when another device is selected unless Bank Lock holds the bank.
 local bank = 0
@@ -117,33 +110,6 @@ local kinds = {}
 -- JSON null crosses as suhina.null, which is neither nil nor false.
 local function is_nil(value)
     return value == nil or value == suhina.null
-end
-
--- Takes a reading against a burst's targets: an earlier target is feedback on its way, the
--- last clears the burst, and anything else is a value set elsewhere and clears it too. Returns
--- the anchor the next step starts from.
-local function settle_targets(targets, anchor, reported, tolerance)
-    if #targets == 0 then
-        return anchor
-    end
-    for index = #targets, 1, -1 do
-        if math.abs(reported - targets[index]) <= tolerance then
-            for _ = 1, index do
-                table.remove(targets, 1)
-            end
-            if #targets == 0 then
-                return nil
-            end
-            return anchor
-        end
-    end
-    if anchor ~= nil and math.abs(reported - anchor) <= tolerance then
-        return anchor
-    end
-    for index = #targets, 1, -1 do
-        targets[index] = nil
-    end
-    return nil
 end
 
 -- The device the device section controls: the locked one, or the selected one.
@@ -258,13 +224,22 @@ local function device_dials()
     return dials
 end
 
--- The device the bank belongs to, so another one starts at its first bank.
-local function device_key()
-    local device = selected_device()
+-- The device a reading belongs to. A replaced device keeps its path, so its stable id is part
+-- of the key too; an older reading without one still gets a key of its own.
+local function device_identity(device, track)
     if device == nil then
         return nil
     end
-    return tostring(device_track()) .. ":" .. tostring(device.path)
+    local key = tostring(track) .. ":" .. tostring(device.path)
+    if not is_nil(device.device_id) then
+        key = key .. "#" .. tostring(device.device_id)
+    end
+    return key
+end
+
+-- The device the bank belongs to, so another one starts at its first bank.
+local function device_key()
+    return device_identity(selected_device(), device_track())
 end
 
 -- The parameter a knob (0-7) shows in the open bank, or nil past the device's last one.
@@ -410,22 +385,25 @@ local function reported_tempo()
     return nil
 end
 
--- The tempo the engine plays, for the tempo knob's and the nudge buttons' next step. While a
--- burst's commands are on their way, its last target is the base.
-local function current_tempo()
-    if #tempo_targets > 0 then
-        return tempo_targets[#tempo_targets]
+-- The tempo the engine plays now, read back after the previous click's command was answered.
+-- A subscription can trail a burst or an edit elsewhere; the reading is the one base a
+-- relative step must use, so values that repeat while feedback arrives cannot lose a step.
+local function read_tempo()
+    local value, error = suhina.read("launcher.state", {})
+    if error == nil and type(value) == "table" and type(value.tempo_bpm) == "number" then
+        return value.tempo_bpm
     end
-    return reported_tempo() or 120
+    return nil
+end
+
+-- The tempo the engine plays, for the tempo knob's and the nudge buttons' next step.
+local function current_tempo()
+    return read_tempo() or reported_tempo() or 120
 end
 
 -- Sets the project tempo, limited to the tempo field's range and rounded to hundredths.
 local function set_tempo(bpm, gesture)
     bpm = math.max(20, math.min(999, math.floor(bpm * 100 + 0.5) / 100))
-    if #tempo_targets == 0 then
-        tempo_anchor = reported_tempo()
-    end
-    tempo_targets[#tempo_targets + 1] = bpm
     suhina.command("transport.setTempo", { bpm = bpm }, gesture)
 end
 
@@ -456,12 +434,12 @@ local function tap_tempo(timestamp)
     end
 end
 
--- The cue level the output reports, or nil before its first reading.
-local function reported_cue()
-    if audio_state == nil or audio_state.chosen == nil then
+-- The cue level an audio reading reports, or nil when it has no output yet.
+local function cue_from(info)
+    if info == nil or info.chosen == nil then
         return nil
     end
-    local db = audio_state.chosen.cue_db
+    local db = info.chosen.cue_db
     if is_nil(db) then
         return -60
     end
@@ -471,20 +449,31 @@ local function reported_cue()
     return nil
 end
 
+-- The cue level the output reports, or nil before its first reading.
+local function reported_cue()
+    return cue_from(audio_state)
+end
+
+-- The cue level now, read back after the previous click's command was answered, as the
+-- tempo's relative steps are.
+local function current_cue()
+    local value, error = suhina.read("audio.info", {})
+    if error == nil then
+        local db = cue_from(value)
+        if db ~= nil then
+            return db
+        end
+    end
+    return reported_cue()
+end
+
 -- The cue knob: a dB a click, from silence to the cue's +12 dB.
 local function cue_step(delta)
-    local current
-    if #cue_targets > 0 then
-        current = cue_targets[#cue_targets]
-    else
-        current = reported_cue()
-        if current == nil then
-            current = 0
-        end
-        cue_anchor = current
+    local current = current_cue()
+    if current == nil then
+        current = 0
     end
     local db = math.max(-60, math.min(12, current + delta))
-    cue_targets[#cue_targets + 1] = db
     local level = "-inf"
     if db > -60 then
         level = math.floor(db * 10 + 0.5) / 10
@@ -769,6 +758,9 @@ local knob_recent = {}
 -- The dial each controller last showed, and how many looks it has left before it has settled.
 local knob_shown = {}
 local knob_turn = {}
+-- The tracks the eight encoder rings showed last, so a project change that moves another
+-- track under a knob forgets the old track's echo history just as scrolling does.
+local encoder_tracks = nil
 
 local function knob_reported(controller, value)
     local list = knob_recent[controller]
@@ -803,13 +795,25 @@ local function forget_encoder_rings()
     end
 end
 
+local function sync_encoder_rings()
+    local tracks = {}
+    for track = 0, TRACKS - 1 do
+        tracks[#tracks + 1] = tostring(mixer_track(track))
+    end
+    local key = table.concat(tracks, ",")
+    if key ~= encoder_tracks then
+        encoder_tracks = key
+        forget_encoder_rings()
+    end
+end
+
 -- The device section's lights: each knob's ring shows its dial's position in the bank (the
 -- single-dot style), the device arrows while a device is selected, the bank arrows where there
 -- is another page, and Device On/Off whether the device is on.
 local function refresh_device()
     sync_bank()
     local device = selected_device()
-    local device_key = device ~= nil and (tostring(device_track()) .. ":" .. tostring(device.path)) or ""
+    local device_key = device_identity(device, device_track()) or ""
     for knob = 0, KNOBS - 1 do
         local controller = 16 + knob
         local param = knob_param(knob)
@@ -889,6 +893,7 @@ end
 
 local function refresh()
     clamp_window()
+    sync_encoder_rings()
     for track = 0, TRACKS - 1 do
         for scene = 0, SCENES - 1 do
             led(0, pad_note(track, scene), pad_velocity(track, scene))
@@ -951,12 +956,8 @@ local function refresh()
 end
 
 local function scroll(track_delta, scene_delta)
-    local before = track_offset
     track_offset = track_offset + track_delta
     scene_offset = scene_offset + scene_delta
-    if track_offset ~= before then
-        forget_encoder_rings()
-    end
     refresh()
 end
 
@@ -1274,10 +1275,6 @@ suhina.on_state(function(token, value)
         grid = value
     elseif kind == "state" then
         state = value
-        local reported = reported_tempo()
-        if reported ~= nil then
-            tempo_anchor = settle_targets(tempo_targets, tempo_anchor, reported, 0.005)
-        end
     elseif kind == "strips" then
         strips = value
     elseif kind == "selection" then
@@ -1298,10 +1295,6 @@ suhina.on_state(function(token, value)
         record_state = value
     elseif kind == "audio" then
         audio_state = value
-        local reported = reported_cue()
-        if reported ~= nil then
-            cue_anchor = settle_targets(cue_targets, cue_anchor, reported, 0.05)
-        end
     end
     refresh()
 end)

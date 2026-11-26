@@ -68,11 +68,12 @@ generated panel gives its sliders to the knobs the same way, in the panel's orde
 stepped or listed slider snaps to the step its panel draws. The bank arrows light where there is
 another page, the device arrows while a device is selected, and the track select buttons light
 for the selected track. Device Lock (`device.read`) holds the device section on its device while
-the selection moves elsewhere, and lets go when the device is removed or its reading is gone;
-Bank Lock holds the parameter bank across devices. The Clip/Dev and Detail View buttons queue the
+the selection moves elsewhere, and lets go when the device is removed or replaced, or its reading
+is gone; Bank Lock holds the parameter bank across devices, and a replacement at the same path
+still starts its own bank. The Clip/Dev and Detail View buttons queue the
 window's own actions (`view.devices`, `view.detail`), and Shift makes the Bank Select arrows jump
-five scenes or eight tracks. Relative tempo and cue clicks are counted until the engine reports
-them, so a fast burst does not lose steps.
+five scenes or eight tracks. Relative tempo and cue clicks read the engine's current value before
+stepping, so delayed feedback or an edit elsewhere cannot add the wrong step.
 
 Not yet: the other Shift combinations and blinking queued pads. A pad's state takes over its
 colour: green while it plays and yellow while it is queued.

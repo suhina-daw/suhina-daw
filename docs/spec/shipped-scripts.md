@@ -3,7 +3,7 @@ description: How Suhina ships a surface program's script inside the app — wher
 read_when: shipped script, bundled script, Suhina scripts folder, Scripts folder, Scripts/MIDI, unpack, starter script, controller script on first launch, APC40
 type: spec
 status: planned
-last_verified: 2026-11-21
+last_verified: 2026-11-26
 covers:
   - apps/suhina/src/pack_materialize.rs
   - crates/session/src/extensions.rs
@@ -29,11 +29,13 @@ covers:
   selected device (#1679); a clip pad takes the clip's colour, a scene launch button lights
   green while its whole row plays and toggles between launching and stopping it, the top-right
   controls switch the encoders, record the arrangement or a slot, set the tempo by tap, knob
-  or nudge (a burst of relative clicks keeps every step), set the cue level, and move the 5x8
-  window with the Bank Select arrows (five scenes and eight tracks while Shift is held), the
-  Launcher outlines that window, the device section locks its device (releasing it when the
-  device is gone) and holds its bank, a stepped or listed plug-in parameter snaps to its
-  panel's step, and Clip/Dev View and Detail View queue the window's actions. The whole
+  or nudge (each relative click reads the engine's current value before stepping, so delayed
+  feedback cannot lose a step), set the cue level, and move the 5x8 window with the Bank Select
+  arrows (five scenes and eight tracks while Shift is held), the Launcher outlines that window,
+  the device section locks its device (releasing it when the device is gone or replaced) and
+  holds its bank (a replacement at the same path starts its own bank), a stepped or listed
+  plug-in parameter snaps to its panel's step, and Clip/Dev View and Detail View queue the
+  window's actions. The whole
   script's run through the supervisor — the mode
   message, a press of each strip button, the LEDs — follows.
 
