@@ -27,10 +27,11 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
         actions.push(Action::new("transport.record", json!({ "on": !recording })));
     }
     // `button#record`, `[checked][recording]` while it records: the sheet's `button[kind="record"]`
-    // gives its fill and ring at rest and lit. The dot's ink is the lit one, at rest too.
-    let dot = BUTTON.id("record").attribute("kind", "record").attr(Checked, true).attr(Recording, true).look().color();
+    // gives its fill and ring at rest and lit. The dot is the `icon[kind="record"]` in it, in its
+    // own `color` (the recording color), at rest too.
     let Lit { el, toggle, lit } =
         widgets::lit_toggle_kind(ui, &response, BUTTON.id("record"), &[Checked, Recording], recording, "record");
+    let dot = crate::kit::element::ICON.attribute("kind", "record").look().color();
     let (fill, ring) = toggle.at(lit);
     widgets::toggle_surface(painter, rect, &el, &response, fill, toggle.image(lit), 0.0);
     if crate::kit::skin::paint(
@@ -38,7 +39,7 @@ pub fn record_button(ui: &Ui, painter: &Painter, rect: Rect, recording: bool, ac
         rect,
         "record",
         crate::kit::skin::State::response(&response, recording),
-        el.color_or(dot),
+        dot,
         0.0,
     ) {
         return;

@@ -3876,12 +3876,7 @@ impl App {
                 let response = widgets::button_area(ui, close, Id::unique("sample-map-close"), "Close sample map")
                     .on_hover_text("Close the sample map (Esc)");
                 let button = crate::kit::element::BUTTON.response(&response).enter();
-                over.rect_filled(
-                    close,
-                    0.0,
-                    button.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
-                );
-                let ink = button.color();
+                let ink = widgets::hover_face(ui, &over, close, &button, &response, false, 0.0);
                 drop(button);
                 for (from, to) in
                     [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]

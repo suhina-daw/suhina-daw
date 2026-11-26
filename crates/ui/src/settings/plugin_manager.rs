@@ -910,21 +910,16 @@ fn library(ui: &mut Ui, painter: &egui::Painter, rect: Rect, plugins: &mut Plugi
     heading(painter, row(&mut y, 18.0), "Format");
     for (format, text) in [("clap", "CLAP"), ("vst3", "VST3"), ("vst2", "VST2")] {
         let item = row(&mut y, ITEM);
-        let mut on = state.formats.iter().any(|f| f == format);
+        let hidden = !state.formats.iter().any(|f| f == format);
         let check =
             Rect::from_min_size(Pos2::new(item.left() + 6.0, item.top()), Vec2::new(item.width() - 6.0, item.height()));
         // Laid out from the left of its line, as the sidebar's other items are, not centered in it.
-        let layout = egui::Layout::left_to_right(egui::Align::Center);
-        let response = ui
-            .scope_builder(egui::UiBuilder::new().max_rect(check).layout(layout), |ui| {
-                ui.add(egui::Checkbox::new(&mut on, text))
-            })
-            .inner;
         let label = format!("Show {text} plug-ins");
-        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, &label));
-        if response.changed() {
+        let id = egui::Id::unique(("plugin-format", format));
+        let response = crate::kit::widgets::check_box_named(ui, painter, check, id, (text, &label), !hidden);
+        if response.clicked() {
             state.formats.retain(|f| f != format);
-            if on {
+            if hidden {
                 state.formats.push(format.to_string());
             }
         }
@@ -1308,14 +1303,13 @@ fn headings(
         let state = &mut plugins.manager;
         let picked: std::collections::HashSet<&str> = state.picked.iter().map(String::as_str).collect();
         let all = !order.is_empty() && order.iter().all(|k| picked.contains(k.as_str()));
-        let mut every = all;
         let check = Rect::from_center_size(Pos2::new((left + right) / 2.0, header.center().y), Vec2::splat(16.0));
         if seen(check).is_some_and(|r| r.width() >= check.width() - 0.5) {
-            let response = ui.put(check, egui::Checkbox::without_text(&mut every));
-            response
-                .widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, all, "Pick every row shown"));
-            if response.changed() {
-                if every {
+            let id = egui::Id::unique("plugin-pick-every");
+            let response =
+                crate::kit::widgets::check_box_named(ui, painter, check, id, ("", "Pick every row shown"), all);
+            if response.clicked() {
+                if !all {
                     state.picked = order.to_vec();
                     state.anchor = order.first().cloned();
                 } else {
@@ -1514,16 +1508,16 @@ fn row(ui: &mut Ui, line: &Line, width: f32, plugins: &PluginsView, shown: &Show
     let (action_left, action_right) = columns[ACTION];
     match (line.kind, plugin) {
         (Kind::Plugin(_), Some(plugin)) => {
-            let mut enabled = plugin.enabled;
             let center = Pos2::new((on_left + on_right) / 2.0, rect.center().y);
             let check = Rect::from_center_size(center, Vec2::splat(16.0));
             // Off while a scan runs: its result replaces the library, switches too.
-            let response = ui
-                .put(check, |ui: &mut egui::Ui| ui.add_enabled(!scanning, egui::Checkbox::without_text(&mut enabled)));
             let label = format!("Use {}", plugin.name);
-            response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, plugin.enabled, &label));
-            if response.changed() {
-                asked.toggled = Some((plugin.spec.clone(), enabled));
+            let id = egui::Id::unique(("plugin-use", &plugin.spec));
+            let cell = crate::kit::widgets::cell(ui, check, !scanning);
+            let response =
+                crate::kit::widgets::check_box_named(&cell, &painter, check, id, ("", &label), plugin.enabled);
+            if response.clicked() {
+                asked.toggled = Some((plugin.spec.clone(), !plugin.enabled));
             }
         }
         (Kind::Failed(_) | Kind::Incompatible(_), _) if action_right - action_left > 8.0 && !scanning => {

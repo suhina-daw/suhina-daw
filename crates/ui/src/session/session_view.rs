@@ -704,7 +704,7 @@ fn main_metronome(
         "metronome",
     );
     let (fill, glyph) = toggle.at(lit);
-    painter.rect_filled(rect, 0.0, fill);
+    widgets::toggle_surface(painter, rect, &el, &response, fill, toggle.image(lit), 0.0);
     crate::session::record_controls::metronome_glyph(painter, rect, glyph);
     // The level's slider is a popup of its own, not a part of the button.
     drop(el);

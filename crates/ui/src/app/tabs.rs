@@ -249,16 +249,18 @@ impl App {
         ui.scope_builder(egui::UiBuilder::new().max_rect(bar.shrink2(Vec2::new(PAD, 6.0))), |ui| {
             ui.horizontal_centered(|ui| {
                 ui.label(egui::RichText::new(format!("Open {name}:")).color(crate::kit::element::name_ink()));
-                if ui.button("In a new tab").clicked() {
+                if crate::kit::controls::button(ui, "In a new tab").clicked() {
                     choice = Some(OpenAs::NewTab);
                 }
-                if ui.button(format!("In place of {current}")).clicked() {
+                if crate::kit::controls::button(ui, &format!("In place of {current}")).clicked() {
                     choice = Some(OpenAs::Replace);
                 }
-                if ui.button("Cancel").clicked() {
+                if crate::kit::controls::button(ui, "Cancel").clicked() {
                     cancel = true;
                 }
-                ui.checkbox(&mut self.remember_choice, "Remember");
+                if crate::kit::controls::check_box(ui, "Remember", self.remember_choice).clicked() {
+                    self.remember_choice = !self.remember_choice;
+                }
             });
         });
         if ui.input(|i| i.key_pressed(Key::Escape)) {
@@ -300,10 +302,10 @@ impl App {
                 if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     unpack = true;
                 }
-                if ui.button("Unpack and open").clicked() {
+                if crate::kit::controls::button(ui, "Unpack and open").clicked() {
                     unpack = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if crate::kit::controls::button(ui, "Cancel").clicked() {
                     cancel = true;
                 }
             });

@@ -23,8 +23,8 @@ fn a_probe_names_the_control_at_a_point_its_path_and_the_rules_behind_it() {
     let (index, browser) = elements
         .iter()
         .enumerate()
-        .find(|(_, e)| e.name == "toolbar-module" && e.id.as_deref() == Some("browser"))
-        .expect("the control bar's browser button");
+        .find(|(_, e)| e.name == "button" && e.id.as_deref() == Some("control-browser-toggle"))
+        .expect("the control bar's browser button (a button, which draws its own box in the browser module)");
     let (rect, _) = browser.painted.expect("it painted");
     assert_eq!(
         inspect::hit(&elements, &h.ctx.memory(|m| m.layer_ids().collect::<Vec<_>>()), rect.center()),
@@ -32,7 +32,8 @@ fn a_probe_names_the_control_at_a_point_its_path_and_the_rules_behind_it() {
     );
     let report = inspect::probe(&h, rect.center()).unwrap();
     let first = report.lines().next().unwrap();
-    assert!(first.starts_with("toolbar-module#browser"), "{report}");
+    assert!(first.starts_with("button#control-browser-toggle"), "{report}");
+    assert!(report.contains("toolbar-module#browser"), "{report}");
     assert!(report.contains("toolbar > group#toolbar-start"), "{report}");
     // The user-agent sheet's rule for this button, with what became of its declaration.
     assert!(report.contains("Suhina's user-agent sheet line"), "{report}");
@@ -152,8 +153,8 @@ fn an_elements_painted_box_includes_its_border() {
     let (index, browser) = elements
         .iter()
         .enumerate()
-        .find(|(_, e)| e.name == "toolbar-module" && e.id.as_deref() == Some("browser"))
-        .expect("the control bar's browser button");
+        .find(|(_, e)| e.name == "button" && e.id.as_deref() == Some("control-browser-toggle"))
+        .expect("the control bar's browser button (a button, which draws its own box in the browser module)");
     let (rect, _) = browser.painted.expect("it painted");
     // A point on the border, a pixel inside its outer edge, selects the button.
     let on_border = pos2(rect.left() + 1.0, rect.center().y);
