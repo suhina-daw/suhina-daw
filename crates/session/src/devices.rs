@@ -567,6 +567,14 @@ pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
                     "min": p.min,
                     "max": p.max,
                     "unit": suhina_device_sdk::builtin::unit(p.unit),
+                    // What a controller's knob can turn: a continuous dial or a whole-number
+                    // one, not a switch or a choice (#1679).
+                    "kind": match p.kind {
+                        suhina_device_api::ParamKind::Continuous(_) => "continuous",
+                        suhina_device_api::ParamKind::Integer => "integer",
+                        suhina_device_api::ParamKind::Toggle => "toggle",
+                        suhina_device_api::ParamKind::Choice(_) => "choice",
+                    },
                 })
             })
             .collect::<Vec<_>>()

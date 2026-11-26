@@ -37,6 +37,7 @@ fn selecting_a_track_selects_its_first_device_with_its_parameters() {
         assert!(param["name"].is_string(), "{param}");
         assert!(param["min"].is_number() && param["max"].is_number(), "{param}");
         assert!(param["unit"].is_string(), "{param}");
+        assert!(param["kind"].is_string(), "a controller tells its dials from its switches: {param}");
     }
     // The reading agrees with the command's answer.
     let read = selection(&mut session);
