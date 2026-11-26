@@ -82,8 +82,9 @@ agent attached to the app may run them (the selection is project state, not sett
   then the other pages' dials in the panel's order — so a controller's knobs follow the device's
   layout, not its parameter order, and Bank pages through them. A compact panel with no native
   dials keeps its continuous parameters in parameter order. A dial also carries `normalized`:
-  the position its panel's dial shows, 0 to 1, beside `value`. A plug-in's parameters are its
-  stored values, and `device.pluginParams` is the way to its full list.
+  the position its panel's dial shows, 0 to 1, beside `value`, and `scale` (`linear`,
+  `logarithmic` or `gain`), so a controller knows a log dial wants a fine step. A plug-in's
+  parameters are its stored values, and `device.pluginParams` is the way to its full list.
 - With nothing selected, both are nothing and the parameters are empty.
 
 ### A controller's dials
@@ -92,7 +93,10 @@ A controller's knob takes a dial from `dials` and sends `device.setParam` with `
 (0 to 1) — the position its panel's dial shows — instead of `value`. The parameter's own scale
 (linear, logarithmic or a gain law) turns it into the unit, and the reading carries the same
 `normalized` for the ring, so a logarithmic time or frequency moves smoothly instead of jumping
-between the ends of a linear value range. A controller maps the page the panel shows, and a page
+between the ends of a linear value range. A logarithmic dial sends `delta`, a 1/512 share of its
+travel per encoder step, and the session adds it to the dial's current normalized position: a
+1/127 position would jump a tenth of a log time, while the fine step is a fortieth. Linear dials
+send their normalized position. A controller maps the page the panel shows, and a page
 or operator change in the window moves its dials with it because the reading carries the page.
 
 The FM Synth is the first such panel: its page 0, operator 1 envelope dials (attack, decay,
@@ -118,8 +122,9 @@ controller's ring uses the same normalized position either way
 - The commands and the reading: select, step, read back; the selected track's first device;
   the already-selected track changing nothing; the ends, the empty chain and no selected track
   doing nothing and not erroring; a named bad device or track refused with its reason; the
-  built-in parameters carrying `name`, `min`, `max`, `unit`, `kind` and `normalized`, with the
-  dials in panel order and a page change moving them.
+  built-in parameters carrying `name`, `min`, `max`, `unit`, `kind`, `scale` and `normalized`,
+  with the dials in panel order, a page change moving them, and a fine `delta` adding a small
+  share of a log dial's travel.
 - A removal clearing the selection, and undo not restoring it.
 - The window: a command-set selection showing (the highlight and the chain), and a click
   changing the reading.

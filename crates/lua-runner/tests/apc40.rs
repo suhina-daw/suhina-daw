@@ -22,6 +22,7 @@ struct Command {
     param: Option<String>,
     value: Option<f64>,
     normalized: Option<f64>,
+    delta: Option<f64>,
     gesture: Option<String>,
 }
 
@@ -112,6 +113,7 @@ impl Fake {
                         param: text_field("param"),
                         value: field("value").and_then(|v| number(&v)),
                         normalized: field("normalized").and_then(|v| number(&v)),
+                        delta: field("delta").and_then(|v| number(&v)),
                         gesture: args.get(2).and_then(text),
                     });
                     Ok(true)
@@ -210,6 +212,7 @@ impl Fake {
             param.set("value", *value).unwrap();
             let normalized = if *id == "attack" { 0.5 } else { (*value - *min) / (*max - *min) };
             param.set("normalized", normalized).unwrap();
+            param.set("scale", if *id == "attack" { "logarithmic" } else { "linear" }).unwrap();
             param.set("unit", "").unwrap();
             list.set(index + 1, param).unwrap();
         }
@@ -317,11 +320,17 @@ fn a_log_dial_sends_and_draws_its_normalized_position() {
         "the reading's 0.5 draws at 64: {:?}",
         &fake.sends.borrow()[before..]
     );
-    fake.knob(1, 64);
+    fake.knob(1, 65);
     let command = fake.last_command();
     assert_eq!(command.param.as_deref(), Some("attack"), "{command:?}");
     assert_eq!(command.value, None, "{command:?}");
-    assert!((command.normalized.unwrap_or_default() - 64.0 / 127.0).abs() < 1e-6, "{command:?}");
+    assert_eq!(command.normalized, None, "{command:?}");
+    assert!((command.delta.unwrap_or_default() - 1.0 / 512.0).abs() < 1e-6, "{command:?}");
+    // The session's echo of the old position does not reset the encoder's baseline.
+    fake.selection(4, 1, 0);
+    fake.knob(1, 66);
+    let command = fake.last_command();
+    assert!((command.delta.unwrap_or_default() - 1.0 / 512.0).abs() < 1e-6, "{command:?}");
 }
 
 #[test]

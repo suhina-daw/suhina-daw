@@ -40,6 +40,7 @@ fn selecting_a_track_selects_its_first_device_with_its_parameters() {
         assert!(param["kind"].is_string(), "a controller tells its dials from its switches: {param}");
         let normalized = param["normalized"].as_f64().unwrap_or_else(|| panic!("the dial's position: {param}"));
         assert!((0.0..=1.0).contains(&normalized), "0 to 1: {param}");
+        assert!(param["scale"].is_string(), "a controller tells a log dial: {param}");
     }
     // The dials a controller's knobs take, in the panel's order.
     let dials = picked["device"]["dials"].as_array().unwrap_or_else(|| panic!("the dials: {picked}"));
@@ -91,6 +92,45 @@ fn a_normalized_position_turns_a_logarithmic_time_smoothly() {
     let neither =
         run(&mut session, "device.setParam", json!({ "track": track.0, "device": 0, "param": "op1.env.attack" }));
     assert!(neither.is_err(), "{neither:?}");
+}
+
+/// A fine delta is a share of the dial's travel, for an encoder's step: on the FM's logarithmic
+/// attack, 1/512 of the travel is a small change in time, not the tenth a 1/127 position jumps,
+/// and a large delta stops at the end (#1718).
+#[test]
+fn a_fine_delta_moves_a_logarithmic_dial_a_small_step() {
+    let (mut session, track) = with_devices();
+    run(&mut session, "track.select", json!({ "track": track.0 })).unwrap();
+    run(
+        &mut session,
+        "device.setParam",
+        json!({ "track": track.0, "device": 0, "param": "op1.env.attack", "normalized": 0.5 }),
+    )
+    .unwrap();
+    let set = run(
+        &mut session,
+        "device.setParam",
+        json!({ "track": track.0, "device": 0, "param": "op1.env.attack", "delta": 1.0 / 512.0 }),
+    )
+    .unwrap();
+    let read = selection(&mut session);
+    let attack = read["device"]["params"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "op1.env.attack")
+        .unwrap_or_else(|| panic!("the attack: {read}"));
+    let normalized = attack["normalized"].as_f64().unwrap_or_default();
+    assert!((normalized - (0.5 + 1.0 / 512.0)).abs() < 1e-9, "{set} {read}");
+    // The old 1/127 step jumps about a tenth of the range; the fine step is much smaller.
+    assert!((normalized - 0.5) < 0.01, "{set} {read}");
+    let end = run(
+        &mut session,
+        "device.setParam",
+        json!({ "track": track.0, "device": 0, "param": "op1.env.attack", "delta": 2.0 }),
+    )
+    .unwrap();
+    assert_eq!(end["value"], 60.0, "{end}");
 }
 
 /// Stepping: the project's track order for tracks (nothing at either end; the first or last

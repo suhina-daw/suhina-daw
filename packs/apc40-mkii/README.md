@@ -47,8 +47,9 @@ panel shows, left to right and top to bottom, then the dials that stay on every 
 other pages' — in banks of eight (`device.setParam`, one gesture each), Device left/right step
 along the chain (`device.selectPrevious`, `device.selectNext`), Bank left/right take the next or
 previous eight dials, and Device On/Off switches the device (`device.setEnabled`). A knob sends
-its dial's normalized position, so a logarithmic time or frequency moves smoothly, and a page or
-operator change in the window moves the bank with it. Switches and choices stay on the device's
+its dial's normalized position; a logarithmic time or frequency takes a fine 1/512 step per
+encoder click, so its value does not jump a tenth of the range, and a page or operator change in
+the window moves the bank with it. Switches and choices stay on the device's
 panel. Each knob's ring shows its dial's position, the bank arrows light where there is another
 page, the device arrows while a device is selected, and the track select buttons light for the
 selected track.

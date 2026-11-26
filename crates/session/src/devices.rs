@@ -612,6 +612,13 @@ pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
                         suhina_device_api::ParamKind::Toggle => "toggle",
                         suhina_device_api::ParamKind::Choice(_) => "choice",
                     },
+                    // A logarithmic dial gets a fine step from a controller, so its value does
+                    // not jump by a tenth of the range per encoder step (#1718).
+                    "scale": match p.kind {
+                        suhina_device_api::ParamKind::Continuous(suhina_device_api::Scale::Logarithmic) => "logarithmic",
+                        suhina_device_api::ParamKind::Continuous(suhina_device_api::Scale::Gain) => "gain",
+                        _ => "linear",
+                    },
                 })
             })
             .collect::<Vec<_>>()
@@ -635,6 +642,14 @@ pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
                         "min": p.min,
                         "max": p.max,
                         "control": p.control,
+                        "scale": if matches!(
+                            p.control,
+                            suhina_device_sdk::ParameterControl::LogSlider | suhina_device_sdk::ParameterControl::LogKnob
+                        ) {
+                            "logarithmic"
+                        } else {
+                            "linear"
+                        },
                         "unit": p.unit,
                         "ui": p.ui,
                         "smoothing_ms": p.smoothing_ms,
@@ -1623,10 +1638,10 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
     let param = Args::new(params).raw_str("param").ok_or("param must be a parameter id, from device.list")?;
     let mut value = Args::new(params).opt_f64("value")?;
     let normalized = Args::new(params).opt_f64("normalized")?;
-    match (value.is_some(), normalized.is_some()) {
-        (true, true) => return Err("give value or normalized, not both".into()),
-        (false, false) => return Err("give value or normalized".into()),
-        _ => {}
+    let delta = Args::new(params).opt_f64("delta")?;
+    let given = [value.is_some(), normalized.is_some(), delta.is_some()].into_iter().filter(|given| *given).count();
+    if given != 1 {
+        return Err("give value, normalized or delta, one of them".into());
     }
     let source_tempo = match (param, value) {
         ("warp", Some(value)) if value > 0. => initial_sampler_tempo(session, params, false)?,
@@ -1640,7 +1655,9 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
     let path = device_path(&channel.devices, params, "device")?;
     if device_at(&channel.devices, &path).is_some_and(|d| is_plugin(&d.kind)) {
         let Some(value) = value else {
-            return Err("a plug-in's normalized position is not known; send value from device.pluginParams".into());
+            return Err(
+                "a plug-in's normalized position or delta is not known; send value from device.pluginParams".into()
+            );
         };
         return set_plugin_param(session, params, track, &path, param, value);
     }
@@ -1654,9 +1671,19 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
                 .param_index(param)
                 .ok_or_else(|| format!("{} has no parameter {param:?}; device.list lists them", info.name))?;
             let spec = info.params.get(index).ok_or("the parameter is missing")?;
-            let value = match value {
-                Some(value) => spec.clamp(value),
-                None => spec.from_normalized(normalized.unwrap_or(0.)),
+            let value = match (value, normalized, delta) {
+                (Some(value), _, _) => spec.clamp(value),
+                (_, Some(normalized), _) => spec.from_normalized(normalized),
+                (_, _, Some(delta)) => {
+                    let current = device
+                        .params
+                        .iter()
+                        .rev()
+                        .find(|p| p.id == param)
+                        .map_or(spec.default, |p| spec.clamp(p.value));
+                    spec.from_normalized((spec.to_normalized(current) + delta).clamp(0., 1.))
+                }
+                _ => spec.default,
             };
             (index, value)
         }
@@ -1670,9 +1697,18 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
                 .enumerate()
                 .find(|(_, p)| p.id == param)
                 .ok_or_else(|| format!("{} has no parameter {param:?}", graph.name))?;
-            let value = match value {
-                Some(value) => parameter.clamp(value),
-                None => sd_from_normalized(parameter, normalized.unwrap_or(0.)),
+            let value = match (value, normalized, delta) {
+                (Some(value), _, _) => parameter.clamp(value),
+                (_, Some(normalized), _) => sd_from_normalized(parameter, normalized),
+                (_, _, Some(delta)) => {
+                    let current = device
+                        .params
+                        .iter()
+                        .find(|p| p.id == param)
+                        .map_or(parameter.default, |p| parameter.clamp(p.value));
+                    sd_from_normalized(parameter, (sd_normalized(parameter, current) + delta).clamp(0., 1.))
+                }
+                _ => parameter.default,
             };
             edits = graph
                 .parameter_edits(param, value, |id| {
@@ -1690,11 +1726,21 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
             let index = suhina_engine::group_param_index(param).ok_or_else(|| {
                 format!("a device group has no parameter {param:?}; it has mix, gain and macro.1 to macro.8")
             })?;
-            let &(_, min, max, _) = suhina_engine::GROUP_PARAMS.get(index).ok_or("the parameter is missing")?;
-            let value = match value {
-                Some(value) => value.clamp(min, max),
-                None => min + normalized.unwrap_or(0.).clamp(0., 1.) * (max - min),
-            };
+            let &(_, min, max, default) = suhina_engine::GROUP_PARAMS.get(index).ok_or("the parameter is missing")?;
+            let value =
+                match (value, normalized, delta) {
+                    (Some(value), _, _) => value.clamp(min, max),
+                    (_, Some(normalized), _) => min + normalized.clamp(0., 1.) * (max - min),
+                    (_, _, Some(delta)) => {
+                        let current =
+                            device.params.iter().rev().find(|p| p.id == param).map_or(default, |p| {
+                                if p.value.is_finite() { p.value.clamp(min, max) } else { default }
+                            });
+                        let share = if max > min { (current - min) / (max - min) } else { 0. };
+                        min + (share + delta).clamp(0., 1.) * (max - min)
+                    }
+                    _ => default,
+                };
             (index, value)
         }
         _ => return Err("this device has no parameters Suhina can set (it is from another program)".into()),
