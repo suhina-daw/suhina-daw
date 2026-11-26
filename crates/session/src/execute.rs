@@ -34,10 +34,11 @@ impl Session {
     /// records one undo step when it changes the project; if it fails, or leaves a project that
     /// does not validate, the project is restored and an error is returned.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
-        if id == "track.setArm" {
-            return self.arm(params);
-        }
-        self.run(id, params)
+        let result = if id == "track.setArm" { self.arm(params) } else { self.run(id, params) };
+        // A removal takes the selection with it before an undo can bring the object back; a
+        // command that leaves it in place keeps it.
+        self.selection.prune(&self.project);
+        result
     }
 
     fn run(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
