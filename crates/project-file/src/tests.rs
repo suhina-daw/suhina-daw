@@ -2027,8 +2027,7 @@ fn warp_settings_out_of_range_save_as_they_play() {
 /// are centered and off.
 #[test]
 fn the_crossfader_and_its_assigns_round_trip() {
-    let mut project = Project::default();
-    project.crossfader = Crossfader(0.25);
+    let mut project = Project { crossfader: Crossfader(0.25), ..Project::default() };
     let mut track = Track::new(TrackId(1), "A");
     track.crossfade_assign = CrossfadeAssign::B;
     project.tracks.push(track);
