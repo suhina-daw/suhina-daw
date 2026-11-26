@@ -88,6 +88,9 @@ fn a_normalized_position_turns_a_logarithmic_time_smoothly() {
         json!({ "track": track.0, "device": 0, "param": "op1.env.attack", "value": 1.0, "normalized": 0.5 }),
     );
     assert!(both.is_err(), "{both:?}");
+    let neither =
+        run(&mut session, "device.setParam", json!({ "track": track.0, "device": 0, "param": "op1.env.attack" }));
+    assert!(neither.is_err(), "{neither:?}");
 }
 
 /// Stepping: the project's track order for tracks (nothing at either end; the first or last

@@ -1623,8 +1623,10 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
     let param = Args::new(params).raw_str("param").ok_or("param must be a parameter id, from device.list")?;
     let mut value = Args::new(params).opt_f64("value")?;
     let normalized = Args::new(params).opt_f64("normalized")?;
-    if value.is_some() == normalized.is_some() {
-        return Err("give value or normalized, not both".into());
+    match (value.is_some(), normalized.is_some()) {
+        (true, true) => return Err("give value or normalized, not both".into()),
+        (false, false) => return Err("give value or normalized".into()),
+        _ => {}
     }
     let source_tempo = match (param, value) {
         ("warp", Some(value)) if value > 0. => initial_sampler_tempo(session, params, false)?,
