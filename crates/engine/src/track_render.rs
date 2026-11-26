@@ -63,8 +63,10 @@ fn alone(project: &Project, track: TrackId) -> Project {
         next_id: project.next_id,
         // The range is rendered straight through: the arrangement's loop region does not wrap it.
         transport: Transport { loop_enabled: false, ..project.transport.clone() },
+        crossfader: project.crossfader,
         tracks: vec![Track {
             folder: false,
+            crossfade_assign: Default::default(),
             id: track,
             name: source.map(|t| t.name.clone()).unwrap_or_default(),
             color: None,

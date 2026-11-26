@@ -190,6 +190,10 @@ pub(crate) fn build(
         let post =
             gains_until(project, chain.track, target.map(|(_, ch)| ch), live_pan.is_none()).unwrap_or((0.0, 0.0));
         chain.set_post(post);
+        // The fade belongs to the last chain on the path to Main: an inner chain feeding a bus
+        // is already scaled by the bus's own assign.
+        let assign = target.is_none().then(|| crossfade_assign(project, chain.track)).flatten();
+        chain.set_crossfade_assign(assign, project.crossfader.0);
         // A key hears this channel's fader, not the gains of later buses that happen to be
         // folded into its audible output. In particular a zero-level output is not a mute.
         chain.set_key_post(cue_gains(project, chain.track, live_pan.is_none()).unwrap_or((0.0, 0.0)));
@@ -439,6 +443,29 @@ pub(crate) fn cue_gains(project: &Project, track: TrackId, pan: bool) -> Option<
     let (left, right) = suhina_dsp::pan::gains(pan);
     let scale = volume * std::f64::consts::SQRT_2 * 0.25;
     Some(((left * scale) as f32, (right * scale) as f32))
+}
+
+/// The assign whose fade this track's output takes: the outermost assigned group above it,
+/// which governs everything inside, or its own assign when no group above it is assigned. `None`
+/// for off (`docs/spec/crossfader.md`).
+fn crossfade_assign(project: &Project, track: TrackId) -> Option<suhina_model::CrossfadeAssign> {
+    use suhina_model::CrossfadeAssign;
+    let mut assign = project.track(track)?.crossfade_assign;
+    let mut parent = project.track(track).and_then(|t| t.parent);
+    let mut hops = 0;
+    while let Some(group) = parent {
+        if hops > suhina_model::MAX_GROUP_DEPTH {
+            break;
+        }
+        if let Some(found) = project.track(group).map(|t| t.crossfade_assign)
+            && found != CrossfadeAssign::Off
+        {
+            assign = found;
+        }
+        parent = project.track(group).and_then(|t| t.parent);
+        hops += 1;
+    }
+    (assign != CrossfadeAssign::Off).then_some(assign)
 }
 
 /// A track's equal-power pan (when `pan`) and the volume of every channel from its own up to,

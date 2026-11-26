@@ -6,6 +6,26 @@ use super::element::{Entered, Look, Native};
 use super::{motion, theme, widgets};
 use egui::{Align2, Color32, Pos2, Rect, Vec2};
 
+/// The mixer's A–B crossfader in `rect`: a bar filled from its center to the value, with A at
+/// its left and B at its right. `el` is the control its caller entered (`#mixer-crossfader`).
+pub fn crossfader_field(painter: &egui::Painter, rect: Rect, el: &Entered, value: f64, hover: f32) {
+    let value = value.clamp(0.0, 1.0) as f32;
+    level_bar(
+        painter,
+        rect,
+        el,
+        "crossfader",
+        (0.5f32.min(value), 0.5f32.max(value)),
+        hover,
+        "",
+        Align2::CENTER_CENTER,
+    );
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let ink = el.color();
+    widgets::text_in(painter, rect.shrink2(Vec2::new(3.0, 0.0)), Align2::LEFT_CENTER, "A", font.clone(), ink);
+    widgets::text_in(painter, rect.shrink2(Vec2::new(3.0, 0.0)), Align2::RIGHT_CENTER, "B", font.clone(), ink);
+}
+
 /// A pan as a field in `rect`, drawn as `el`, the pan control its caller entered (`pan`,
 /// `#mixer-pan`).
 pub fn pan_field(painter: &egui::Painter, rect: Rect, el: &Entered, pan: f64, hover: f32) {

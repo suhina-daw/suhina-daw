@@ -105,42 +105,47 @@ use suhina_theme_render::{Subject, scenes};
 /// rate and Random amount are the SDK's native dial widget, which the style engine paints as knob
 /// elements, where the hand-drawn dial was a canvas drawing (736 and 715; 748 and 728 on
 /// Windows).
+///
+/// #1678 (the crossfader) raised the Launcher by 11 nodes and 4 identities, and the expanded FM
+/// scene by 11 nodes and 11 identities, and the styles worked out after a theme or color change
+/// by the same: the Main strip's crossfader and each track strip's A/B/off button, each a styled
+/// level bar or button (485 and 463, 747 and 726; 497 and 476, 759 and 739 on Windows).
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 474,
-            identities: 459,
+            nodes: 485,
+            identities: 463,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 459,
+            theme_change_fresh: 463,
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 460,
+            color_change_fresh: 464,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 736,
-            identities: 715,
+            nodes: 747,
+            identities: 726,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 715,
+            theme_change_fresh: 726,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 716,
+            color_change_fresh: 727,
         },
     ),
 ];
@@ -152,37 +157,37 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 486,
-            identities: 472,
+            nodes: 497,
+            identities: 476,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 472,
+            theme_change_fresh: 476,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 473,
+            color_change_fresh: 477,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 748,
-            identities: 728,
+            nodes: 759,
+            identities: 739,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 728,
+            theme_change_fresh: 739,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 729,
+            color_change_fresh: 740,
         },
     ),
 ];

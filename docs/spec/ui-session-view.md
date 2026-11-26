@@ -380,6 +380,11 @@ vertical channel strip under its slots, and the strip shows more the taller the 
 - **The fader** is dragged up or down (Shift for finer), and the wheel over it moves it a dB at
   a time; every frame of a drag is heard, and the drag is one undo step (`track.setVolume` with
   `tracks` and a `gesture`). A double-click sets it back to 0 dB, as the Arrangement headers do.
+- **The crossfader** sits in Main's toggle row beside the metronome: a horizontal A–B bar,
+  dragged, wheeled or double-clicked back to center (`mixer.setCrossfader`, one gesture). Each
+  track, group and return strip has an **A/B/off** button at the right of its pan row; a click
+  cycles the side (`track.setCrossfadeAssign`, one undo step). The blend and the group rule are
+  in [the crossfader](crossfader.md).
 - **The output** reads "→ Main" only for the main output; otherwise it names the actual
   destination channel, including imported routes into regular or return tracks and channels
   without a visible track. A muted destination is marked "(muted)". A click opens a menu

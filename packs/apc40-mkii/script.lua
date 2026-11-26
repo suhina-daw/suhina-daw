@@ -50,6 +50,8 @@ local ON, OFF_BUTTON, STOP_LIT, STOP_TRIGGERED = 127, 0, 1, 2
 -- types on CC 24-31; DEVICE < > on notes 58-59, BANK < > on notes 60-61, DEV. ON/OFF on note
 -- 62; the TRACK SELECT buttons on note 51 of each track's channel, MASTER on note 80).
 local KNOBS = 8
+local CROSSFADER = 15
+local CROSSFADE_AB = 66
 -- How many selection looks after a knob's last report count as still turning: the ring is not
 -- written while it turns, because a ring write resets an absolute encoder's own value and the
 -- next report would jump.
@@ -323,6 +325,21 @@ local function arm_velocity(track)
     return OFF_BUTTON
 end
 
+-- The crossfader A/B button's LED: yellow on A, red on B, off when the track is off the
+-- crossfader. A single LED, so off has no colour of its own.
+local function crossfade_velocity(track)
+    local strip = strip_of(track)
+    if strip == nil then
+        return OFF
+    end
+    if strip.crossfade_assign == "a" then
+        return YELLOW
+    elseif strip.crossfade_assign == "b" then
+        return RED
+    end
+    return OFF_BUTTON
+end
+
 local function play_velocity()
     if state ~= nil and state.running == true then
         return ON
@@ -445,6 +462,7 @@ local function refresh()
         led(track, 50, activator_velocity(track))
         led(track, 49, solo_velocity(track))
         led(track, 48, arm_velocity(track))
+        led(track, CROSSFADE_AB, crossfade_velocity(track))
         -- The track select buttons are radio style: the selected track's is lit.
         local id = mixer_track(track)
         led(track, TRACK_SELECT, (id ~= nil and not is_nil(selection) and selection.track == id) and ON or OFF_BUTTON)
@@ -548,6 +566,18 @@ local function press(channel, note)
             -- Record arm takes one track, not a list.
             local armed = not (strip ~= nil and strip.armed == true)
             suhina.command("track.setArm", { track = id, armed = armed })
+        elseif note == CROSSFADE_AB then
+            -- The button has two sides: A and B alternate; off is chosen in the window.
+            local assign = strip ~= nil and strip.crossfade_assign or "off"
+            local next
+            if assign == "a" then
+                next = "b"
+            elseif assign == "b" then
+                next = "a"
+            else
+                next = "a"
+            end
+            suhina.command("track.setCrossfadeAssign", { tracks = { id }, assign = next })
         elseif note == TRACK_SELECT then
             suhina.command("track.select", { track = id })
         end
@@ -590,6 +620,8 @@ local function cc_received(channel, controller, value)
         suhina.command("device.setParam", args, "apc40-mkii device " .. tostring(selection.track) .. ":" .. tostring(device.path) .. ":" .. tostring(param.id))
         knob_reported(controller, value)
         knob_turn[controller] = KNOB_SETTLE
+    elseif controller == CROSSFADER and channel == 0 then
+        suhina.command("mixer.setCrossfader", { value = value / 127 }, "apc40-mkii crossfader")
     elseif controller >= 48 and controller <= 55 and channel == 0 then
         local id = mixer_track(controller - 48)
         if id == nil then

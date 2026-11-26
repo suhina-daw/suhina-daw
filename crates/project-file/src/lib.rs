@@ -24,14 +24,14 @@ use serde_json::{Map, Value, json};
 use suhina_model::{
     Arrangement, ArrangementLane, AudioInput, AudioRegion, AutomationLane, AutomationPoint, Branch, CLIP_GAIN_MAX_DB,
     Channel, ChannelId, ChannelRole, Clip, ClipAudio, ClipContent, ClipId, ClipSwing, ContentId, ContentKinds,
-    ContentLane, ControllerMapping, Device, DeviceGroup, DeviceId, DeviceInput, DeviceKind, DeviceParam, Extension,
-    Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE, GainPoint, InputChannels, LaneData,
-    LaneId, LaunchMode, LaunchQuantization, LaunchSettings, Launcher, LauncherColumn, LoopRange, MAX_CHANGE_BEAT,
-    MAX_GAIN_POINTS, MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Macro,
-    MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput, MidiPort, Monitor, Note, Project, Rgb,
-    SWING_RANGE, Scale, ScaleMode, Scene, SceneId, Send, SignalPoint, Slot, StretchMode, TakeLane, TapPoint,
-    TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track, TrackId, Transport, WarpMarker, automation,
-    max_clip_gain, valid_bpm,
+    ContentLane, ControllerMapping, CrossfadeAssign, Crossfader, Device, DeviceGroup, DeviceId, DeviceInput,
+    DeviceKind, DeviceParam, Extension, Extensions, FadeCurve, FadeShape, FollowAction, FollowKind, GAIN_POINT_RANGE,
+    GainPoint, InputChannels, LaneData, LaneId, LaunchMode, LaunchQuantization, LaunchSettings, Launcher,
+    LauncherColumn, LoopRange, MAX_CHANGE_BEAT, MAX_GAIN_POINTS, MAX_INPUT_CHANNEL, MAX_MAPPINGS, MAX_TEMPO_CHANGES,
+    MAX_TIME_SIGNATURE_CHANGES, Macro, MacroMapping, MappedDevice, MappingSource, MappingTarget, Marker, MidiInput,
+    MidiPort, Monitor, Note, Project, Rgb, SWING_RANGE, Scale, ScaleMode, Scene, SceneId, Send, SignalPoint, Slot,
+    StretchMode, TakeLane, TapPoint, TempoPoint, TempoSource, TimeSignature, TimeSignatureChange, Track, TrackId,
+    Transport, WarpMarker, automation, max_clip_gain, valid_bpm,
 };
 use suhina_model::{ENVELOPE_RANGE, GRAIN_RANGE, SCATTER_RANGE, SliceAt, SliceTail, WarpSettings};
 use suhina_model::{LaneGroup, LaneLayout, LaneRef, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
@@ -44,7 +44,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 16;
+pub const VERSION: u64 = 17;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -267,6 +267,10 @@ fn project_value(p: &Project) -> Value {
         }
     }
     out.insert("transport".into(), transport);
+    // Version 17: left out while the crossfader is centered.
+    if p.crossfader.0 != Crossfader::CENTER {
+        out.insert("crossfader".into(), json!(number(p.crossfader.0)));
+    }
     out.insert("tracks".into(), p.tracks.iter().map(track_value).collect());
     out.insert("channels".into(), p.channels.iter().map(channel_value).collect());
     out.insert("contents".into(), p.contents.iter().map(content_value).collect());
@@ -367,6 +371,17 @@ fn track_value(t: &Track) -> Value {
         "channel": t.channel.map(|c| c.0),
         "parent": t.parent.map(|p| p.0),
     });
+    // Version 17: left out while the track is off the crossfader.
+    if t.crossfade_assign != CrossfadeAssign::Off {
+        let assign = match t.crossfade_assign {
+            CrossfadeAssign::A => "a",
+            CrossfadeAssign::B => "b",
+            CrossfadeAssign::Off => "off",
+        };
+        if let Some(map) = out.as_object_mut() {
+            map.insert("crossfade_assign".into(), assign.into());
+        }
+    }
     if let Some(map) = out.as_object_mut() {
         // Only a presentation folder says so (#1416).
         if t.folder {
@@ -1214,8 +1229,13 @@ fn read_project(value: &Value, version: u64) -> Result<Project, ProjectFileError
         }
         mappings
     };
+    let crossfader = float_or(p, "crossfader", Crossfader::CENTER, "project")?;
+    if !(0.0..=1.0).contains(&crossfader) {
+        return Err("project.crossfader: expected a number from 0 to 1".into());
+    }
     let mut project = Project {
         transport,
+        crossfader: Crossfader(crossfader),
         tracks,
         channels,
         contents,
@@ -1348,6 +1368,12 @@ fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
         midi_input: read_midi_input(t.get("midi_input"), at)?,
         audio_input: read_audio_input(t.get("audio_input"), at)?,
         folder: flag(t, "folder", false, at)? || was_folder,
+        crossfade_assign: match t.get("crossfade_assign").and_then(Value::as_str) {
+            None | Some("off") => CrossfadeAssign::Off,
+            Some("a") => CrossfadeAssign::A,
+            Some("b") => CrossfadeAssign::B,
+            Some(other) => return Err(format!("{at}.crossfade_assign: {other} is not a or b").into()),
+        },
         extensions,
     })
 }

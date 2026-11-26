@@ -217,6 +217,7 @@ fn input_track() -> Project {
     Project {
         tracks: vec![Track {
             folder: false,
+            crossfade_assign: Default::default(),
             id: TrackId(1),
             name: "Mic".into(),
             color: None,

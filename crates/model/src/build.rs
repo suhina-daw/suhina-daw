@@ -50,6 +50,7 @@ impl Track {
             midi_input: MidiInput::default(),
             audio_input: AudioInput::default(),
             folder: false,
+            crossfade_assign: crate::CrossfadeAssign::default(),
             extensions: Extensions::default(),
         }
     }

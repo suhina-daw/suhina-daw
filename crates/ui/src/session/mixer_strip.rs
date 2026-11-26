@@ -95,6 +95,8 @@ pub const SENDS_AT: f32 = 148.0;
 pub const NAME_AT: f32 = 166.0;
 pub const OUTPUT_AT: f32 = 192.0;
 pub const DEVICES_AT: f32 = 260.0;
+/// The A/B/off button beside a track's pan, in points.
+const ASSIGN_WIDTH: f32 = 20.0;
 
 /// Where each part of a strip goes, as the strip's box tree lays them out (#1453); a part the
 /// strip's height has no room for, or the sheet hides, is `None`.
@@ -118,6 +120,10 @@ pub struct Layout {
     pub divider: Option<Rect>,
     pub sends: Option<Rect>,
     pub pan: Option<Rect>,
+    /// Main's A–B crossfader.
+    pub crossfader: Option<Rect>,
+    /// A track's A/B/off assign button.
+    pub assign: Option<Rect>,
     /// The dB value over the fader.
     pub readout: Option<Rect>,
     pub fader: Option<Rect>,
@@ -322,6 +328,8 @@ pub fn layout_in(
         divider: None,
         sends: None,
         pan: None,
+        crossfader: None,
+        assign: None,
         readout: None,
         fader: None,
         scale: None,
@@ -364,6 +372,17 @@ pub fn layout_in(
             Slot::Metronome => parts.metronome = at,
             Slot::Sends => parts.sends = at.filter(|_| has_sends),
         }
+    }
+    // The crossfader shares Main's toggle row with its metronome; a track's assign shares its
+    // pan row's right end. Both are inside rows the strip already has, so no height step moves.
+    if main {
+        parts.crossfader = parts.metronome.map(|m| {
+            Rect::from_min_max(Pos2::new(m.right() + 2.0, m.top()), Pos2::new(parts.toggles.right(), m.bottom()))
+        });
+    } else {
+        parts.assign = parts
+            .pan
+            .map(|p| Rect::from_min_max(Pos2::new((p.right() - ASSIGN_WIDTH).max(p.left() + 8.0), p.top()), p.max));
     }
     // A strip with no input of its own keeps the block's room, empty: nothing in it is drawn.
     if !can_hear_input {
@@ -502,7 +521,10 @@ pub fn show(
     // Sends first, so a dragged send's level can stand where the pan's value is.
     let sending = parts.sends.and_then(|row| send_knobs(ui, painter, row, column, state, id, actions));
     if let Some(row) = parts.pan {
-        pan_row(ui, painter, row, column, sending, state, id, actions);
+        pan_row(ui, painter, row, parts.assign, column, sending, state, id, actions);
+    }
+    if let Some(rect) = parts.assign {
+        assign_button(ui, painter, rect, column, id, actions);
     }
     if let Some(fader) = parts.fader {
         let readout = parts.readout.unwrap_or(Rect::NOTHING);
@@ -1300,12 +1322,116 @@ fn compact_volume(
     widgets::text_in(painter, text, Align2::RIGHT_CENTER, &widgets::format_db(db), font, ink);
 }
 
+/// A track's A/B/off assign under its pan: a click cycles A, B, off through
+/// `track.setCrossfadeAssign`; the face reads the side and is lit while assigned.
+fn assign_button(ui: &Ui, painter: &egui::Painter, rect: Rect, column: &Column, id: Id, actions: &mut Vec<Action>) {
+    use suhina_engine::model::CrossfadeAssign;
+    let assign = column.crossfade_assign;
+    let label = match assign {
+        CrossfadeAssign::A => "A",
+        CrossfadeAssign::B => "B",
+        CrossfadeAssign::Off => "Off",
+    };
+    let response = widgets::button_area(
+        ui,
+        rect.intersect(painter.clip_rect()),
+        id.with("crossfade"),
+        format!("{} crossfade: {label}", column.name),
+    );
+    if response.clicked() {
+        let next = match assign.next() {
+            CrossfadeAssign::A => "a",
+            CrossfadeAssign::B => "b",
+            CrossfadeAssign::Off => "off",
+        };
+        actions.push(Action::new("track.setCrossfadeAssign", json!({ "tracks": [column.track.0], "assign": next })));
+    }
+    let lit = widgets::lit_toggle(
+        ui,
+        &response,
+        crate::kit::element::BUTTON.id("mixer-crossfade"),
+        &[Checked],
+        assign != CrossfadeAssign::Off,
+    );
+    let (fill, text) = lit.colors();
+    widgets::toggle_surface(painter, rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
+    widgets::text_in(painter, rect, Align2::CENTER_CENTER, label, theme::ui_font(theme::TEXT_SMALL), text);
+}
+
+/// Main's horizontal A–B crossfader: drag it, wheel it or double-click it to center; every frame
+/// of a drag is `mixer.setCrossfader` in one gesture.
+pub fn main_crossfader(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    value: f64,
+    state: &mut SessionViewState,
+    actions: &mut Vec<Action>,
+) {
+    state.value_areas.push(rect);
+    let style = crate::kit::element::PAN.id("mixer-crossfader").enter();
+    let response = widgets::value_area(
+        ui,
+        rect.intersect(painter.clip_rect()),
+        Id::unique("main-crossfader"),
+        "Main crossfader",
+        widgets::format_crossfader(value),
+    );
+    widgets::value_drag_pointer(ui.ctx(), &response, &style);
+    let mut preview = match state.drag {
+        Some((t, Control::Crossfader, v)) if t == MAIN => Some(v),
+        _ => None,
+    };
+    let mut committed = None;
+    let drag = widgets::drag_value_axis(
+        ui,
+        &response,
+        &mut preview,
+        value,
+        0.005,
+        0.01,
+        (0.0, 1.0),
+        0.5,
+        widgets::DragAxis::Horizontal,
+    );
+    let send = |v: f64, dragged: bool| {
+        let mut params = json!({ "value": v });
+        if dragged {
+            params["gesture"] = commands::gesture("main-crossfader");
+        }
+        Action::new("mixer.setCrossfader", params)
+    };
+    match drag {
+        Drag::Moving(v) => {
+            state.drag = Some((MAIN, Control::Crossfader, v));
+            actions.push(send(v, true));
+        }
+        Drag::Done(v) => {
+            state.drag = None;
+            actions.push(send(v, true));
+            committed = Some(v);
+        }
+        Drag::Set(v) => {
+            state.drag = None;
+            actions.push(send(v, false));
+            committed = Some(v);
+        }
+        Drag::None => {}
+    }
+    let shown = match state.drag {
+        Some((t, Control::Crossfader, v)) if t == MAIN => v,
+        _ => committed.unwrap_or(value),
+    };
+    crate::kit::mixer_controls::crossfader_field(painter, rect, &style, shown, widgets::hover(ui, &response));
+}
+
 /// The full-width pan field, sharing its face with Arrangement.
 #[allow(clippy::too_many_arguments)]
 fn pan_row(
     ui: &Ui,
     painter: &egui::Painter,
     row: Rect,
+    assign: Option<Rect>,
     column: &Column,
     _sending: Option<(String, f64)>,
     state: &mut SessionViewState,
@@ -1314,7 +1440,8 @@ fn pan_row(
 ) {
     let style = crate::kit::element::PAN.id("mixer-pan").enter();
     let track = column.track;
-    let knob_rect = row;
+    let knob_rect =
+        assign.map_or(row, |a| Rect::from_min_max(row.min, Pos2::new((a.left() - 2.0).max(row.left()), row.max.y)));
     state.value_areas.push(knob_rect);
     let pan_response = widgets::value_area(
         ui,

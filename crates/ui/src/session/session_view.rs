@@ -213,6 +213,8 @@ pub fn step_slot(grid: &TrackGrid, from: (TrackId, usize), step: Step) -> Option
 pub(crate) enum Control {
     Volume,
     Pan,
+    /// The mixer's A–B crossfader.
+    Crossfader,
     /// The send to this return track.
     Send(TrackId),
 }
@@ -603,6 +605,16 @@ pub fn show(
             &main_painter,
             (parts.readout.unwrap_or(Rect::NOTHING), fader, parts.scale),
             grid.main_volume_db,
+            state,
+            actions,
+        );
+    }
+    if let Some(rect) = parts.crossfader {
+        crate::session::mixer_strip::main_crossfader(
+            ui,
+            &painter.with_clip_rect(main_mixer),
+            rect,
+            grid.main_crossfader,
             state,
             actions,
         );

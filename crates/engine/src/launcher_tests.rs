@@ -71,6 +71,7 @@ pub(super) fn project(contents: Vec<ClipContent>, slots: Vec<Vec<Slot>>) -> Proj
         tracks: (1..=n)
             .map(|i| Track {
                 folder: false,
+                crossfade_assign: Default::default(),
                 id: TrackId(i),
                 name: format!("T{i}"),
                 color: None,

@@ -40,6 +40,8 @@ mod clock;
 mod count_in;
 mod cpu;
 mod crossfade;
+#[cfg(test)]
+mod crossfade_mixer_tests;
 mod cue;
 #[cfg(test)]
 mod cue_tests;
@@ -187,6 +189,24 @@ pub const MIXER_PAN: usize = usize::MAX - 2;
 /// [`branch_param`], the value the branch's new linear volume, pan (-1 to 1), or mute or solo
 /// (1 on, 0 off) (#763 › 4).
 pub const MIXER_BRANCH: usize = usize::MAX - 3;
+/// The device index of a parameter message that moves the mixer's crossfader
+/// ([`Controller::set_device_param`]): the parameter is unused, the value is 0 at A and 1 at B;
+/// every chain with its own assign takes it, smoothed, without a new graph.
+pub const MIXER_CROSSFADE: usize = usize::MAX - 4;
+
+/// The crossfader's equal-power gain for a track on `assign` at `value` (0 at A, 1 at B). An
+/// assign of off, or no assign, is heard at unity.
+pub fn crossfade_gain(assign: Option<suhina_model::CrossfadeAssign>, value: f64) -> f32 {
+    use suhina_model::CrossfadeAssign;
+    let Some(assign) = assign else { return 1.0 };
+    let value = if value.is_finite() { value.clamp(0.0, 1.0) } else { suhina_model::Crossfader::CENTER };
+    let angle = value * std::f64::consts::FRAC_PI_2;
+    match assign {
+        CrossfadeAssign::A => angle.cos() as f32,
+        CrossfadeAssign::B => angle.sin() as f32,
+        CrossfadeAssign::Off => 1.0,
+    }
+}
 
 /// What a [`MIXER_BRANCH`] message moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

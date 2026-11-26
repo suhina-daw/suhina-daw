@@ -130,6 +130,7 @@ fn everything() -> Project {
         ..Track::new(TrackId(id), format!("Track {id}"))
     };
     let mut project = Project {
+        crossfader: Crossfader(0.25),
         transport: Transport {
             tempo_bpm: 128.5,
             time_signature: TimeSignature { numerator: 7, denominator: 8 },
@@ -1507,6 +1508,9 @@ fn a_mapping_to_a_place_or_an_id_with_no_device_is_an_error() {
 /// channel. A field added to the model is added here too, so the shape test below sees it.
 fn every_feature() -> Project {
     let mut project = everything();
+    // Version 17: the crossfader and one track's side.
+    project.crossfader = Crossfader(0.25);
+    project.tracks[0].crossfade_assign = CrossfadeAssign::B;
     project.channels[0].devices.extend(with_a_group().channels[0].devices.clone());
     // Version 4: take lanes (#909).
     let lane = project.arrangement.lanes.iter().find(|l| l.track.is_some() && !l.clips.is_empty()).unwrap();
@@ -1631,6 +1635,13 @@ fn a_file_of_every_version_reads() {
             // The stretch modes' settings came with version 16.
             for clip in expected.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
                 clip.audio.warp = WarpSettings::default();
+            }
+        }
+        if version < 17 {
+            // The crossfader and its assigns came with version 17.
+            expected.crossfader = Crossfader::default();
+            for track in &mut expected.tracks {
+                track.crossfade_assign = CrossfadeAssign::Off;
             }
         }
         // Devices get their ids in document order when a file before version 6 is read.
@@ -2010,4 +2021,21 @@ fn warp_settings_out_of_range_save_as_they_play() {
     }
     let read = from_json(&to_json(&project)).unwrap();
     assert!(read.arrangement.lanes.iter().flat_map(|l| &l.clips).all(|c| c.audio.warp == own));
+}
+
+/// Version 17: the crossfader and a track's assign survive a save and read, and their defaults
+/// are centered and off.
+#[test]
+fn the_crossfader_and_its_assigns_round_trip() {
+    let mut project = Project::default();
+    project.crossfader = Crossfader(0.25);
+    let mut track = Track::new(TrackId(1), "A");
+    track.crossfade_assign = CrossfadeAssign::B;
+    project.tracks.push(track);
+    let read = from_json(&to_json(&project)).unwrap();
+    assert_eq!(read.crossfader.0, 0.25);
+    assert_eq!(read.track(TrackId(1)).map(|t| t.crossfade_assign), Some(CrossfadeAssign::B));
+    let plain = from_json(&to_json(&Project::default())).unwrap();
+    assert_eq!(plain.crossfader.0, Crossfader::CENTER);
+    assert_eq!(plain.track(TrackId(1)).map(|t| t.crossfade_assign), None);
 }

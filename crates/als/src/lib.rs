@@ -186,6 +186,7 @@ impl Reader {
             channels.push(channel);
             tracks.push(Track {
                 folder: false,
+                crossfade_assign: Default::default(),
                 id: entry.track,
                 name: entry.name.clone(),
                 color: None,
@@ -210,6 +211,7 @@ impl Reader {
         }
 
         let mut project = Project {
+            crossfader: Default::default(),
             transport,
             tracks,
             channels,

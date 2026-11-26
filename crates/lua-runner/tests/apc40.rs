@@ -22,6 +22,7 @@ struct Command {
     param: Option<String>,
     value: Option<f64>,
     normalized: Option<f64>,
+    assign: Option<String>,
     gesture: Option<String>,
 }
 
@@ -112,6 +113,7 @@ impl Fake {
                         param: text_field("param"),
                         value: field("value").and_then(|v| number(&v)),
                         normalized: field("normalized").and_then(|v| number(&v)),
+                        assign: text_field("assign"),
                         gesture: args.get(2).and_then(text),
                     });
                     Ok(true)
@@ -242,6 +244,21 @@ impl Fake {
             let strip = self.lua.create_table().unwrap();
             strip.set("id", *id).unwrap();
             strip.set("pan", 0.0).unwrap();
+            strip.set("crossfade_assign", "off").unwrap();
+            strips.set(index + 1, strip).unwrap();
+        }
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((3u64, strips)).unwrap();
+    }
+
+    /// The strips with their crossfade assigns, then the state read as one look.
+    fn strips_assigns(&self, ids: &[(u32, &str)]) {
+        let strips = self.lua.create_table().unwrap();
+        for (index, (id, assign)) in ids.iter().enumerate() {
+            let strip = self.lua.create_table().unwrap();
+            strip.set("id", *id).unwrap();
+            strip.set("pan", 0.0).unwrap();
+            strip.set("crossfade_assign", *assign).unwrap();
             strips.set(index + 1, strip).unwrap();
         }
         let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
@@ -355,6 +372,41 @@ fn the_track_and_master_select_buttons_set_the_selection() {
     let command = fake.last_command();
     assert_eq!(command.id, "track.select", "{command:?}");
     assert_eq!(command.track_name.as_deref(), Some("main"), "{command:?}");
+}
+
+/// CC 15 sets the crossfader, and a track's note 66 button toggles A and B; the strip reading
+/// lights it yellow on A and red on B.
+#[test]
+fn the_crossfader_and_the_ab_button_drive_their_commands() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    fake.strips_assigns(&[(7, "off")]);
+    fake.message(&[0xB0, 15, 127]);
+    let command = fake.last_command();
+    assert_eq!(command.id, "mixer.setCrossfader", "{command:?}");
+    assert!((command.value.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
+    assert_eq!(command.gesture.as_deref(), Some("apc40-mkii crossfader"), "{command:?}");
+    // The A/B button on the first track's channel (0) turns off into A.
+    fake.press(66);
+    let command = fake.last_command();
+    assert_eq!(command.id, "track.setCrossfadeAssign", "{command:?}");
+    assert_eq!(command.assign.as_deref(), Some("a"), "{command:?}");
+    // The reading says A: the button burns yellow. Then A turns into B, red.
+    fake.strips_assigns(&[(7, "a")]);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 66, 13].as_slice()),
+        "A lights yellow: {:?}",
+        fake.sends.borrow()
+    );
+    fake.press(66);
+    assert_eq!(fake.last_command().assign.as_deref(), Some("b"));
+    fake.strips_assigns(&[(7, "b")]);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 66, 5].as_slice()),
+        "B lights red: {:?}",
+        fake.sends.borrow()
+    );
 }
 
 /// The alternate Live mode hands every LED to the host, so a knob's ring follows its parameter

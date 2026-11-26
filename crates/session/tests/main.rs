@@ -19,6 +19,7 @@ mod clip_edits;
 mod clip_shape;
 mod commands;
 mod comping;
+mod crossfader;
 mod cue;
 mod device_groups;
 mod devices;

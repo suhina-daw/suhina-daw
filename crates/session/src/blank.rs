@@ -46,6 +46,7 @@ pub fn blank_project_with(returns: bool) -> Project {
         let id = index as u32 + 1;
         project.tracks.push(Track {
             folder: false,
+            crossfade_assign: Default::default(),
             id: TrackId(id),
             name: name.into(),
             color: None,
@@ -64,6 +65,7 @@ pub fn blank_project_with(returns: bool) -> Project {
         let track = TrackId(10 + offset as u32);
         project.tracks.push(Track {
             folder: false,
+            crossfade_assign: Default::default(),
             id: track,
             name: name.into(),
             color: None,

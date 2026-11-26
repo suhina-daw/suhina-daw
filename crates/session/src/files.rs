@@ -115,6 +115,7 @@ pub(crate) fn insert_track(
     });
     let track = Track {
         folder: false,
+        crossfade_assign: Default::default(),
         id,
         name: name.to_string(),
         color: None,

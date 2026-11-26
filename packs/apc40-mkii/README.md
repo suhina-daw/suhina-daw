@@ -5,8 +5,8 @@ the per-track stop, activator (mute), solo, record-arm and select buttons, the t
 and metronome buttons, the device control section — the eight knobs on the selected device's
 dials in banks of eight, Device and Bank left/right, Device On/Off, and the master select — and
 the
-mixer, the eight track faders, the master fader and the pan encoders with their LED rings, with
-feedback on every button.
+mixer, the crossfader and each track's A/B button, the eight track faders, the master fader and
+the pan encoders with their LED rings, with feedback on every button.
 
 Suhina ships it: the files ride inside the executable and unpack into the library's
 `Scripts/MIDI/apc40-mkii/` folder, and the app installs the program into its extensions store so
@@ -37,9 +37,10 @@ affiliation with Akai, and the name says what hardware the script is for — no 
 Wired: the clip grid (`clip.launch`, a slot's stop button for an empty slot), the scene
 buttons (`scene.launch`), the track stop, the activator (`track.setMute`), solo
 (`track.setSolo`), record arm (`track.setArm`), the track select buttons and master select
-(`track.select`), play/stop and the metronome, the eight faders (`track.setVolume`, one gesture
-each), the master fader (`mixer.setMainVolume`) and the pan encoders (`track.setPan`, one
-gesture each) with their rings.
+(`track.select`), play/stop and the metronome, the crossfader (`mixer.setCrossfader`, one
+gesture) and each track's A/B button (`track.setCrossfadeAssign`), the eight faders
+(`track.setVolume`, one gesture each), the master fader (`mixer.setMainVolume`) and the pan
+encoders (`track.setPan`, one gesture each) with their rings.
 
 The device control section follows the selection the window, commands and agents share
 (`project.selection`, #1679): the eight knobs turn the selected device's dials — the page its
@@ -55,7 +56,7 @@ when a value comes from elsewhere. Switches and choices stay on the device's pan
 arrows light where there is another page, the device arrows while a device is selected, and the
 track select buttons light for the selected track.
 
-Not yet: the sends, user mode, crossfader, Device Lock, the Clip/Dev and Detail View buttons,
-the tempo encoder, nudge, tap tempo, session record and shift; blinking queued pads; and the
-clip's own colour on its pad (a slot with a clip lights white, its track's states light green,
+Not yet: the sends, user mode, Device Lock, the Clip/Dev and Detail View buttons, the tempo
+encoder, nudge, tap tempo, session record and shift; blinking queued pads; and the clip's own
+colour on its pad (a slot with a clip lights white, its track's states light green,
 yellow, red and grey).
