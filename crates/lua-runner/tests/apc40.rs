@@ -282,12 +282,12 @@ impl Fake {
         device.set("path", path).unwrap();
         device.set("enabled", true).unwrap();
         let params = [
-            (101, "Bypass", "toggle", 0.0, 1.0, 0.0),
-            (102, "Cutoff", "continuous", 0.0, 1.0, 0.5),
-            (103, "Mode", "continuous", 0.0, 3.0, 1.0),
+            (101, "Bypass", "toggle", 0.0, 1.0, 0.0, 1, false),
+            (102, "Cutoff", "continuous", 0.0, 1.0, 0.5, 0, false),
+            (103, "Mode", "continuous", 0.0, 3.0, 1.0, 3, true),
         ];
         let list = self.lua.create_table().unwrap();
-        for (index, (id, name, kind, min, max, value)) in params.iter().enumerate() {
+        for (index, (id, name, kind, min, max, value, steps, is_list)) in params.iter().enumerate() {
             let param = self.lua.create_table().unwrap();
             param.set("id", *id).unwrap();
             param.set("name", *name).unwrap();
@@ -295,6 +295,8 @@ impl Fake {
             param.set("min", *min).unwrap();
             param.set("max", *max).unwrap();
             param.set("value", *value).unwrap();
+            param.set("steps", *steps).unwrap();
+            param.set("list", *is_list).unwrap();
             param.set("unit", "").unwrap();
             list.set(index + 1, param).unwrap();
         }
@@ -380,6 +382,21 @@ impl Fake {
     }
 
     fn launcher_grid_tracks(&self, scenes: &[(u64, &str)], color: Option<&str>, clips: bool, track_count: u32) {
+        self.launcher_grid_where(scenes, color, track_count, |track| clips && (track < 2 || track_count > 9));
+    }
+
+    /// A nine-track grid with a clip on the ninth track too, outside the 5x8 window.
+    fn launcher_grid_with_offwindow_clip(&self, scenes: &[(u64, &str)]) {
+        self.launcher_grid_where(scenes, None, 9, |track| track < 2 || track == 8);
+    }
+
+    fn launcher_grid_where(
+        &self,
+        scenes: &[(u64, &str)],
+        color: Option<&str>,
+        track_count: u32,
+        has_clip: impl Fn(u32) -> bool,
+    ) {
         let grid = self.lua.create_table().unwrap();
         let list = self.lua.create_table().unwrap();
         for (index, (id, name)) in scenes.iter().enumerate() {
@@ -389,8 +406,6 @@ impl Fake {
             list.set(index + 1, scene).unwrap();
         }
         grid.set("scenes", list).unwrap();
-        // Two clips in every scene's row, on the first two tracks, so a scene is playing only
-        // when both play and a partly stopped row is not.
         let tracks = self.lua.create_table().unwrap();
         for track in 0..track_count {
             let column = self.lua.create_table().unwrap();
@@ -398,7 +413,7 @@ impl Fake {
             let slots = self.lua.create_table().unwrap();
             for scene in 0..scenes.len() {
                 let slot = self.lua.create_table().unwrap();
-                if clips && (track < 2 || track_count > 9) {
+                if has_clip(track) {
                     slot.set("clip", "Clip").unwrap();
                     if let Some(color) = color {
                         slot.set("color", color).unwrap();
@@ -462,6 +477,14 @@ impl Fake {
         handler.call::<()>((6u64, state)).unwrap();
     }
 
+    /// The locked device's next subscription state: it is gone, as `device.read` answers null.
+    fn locked_missing(&self) {
+        let suhina: mlua::Table = self.lua.globals().get("suhina").unwrap();
+        let null: Value = suhina.get("null").unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((7u64, null)).unwrap();
+    }
+
     fn record_state_with(&self, arrangement: bool, slot_take: Option<(u32, u32)>) {
         let state = self.lua.create_table().unwrap();
         state.set("arrangement", arrangement).unwrap();
@@ -481,14 +504,21 @@ impl Fake {
 
     /// Strips with their armed state and sends: each send's return id and level in dB.
     fn strips_mixer(&self, entries: &[(u32, bool, &[f64])]) {
+        let entries: Vec<(u32, f64, bool, &[f64])> =
+            entries.iter().map(|(id, armed, levels)| (*id, 0.0, *armed, *levels)).collect();
+        self.strips_mixer_with_pan(&entries);
+    }
+
+    /// The same with each strip's pan, for the encoder rings.
+    fn strips_mixer_with_pan(&self, entries: &[(u32, f64, bool, &[f64])]) {
         let strips = self.lua.create_table().unwrap();
         for track in 0..8u32 {
             let strip = self.lua.create_table().unwrap();
-            let (id, armed, levels) = entries
+            let (id, pan, armed, levels) = entries
                 .get(track as usize)
-                .map_or((track + 1, false, &[][..]), |(id, armed, levels)| (*id, *armed, *levels));
+                .map_or((track + 1, 0.0, false, &[][..]), |(id, pan, armed, levels)| (*id, *pan, *armed, *levels));
             strip.set("id", id).unwrap();
-            strip.set("pan", 0.0).unwrap();
+            strip.set("pan", pan).unwrap();
             strip.set("armed", armed).unwrap();
             strip.set("crossfade_assign", "off").unwrap();
             let sends = self.lua.create_table().unwrap();
@@ -585,6 +615,11 @@ fn a_plugins_sliders_take_the_device_knobs_in_panel_order() {
     let command = fake.last_command();
     assert_eq!(command.param.as_deref(), Some("103"), "{command:?}");
     assert!((command.value.unwrap_or_default() - 3.0).abs() < 1e-6, "{command:?}");
+    // Halfway along the four-choice list snaps to the panel's step, not 1.5118 between them.
+    fake.knob(1, 64);
+    let command = fake.last_command();
+    assert_eq!(command.param.as_deref(), Some("103"), "{command:?}");
+    assert!((command.value.unwrap_or_default() - 2.0).abs() < 1e-6, "{command:?}");
 }
 
 /// A logarithmic dial sends the reading's normalized position, not a linear value: its knob
@@ -676,8 +711,8 @@ fn the_clip_pads_take_the_colours_the_window_shows() {
     );
 }
 
-/// A scene launch button lights green while any track plays its scene, and a press on a lit
-/// one stops that scene; a blank one launches it (#1677).
+/// A scene launch button lights green while its whole row plays, and a press on a lit one stops
+/// that scene; a blank one launches it (#1677).
 #[test]
 fn the_scene_launch_buttons_light_and_toggle_their_scene() {
     let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
@@ -712,6 +747,18 @@ fn the_scene_launch_buttons_light_and_toggle_their_scene() {
     let command = fake.last_command();
     assert_eq!(command.id, "scene.launch", "{command:?}");
     assert_eq!(command.scene, Some(11), "{command:?}");
+    // A clip outside the eight-track window still counts: the scene is not fully playing, so
+    // its visible button is blank and a press launches rather than stops.
+    fake.launcher_grid_with_offwindow_clip(&[(10, "Intro")]);
+    let before = fake.sends.borrow().len();
+    fake.launcher_state(&[(0, 0), (1, 0)]);
+    let sent = fake.sends.borrow()[before..].to_vec();
+    assert!(
+        !sent.iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 82, 21].as_slice()),
+        "the ninth track's stopped clip keeps the scene blank: {sent:?}"
+    );
+    fake.press(82);
+    assert_eq!(fake.last_command().id, "scene.launch", "{:?}", fake.commands());
 }
 
 /// Pan, Sends and User take the eight encoders: pan, a return's send (paged by another Sends
@@ -766,6 +813,25 @@ fn the_encoder_modes_take_pan_sends_and_user() {
     let before = fake.commands.borrow().len();
     fake.encoder(0, 64);
     assert_eq!(fake.commands.borrow().len(), before, "User leaves the encoder alone: {:?}", fake.commands());
+}
+
+/// A ring value reported for one mode is not an echo of the next mode's value: returning to Pan
+/// restores its ring rather than leaving the Sends position in place.
+#[test]
+fn changing_an_encoders_mode_forgets_its_old_echoes() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.strips_mixer(&[(7, false, &[-60.0])]);
+    // The pan is centred: its ring is at 64, and the encoder reports that same value.
+    fake.encoder(0, 64);
+    fake.press(88);
+    let before = fake.sends.borrow().len();
+    fake.press(87);
+    let sent = &fake.sends.borrow()[before..];
+    assert!(
+        sent.iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 48, 64].as_slice()),
+        "the pan's ring is written again: {sent:?}"
+    );
 }
 
 /// The Record button records the arrangement and lights while it does; Session Record arms
@@ -834,9 +900,13 @@ fn the_tempo_knob_nudge_and_tap_tempo_set_the_tempo() {
     fake.launcher_state_tempo(&[], 120.0);
     fake.press(101);
     assert!((fake.last_command().bpm.unwrap_or_default() - 121.0).abs() < 1e-6, "{:?}", fake.last_command());
-    fake.launcher_state_tempo(&[], 121.0);
+    // A second click before the engine reports the first still adds a BPM.
+    fake.press(101);
+    assert!((fake.last_command().bpm.unwrap_or_default() - 122.0).abs() < 1e-6, "{:?}", fake.last_command());
+    fake.launcher_state_tempo(&[], 122.0);
     fake.press(100);
-    assert!((fake.last_command().bpm.unwrap_or_default() - 120.0).abs() < 1e-6, "{:?}", fake.last_command());
+    assert!((fake.last_command().bpm.unwrap_or_default() - 121.0).abs() < 1e-6, "{:?}", fake.last_command());
+    fake.launcher_state_tempo(&[], 121.0);
     // Two taps half a second apart are 120 BPM.
     fake.message_at(&[0x90, 99, 127], 1_000_000);
     fake.message_at(&[0x90, 99, 127], 1_500_000);
@@ -855,6 +925,10 @@ fn the_cue_knob_steps_the_cue_volume() {
     let command = fake.last_command();
     assert_eq!(command.id, "output.setCueVolume", "{command:?}");
     assert!((command.db.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
+    // A second click before the output reports the first still moves another dB.
+    fake.message(&[0xB0, 47, 1]);
+    assert!((fake.last_command().db.unwrap_or_default() - 2.0).abs() < 1e-6, "{:?}", fake.last_command());
+    fake.audio_info(Some(2.0));
     fake.audio_info(Some(-6.0));
     fake.message(&[0xB0, 47, 127]);
     let command = fake.last_command();
@@ -926,6 +1000,42 @@ fn the_device_buttons_follow_the_device_lock() {
     assert_eq!(fake.last_command().id, "view.devices", "{:?}", fake.commands());
     fake.press(65);
     assert_eq!(fake.last_command().id, "view.detail", "{:?}", fake.commands());
+}
+
+/// A locked device that is removed or replaced reports no device; the lock releases and the
+/// section follows the current selection again.
+#[test]
+fn a_missing_locked_device_releases_the_lock() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    fake.press(63);
+    fake.selection(4, 2, 1);
+    fake.locked_missing();
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 63, 0].as_slice()),
+        "the lock goes dark: {:?}",
+        fake.sends.borrow()
+    );
+    fake.press(62);
+    let command = fake.last_command();
+    assert_eq!(command.track, Some(2), "the selected device is controlled again: {command:?}");
+    assert_eq!(command.device.as_deref(), Some("1"), "{command:?}");
+}
+
+/// Unlocking a device whose bank was moved leaves the newly selected device on its first bank,
+/// or within its own last bank when Bank Lock holds it.
+#[test]
+fn unlocking_device_lock_reconciles_the_bank() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    fake.press(61);
+    fake.press(63);
+    fake.selection(4, 2, 1);
+    fake.press(63);
+    fake.knob(0, 127);
+    assert_eq!(fake.last_command().param.as_deref(), Some("dial6"), "{:?}", fake.last_command());
 }
 
 /// Bank Lock keeps the bank across a device change; without it another device starts at its

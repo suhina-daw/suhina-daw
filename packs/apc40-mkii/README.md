@@ -37,8 +37,8 @@ affiliation with Akai, and the name says what hardware the script is for — no 
 Wired: the clip grid (`clip.launch`, a slot's stop button for an empty slot; each pad shows its
 clip's own or its track's colour, goes green while it plays, yellow while it is queued and dims
 when it is disabled), the scene
-buttons (`scene.launch`, and `scene.stop` on a lit one — a button lights green while its scene
-plays and goes blank when stopped), the track stop, the activator (`track.setMute`), solo
+buttons (`scene.launch`, and `scene.stop` on a lit one — a button lights green while every clip
+in its row plays and goes blank when stopped), the track stop, the activator (`track.setMute`), solo
 (`track.setSolo`), record arm (`track.setArm`), the track select buttons and master select
 (`track.select`), play/stop and the metronome, the crossfader (`mixer.setCrossfader`, one
 gesture) and each track's A/B button (`track.setCrossfadeAssign`), the eight faders
@@ -64,13 +64,15 @@ and a page or operator change in the window moves the bank with it. While a knob
 script leaves its ring to the knob: a host ring write resets the encoder's own value, and the
 next report would jump. The ring goes to the dial's position when the bank or device changes, or
 when a value comes from elsewhere. Switches and choices stay on the device's panel; a plug-in's
-generated panel gives its sliders to the knobs the same way, in the panel's order. The bank
-arrows light where there is another page, the device arrows while a device is selected, and the
-track select buttons light for the selected track. Device Lock (`device.read`) holds the device
-section on its device while the selection moves elsewhere; Bank Lock holds the parameter bank
-across devices. The Clip/Dev and Detail View buttons queue the window's own actions
-(`view.devices`, `view.detail`), and Shift makes the Bank Select arrows jump five scenes or
-eight tracks.
+generated panel gives its sliders to the knobs the same way, in the panel's order, and a
+stepped or listed slider snaps to the step its panel draws. The bank arrows light where there is
+another page, the device arrows while a device is selected, and the track select buttons light
+for the selected track. Device Lock (`device.read`) holds the device section on its device while
+the selection moves elsewhere, and lets go when the device is removed or its reading is gone;
+Bank Lock holds the parameter bank across devices. The Clip/Dev and Detail View buttons queue the
+window's own actions (`view.devices`, `view.detail`), and Shift makes the Bank Select arrows jump
+five scenes or eight tracks. Relative tempo and cue clicks are counted until the engine reports
+them, so a fast burst does not lose steps.
 
 Not yet: the other Shift combinations and blinking queued pads. A pad's state takes over its
 colour: green while it plays and yellow while it is queued.
