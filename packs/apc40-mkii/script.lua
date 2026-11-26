@@ -9,21 +9,22 @@
 -- Suhina's own, written from public documentation alone (the repository's clean-room rules):
 -- Akai's public *APC40 Mk2 Communication Protocol v1.2* (January 19, 2015) for the note and CC
 -- map, the RGB values and the Application/Configuration message that puts the device in the
--- mode the document names Alternate Ableton Live (0x42), and Akai's public MIDI implementation
--- chart for the control map. See README.md beside this file. Suhina content: CC0-1.0.
+-- mode the document names Ableton Live (0x41), and Akai's public MIDI implementation chart for
+-- the control map. See README.md beside this file. Suhina content: CC0-1.0.
 
 local TRACKS = 8
 local SCENES = 5
 
 -- The device wakes in its Generic mode, where the activator, solo and record-arm buttons are
--- latching toggles that drive their own lights. The document's Alternate Ableton Live Mode
--- (0x42) makes every button momentary — a press is always note-on 127, a release note-off —
--- and hands every LED to the host, so a knob's ring follows its parameter without the device's
--- own ring updates fighting them. The message is the Application/Configuration identifier of
+-- latching toggles that drive their own lights. Ableton Live mode (0x41) makes every button
+-- momentary — a press is always note-on 127, a release note-off —
+-- and hands the buttons' LEDs to the host; the knobs' rings ride the hardware, and the script
+-- writes a ring only for a value the knob did not just report, so a session value trailing a
+-- turn cannot yank it back. The message is the Application/Configuration identifier of
 -- the protocol document; its trailing bytes are the host application's version, as the
 -- document and the public examples send. The mode lasts until the device is powered off, so it
 -- goes out whenever the ports are (re)opened.
-local LIVE_MODE = string.char(0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x42, 0x09, 0x07, 0x01, 0xF7)
+local LIVE_MODE = string.char(0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41, 0x09, 0x07, 0x01, 0xF7)
 
 -- The note that lights the pad of (track, scene): the chart numbers clip launch 1 at the
 -- bottom-left, left to right, bottom row first — note 0 is track 1, scene 5 (the bottom), and
@@ -333,6 +334,35 @@ local function led_cc(controller, value)
     end
 end
 
+-- What each knob recently reported, six steps deep. The ring's own position rides the knob's
+-- hardware, and the session's value trails the knob by a look or two: a session value matching
+-- a recent report is that echo, not a change, and writing it yanks the ring backward mid-turn.
+-- Only a value the knob never reported (a change made in the window or by a command) writes.
+local knob_recent = {}
+
+local function knob_reported(controller, value)
+    local list = knob_recent[controller]
+    if list == nil then
+        list = { n = 0 }
+        knob_recent[controller] = list
+    end
+    list.n = (list.n % 6) + 1
+    list[list.n] = value
+end
+
+local function knob_saw(controller, value)
+    local list = knob_recent[controller]
+    if list == nil then
+        return false
+    end
+    for i = 1, 6 do
+        if list[i] == value then
+            return true
+        end
+    end
+    return false
+end
+
 -- The device section's lights: each knob's ring shows its dial's position in the bank (the
 -- single-dot style), the device arrows while a device is selected, the bank arrows where there
 -- is another page, and Device On/Off whether the device is on.
@@ -341,7 +371,10 @@ local function refresh_device()
         local param = knob_param(knob)
         if param ~= nil and type(param.min) == "number" and type(param.max) == "number" then
             led_cc(24 + knob, 1)
-            led_cc(16 + knob, ring_position(param))
+            local position = ring_position(param)
+            if not knob_saw(16 + knob, position) then
+                led_cc(16 + knob, position)
+            end
         else
             led_cc(24 + knob, 0)
             led_cc(16 + knob, 0)
@@ -379,7 +412,9 @@ local function refresh()
         else
             position = math.floor(pan * 63.5 + 64 + 0.5)
         end
-        led_cc(48 + track, position)
+        if not knob_saw(48 + track, position) then
+            led_cc(48 + track, position)
+        end
     end
     for scene = 0, SCENES - 1 do
         led(0, 82 + scene, scene_velocity(scene))
@@ -498,6 +533,7 @@ local function cc_received(channel, controller, value)
             param = param.id,
             value = scaled,
         }, "apc40-mkii device " .. tostring(selection.track) .. ":" .. tostring(device.path) .. ":" .. tostring(param.id))
+        knob_reported(controller, value)
     elseif controller >= 48 and controller <= 55 and channel == 0 then
         local id = mixer_track(controller - 48)
         if id == nil then
@@ -510,6 +546,7 @@ local function cc_received(channel, controller, value)
             pan = -1
         end
         suhina.command("track.setPan", { tracks = { id }, pan = pan }, "apc40-mkii pan " .. id)
+        knob_reported(controller, value)
     elseif controller == 14 then
         -- The master fader (CC 14): the main output's volume, the same curve.
         local db = "-inf"

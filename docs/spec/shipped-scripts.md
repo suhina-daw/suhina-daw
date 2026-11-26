@@ -44,10 +44,11 @@ one; ADR 0019 › 10).
   content, AGENTS.md rule 14).
 - A controller's **proprietary modes** are put right by a message its public protocol document
   describes. The APC40 MkII's script sends, when its ports open, the Application/Configuration
-  identifier that puts the device in the mode the document names Alternate Ableton Live (0x42):
-  every button momentary, every LED the host's own, so the device knobs' rings follow their
-  parameters without the device's own ring updates. The document, and the behaviour it comes
-  from, are cited in the script's README.
+  identifier that puts the device in the mode the document names Ableton Live (0x41): every
+  button momentary, the buttons' LEDs the host's own. The knobs' rings ride the hardware, and
+  the script writes a ring only for a value the knob did not just report, so a session value
+  trailing a turn cannot yank it back. The document, and the behaviour it comes from, are cited
+  in the script's README.
 
 ## Where it lands, and what runs
 

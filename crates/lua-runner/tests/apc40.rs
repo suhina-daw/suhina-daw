@@ -169,6 +169,11 @@ impl Fake {
 
     /// A selection state: `track`'s `device` with the Utility's parameters.
     fn selection(&self, token: u64, track: u32, path: u32) {
+        self.selection_with_gain(token, track, path, 0.0);
+    }
+
+    /// The same with the first dial's Gain at `gain`, for the ring guard.
+    fn selection_with_gain(&self, token: u64, track: u32, path: u32, gain: f64) {
         let selection = self.lua.create_table().unwrap();
         selection.set("track", track).unwrap();
         selection.set("track_name", "Drums").unwrap();
@@ -180,7 +185,7 @@ impl Fake {
         // Nine dials with switches and a choice between them: the knobs take the dials only,
         // and the bank's next page holds the ninth.
         let params = [
-            ("gain", "continuous", -150.0, 35.0, 0.0),
+            ("gain", "continuous", -150.0, 35.0, gain),
             ("mono", "toggle", 0.0, 1.0, 0.0),
             ("balance", "continuous", -1.0, 1.0, 0.0),
             ("width", "continuous", 0.0, 4.0, 1.0),
@@ -314,14 +319,38 @@ fn the_track_and_master_select_buttons_set_the_selection() {
 /// The alternate Live mode hands every LED to the host, so a knob's ring follows its parameter
 /// without the device's own ring updates fighting it.
 #[test]
-fn the_program_hands_every_led_to_the_host() {
+fn the_program_uses_the_live_mode() {
     let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
     fake.ports();
-    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x42];
+    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
     assert!(
         fake.sends.borrow().iter().any(|(_, bytes)| bytes.starts_with(&mode)),
         "the alternate Live mode is sent: {:?}",
         fake.sends.borrow()
+    );
+}
+
+#[test]
+fn a_knobs_own_report_is_not_written_back_to_its_ring() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    // The knob reports 64; the session's gain trails with the same position.
+    fake.knob(0, 64);
+    let after_knob = fake.sends.borrow().len();
+    let gain = -150.0 + (64.0 / 127.0) * 185.0;
+    fake.selection_with_gain(4, 1, 0, gain);
+    assert!(
+        !fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 16, 64].as_slice()),
+        "the knob's own ring is not yanked: {:?}",
+        &fake.sends.borrow()[after_knob..]
+    );
+    // A value the knob never reported — the window set the gain to its maximum — writes.
+    fake.selection_with_gain(4, 1, 0, 35.0);
+    assert!(
+        fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 16, 127].as_slice()),
+        "a change from elsewhere writes the ring: {:?}",
+        &fake.sends.borrow()[after_knob..]
     );
 }
 
