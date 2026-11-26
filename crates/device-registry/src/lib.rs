@@ -248,9 +248,10 @@ pub fn dials(id: &str) -> Vec<String> {
 
 /// [`dials`] with the reading's values: the page and operator the panel shows (the hidden
 /// `panel.page` and `panel.op` parameters) and the model a page's dials follow (the FM Synth's
-/// ADSR or Rates envelope) choose which dials are visible. The window publishes a selection when
-/// its track or device changes, so a controller maps the page the panel opened on until it reads
-/// the selection again.
+/// ADSR or Rates envelope) choose which dials come first. The other pages' dials follow, then a
+/// compact panel with no native dials falls back to its continuous parameters. The window
+/// publishes a selection when its track or device changes, so a controller maps the page the
+/// panel opened on until it reads the selection again.
 pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
     let Some(info) = info(id) else { return Vec::new() };
     let value = |id: &str| -> f64 {
@@ -282,13 +283,12 @@ pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
     let (page, op) = (value("panel.page"), value("panel.op"));
     let mut page_controls: Vec<(f32, f32, &str)> = Vec::new();
     let mut always: Vec<&str> = Vec::new();
+    let mut rest: Vec<&str> = Vec::new();
+    let mut has_native = false;
     for control in &ui.controls {
         // Only the native dial widgets are a controller's dials; a host-drawn bar or number
         // field is the panel's own, and the operator table's cells are not dials.
         if !matches!(control.widget, Some(Widget::Knob { .. } | Widget::Dial { .. })) {
-            continue;
-        }
-        if !visible(control, page, op) {
             continue;
         }
         let Some(id) = control.x.as_ref().or(control.y.as_ref()).map(|binding| binding.parameter.as_str()) else {
@@ -296,6 +296,15 @@ pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
         };
         let Some(param) = info.params.iter().find(|p| p.id == id) else { continue };
         if !matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer) {
+            continue;
+        }
+        has_native = true;
+        if !visible(control, page, op) {
+            // A page that is not showing follows the ones that are, in the panel's own order, so
+            // Bank ▶ pages through every dial the panel has.
+            if !rest.contains(&id) {
+                rest.push(id);
+            }
             continue;
         }
         // A control whose visibility changes with the page or the operator is the page's own;
@@ -327,10 +336,15 @@ pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
         }
     }
     // A dial that is also on the page (Random's Amount) is the page's once, not twice.
-    for id in always {
+    for id in always.into_iter().chain(rest) {
         if !page_dials.iter().any(|seen| seen == id) {
             page_dials.push(id.to_string());
         }
+    }
+    // A compact panel with no native dials keeps the generated list, so a device Suhina has not
+    // migrated yet still maps its continuous parameters.
+    if !has_native {
+        page_dials.extend(generated_dials(info));
     }
     page_dials
 }

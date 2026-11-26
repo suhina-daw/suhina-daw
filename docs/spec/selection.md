@@ -78,9 +78,10 @@ agent attached to the app may run them (the selection is project state, not sett
   emitted its own `control` — so a controller's knob can take the continuous dials and leave the
   switches to the panel, scale onto the unit and draw the position. A built-in also carries
   `dials`: the parameter ids its knobs can turn — the page the panel shows, its dials left to
-  right and top to bottom, then the dials that stay on every page in the panel's section order
-  — so a controller's knobs follow the device's layout, not its parameter order. A dial also
-  carries `normalized`: the position its panel's dial shows, 0 to 1, beside
+  right and top to bottom, then the dials that stay on every page in the panel's section order,
+  then the other pages' dials in the panel's order — so a controller's knobs follow the device's
+  layout, not its parameter order, and Bank pages through them. A compact panel with no native
+  dials keeps its continuous parameters in parameter order. A dial also carries `normalized`: the position its panel's dial shows, 0 to 1, beside
   `value`. A plug-in's parameters are its stored values, and `device.pluginParams` is the way to
   its full list.
 - With nothing selected, both are nothing and the parameters are empty.

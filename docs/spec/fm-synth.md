@@ -106,9 +106,10 @@ Layout from `scripts/fm_synth_panel.py`, written to `devices/fm-synth/panel.json
   other dial. The panel's page and operator still choose which dials show; a controller maps the
   dials of the page the device opens on, left to right and top to bottom, and then the
   always-visible LFO rate and amount, filter frequency and resonance, Spread, Volume and Random
-  amount dials. The LFO's Rate dial shows the hertz its range gives the stored 0 to 1, through the
-  dial's computed readout. Its knobs send the dial's normalized position, not a linear value, so
-  a logarithmic time does not jump ([the selection](selection.md#a-controllers-dials), #1718).
+  amount dials, then the other pages' dials. The LFO's Rate dial shows the hertz its range gives
+  the stored 0 to 1, through the dial's computed readout. Its knobs send the dial's normalized
+  position, not a linear value, so a logarithmic time does not jump
+  ([the selection](selection.md#a-controllers-dials), #1718).
 - **Device row (1078 by 168):** the operators as a table with its columns named once (number, ratio or Hz
   with what coarse and fine come to, coarse, fine, level, on), one display with the pages Env, Wave,
   Filter, LFO, Pitch, Algo, Mod and Voice and the eight dials that follow it, then the LFO's and the

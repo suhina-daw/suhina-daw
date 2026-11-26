@@ -586,6 +586,10 @@ fn the_panel_dials_follow_their_control_positions() {
         ["gain", "balance", "width", "midSide", "bassMonoFrequency"],
         "the generated list's continuous parameters, in order"
     );
+    // A compact panel with no native dial yet keeps its continuous parameters, in order.
+    let band = dials("multiband");
+    assert!(band.contains(&"lowCrossover".to_string()), "{band:?}");
+    assert!(!band.iter().any(|id| id == "peak"), "a toggle is not a dial: {band:?}");
 }
 
 /// The FM Synth opens on Env; the device's Env model chooses the page's dials. The ADSR/time
@@ -614,6 +618,8 @@ fn the_fm_synths_envelope_dials_follow_the_chosen_model() {
         "the always-visible dials follow the page's: {time:?}"
     );
     assert!(!time.iter().any(|id| id == "op1.coarse" || id == "panel.op"), "not a dial: {time:?}");
+    assert!(time.len() > 15, "Bank pages on through the rest: {time:?}");
+    assert!(time.iter().any(|id| id == "op1.rate1"), "the page's other model follows: {time:?}");
 
     let rates = dials_with("fm-synth", &[("op1.envMode".to_string(), 0.0)]);
     assert_eq!(
