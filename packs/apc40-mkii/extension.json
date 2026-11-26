@@ -16,7 +16,7 @@
   "programs": [
     {
       "path": "script.lua",
-      "sha256": "9c5afa5d6216a439215bd0efbe23a5f336e2c6168052dc67efa0256b4f79ad3a"
+      "sha256": "4333f3b028adbfa7c21aa8fe17890689d9657be273d25d4f97e23d475c04b8e7"
     }
   ],
   "ports": [
@@ -25,6 +25,7 @@
   "runner": "lua",
   "permissions": [
     "project.read",
-    "project.write"
+    "project.write",
+    "audio.read"
   ]
 }

@@ -28,8 +28,9 @@ covers:
   plug-in's sliders taking the knobs in its panel's order, and the device arrows change the
   selected device (#1679); a clip pad takes the clip's colour, a scene launch button lights
   green while its scene plays and toggles between launching and stopping it, and the top-right
-  controls switch the encoders, record the arrangement or a slot, and set the tempo by tap,
-  knob or nudge. The whole script's run through the supervisor — the mode
+  controls switch the encoders, record the arrangement or a slot, set the tempo by tap, knob
+  or nudge, set the cue level, and move the 5x8 window with the Bank Select arrows. The whole
+  script's run through the supervisor — the mode
   message, a press of each strip button, the LEDs — follows.
 
 ## What ships

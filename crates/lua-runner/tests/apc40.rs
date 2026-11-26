@@ -26,6 +26,7 @@ struct Command {
     assign: Option<String>,
     scene: Option<u64>,
     bpm: Option<f64>,
+    db: Option<f64>,
     on: Option<bool>,
     level: Option<f64>,
     pan: Option<f64>,
@@ -141,6 +142,7 @@ impl Fake {
                         assign: text_field("assign"),
                         scene: scene.map(|n| n as u64),
                         bpm: field("bpm").and_then(|v| number(&v)),
+                        db: field("db").and_then(|v| number(&v)),
                         on: field("on").and_then(|v| match v {
                             Value::Boolean(on) => Some(on),
                             _ => None,
@@ -358,6 +360,15 @@ impl Fake {
     }
 
     fn launcher_grid_slots(&self, scenes: &[(u64, &str)], color: Option<&str>, clips: bool) {
+        self.launcher_grid_tracks(scenes, color, clips, 8);
+    }
+
+    /// A wider grid, so the Bank Select arrows have somewhere to scroll.
+    fn launcher_grid_big(&self, scenes: &[(u64, &str)]) {
+        self.launcher_grid_tracks(scenes, None, true, 9);
+    }
+
+    fn launcher_grid_tracks(&self, scenes: &[(u64, &str)], color: Option<&str>, clips: bool, track_count: u32) {
         let grid = self.lua.create_table().unwrap();
         let list = self.lua.create_table().unwrap();
         for (index, (id, name)) in scenes.iter().enumerate() {
@@ -370,8 +381,9 @@ impl Fake {
         // Two clips in every scene's row, on the first two tracks, so a scene is playing only
         // when both play and a partly stopped row is not.
         let tracks = self.lua.create_table().unwrap();
-        for track in 0..8u32 {
+        for track in 0..track_count {
             let column = self.lua.create_table().unwrap();
+            column.set("track", track + 1).unwrap();
             let slots = self.lua.create_table().unwrap();
             for scene in 0..scenes.len() {
                 let slot = self.lua.create_table().unwrap();
@@ -425,6 +437,18 @@ impl Fake {
     /// The same with a take running into `track`'s slot of `scene`, for the second press.
     fn record_slot_take(&self, track: u32, scene: u32) {
         self.record_state_with(false, Some((track, scene)));
+    }
+
+    /// The audio output's state: the cue's level in dB, or null for silence.
+    fn audio_info(&self, cue_db: Option<f64>) {
+        let state = self.lua.create_table().unwrap();
+        let chosen = self.lua.create_table().unwrap();
+        if let Some(db) = cue_db {
+            chosen.set("cue_db", db).unwrap();
+        }
+        state.set("chosen", chosen).unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((6u64, state)).unwrap();
     }
 
     fn record_state_with(&self, arrangement: bool, slot_take: Option<(u32, u32)>) {
@@ -808,6 +832,54 @@ fn the_tempo_knob_nudge_and_tap_tempo_set_the_tempo() {
     let command = fake.last_command();
     assert_eq!(command.id, "transport.setTempo", "{command:?}");
     assert!((command.bpm.unwrap_or_default() - 120.0).abs() < 1e-6, "{command:?}");
+}
+
+/// The cue level is a relative knob: a dB a click, silence at its bottom and +12 at its top.
+#[test]
+fn the_cue_knob_steps_the_cue_volume() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.audio_info(Some(0.0));
+    fake.message(&[0xB0, 47, 1]);
+    let command = fake.last_command();
+    assert_eq!(command.id, "output.setCueVolume", "{command:?}");
+    assert!((command.db.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
+    fake.audio_info(Some(-6.0));
+    fake.message(&[0xB0, 47, 127]);
+    let command = fake.last_command();
+    assert!((command.db.unwrap_or_default() + 7.0).abs() < 1e-6, "{command:?}");
+    fake.audio_info(Some(12.0));
+    fake.message(&[0xB0, 47, 1]);
+    assert!((fake.last_command().db.unwrap_or_default() - 12.0).abs() < 1e-6, "{:?}", fake.last_command());
+    // Silence climbs one step to -59 dB.
+    fake.audio_info(None);
+    fake.message(&[0xB0, 47, 1]);
+    assert!((fake.last_command().db.unwrap_or_default() + 59.0).abs() < 1e-6, "{:?}", fake.last_command());
+}
+
+/// The four Bank Select arrows move the 5x8 window over the launcher: scenes up and down,
+/// tracks left and right.
+#[test]
+fn the_bank_select_arrows_move_the_window() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.launcher_grid_big(&[(10, "A"), (11, "B"), (12, "C"), (13, "D"), (14, "E"), (15, "F")]);
+    fake.press(82);
+    assert_eq!(fake.last_command().scene, Some(10), "{:?}", fake.last_command());
+    fake.press(95);
+    fake.press(82);
+    assert_eq!(fake.last_command().scene, Some(11), "{:?}", fake.last_command());
+    fake.press(94);
+    fake.press(82);
+    assert_eq!(fake.last_command().scene, Some(10), "{:?}", fake.last_command());
+    fake.press(96);
+    fake.press(32);
+    let command = fake.last_command();
+    assert_eq!(command.id, "clip.launch", "{command:?}");
+    assert_eq!(command.track, Some(2), "{command:?}");
+    fake.press(97);
+    fake.press(32);
+    assert_eq!(fake.last_command().track, Some(1), "{:?}", fake.last_command());
 }
 
 /// CC 15 sets the crossfader, and a track's note 66 button toggles A and B; the strip reading

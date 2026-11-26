@@ -47,8 +47,10 @@ encoders with their rings: Pan (the track's pan), Sends (a return's send, paged 
 Sends press) and User (left to the user), each button lighting its mode. Record records the
 arrangement (`transport.record`) and lights while it does; Session Record arms empty pads on
 armed tracks to record (a second press on the recording slot ends its take), and lights while
-armed or a slot take runs; Tap Tempo takes its taps'
-spacing, the tempo encoder turns a BPM a click, and Nudge −/+ step it.
+armed or a slot take runs; Tap Tempo takes its taps' spacing, the tempo encoder turns a BPM a
+click, and Nudge −/+ step it. The cue level knob sets the cue's volume (`output.setCueVolume`,
+one dB a click), and the four Bank Select arrows move the 5x8 window one scene up or down and
+one track left or right.
 
 The device control section follows the selection the window, commands and agents share
 (`project.selection`, #1679): the eight knobs turn the selected device's dials — the page its
@@ -65,5 +67,6 @@ generated panel gives its sliders to the knobs the same way, in the panel's orde
 arrows light where there is another page, the device arrows while a device is selected, and the
 track select buttons light for the selected track.
 
-Not yet: Device Lock, the Clip/Dev and Detail View buttons, and shift; and blinking queued pads.
-A pad's state takes over its colour: green while it plays and yellow while it is queued.
+Not yet: Device Lock, the Clip/Dev and Detail View buttons, and shift (with its five-scene and
+eight-track arrow jumps); and blinking queued pads. A pad's state takes over its colour: green
+while it plays and yellow while it is queued.

@@ -55,8 +55,10 @@ local KNOBS = 8
 local CROSSFADER = 15
 local CROSSFADE_AB = 66
 local TEMPO = 13
+local CUE_LEVEL = 47
 local PAN_MODE, SENDS_MODE, USER_MODE = 87, 88, 89
 local RECORD, SESSION_RECORD, TAP_TEMPO, NUDGE_DOWN, NUDGE_UP = 93, 102, 99, 100, 101
+local ARROW_UP, ARROW_DOWN, ARROW_RIGHT, ARROW_LEFT = 94, 95, 96, 97
 -- How many selection looks after a knob's last report count as still turning: the ring is not
 -- written while it turns, because a ring write resets an absolute encoder's own value and the
 -- next report would jump.
@@ -66,9 +68,12 @@ local TRACK_SELECT, MASTER_SELECT = 51, 80
 
 -- What the subscriptions last reported: the grid (which slots hold clips, which have stop
 -- buttons), the launcher's state (what plays and what is queued, the transport), the tracks
--- (mute, solo, armed, pan, sends), the selection (the selected track and device, #1679), and
--- the record state (whether the arrangement records).
-local grid, state, strips, selection, record_state = nil, nil, nil, nil, nil
+-- (mute, solo, armed, pan, sends), the selection (the selected track and device, #1679), the
+-- record state (whether the arrangement records), and the audio output (the cue's level).
+local grid, state, strips, selection, record_state, audio_state = nil, nil, nil, nil, nil, nil
+
+-- The first track and scene the 5x8 window shows, moved by the Bank Select arrows.
+local track_offset, scene_offset = 0, 0
 
 -- The encoders' mode: pan, a return track's sends, or the user's own. In sends mode the sends
 -- are paged: pressing Sends again takes the next one.
@@ -218,23 +223,42 @@ local function ring_position(param)
     return math.floor(position + 0.5)
 end
 
+-- The project track and scene behind a strip or pad, once the Bank Select arrows have moved
+-- the window.
+local function window_track(track)
+    return track_offset + track
+end
+
+local function window_scene(scene)
+    return scene_offset + scene
+end
+
 local function strip_of(track)
     if is_nil(strips) then
         return nil
     end
-    return strips[track + 1]
+    if not is_nil(grid) then
+        local column = grid.tracks[window_track(track) + 1]
+        if column ~= nil then
+            for index = 1, #strips do
+                if strips[index].id == column.track then
+                    return strips[index]
+                end
+            end
+        end
+    end
+    return strips[window_track(track) + 1]
 end
 
 local function column_state(track)
     if is_nil(state) then
         return nil
     end
-    return state.tracks[track + 1]
+    return state.tracks[window_track(track) + 1]
 end
 
--- The mixer's track under a surface index: project.tracks counts every track, so a return
--- track (which has no launcher column) still has the fader, the pan and the buttons of its
--- index; the grid's track list stands in until the strips have arrived.
+-- The mixer's track under a surface index: the window's track, from its strip, or from the
+-- grid's track list until the strips have arrived.
 local function mixer_track(track)
     local strip = strip_of(track)
     if not is_nil(strip) then
@@ -243,7 +267,7 @@ local function mixer_track(track)
     if is_nil(grid) then
         return nil
     end
-    local column = grid.tracks[track + 1]
+    local column = grid.tracks[window_track(track) + 1]
     if is_nil(column) then
         return nil
     end
@@ -320,6 +344,25 @@ local function tap_tempo(timestamp)
     if span > 0 then
         set_tempo(60 * 1000000 * (#tap_times - 1) / span, "apc40-mkii tap tempo")
     end
+end
+
+-- The cue knob: a dB a click, from silence to the cue's +12 dB.
+local function cue_step(delta)
+    local current = 0
+    if audio_state ~= nil and audio_state.chosen ~= nil then
+        local db = audio_state.chosen.cue_db
+        if is_nil(db) then
+            current = -60
+        elseif type(db) == "number" then
+            current = db
+        end
+    end
+    local db = math.max(-60, math.min(12, current + delta))
+    local level = "-inf"
+    if db > -60 then
+        level = math.floor(db * 10 + 0.5) / 10
+    end
+    suhina.command("output.setCueVolume", { db = level })
 end
 
 -- Whether a track's slot is the one its take records into, so a second press ends it.
@@ -422,19 +465,20 @@ local function pad_color(text, dim)
 end
 
 local function pad_velocity(track, scene)
+    local project_scene = window_scene(scene)
     local column = column_state(track)
     if column ~= nil then
-        if not is_nil(column.playing) and column.playing.scene == scene then
+        if not is_nil(column.playing) and column.playing.scene == project_scene then
             return GREEN
         end
-        if type(column.queued) == "table" and column.queued.scene == scene then
+        if type(column.queued) == "table" and column.queued.scene == project_scene then
             return YELLOW
         end
     end
     if not is_nil(grid) then
-        local column_grid = grid.tracks[track + 1]
+        local column_grid = grid.tracks[window_track(track) + 1]
         if column_grid ~= nil then
-            local slot = column_grid.slots and column_grid.slots[scene + 1] or nil
+            local slot = column_grid.slots and column_grid.slots[project_scene + 1] or nil
             if slot ~= nil and not is_nil(slot.clip) then
                 local color = slot.color
                 if not is_nil(color) and type(color) == "string" then
@@ -467,14 +511,15 @@ local function scene_playing(scene)
     if is_nil(state) or is_nil(grid) then
         return false
     end
+    local project_scene = window_scene(scene)
     local clips, playing = 0, 0
     for track = 0, TRACKS - 1 do
-        local column_grid = grid.tracks[track + 1]
-        local slot = (column_grid ~= nil) and (column_grid.slots and column_grid.slots[scene + 1]) or nil
+        local column_grid = grid.tracks[window_track(track) + 1]
+        local slot = (column_grid ~= nil) and (column_grid.slots and column_grid.slots[project_scene + 1]) or nil
         if slot ~= nil and not is_nil(slot.clip) then
             clips = clips + 1
-            local column = state.tracks[track + 1]
-            if column ~= nil and not is_nil(column.playing) and column.playing.scene == scene then
+            local column = state.tracks[window_track(track) + 1]
+            if column ~= nil and not is_nil(column.playing) and column.playing.scene == project_scene then
                 playing = playing + 1
             end
         end
@@ -489,9 +534,10 @@ local function scene_velocity(scene)
     if is_nil(state) then
         return OFF
     end
+    local project_scene = window_scene(scene)
     for track = 0, TRACKS - 1 do
-        local column = state.tracks[track + 1]
-        if column ~= nil and type(column.queued) == "table" and column.queued.scene == scene then
+        local column = state.tracks[window_track(track) + 1]
+        if column ~= nil and type(column.queued) == "table" and column.queued.scene == project_scene then
             return YELLOW
         end
     end
@@ -661,7 +707,27 @@ local function refresh_device()
     led(0, DEVICE_ON_OFF, (device ~= nil and device.enabled == true) and ON or OFF_BUTTON)
 end
 
+local function max_track_offset()
+    if is_nil(grid) then
+        return 0
+    end
+    return math.max(0, #grid.tracks - TRACKS)
+end
+
+local function max_scene_offset()
+    if is_nil(grid) then
+        return 0
+    end
+    return math.max(0, #grid.scenes - SCENES)
+end
+
+local function clamp_window()
+    track_offset = math.max(0, math.min(track_offset, max_track_offset()))
+    scene_offset = math.max(0, math.min(scene_offset, max_scene_offset()))
+end
+
 local function refresh()
+    clamp_window()
     for track = 0, TRACKS - 1 do
         for scene = 0, SCENES - 1 do
             led(0, pad_note(track, scene), pad_velocity(track, scene))
@@ -722,6 +788,12 @@ local function refresh()
     refresh_device()
 end
 
+local function scroll(track_delta, scene_delta)
+    track_offset = track_offset + track_delta
+    scene_offset = scene_offset + scene_delta
+    refresh()
+end
+
 -- A press: pads and scenes launch, the track buttons act, the transport runs.
 local function press(channel, note, timestamp)
     if channel == 0 and note >= 0 and note <= 39 then
@@ -730,8 +802,9 @@ local function press(channel, note, timestamp)
         if id == nil or is_nil(grid) then
             return
         end
-        local column = grid.tracks[track + 1]
-        local slot = (column ~= nil) and (column.slots and column.slots[scene + 1] or nil) or nil
+        local project_scene = window_scene(scene)
+        local column = grid.tracks[window_track(track) + 1]
+        local slot = (column ~= nil) and (column.slots and column.slots[project_scene + 1] or nil) or nil
         if slot == nil then
             return
         end
@@ -739,23 +812,23 @@ local function press(channel, note, timestamp)
         -- armed track while Session Record is armed; otherwise an empty one with a stop button
         -- stops the track, and one without does nothing.
         if is_nil(slot.clip) then
-            if slot_recording(id, scene) then
-                suhina.command("clip.launch", { track = id, scene = scene })
+            if slot_recording(id, project_scene) then
+                suhina.command("clip.launch", { track = id, scene = project_scene })
                 return
             end
             local strip = strip_of(track)
             if session_record and strip ~= nil and strip.armed == true then
-                suhina.command("clip.record", { track = id, scene = scene })
+                suhina.command("clip.record", { track = id, scene = project_scene })
                 return
             end
             if slot.stop_button ~= true then
                 return
             end
         end
-        suhina.command("clip.launch", { track = id, scene = scene })
+        suhina.command("clip.launch", { track = id, scene = project_scene })
     elseif channel == 0 and note >= 82 and note <= 86 then
         local scene = note - 82
-        local row = (not is_nil(grid)) and grid.scenes[scene + 1] or nil
+        local row = (not is_nil(grid)) and grid.scenes[window_scene(scene) + 1] or nil
         if is_nil(row) then
             return
         end
@@ -801,6 +874,14 @@ local function press(channel, note, timestamp)
         nudge_tempo(-1)
     elseif channel == 0 and note == NUDGE_UP then
         nudge_tempo(1)
+    elseif channel == 0 and note == ARROW_UP then
+        scroll(0, -1)
+    elseif channel == 0 and note == ARROW_DOWN then
+        scroll(0, 1)
+    elseif channel == 0 and note == ARROW_LEFT then
+        scroll(-1, 0)
+    elseif channel == 0 and note == ARROW_RIGHT then
+        scroll(1, 0)
     elseif channel == 0 and note == DEVICE_LEFT then
         suhina.command("device.selectPrevious")
     elseif channel == 0 and note == DEVICE_RIGHT then
@@ -943,6 +1024,14 @@ local function cc_received(channel, controller, value)
         if delta ~= 0 then
             set_tempo(current_tempo() + delta, "apc40-mkii tempo")
         end
+    elseif controller == CUE_LEVEL and channel == 0 then
+        local delta = value
+        if delta > 63 then
+            delta = delta - 128
+        end
+        if delta ~= 0 then
+            cue_step(delta)
+        end
     elseif controller == 14 then
         -- The master fader (CC 14): the main output's volume, the same curve.
         local db = "-inf"
@@ -983,6 +1072,8 @@ suhina.on_state(function(token, value)
         end
     elseif kind == "record" then
         record_state = value
+    elseif kind == "audio" then
+        audio_state = value
     end
     refresh()
 end)
@@ -1002,3 +1093,4 @@ kinds[suhina.subscribe("launcher.state")] = "state"
 kinds[suhina.subscribe("project.tracks")] = "strips"
 kinds[suhina.subscribe("project.selection")] = "selection"
 kinds[suhina.subscribe("record.state")] = "record"
+kinds[suhina.subscribe("audio.info")] = "audio"
