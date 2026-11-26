@@ -3,7 +3,7 @@ description: Portable theme skins with SVG controls, level meter styles and mova
 read_when: theme skin, SVG controls, theme package, movable toolbar, meter style
 type: spec
 status: draft
-last_verified: 2026-11-23
+last_verified: 2026-11-26
 covers:
   - crates/ui/src/kit/platform.rs
   - crates/ui/src/kit/session_geometry.rs
@@ -329,7 +329,8 @@ classes and scoped color and text styling; see [custom panels](sdk-custom-ui.md#
 
 Asset roles include fader cap and rail, knob body and pointer, button surface and
 play/stop/record/solo/arm/cue icons. State suffixes `.hover`, `.active`, `.disabled`
-optionally override a base role. `currentColor` uses the control's foreground.
+optionally override a base role. `currentColor` uses the control's foreground; a button's artwork takes
+its `background-color` (see Control surfaces).
 The fader cap moves along the rail; the knob pointer rotates with its value.
 
 Meter intensity is an integer percentage (`meter { meter-intensity: 65; }`, default 100);
@@ -369,14 +370,16 @@ Suhina has a user-agent style sheet, as a browser does: `crates/theme-package/sr
 element stands on: what keeps it usable, with no design of Suhina's. Its only colors are a
 plain readable floor on `window`, fixed light text on an opaque dark background, and the same
 opaque background on `menu`, `popup`, `tooltip` and `dialog`, so what floats over the window
-never shows what is behind it; the base sheet replaces them with Suhina's colors. Those
+never shows what is behind it; the base sheet replaces them with Suhina's colors. The one
+other color is the system's look for the window's buttons on Windows (`window-button`), which
+nothing above it sets, so they look like the system's in every theme. Those
 backgrounds reach the surfaces whichever sheet gives them: egui frames its menus, pop-ups and
 tooltips in the window's frame (`widget[kind="window"]`), which this sheet leaves clear, and the
 element's background replaces that frame's fill.
 
 - **It selects elements by name, state and attribute only:** no classes (but the standard toolbar
   group classes, `group.transport` and `group.display`, once the toolbar has groups), no ids, no
-  variables, no colors but the window's two fixed ones and that background on what floats over it, and no at-rules. Tests in
+  variables, no colors but the window's two fixed ones, that background on what floats over it and the window buttons' fixed ones, and no at-rules. Tests in
   `suhina-theme-package` check this, and that every element it names is in the registry.
 - **The cascade** is: the user-agent sheet, the base tier (*The base sheet*), the theme's
   `theme.css`, the chosen variant, device panel sheets (each inside its panel), and the user's
@@ -469,6 +472,14 @@ page's (ADR 0031, amendment of 2026-11-15).
   state.
 - **Not the theme's.** What a base rule gives an element is not authored, as the user agent's is
   not: the code that asks whether a theme styled something sees only the theme's rules.
+- **The sheet decides, the code draws** (#1695). Everything a theme author could want to change
+  (a color, a size, a border, which artwork) comes from a sheet, the base sheet's rule where no
+  theme gives one, and the code draws the computed value: it keeps no color or size of its own to
+  fall back to, since such a copy drifts from the sheet unseen. Code keeps only what is
+  arithmetic about the layout (a corner a quarter of the control's height, a hit area, the
+  grid's spacing); where a theme should be able to change it, the sheet gives the input and the
+  code the formula. The areas of #1695 move the code there one at a time, and #1694 then counts
+  the base tier as authored.
 - **No fixed color.** Every color in the base sheet reads a variable (it may mix one with
   `black` to shade it), so a theme's variables reach everything it styles and an element added in
   a later version matches a theme that never heard of it. A test checks it.
@@ -498,19 +509,19 @@ page's (ADR 0031, amendment of 2026-11-15).
   `dropdown-arrow`, a typed number (`text-input[kind="typed"]`), a routing field's `:hover`
   (`dropdown[kind="subtle"]`); a slider's rail, fill and handle; a fader cap's fill; a meter's
   levels and clip light; a dialog's edge; the rows of a floating list (`list-row`,
-  `list-row[selected]`); the section of the Launcher, the mixer and the Arrangement (#1450): a
+  `list-row[selected]`, their fill while picked and under the pointer `list-row[kind="floating"]`); the section of the Launcher, the mixer and the Arrangement (#1450): a
   scene's button (`scene`, `:hover`, `[playing]`; `scene[kind="stop-all"]`), a track's stop button
   (`slot[kind="stop"]`, `:hover`, `[queued]`), an empty slot (`session slot`, `[selected]`) and
   `slot-mark`, the Launcher's clips by state (`session clip[muted]`, `[queued]`, `[selected]`),
   `slot-record` (`:hover`, `[recording]`), `mapping-overlay`, Main's headers, the
   Launcher's lines (`separator[kind="band"]`, `"column"`, `"slot"`), a splitter's `divider`, the
-  switches `button[kind="record"]`, `"metronome"`, `"monitor"`, `"lanes"`, `"envelope"` and
+  switches `button[kind="record"]` (its dot `button[kind="record"] icon[kind="record"]`), `"metronome"`, `"monitor"`, `"lanes"`, `"envelope"` and
   `"shape"` (lit with `[checked]`), a strip's `mixer`, `device-list` and its rows (`:hover`,
   `[selected]`, `[muted]`), `fader`, `fader-scale`, `fader-rail`, `send` (`:hover`), `scroll-bar`
   and the metronome's level popup (`popup[kind="level"]`, its slider's parts); and in the Arrangement `arrangement`
   and `arrangement[kind="panel"]` (the colors under the grid and under the panels), `ruler`, the
   grid lines, `tempo-mark`, `start-marker`, `playhead`, `loop-line`, `loop-region`, `marker`,
-  `arrangement-tool`, `time-selection` by kind (`ruler`, `draw`, `take`, `automation`, `editor`),
+  `arrangement-tool`, the returns button (`button[kind="returns"]`), `time-selection` by kind (`ruler`, `draw`, `take`, `automation`, `editor`),
   `marquee`, `clip[recording]`, `track-lane[checked]`, the track headers (`[selected]`; Main's),
   `clip-gain`, `clip-fade-handle`, and the automation lanes' parts; the detail panels' and the browser's section (#1451): the browser's own
   text and its words in it (`browser label[kind]`, from the `--browser-text-*` variables), its rows
@@ -521,13 +532,13 @@ page's (ADR 0031, amendment of 2026-11-15).
   `device[selected]`, `separator[kind="column"]`, `label`/`value[kind="parameter"]`,
   `device-control[kind]`, `slider[kind="parameter"]`), a device canvas's colors
   (`device-canvas` and its kinds), a device group's branches (`device-row[kind="branch"]`), the
-  panels' fields, buttons, switches and lists (`value[kind="field"]`, `button[kind="panel"]`,
-  `"panel-toggle"`, `"entry"`, `dropdown[kind="panel"]`, `editor-tab[kind]`); the piano roll's grid,
+  panels' fields, buttons, switches and lists (`value[kind="field"]`, `button[kind="push"]`,
+  `[kind="toggle"]`, `"entry"`, their lists' rows `list-row[kind="menu"]`, `dropdown[kind="panel"]`, `editor-tab[kind]`); the piano roll's grid,
   rows, notes, velocities, slices, markers, ruler, loop bar, keys, strips, ranges and tools
   (`piano-grid`, `piano-row`, `piano-note[kind]`, `velocity`, `piano-slice`, `start-marker`,
   `playhead`, `ruler-number`, `loop-region[kind="clip"]`, `piano-key`, `piano-scale-strip`,
-  `piano-clip-strip`, `piano-tool` with `[checked]`, `:hover` and `:disabled`, `bar-item[kind="menu"]`
-  and the Focus switch, `button[kind="focus"]`); the app's bars', Settings' and the dialogs' section
+  `piano-clip-strip`, `piano-tool` with `[checked]`, `:hover` and `:disabled`, the toolbar's menus
+  `piano-tool[kind="menu"]` (`[muted]` while what they name is off) and the Focus switch, `button[kind="focus"]`); the app's bars', Settings' and the dialogs' section
   (#1452): the window's own background (`window`), the fills the bars, Settings, the dialogs and
   menus paint for themselves (`app-fill` by kind: `window`, `panel`, `panel-hover`, `control`,
   `control-hover`, `control-active`, `knob`), the lines over and under the views
@@ -540,9 +551,10 @@ page's (ADR 0031, amendment of 2026-11-15).
   `"browser"`), Settings' edge and its pages' list (`settings`, `settings-nav[checked]`), the start
   page's tabs (`editor-tab[kind="start"]`), a dialog's title row, the rows of a dialog's list, the
   Plug-in manager's table, the missing files panel's table and the color picker
-  (`list-row[kind="dialog"]`, `"plugin"`, `"missing-file"`, `"picker"`),
+  (`list-row[kind="dialog"]`, `"plugin"`, `"missing-file"`, `"picker"`), every menu's rows
+  (`list-row[kind="menu"]`, `[selected]` for the chosen one),
   the swatches, the theme picker's cards, the drag pill (`tooltip`), the buttons that add a track
-  (`add-track`), the buttons of Settings and the dialogs (`button[kind="secondary"]`, `"check"`,
+  (push buttons, `#control-add-midi-track` and the others), the buttons of Settings and the dialogs (`button[kind="secondary"]`, `"check"`,
   `"option"`, `"preset"`, `"switch"`, lit with `[checked]`) and egui's own widgets (`widget`, below).
   The views move onto it area by
   area (#1449 – #1452), each in a section of its own. Worked-out colors stay worked out from the
@@ -598,9 +610,17 @@ every arrangement.
 (`kit::element`, `Entered::paint`): `background-color`, `background-image`, `border-radius`,
 `border-width` with `border-color` (no border without a width), `box-shadow` and
 `opacity` from its element, the native values where the sheet sets none. A transparent
-background paints nothing, never a see-through hole in the window. A button the sheet
-shapes (background, radius or border width) is not covered by the artwork Suhina ships;
-a theme's own `button` artwork still wins. The toolbar's tempo, position and RAM/CPU
+background paints nothing, never a see-through hole in the window. A button draws the artwork
+its cascaded `image` names (the user-agent sheet's `button { image: url("suhina:button.svg"); }`,
+or the theme's) unless the sheet says `image: none`: then it draws its CSS shape alone. Over
+artwork, the sheet's `background-color` is the artwork's `currentColor`, its `border-radius` rounds
+it, its `background-image` is painted over it and its border over that, as CSS draws a border over
+the background; whether a button has artwork never depends on which sheet set its colors (#1696).
+A push button with words is `button[kind="push"]`, the dialog's main action
+`button[kind="primary"]`: its edge is its CSS border (the base sheet gives both `border-width:
+1px`, the primary one in the accent), not a line of the code's own.
+`appearance` is a separate choice, of what kind of control to draw (`pan { appearance: knob; }`);
+each kind draws the artwork `image` names for it. The toolbar's tempo, position and RAM/CPU
 fields paint the same way.
 
 **Paint order.** Every element `Entered::paint` draws paints in CSS's order, whatever its kind:
@@ -690,11 +710,13 @@ reads `backdrop-filter` too (#1487 F4), from any rule for `settings`; with none 
 `border-bottom-width` and `border-left-width` (one to four lengths, as `padding`), each 0 to
 16 px; `border-color` is one color for all four sides. Sides of one width follow the element's
 `border-radius`; sides of different widths are drawn straight. egui's ordinary widgets (in
-Settings, dialogs and the browser, styled by the generic `button` rules) draw one outline all round: a rule whose sides differ gives them its
+Settings, dialogs and the browser: the drop-downs' faces, styled by the generic `button` rules) draw one outline all round: a rule whose sides differ gives them its
 `border-color` and leaves their outline's width as it was, rather than a box of its widest side.
 
-**egui's own widgets at the root (#1442, #1452).** egui draws its buttons, check boxes, drop-downs, text
-fields, scroll bars, menus and pop-ups from `egui::Visuals`. The window builds them from the
+**egui's own widgets at the root (#1442, #1452).** egui draws its drop-downs' faces, text
+fields, scroll bars, menus and pop-ups from `egui::Visuals`; the views draw no egui button, check
+box, radio button or selectable label, only the kit's (`kit::controls`, `kit::widgets`), which
+read their elements' computed style like every other control (#1696). The window builds them from the
 sheet. Under every theme's rules they take the computed style of `widget`, looked up inside the
 `window` (so a backdrop's fading reaches them): `widget` at rest, `:hover` and `:active` (fill
 and words), `widget[kind="static"]` what egui draws that takes no input (egui's non-interactive
@@ -740,8 +762,8 @@ shows the desktop through 25%; a theme that wants a panel's own alpha at the des
 registry, `suhina_theme_package::elements`) is that view's own, painted once; it writes no
 token. A part drawn in it that takes its region's color (the launcher's stop buttons, the
 Arrangement's ruler rows, the toolbar's fields) reads it with `style_class::surface_or`, and
-the controls on it keep their own fill. The add-track buttons under the last track keep their
-own fill.
+the controls on it keep their own fill. The add-track buttons under the last track are push buttons
+and keep their own fill.
 
 **Level bars.** Volume and pan fields of the track headers and the mixer are one level
 bar (`mixer_controls::level_bar`): the field's element is the track and `value-fill` the
@@ -1450,8 +1472,14 @@ These native parts take the sheet (the [theme author guide](../guide/theme-autho
 - **Sends:** `send` in the mixer and the Arrangement header; `#mixer-send-N` by place from
   the left; `appearance: knob` draws mixer sends as knobs; artwork `send` and
   `send.fill`.
-- **Add-track buttons:** `add-track`, `#add-midi-track`, `#add-audio-track`,
-  `#add-return-track`, artwork `add-track`.
+- **Add-track buttons:** push buttons (`button[kind="push"]`), `#control-add-midi-track`,
+  `#control-add-audio-track`, `#control-add-return-track`, a device group's `#control-add-branch`.
+- **Window buttons:** where Suhina draws the title bar (Windows), `window-button[kind="minimize"]`,
+  `[kind="maximize"]` and `[kind="close"]`: an element of its own, not a `button`, so a theme's
+  rules for every `button` do not reach it, and it draws no artwork. The user-agent sheet draws
+  them as the system does, with fixed colors, so they look the same in every theme, with the base
+  sheet or without it: no fill at rest, a faint gray under the pointer, Close red (`#c42b1c`)
+  with a white cross. A theme restyles them only by naming `window-button`.
 - **Ruler, loop region, play position:** `ruler` (background, `color`, `border-color`;
   artwork `ruler`), `loop-region` (`[checked]` while looping; `height`; artwork `loop-region`,
   `.on`), `playhead` (`color`, `width`; `width: 0` hides it; the piano roll and the browser's preview strip draw it too).
@@ -1490,7 +1518,7 @@ These native parts take the sheet (the [theme author guide](../guide/theme-autho
   the scope's own `color` and `font-size` reach its widgets as CSS inherits them. Its own
   `border-radius` and border reach them only where the scope is a control (a `dropdown`, a
   `text-input`, a `value`), whose egui widget it is; a region's or container's (`menu`,
-  `settings`, `dialog`) frame it alone, so `menu button` gives a menu's rows theirs. The rows of
+  `settings`, `dialog`) frame it alone, so `menu list-row[kind="menu"]` gives a menu's rows theirs. The rows of
   a drop-down's open list keep the field's words, not its radius, border or fill
   (`dropdown button` gives those, #1487);
   `button[checked]` the selection; `text-input` text fields' background.
@@ -1655,9 +1683,8 @@ of bars, and a slider id per parameter.
   `[kind="tag-check"][checked]`, `[kind="focus"][checked]`, `button[kind="more"]:hover`), as
   Suhina Meadow, Blocks, Sheet and Dark Gloss do. A device's on switch
   (`button#control-device-on`, `[checked]` while it runs) is one of them: a theme's rule for every
-  `button` reaches it as it does any button. An expanded panel's × (`button[kind="close"]`) and
-  the piano roll's toolbar menus (`dropdown[kind="subtle"]`) still take only a rule for
-  themselves. A device's own
+  `button` reaches it as it does any button. So do an expanded panel's × (`button[kind="close"]`) and the browser's "…" (`button[kind="more"]`), and the
+  piano roll's toolbar draws every button, its menus too, as `piano-tool`. A device's own
   drawings (its canvas, the EQ's display, a sampler's waveform and envelope) take the colors of
   `device-canvas` in the device's scope, read once a frame. A region's plain `color` no longer
   reaches what the base sheet colors with `--text-value` or a border variable (the piano roll's

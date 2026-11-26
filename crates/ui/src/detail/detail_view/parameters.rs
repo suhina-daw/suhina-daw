@@ -174,16 +174,19 @@ pub(super) fn parameter_widget(
     let style = &parameter.ui;
     match parameter.control {
         ParameterControl::Toggle => {
-            let mut checked = *value >= 0.5;
-            let response = ui.checkbox(&mut checked, "");
+            let checked = *value >= 0.5;
+            // The tick box in the middle of its cell (its mark is 6 points in from its left edge).
+            let cell = Rect::from_center_size(rect.center(), egui::Vec2::new(12.0, rect.height().min(18.0)));
+            let id = ui.scope_id().with("kit-check");
+            let response = widgets::check_box(ui, ui.painter(), cell, id, "", checked);
             // Only a click writes: a value automation plays between off and on stays as it is.
-            if response.changed() {
-                *value = f64::from(checked);
+            if response.clicked() {
+                *value = f64::from(!checked);
             }
             response
         }
         ParameterControl::Button => {
-            let response = ui.selectable_label(*value >= 0.5, &parameter.name);
+            let response = crate::kit::controls::choice_word(ui, &parameter.name, &parameter.name, *value >= 0.5);
             if response.clicked() {
                 *value = if *value >= 0.5 { 0.0 } else { 1.0 };
             }
@@ -210,7 +213,9 @@ pub(super) fn parameter_widget(
         ParameterControl::Radio => {
             ui.vertical_centered(|ui| {
                 for (i, label) in style.options.iter().enumerate() {
-                    ui.selectable_value(&mut *value, i as f64, label);
+                    if crate::kit::controls::choice(ui, label, *value == i as f64).clicked() {
+                        *value = i as f64;
+                    }
                 }
             })
             .response
@@ -522,7 +527,7 @@ pub(super) fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, showing: Show
         }
         // `editor-tab` (`[checked]` for the one shown), `#tab-clip` and `#tab-devices`.
         let tab = format!("tab-{}", text.to_ascii_lowercase());
-        let lit = widgets::lit_toggle_kind(
+        let lit = widgets::lit_toggle_words(
             ui,
             &response,
             crate::kit::element::EDITOR_TAB.id(&tab),

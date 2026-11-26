@@ -5,6 +5,7 @@
 //! kind, as a cloud or a grid. The view draws and reports what the user did as [`MapEvent`]s;
 //! the browser turns them into its own selection, previews and drags.
 
+use crate::kit::controls;
 use std::collections::HashSet;
 
 use egui::{Color32, CornerRadius, Key, PointerButton, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
@@ -692,31 +693,29 @@ fn together(ui: &mut Ui, width: f32, add: impl FnOnce(&mut Ui)) {
 fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
     let tier = crate::browser::browser_view::inks();
     for (layout, name) in [(Layout::Cloud, "Cloud"), (Layout::Grid, "Grid")] {
-        if ui.selectable_label(view.layout == layout, name).clicked() && view.layout != layout {
+        if controls::choice_word(ui, name, name, view.layout == layout).clicked() && view.layout != layout {
             view.layout = layout;
             events.push(MapEvent::Layout(layout));
         }
     }
-    if ui.button("+").on_hover_text("Zoom in").clicked() {
+    if controls::button(ui, "+").on_hover_text("Zoom in").clicked() {
         view.zoom = (view.zoom * 1.5).min(MAX_ZOOM);
     }
-    if ui.button("−").on_hover_text("Zoom out").clicked() {
+    if controls::button(ui, "−").on_hover_text("Zoom out").clicked() {
         view.zoom = (view.zoom / 1.5).max(MIN_ZOOM);
         view.clamp_center();
     }
-    if ui.button("Fit").on_hover_text("Fit all points in view").clicked() {
+    if controls::button(ui, "Fit").on_hover_text("Fit all points in view").clicked() {
         view.fit();
     }
     if !view.window
-        && ui
-            .button(if view.large { "Close" } else { "Large" })
+        && controls::button(ui, if view.large { "Close" } else { "Large" })
             .on_hover_text("Show the map in the main area")
             .clicked()
     {
         events.push(MapEvent::ToggleLarge);
     }
-    if ui
-        .button(if view.window { "Dock" } else { "Window" })
+    if controls::button(ui, if view.window { "Dock" } else { "Window" })
         .on_hover_text(if view.window {
             "Put the map back into the browser"
         } else {
@@ -1231,20 +1230,22 @@ fn similar_strip(ui: &mut Ui, rect: Rect, view: &mut MapView, points: &[MapPoint
     egui::ScrollArea::vertical().show(&mut child, |ui| {
         for i in items {
             let Some(point) = points.get(i) else { continue };
-            ui.horizontal(|ui| {
-                if ui.small_button("▶").on_hover_text(format!("Preview {}", point.name)).clicked() {
-                    events.push(MapEvent::Preview(i));
-                }
-                let row =
-                    ui.selectable_label(point.selected, egui::RichText::new(&point.name).color(kind_color(point.kind)));
-                if row.clicked() {
-                    events.push(MapEvent::Select { items: vec![i], add: false });
-                    events.push(MapEvent::Preview(i));
-                }
+            // A scope of the sample's own, so two samples of one name keep their ids apart.
+            ui.push_id(i, |ui| {
+                ui.horizontal(|ui| {
+                    if controls::button_named(ui, "▶", &format!("Preview {}", point.name)).clicked() {
+                        events.push(MapEvent::Preview(i));
+                    }
+                    let row = controls::choice_inked(ui, &point.name, point.selected, kind_color(point.kind));
+                    if row.clicked() {
+                        events.push(MapEvent::Select { items: vec![i], add: false });
+                        events.push(MapEvent::Preview(i));
+                    }
+                });
             });
         }
     });
-    if child.button("Close").clicked() {
+    if controls::button(&mut child, "Close").clicked() {
         view.similar = None;
     }
 }

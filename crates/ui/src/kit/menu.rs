@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The rows of a right-click or drop-down menu, drawn by the kit so a theme styles them as it
-//! does the clip panel's lists: an entry is a `button[kind="entry"]` (`[checked]` while it is
-//! the one chosen, with the pointer's fill under the pointer), a line between groups a
+//! does the clip panel's lists: an entry is a `list-row[kind="menu"]` (`[selected]` while it is
+//! the one chosen, `:hover` under the pointer), a choice among a row of them (a grid's widths) a
+//! `button[kind="entry"]` drawn alike, a line between groups a
 //! `separator[kind="menu"]`, a heading a `label[kind="caption"]` and a note a
 //! `label[kind="hint"]`. They go inside a menu egui opens (`Response::context_menu`,
 //! `egui::Popup::menu`); a submenu opens with egui's own [`egui::containers::menu::SubMenu`]
@@ -11,7 +12,7 @@
 
 use egui::{Align2, Pos2, Rect, Response, Role, Sense, Ui, Vec2, WidgetInfo};
 
-use crate::kit::element::{BUTTON, Checked, LABEL, SEPARATOR};
+use crate::kit::element::{BUTTON, Checked, LABEL, LIST_ROW, SEPARATOR, Selected};
 use crate::kit::{controls, theme, widgets};
 
 /// How far a row's words sit from its edges.
@@ -185,10 +186,7 @@ impl<'a> Entry<'a> {
                 WidgetInfo::labeled(Role::MenuItem, enabled, name)
             }
         });
-        let mut ink = BUTTON.attribute("kind", "entry").response(&response).look().color();
-        if !enabled {
-            ink = crate::kit::element::hint_ink();
-        }
+        let ink = LIST_ROW.attribute("kind", "menu").response(&response).pointer(false, false, !enabled).look().color();
         let arrow = Pos2::new(response.rect.right() - INSET, response.rect.center().y);
         let painter = ui.painter();
         // Pointing right: the submenu opens beside the row.
@@ -269,8 +267,7 @@ pub fn slider(
 /// The ink of the chosen entry's words, on its chosen fill: for what a caller draws on a chosen
 /// row besides them (a waveform's picture).
 pub fn chosen_ink(response: &Response) -> egui::Color32 {
-    let look = BUTTON.attribute("kind", "entry").response(response).attr(Checked, true).look();
-    look.own_color_or(theme::text_on(look.background()))
+    LIST_ROW.attribute("kind", "menu").response(response).attr(Selected, true).look().color()
 }
 
 /// How wide a slider in a menu is at least.
@@ -305,44 +302,57 @@ struct Face<'a> {
 const KEY_GAP: f32 = 16.0;
 
 /// A row of a menu as wide as the menu or its words (the menu grows to the widest), `extra`
-/// more at its right end: lit with the pointer's fill under the pointer, with the chosen one's
-/// fill while `checked`, its words in the entry's `color` (on the chosen fill, the color that
-/// reads on it unless the theme gives one). `face` says its font and height, and the key shown
-/// at its right end in the hint ink; a row that is not enabled takes no click and is drawn in
-/// the entry's disabled color (the hint ink unless the theme gives one).
+/// more at its right end, drawn by [`row_face`], `[selected]` while `checked`. `face` says its
+/// font and height, and the key shown at its right end in the hint ink; a row that is not
+/// enabled takes no click.
 fn row(ui: &mut Ui, text: &str, checked: bool, extra: f32, face: Face<'_>) -> Response {
     let font = theme::ui_font(if face.small { theme::TEXT_SMALL } else { theme::TEXT });
     let key_font = key_font(face, &font);
     let (width, key_width) = natural_width(ui, text, extra, face);
     let sense = if face.enabled { Sense::click() } else { Sense::hover() };
     let (rect, response) = ui.allocate_exact_size(Vec2::new(across(ui, width), face.height), sense);
-    let entry = BUTTON.attribute("kind", "entry");
-    let look = entry.response(&response).attr(Checked, checked).look();
-    let fill = if checked {
-        look.background()
-    } else if face.enabled && (response.hovered() || response.has_focus()) {
-        BUTTON.attribute("kind", "entry").pointer(true, false, false).look().background()
-    } else {
-        egui::Color32::TRANSPARENT
-    };
-    if fill != egui::Color32::TRANSPARENT {
-        ui.painter().rect_filled(rect, 2.0, fill);
-    }
+    let hot = response.hovered() || response.has_focus();
+    let ink = row_face(ui.painter(), rect, checked, hot, face.enabled);
     let hint = crate::kit::element::hint_ink();
-    let ink = if !face.enabled {
-        let disabled = BUTTON.attribute("kind", "entry").pointer(false, false, true).look().color();
-        if disabled == look.color() { hint } else { disabled }
-    } else if checked {
-        chosen_ink(&response)
-    } else {
-        look.color()
-    };
     let inside = Rect::from_min_max(rect.min + Vec2::new(INSET, 0.0), rect.max - Vec2::new(INSET + extra, 0.0));
     if let Some((key, _)) = face.trailing {
         let key_ink = if face.enabled { hint } else { hint.gamma_multiply(0.6) };
         widgets::text_in(ui.painter(), inside, Align2::RIGHT_CENTER, key, key_font, key_ink);
     }
     let words = Rect::from_min_max(inside.min, inside.max - Vec2::new(key_width, 0.0));
+    widgets::text_in(ui.painter(), words, Align2::LEFT_CENTER, text, font, ink);
+    response
+}
+
+/// The face of a row of a menu or of a drop-down's list in `rect`: `list-row[kind="menu"]`,
+/// `[selected]` while `selected` (the chosen one, highlighted), `:hover` while `hot` (under the
+/// pointer, or the keys on it), `:disabled` while not `enabled`, its box as the sheet paints it.
+/// Returns the ink of its words.
+pub(crate) fn row_face(painter: &egui::Painter, rect: Rect, selected: bool, hot: bool, enabled: bool) -> egui::Color32 {
+    let hot = enabled && hot;
+    let el = LIST_ROW.attribute("kind", "menu").pointer(hot, false, !enabled).attr(Selected, selected).enter();
+    el.paint_with(painter, rect, crate::kit::element::Native { radius: 2.0, fill: el.background() });
+    el.color()
+}
+
+/// One of a row of choices in a menu (a grid's widths and values): `text` on a
+/// `button[kind="entry"]`, a toggle drawn as the menu's rows are, `[checked]` while `on`, as wide
+/// as the room it is given and as tall as a compact row. Named `name`, selected while `on`; one
+/// not `enabled` takes no click. The response, clicked when pressed.
+pub fn choice(ui: &mut Ui, text: &str, name: &str, on: bool, enabled: bool) -> Response {
+    let height = ui.spacing().interact_size.y.max(1.0);
+    let font = theme::ui_font(theme::TEXT_SMALL);
+    let width = widgets::text_width(ui, text, font.clone()) + 2.0 * INSET;
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(across(ui, width), height), sense);
+    response.widget_info(|| WidgetInfo::selected(Role::Button, enabled, on, name));
+    let el = BUTTON.attribute("kind", "entry").response(&response).attr(Checked, on);
+    let el = if enabled { el } else { el.pointer(false, false, true) }.enter();
+    let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
+    widgets::button_surface(ui.painter(), rect, &el, &response, on, fill, 2.0);
+    let ink = el.color();
+    drop(el);
+    let words = Rect::from_min_max(rect.min + Vec2::new(INSET, 0.0), rect.max - Vec2::new(INSET, 0.0));
     widgets::text_in(ui.painter(), words, Align2::LEFT_CENTER, text, font, ink);
     response
 }

@@ -105,6 +105,10 @@ use suhina_theme_render::{Subject, scenes};
 /// rate and Random amount are the SDK's native dial widget, which the style engine paints as knob
 /// elements, where the hand-drawn dial was a canvas drawing (736 and 715; 748 and 728 on
 /// Windows).
+///
+/// On Windows the window's three controls are `window-button` elements a sheet styles (they were
+/// egui buttons with no frame and are deliberately not `button`s), 3 more nodes in the Launcher
+/// and 1 in the FM synth on top of #1718's counts (489 and 749); the recorded identities stay.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
@@ -152,7 +156,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 486,
+            nodes: 489,
             identities: 472,
             unstyled: 0,
             fresh: 0,
@@ -170,7 +174,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 748,
+            nodes: 749,
             identities: 728,
             unstyled: 0,
             fresh: 0,

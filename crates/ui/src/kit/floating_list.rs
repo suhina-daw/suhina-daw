@@ -5,7 +5,7 @@
 //! (Ctrl+Tab) shows it. Up and Down move the lit row and go no further while
 //! it is open (#681); a click on a row chooses it.
 
-use egui::{Context, Id, Rect, RichText, Ui, Vec2};
+use egui::{Context, Id, Rect, Ui, Vec2};
 
 use crate::kit::theme;
 
@@ -93,10 +93,9 @@ pub fn show(
                 heading(ui);
                 let spacing = ui.spacing().item_spacing.y;
                 let height = (look.row_height + spacing) * look.visible_rows.max(1) as f32;
-                // `list-row` (`[selected]` for the picked one): its `color`, and the tags' hint.
+                // `list-row[kind="floating"]` (`[selected]` for the picked one): its fill and its
+                // `color`, and the tags' hint.
                 use super::element::{LIST_ROW, Selected};
-                let picked_ink = LIST_ROW.attr(Selected, true).look().color();
-                let other_ink = LIST_ROW.look().color();
                 let hint = super::element::hint_ink();
                 egui::ScrollArea::vertical()
                     .id_salt(id.with("rows"))
@@ -105,14 +104,29 @@ pub fn show(
                     .show(ui, |ui| {
                         for (place, row) in rows.iter().enumerate() {
                             let lit = picked == Some(place);
-                            let text = RichText::new(&row.text).color(if lit { picked_ink } else { other_ink });
-                            let response = ui.add(
-                                egui::Button::selectable(lit, text).min_size(Vec2::new(look.width, look.row_height)),
+                            let (rect, response) = ui.allocate_exact_size(
+                                Vec2::new(ui.available_width().max(look.width), look.row_height),
+                                egui::Sense::click(),
                             );
                             let label = row.label.clone();
                             response.widget_info(|| {
                                 egui::WidgetInfo::selected(egui::Role::Button, true, lit, label.clone())
                             });
+                            // `list-row[kind="floating"]`: its fill while picked and under the pointer.
+                            let row_look =
+                                LIST_ROW.attribute("kind", "floating").attr(Selected, lit).response(&response).look();
+                            let fill = row_look.background();
+                            ui.painter().rect_filled(rect, 2.0, fill);
+                            let words = rect.shrink2(Vec2::new(4.0, 0.0));
+                            let ink = row_look.color();
+                            super::widgets::text_in(
+                                ui.painter(),
+                                words,
+                                egui::Align2::LEFT_CENTER,
+                                &row.text,
+                                egui::FontId::proportional(theme::TEXT),
+                                ink,
+                            );
                             if let Some(tag) = &row.tag {
                                 ui.painter().text(
                                     response.rect.right_center() - Vec2::new(10.0, 0.0),

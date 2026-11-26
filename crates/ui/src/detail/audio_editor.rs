@@ -2506,7 +2506,7 @@ fn header_bar(
             picked = Some(value);
         }
         let id = format!("tab-{}", text.to_ascii_lowercase());
-        let lit = widgets::lit_toggle_kind(
+        let lit = widgets::lit_toggle_words(
             ui,
             &response,
             crate::kit::element::EDITOR_TAB.id(&id),
@@ -2573,7 +2573,7 @@ fn header_tools(
         let response = widgets::button_area(ui, cell, egui::Id::unique(("audio-editor-tool", index)), name);
         let id = format!("tool-{index}");
         let on = lit.unwrap_or(false);
-        let look = widgets::lit_toggle_kind(
+        let look = widgets::lit_toggle_words(
             ui,
             &response,
             crate::kit::element::EDITOR_TAB.id(&id),
