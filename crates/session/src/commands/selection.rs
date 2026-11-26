@@ -70,8 +70,10 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
 
 /// The selection as the commands answer it: nothing selected is null fields, and the device is
 /// its `track.devices` entry — parameters with `name`, `min`, `max` and `unit` included, so a
-/// knob can scale onto the unit and a ring draw the position.
-fn selected_json(session: &Session) -> Value {
+/// knob can scale onto the unit and a ring draw the position. A running plug-in's entry is its
+/// generated panel's parameter list, in the panel's order, so a controller's knobs turn the
+/// sliders the window shows (#1679).
+fn selected_json(session: &mut Session) -> Value {
     let mut value = json!({ "track": Value::Null, "track_name": Value::Null, "device": Value::Null });
     let Some(track) = session.selection.track() else { return value };
     value["track"] = json!(track.0);
@@ -82,9 +84,28 @@ fn selected_json(session: &Session) -> Value {
         .unwrap_or_else(|| "Main".to_string());
     value["track_name"] = json!(name);
     let Some(path) = session.selection.device_path(&session.project) else { return value };
-    let Some(channel) = session.project.channel_of_track(track) else { return value };
-    let Some(device) = suhina_model::device_at(&channel.devices, &path) else { return value };
-    value["device"] = crate::devices::device_json(&path, device);
+    let Some(device) = session
+        .project
+        .channel_of_track(track)
+        .and_then(|channel| suhina_model::device_at(&channel.devices, &path))
+        .cloned()
+    else {
+        return value;
+    };
+    let mut entry = crate::devices::device_json(&path, &device);
+    if crate::devices::is_plugin(&device.kind) {
+        // Its panel follows the parameters it lists; a selection read keeps that list fresh,
+        // as the detail area does, so a controller maps the sliders the window shows.
+        session.list_plugin_params_at(track, &path);
+        if let Some(report) = session.plugin_report_at(track, &path)
+            && let Some(list) = report.params.as_deref()
+        {
+            let (params, dials) = crate::devices::plugin_panel_params(&device, list);
+            entry["params"] = params;
+            entry["dials"] = dials;
+        }
+    }
+    value["device"] = entry;
     value
 }
 

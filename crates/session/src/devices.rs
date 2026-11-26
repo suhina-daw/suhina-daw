@@ -707,6 +707,51 @@ pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
     value
 }
 
+/// A plug-in's parameters as its generated panel draws them (#679), with the `dials` a
+/// controller's knobs turn: every parameter the panel shows, in its order, with the value the
+/// project keeps for it or the one the plug-in listed. A switch is left out of `dials`, as a
+/// built-in's is; a slider — stepped or a list too — is a dial, because that is what the panel
+/// draws (#1679). The panel's cap of [`suhina_device_sdk::MAX_PARAMETERS`] holds here too.
+pub(crate) fn plugin_panel_params(device: &Device, list: &[suhina_plugins::ParamInfo]) -> (Value, Value) {
+    let shown: Vec<&suhina_plugins::ParamInfo> = list
+        .iter()
+        .filter(|p| !p.hidden && !p.read_only && p.min < p.max)
+        .take(suhina_device_sdk::MAX_PARAMETERS)
+        .collect();
+    let mut params = Vec::with_capacity(shown.len());
+    let mut dials = Vec::new();
+    for p in shown {
+        let value = device
+            .params
+            .iter()
+            .rev()
+            .find(|stored| param_id(&stored.id) == Some(p.id))
+            .map_or(p.value, |stored| stored.value)
+            .clamp(p.min, p.max);
+        let toggle = p.steps == 1 && p.min == 0.0 && p.max == 1.0;
+        if !toggle {
+            dials.push(json!(p.id));
+        }
+        params.push(json!({
+            "id": p.id,
+            "name": if p.name.is_empty() { p.id.to_string() } else { p.name.clone() },
+            "group": p.group,
+            "min": p.min,
+            "max": p.max,
+            "default": p.default.clamp(p.min, p.max),
+            "value": value,
+            "text": p.text,
+            "steps": p.steps,
+            "list": p.list,
+            "automatable": p.automatable,
+            "unit": "",
+            // What the generated panel draws it as: a slider or a switch.
+            "kind": if toggle { "toggle" } else { "continuous" },
+        }));
+    }
+    (Value::Array(params), Value::Array(dials))
+}
+
 /// A linear gain in dB, silence as -150.
 fn gain_db(gain: f64) -> f64 {
     if gain > 0.0 { 20.0 * gain.log10() } else { -150.0 }
