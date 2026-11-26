@@ -273,18 +273,25 @@ local function stop_velocity(track)
     return OFF
 end
 
--- Whether any track plays a clip of this scene, which lights its launch button.
+-- Whether every clip in the scene's row plays, and there is one: the scene the window's
+-- button calls playing, which lights its launch button and makes a press stop it.
 local function scene_playing(scene)
-    if is_nil(state) then
+    if is_nil(state) or is_nil(grid) then
         return false
     end
+    local clips, playing = 0, 0
     for track = 0, TRACKS - 1 do
-        local column = state.tracks[track + 1]
-        if column ~= nil and not is_nil(column.playing) and column.playing.scene == scene then
-            return true
+        local column_grid = grid.tracks[track + 1]
+        local slot = (column_grid ~= nil) and (column_grid.slots and column_grid.slots[scene + 1]) or nil
+        if slot ~= nil and not is_nil(slot.clip) then
+            clips = clips + 1
+            local column = state.tracks[track + 1]
+            if column ~= nil and not is_nil(column.playing) and column.playing.scene == scene then
+                playing = playing + 1
+            end
         end
     end
-    return false
+    return clips > 0 and playing == clips
 end
 
 local function scene_velocity(scene)

@@ -319,7 +319,24 @@ impl Fake {
             list.set(index + 1, scene).unwrap();
         }
         grid.set("scenes", list).unwrap();
-        grid.set("tracks", self.lua.create_table().unwrap()).unwrap();
+        // Two clips in every scene's row, on the first two tracks, so a scene is playing only
+        // when both play and a partly stopped row is not.
+        let tracks = self.lua.create_table().unwrap();
+        for track in 0..8u32 {
+            let column = self.lua.create_table().unwrap();
+            let slots = self.lua.create_table().unwrap();
+            for scene in 0..scenes.len() {
+                let slot = self.lua.create_table().unwrap();
+                if track < 2 {
+                    slot.set("clip", "Clip").unwrap();
+                }
+                slot.set("stop_button", true).unwrap();
+                slots.set(scene + 1, slot).unwrap();
+            }
+            column.set("slots", slots).unwrap();
+            tracks.set(track + 1, column).unwrap();
+        }
+        grid.set("tracks", tracks).unwrap();
         let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
         handler.call::<()>((1u64, grid)).unwrap();
     }
@@ -483,9 +500,9 @@ fn the_scene_launch_buttons_light_and_toggle_their_scene() {
     let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
     fake.ports();
     fake.launcher_grid(&[(10, "Intro"), (11, "Verse"), (12, "Chorus"), (13, "Bridge"), (14, "Out")]);
-    // Track 1 plays scene 1 (the second row): its launch button is green, the first is blank.
+    // Both tracks play scene 1 (the second row): its launch button is green, the first blank.
     let before = fake.sends.borrow().len();
-    fake.launcher_state(&[(0, 1)]);
+    fake.launcher_state(&[(0, 1), (1, 1)]);
     let sent = fake.sends.borrow()[before..].to_vec();
     assert!(
         sent.iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 83, 21].as_slice()),
