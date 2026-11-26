@@ -1432,6 +1432,45 @@ impl App {
             View::Arrangement => self.arrangement.selected_tracks.first().copied(),
         }
     }
+
+    /// Moves the window to the session's selection (`docs/spec/selection.md` › The window
+    /// follows): a command from the CLI, MCP or a surface program moves the track highlight and
+    /// the device picked in the chain. The window's own multi-picks stay its own; only the one
+    /// the selection names changes.
+    pub(super) fn follow_session_selection(&mut self) {
+        let Some(session) = self.session() else { return };
+        let Some(track) = session.selected_track() else { return };
+        let device = session.selected_device_path();
+        if self.selected_track() != Some(track) {
+            self.arrangement.select_one(track);
+            self.view.selected = Some(track);
+            self.view.selected_tracks = vec![track];
+        }
+        let picked = device.map(|path| (track, detail_view::DeviceAt(path)));
+        if self.selected_device != picked {
+            self.selected_device = picked.clone();
+            self.device_picks = picked.into_iter().collect();
+        }
+    }
+
+    /// Sets the session's selection from the window's, after a click or a key moved it
+    /// (`docs/spec/selection.md` › The window follows): the window runs the same commands a
+    /// script or an agent would, so both point at the same track and device.
+    pub(super) fn publish_session_selection(&mut self) {
+        let Some(track) = self.selected_track() else { return };
+        let Some(session) = self.session() else { return };
+        if session.project().channel_of_track(track).is_none() {
+            return;
+        }
+        if session.selected_track() != Some(track) {
+            self.run(&Action::new("track.select", json!({ "track": track.0 })));
+            return;
+        }
+        let Some((picked_track, at)) = self.selected_device.clone().filter(|(t, _)| *t == track) else { return };
+        if session.selected_device_path().as_deref() != Some(at.0.as_slice()) {
+            self.run(&Action::new("device.select", json!({ "track": picked_track.0, "device": at.value() })));
+        }
+    }
 }
 
 /// A selection moving together with one of its faders, pans or sends.

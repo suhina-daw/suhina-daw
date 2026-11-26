@@ -1,0 +1,103 @@
+---
+description: The selection an open project carries - the selected track and the selected device of its chain - as commands and a reading, and the window that shows it
+read_when: selected track, selected device, selection, track.select, device.select, project.selection, controller focus, mapping selected target, what the knobs control
+type: spec
+status: current
+last_verified: 2026-11-25
+covers:
+  - crates/session/src/selection.rs
+  - crates/session/src/commands/selection.rs
+  - crates/session/src/commands.rs
+  - crates/ui/src/app.rs
+  - crates/ui/src/app/actions.rs
+---
+
+# The selection
+
+- **Sources:** Suhina's own design, from the command registry ([ADR 0002](../decisions/0002-commands.md))
+  and the controllers and mapping design ([ADR 0019](../decisions/0019-midi-controllers-and-mapping.md)),
+  whose `selected` track/device targets are "whatever is selected in the window" ([MIDI
+  controllers and mapping](midi-mapping.md) › Targets).
+- **Status:** current ([#1679](https://github.com/suhina-daw/suhina-daw/issues/1679)). The
+  session's own state, the commands, the `project.selection` reading and the window are built: a
+  click selects a track and picks a device, a command from the CLI, MCP or a surface program
+  moves the highlight and the chain, and both read and set the same selection. The window
+  already selects: both views share one track selection (#208) and a device is picked in the
+  chain; that selection is now the session's, so commands, controllers, mappings and agents
+  point at the same one.
+
+## What the selection is
+
+- **One per open project**: the **selected track**, and one **selected device** in that track's
+  chain. One state: a click in the window and a command set the same selection, so they cannot
+  disagree.
+- **Not an edit.** The selection records no undo step; undo and redo never move it, and it is not
+  saved with the project. Its commands are project-targeted with the registry's `Change` effect:
+  they change something outside the undo history — what the session points at — as the effect's
+  own words say. The main channel is among the selectable tracks, addressed as the device
+  commands address it (`"main"`).
+- **An open project begins with nothing selected**; the window's own habit (selecting as a
+  project opens) is the selection being set, not a second state.
+- **The window's multi-picks are its own.** Several tracks or devices picked with Ctrl (Cmd) or
+  Shift for the commands that take many stay window state; the selection is the one the
+  controllers, mappings and agents point at — the launcher's selected track and the device
+  picked in the chain.
+- **A device inside a group can be selected** by its path, with the same addressing every other
+  device command uses (`"2/1/0"` — [`track.devices`](midi-mapping.md) lists the paths).
+
+## The commands
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `track.select` | `track` | Selects that track (id or name). A track that is not the selected one selects its first device (none when its chain is empty); the already-selected track changes nothing. |
+| `track.selectNext`, `track.selectPrevious` | — | The next or previous track in the project's order; with nothing selected, the first (next) or last (previous) track. At either end nothing happens, and it is not an error — the mapping spec's rule for a relative target with nothing to point at. |
+| `device.select` | `device`, optional `track` | Selects a device on the selected track — or, with `track` named, that track's device, selecting the track too. Naming a device or track that does not exist is refused with its reason, like every other device command, and so is having no track selected and none named. |
+| `device.selectNext`, `device.selectPrevious` | — | The next or previous device of the branch the selected device sits in — its track's top-level chain for a device not inside a group. With no track or device selected, an empty chain, or an end reached, nothing happens and it is not an error. |
+
+None of them records an undo step; all of them work from the window, the CLI and MCP, and an
+agent attached to the app may run them (the selection is project state, not settings).
+
+## A removal clears it
+
+- When the selected track or the selected device is removed, nothing is selected: the window's
+  highlight is gone and `project.selection` answers with nothing. Undoing the removal does not
+  bring the selection back — the selection is not an edit.
+
+## The reading
+
+`project.selection` answers what is selected, for a window, a script or an agent to follow:
+
+- `track` — the selected track's id and name, or nothing.
+- `device` — the selected device's entry as [`track.devices`](midi-mapping.md) lists it: its
+  path, kind, id and name, and its parameters. A built-in's parameters carry `name`, `group`,
+  `min`, `max` and `unit` beside `id` and `value` — the registry held them, and the `.sd`
+  devices' branch of the reading already emitted its own — so a knob can scale onto the unit and
+  a ring draw the position; a plug-in's are its stored values, and `device.pluginParams` is the
+  way to its full list.
+- With nothing selected, both are nothing and the parameters are empty.
+
+## The window follows
+
+- A command from the CLI or MCP moves the window: the track highlight and the device chain's
+  shown device follow at the next frame.
+- A click that selects a track or picks a device sets the same selection — the window runs the
+  commands, as it runs every action.
+- Each open project keeps its own selection, so switching tabs switches it.
+
+## Testing
+
+- The commands and the reading: select, step, read back; the selected track's first device;
+  the already-selected track changing nothing; the ends, the empty chain and no selected track
+  doing nothing and not erroring; a named bad device or track refused with its reason; the
+  built-in parameters carrying `name`, `min`, `max` and `unit`.
+- A removal clearing the selection, and undo not restoring it.
+- The window: a command-set selection showing (the highlight and the chain), and a click
+  changing the reading.
+
+## Not yet
+
+- The arrangement view's own clip and multi-track selection as part of the focus; it keeps its
+  own for now.
+- Stepping into a device group's branches with the next/previous commands (a device inside one
+  is selected by path).
+- Saving the selection with the project, or naming it in `project.info`.
