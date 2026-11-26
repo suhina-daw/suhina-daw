@@ -3296,6 +3296,11 @@ impl App {
         );
         // egui's widgets follow the sheet: the root's `Visuals` the frame's setup rebuilt.
         theme::follow_root_visuals(ui);
+        // Restore the active project's view before the selection follows it or the frame's
+        // snapshot is taken, so a device a command set on the newly active project is neither
+        // overwritten by the previous project's pick nor mistaken for this frame's click.
+        self.follow_active(ui.ctx());
+        self.frame_trace.mark("follow project");
         // A selection a command from the CLI, MCP or a surface program made moves the window:
         // the track highlight and the device picked in the chain follow
         // (docs/spec/selection.md › The window follows).
@@ -3430,8 +3435,6 @@ impl App {
             self.device_focus = false;
         }
         self.frame_trace.mark("input");
-        self.follow_active(ui.ctx());
-        self.frame_trace.mark("follow project");
         self.poll_scan(ui.ctx());
         self.frame_trace.mark("plug-in scan");
         self.poll_export(ui.ctx());
@@ -3866,12 +3869,7 @@ impl App {
                 let response = widgets::button_area(ui, close, Id::unique("sample-map-close"), "Close sample map")
                     .on_hover_text("Close the sample map (Esc)");
                 let button = crate::kit::element::BUTTON.response(&response).enter();
-                over.rect_filled(
-                    close,
-                    0.0,
-                    button.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
-                );
-                let ink = button.color();
+                let ink = widgets::hover_face(ui, &over, close, &button, &response, false, 0.0);
                 drop(button);
                 for (from, to) in
                     [(Vec2::new(-4.0, -4.0), Vec2::new(4.0, 4.0)), (Vec2::new(-4.0, 4.0), Vec2::new(4.0, -4.0))]
@@ -4266,7 +4264,14 @@ impl App {
                 && let Some(now) = self.device_count(track)
             {
                 if now == count {
-                    self.selected_device = Some((track, detail_view::DeviceAt::at(selected)));
+                    // Undo brings the chain back, not the selection: a removed device stays
+                    // unselected. A device after it keeps the id the session still holds.
+                    if selected == index {
+                        self.selected_device = None;
+                        self.device_picks.clear();
+                    } else {
+                        self.selected_device = Some((track, detail_view::DeviceAt::at(selected)));
+                    }
                 } else if now.checked_add(1) == Some(count) {
                     self.selected_device = (selected != index).then(|| {
                         (track, detail_view::DeviceAt::at(if selected > index { selected - 1 } else { selected }))

@@ -91,21 +91,36 @@ pub(super) fn show(
     .into_iter()
     .enumerate()
     {
+        // Within the bar's padding box: a button face the sheet paints must not stand past the
+        // bar's overflow clip (a bar with a bottom border is a pixel shorter than its room).
         let rect = Rect::from_min_size(
             controls.min + egui::vec2(index as f32 * CONTROL_WIDTH, 0.0),
             egui::vec2(CONTROL_WIDTH, controls.height()),
-        );
+        )
+        .intersect(style_class.input_clip(whole));
         let glyph = ["−", "□", "×"].get(index).copied().unwrap_or("");
-        let response = ui.put(rect, egui::Button::new(glyph).frame(false)).on_hover_text(label);
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Window {label}")));
+        let kind = ["minimize", "maximize", "close"].get(index).copied().unwrap_or("");
+        let id = egui::Id::unique(("window-control", label));
+        let response = widgets::button_area(ui, rect, id, format!("Window {label}")).on_hover_text(label);
+        // A `window-button`, not a `button`: a theme's rules for every button (its artwork, its
+        // fill, its corners) leave it as the base sheet draws it, the system's own title bar look.
+        let el = crate::kit::element::WINDOW_BUTTON.attribute("kind", kind).response(&response).enter();
+        let hovered = widgets::hover(ui, &response);
+        ui.painter().rect_filled(
+            rect,
+            el.radius_or(0.0),
+            el.hover_fade(hovered, crate::kit::element::Look::background),
+        );
+        let ink = el.hover_fade(hovered, crate::kit::element::Look::color);
+        widgets::text_in(ui.painter(), rect, Align2::CENTER_CENTER, glyph, theme::ui_font(theme::TEXT), ink);
         if response.clicked() {
             ui.ctx().send_viewport_cmd(command);
         }
     }
 }
 
-/// How wide each of the window's buttons is, in points.
-const CONTROL_WIDTH: f32 = 32.0;
+/// How wide each of the window's buttons is, in points: the system's own width on Windows.
+const CONTROL_WIDTH: f32 = 46.0;
 
 /// `text` in `rect`, on one line, cut short with an ellipsis when it does not fit.
 fn group(ui: &Ui, rect: Rect, text: String, color: egui::Color32) {

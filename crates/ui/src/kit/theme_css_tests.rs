@@ -300,3 +300,15 @@ fn a_color_variable_is_kept_by_its_one_name() {
     assert!(theme.colors.keys().all(|name| !name.contains('.')), "{:?}", theme.colors);
     assert_eq!(theme.colors.len(), 1, "{:?} {warnings:?}", theme.colors);
 }
+
+/// `image: none` on buttons that name no artwork of their own is the cascade's, as the guide's
+/// `#browser button` example says: no warning, and every button keeps its artwork.
+#[test]
+fn image_none_on_buttons_without_artwork_of_their_own_is_read_by_the_cascade() {
+    let mut theme = Theme::default();
+    let before = theme.skin.assets.clone();
+    let css = "button[kind=\"entry\"], button[kind=\"more\"] { image: none; } #browser button { image: none; }";
+    assert!(read_host_rules(&mut theme, css).is_empty(), "{:?}", read_host_rules(&mut Theme::default(), css));
+    assert_eq!(theme.skin.assets, before);
+    assert_eq!(read_host_rules(&mut Theme::default(), "button[kind=\"entry\"] { image: url(a.png); }").len(), 1);
+}

@@ -298,7 +298,7 @@ pub(crate) fn switch(
         state.enabled,
     );
     let (fill, text) = lit.colors();
-    lit.el.paint_over(ui.painter(), rect, crate::kit::element::Native { radius: 3.0, fill }, lit.toggle.image(lit.lit));
+    crate::kit::widgets::toggle_surface(ui.painter(), rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 3.0);
     drop(lit);
     let word = if state.enabled { "On" } else { "Off" };
     widgets::text_in(ui.painter(), rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
@@ -515,7 +515,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
     let look = crate::kit::element::BUTTON.response(&response).look();
     let button = crate::kit::element::BUTTON.response(&response).enter();
     let radius = button.radius_or(2.0);
-    button.paint_with(painter, rect, crate::kit::element::Native { radius, fill: look.background() });
+    crate::kit::widgets::button_surface(painter, rect, &button, &response, false, look.background(), radius);
     drop(button);
     let inner = rect.shrink(5.0);
     let center = inner.center();

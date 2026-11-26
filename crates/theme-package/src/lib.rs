@@ -75,7 +75,7 @@ pub const CORE_SHEET: &str = include_str!("core.css");
 /// Suhina's user-agent style sheet: the first sheet of every cascade, under the base sheet, the
 /// theme, its variant, device panel sheets and the user's sheet (`docs/spec/theme-skins.md` › The
 /// user-agent sheet). It styles elements by name, state and attribute only, with no classes, ids,
-/// variables, and gives only `window` a plain text and background color, and holds the default artwork (`knob-body { image: url("suhina:knob.body.svg"); }`).
+/// variables, and gives only `window` (and what floats over it) a plain text and background color and the window's buttons on Windows the system's own look, and holds the default artwork (`knob-body { image: url("suhina:knob.body.svg"); }`).
 pub const USER_AGENT_SHEET: &str = include_str!("user-agent.css");
 
 /// Suhina's base sheet: Suhina's own design under every theme, in the cascade's base tier between
