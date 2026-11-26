@@ -1368,11 +1368,19 @@ fn read_track(value: &Value, at: &str) -> Result<Track, ProjectFileError> {
         midi_input: read_midi_input(t.get("midi_input"), at)?,
         audio_input: read_audio_input(t.get("audio_input"), at)?,
         folder: flag(t, "folder", false, at)? || was_folder,
-        crossfade_assign: match t.get("crossfade_assign").and_then(Value::as_str) {
-            None | Some("off") => CrossfadeAssign::Off,
-            Some("a") => CrossfadeAssign::A,
-            Some("b") => CrossfadeAssign::B,
-            Some(other) => return Err(format!("{at}.crossfade_assign: {other} is not a or b").into()),
+        crossfade_assign: match t.get("crossfade_assign") {
+            None | Some(Value::Null) => CrossfadeAssign::Off,
+            Some(Value::String(text)) => match text.as_str() {
+                "off" => CrossfadeAssign::Off,
+                "a" => CrossfadeAssign::A,
+                "b" => CrossfadeAssign::B,
+                other => {
+                    return Err(
+                        format!("{at}.crossfade_assign: expected \"a\", \"b\" or \"off\", got {other:?}").into()
+                    );
+                }
+            },
+            Some(_) => return Err(format!("{at}.crossfade_assign: expected \"a\", \"b\" or \"off\"").into()),
         },
         extensions,
     })

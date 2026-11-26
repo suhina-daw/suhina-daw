@@ -604,7 +604,6 @@ fn set_mute(session: &mut Session, params: &Value) -> Result<Value, CommandError
     Ok(with_override(json!({ "tracks": track_ids(&channels), "mute": mute }), off))
 }
 
-/// The mixer channel of every track `params.tracks` names, in that order, checked.
 fn set_crossfade_assign(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let assign = match Args::new(params).raw_str("assign") {
         Some("a") => suhina_model::CrossfadeAssign::A,
@@ -625,6 +624,7 @@ fn set_crossfade_assign(session: &mut Session, params: &Value) -> Result<Value, 
     } }))
 }
 
+/// The mixer channel of every track `params.tracks` names, in that order, checked.
 fn channel_ids(p: &Project, params: &Value) -> Result<Vec<(TrackId, ChannelId)>, CommandError> {
     let mut out = Vec::new();
     for track in track_list(p, params)? {

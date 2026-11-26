@@ -1699,7 +1699,6 @@ pub fn formatted_value(el: &Entered, text: &str) -> String {
     out
 }
 
-/// A pan position as the mixer shows it: 50L … C … 50R.
 /// A crossfader's value as the ends and the share between them: A, B, or the percentage toward
 /// B (`docs/spec/crossfader.md`).
 pub fn format_crossfader(value: f64) -> String {
@@ -1712,6 +1711,7 @@ pub fn format_crossfader(value: f64) -> String {
     }
 }
 
+/// A pan position as the mixer shows it: 50L … C … 50R.
 pub fn format_pan(pan: f64) -> String {
     let amount = (pan * 50.0).round() as i64;
     match amount {
