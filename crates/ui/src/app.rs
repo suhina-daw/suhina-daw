@@ -1421,6 +1421,12 @@ impl App {
         self.view.selected_slot
     }
 
+    /// The device picked in the chain or a strip's list: its track and where it is, for the
+    /// window's tests and the keys.
+    pub fn picked_device(&self) -> Option<(TrackId, detail_view::DeviceAt)> {
+        self.selected_device.clone()
+    }
+
     /// The Arrangement view's state: what is selected, how far it is scrolled and which groups are
     /// folded. The view draws itself from it, and the window's tests read it.
     pub fn arrangement(&self) -> &ArrangementViewState {
@@ -3290,6 +3296,10 @@ impl App {
         );
         // egui's widgets follow the sheet: the root's `Visuals` the frame's setup rebuilt.
         theme::follow_root_visuals(ui);
+        // A selection a command from the CLI, MCP or a surface program made moves the window:
+        // the track highlight and the device picked in the chain follow
+        // (docs/spec/selection.md › The window follows).
+        self.follow_session_selection();
         // The layout settings, as the window's grid reads them (#1370), so a theme's rules for
         // them paint as they lay out.
         let (detail_place, browser_side) = self.window_place(self.session().is_some());
@@ -4271,6 +4281,9 @@ impl App {
         }
         // A selection this frame's commands or clicks made arms its track.
         self.follow_selection_with_arm();
+        // A click that selected a track or picked a device sets the same selection the CLI, MCP
+        // and surface programs read (docs/spec/selection.md › The window follows).
+        self.publish_session_selection();
         self.end_gesture_on_release(ui.ctx());
         self.frame_trace.mark("commands");
         self.frame_trace.note(|| format!("{ran} commands"));

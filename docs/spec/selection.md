@@ -2,13 +2,14 @@
 description: The selection an open project carries - the selected track and the selected device of its chain - as commands and a reading, and the window that shows it
 read_when: selected track, selected device, selection, track.select, device.select, project.selection, controller focus, mapping selected target, what the knobs control
 type: spec
-status: planned
-last_verified: 2026-11-21
+status: current
+last_verified: 2026-11-25
 covers:
   - crates/session/src/selection.rs
   - crates/session/src/commands/selection.rs
   - crates/session/src/commands.rs
   - crates/ui/src/app.rs
+  - crates/ui/src/app/actions.rs
 ---
 
 # The selection
@@ -17,11 +18,13 @@ covers:
   and the controllers and mapping design ([ADR 0019](../decisions/0019-midi-controllers-and-mapping.md)),
   whose `selected` track/device targets are "whatever is selected in the window" ([MIDI
   controllers and mapping](midi-mapping.md) › Targets).
-- **Status:** planned ([#1679](https://github.com/suhina-daw/suhina-daw/issues/1679)). Built so
-  far: the session's own state, the commands and the `project.selection` reading (#1680); the
-  window running the same commands follows. The window already selects: both views share one
-  track selection (#208) and a device is picked in the chain; this document makes that selection
-  the session's, so commands, controllers, mappings and agents read and set the same one.
+- **Status:** current ([#1679](https://github.com/suhina-daw/suhina-daw/issues/1679)). The
+  session's own state, the commands, the `project.selection` reading and the window are built: a
+  click selects a track and picks a device, a command from the CLI, MCP or a surface program
+  moves the highlight and the chain, and both read and set the same selection. The window
+  already selects: both views share one track selection (#208) and a device is picked in the
+  chain; that selection is now the session's, so commands, controllers, mappings and agents
+  point at the same one.
 
 ## What the selection is
 

@@ -883,6 +883,19 @@ impl Session {
         self.live.armed.contains(&track) && self.project.tracks.iter().any(|t| t.id == track)
     }
 
+    /// The selected track (`docs/spec/selection.md`, #1679): what the window, controllers,
+    /// mappings and agents point at. `None` when nothing is selected or the track is gone.
+    pub fn selected_track(&self) -> Option<suhina_model::TrackId> {
+        self.selection.track().filter(|track| self.project.channel_of_track(*track).is_some())
+    }
+
+    /// The selected device's path on the selected track, when one is: an index on the track's
+    /// chain, or a path through device groups (`"2/1/0"`). `None` when nothing is selected or
+    /// the device is gone.
+    pub fn selected_device_path(&self) -> Option<Vec<usize>> {
+        self.selection.device_path(&self.project)
+    }
+
     /// Arms `track` or disarms it; `exclusive` also disarms every other track. The playing
     /// engine hears it from its next block.
     pub(crate) fn set_armed(&mut self, track: suhina_model::TrackId, armed: bool, exclusive: bool) {
