@@ -50,9 +50,6 @@ local ON, OFF_BUTTON, STOP_LIT, STOP_TRIGGERED = 127, 0, 1, 2
 -- types on CC 24-31; DEVICE < > on notes 58-59, BANK < > on notes 60-61, DEV. ON/OFF on note
 -- 62; the TRACK SELECT buttons on note 51 of each track's channel, MASTER on note 80).
 local KNOBS = 8
--- How many fine steps one encoder step makes on a logarithmic dial: a 1/127 step of a log time is
--- about a tenth of its range, while this is about a fortieth; a full turn is a quarter of it.
-local FINE_STEPS = 512
 local DEVICE_LEFT, DEVICE_RIGHT, BANK_LEFT, BANK_RIGHT, DEVICE_ON_OFF = 58, 59, 60, 61, 62
 local TRACK_SELECT, MASTER_SELECT = 51, 80
 
@@ -365,13 +362,7 @@ end
 -- hardware, and the session's value trails the knob by a look or two: a session value matching
 -- a recent report is that echo, not a change, and writing it yanks the ring backward mid-turn.
 -- Only a value the knob never reported (a change made in the window or by a command) writes.
--- `knob_last` is the encoder value the ring was last set to: a logarithmic dial adds the steps
--- the knob reports from it, so one step is finer than the ring's 127.
 local knob_recent = {}
-local knob_last = {}
--- The dial each controller last showed, so a bank or device change puts its ring at the new
--- position instead of treating it as the old knob's echo.
-local knob_shown = {}
 
 local function knob_reported(controller, value)
     local list = knob_recent[controller]
@@ -400,29 +391,20 @@ end
 -- single-dot style), the device arrows while a device is selected, the bank arrows where there
 -- is another page, and Device On/Off whether the device is on.
 local function refresh_device()
-    local device = selected_device()
-    local device_key = device ~= nil and (tostring(selection.track) .. ":" .. tostring(device.path)) or ""
     for knob = 0, KNOBS - 1 do
         local param = knob_param(knob)
         if param ~= nil and type(param.min) == "number" and type(param.max) == "number" then
             led_cc(24 + knob, 1)
             local position = ring_position(param)
-            local shown = device_key .. ":" .. tostring(param.id)
-            -- A dial the controller did not show before is not the old knob's echo: its ring
-            -- goes to the new position, so the next step counts from the new dial.
-            if shown ~= knob_shown[16 + knob] or not knob_saw(16 + knob, position) then
+            if not knob_saw(16 + knob, position) then
                 led_cc(16 + knob, position)
-                knob_reported(16 + knob, position)
-                knob_last[16 + knob] = position
             end
-            knob_shown[16 + knob] = shown
         else
             led_cc(24 + knob, 0)
             led_cc(16 + knob, 0)
-            knob_last[16 + knob] = nil
-            knob_shown[16 + knob] = nil
         end
     end
+    local device = selected_device()
     led(0, DEVICE_LEFT, device ~= nil and ON or OFF_BUTTON)
     led(0, DEVICE_RIGHT, device ~= nil and ON or OFF_BUTTON)
     led(0, BANK_LEFT, bank > 0 and ON or OFF_BUTTON)
@@ -576,29 +558,8 @@ local function cc_received(channel, controller, value)
             device = device.path,
             param = param.id,
         }
-        local last = knob_last[controller]
-        knob_last[controller] = value
         if type(param.normalized) == "number" then
-            if param.scale == "logarithmic" then
-                -- One encoder step is a small share of the dial's travel, not a jump to a
-                -- 1/127 position; the ring still shows the rounded position.
-                if last == nil then
-                    args.normalized = value / 127
-                else
-                    local delta = value - last
-                    if delta > 64 then
-                        delta = delta - 128
-                    elseif delta < -64 then
-                        delta = delta + 128
-                    end
-                    if delta == 0 then
-                        return
-                    end
-                    args.delta = delta / FINE_STEPS
-                end
-            else
-                args.normalized = value / 127
-            end
+            args.normalized = value / 127
         else
             args.value = param.min + (value / 127) * (param.max - param.min)
         end

@@ -338,7 +338,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "device.setParam",
-        label: "Set a parameter of a device on a track, heard from the next block, by its value, a dial's normalized position, or a fine step from it; each is limited to the parameter's range",
+        label: "Set a parameter of a device on a track, heard from the next block, by its value or a dial's normalized position; either is limited to the parameter's range",
         params: &[
             DEVICE_TRACK,
             DEVICE,
@@ -356,11 +356,6 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "normalized",
                 ParamType::Number,
                 "0 to 1, where the panel's dial sits, from the selection reading's normalized; it follows the parameter's curve (logarithmic, gain), so a controller's knob moves a time smoothly; not a plug-in's",
-            ),
-            optional(
-                "delta",
-                ParamType::Number,
-                "a share of the dial's travel, added to its normalized position; a logarithmic dial's fine step, so one encoder step is not a tenth of its range; not a plug-in's",
             ),
             GESTURE,
         ],
