@@ -81,9 +81,9 @@ agent attached to the app may run them (the selection is project state, not sett
   right and top to bottom, then the dials that stay on every page in the panel's section order,
   then the other pages' dials in the panel's order — so a controller's knobs follow the device's
   layout, not its parameter order, and Bank pages through them. A compact panel with no native
-  dials keeps its continuous parameters in parameter order. A dial also carries `normalized`: the position its panel's dial shows, 0 to 1, beside
-  `value`. A plug-in's parameters are its stored values, and `device.pluginParams` is the way to
-  its full list.
+  dials keeps its continuous parameters in parameter order. A dial also carries `normalized`:
+  the position its panel's dial shows, 0 to 1, beside `value`. A plug-in's parameters are its
+  stored values, and `device.pluginParams` is the way to its full list.
 - With nothing selected, both are nothing and the parameters are empty.
 
 ### A controller's dials
@@ -98,8 +98,9 @@ or operator change in the window moves its dials with it because the reading car
 The FM Synth is the first such panel: its page 0, operator 1 envelope dials (attack, decay,
 sustain, release, initial, peak, by vel and by key) come first, then the always-visible LFO rate
 and amount, filter frequency and resonance, Spread, Volume and Random amount dials; banks page
-through the rest. The LFO's Rate dial computes its hertz from the stored position, and a controller's ring
-uses the same normalized position either way ([FM Synth](fm-synth.md#panel), #1718).
+through the rest. The LFO's Rate dial computes its hertz from the stored position, and a
+controller's ring uses the same normalized position either way
+([FM Synth](fm-synth.md#panel), #1718).
 
 ## The window follows
 
@@ -117,7 +118,8 @@ uses the same normalized position either way ([FM Synth](fm-synth.md#panel), #17
 - The commands and the reading: select, step, read back; the selected track's first device;
   the already-selected track changing nothing; the ends, the empty chain and no selected track
   doing nothing and not erroring; a named bad device or track refused with its reason; the
-  built-in parameters carrying `name`, `min`, `max` and `unit`.
+  built-in parameters carrying `name`, `min`, `max`, `unit`, `kind` and `normalized`, with the
+  dials in panel order and a page change moving them.
 - A removal clearing the selection, and undo not restoring it.
 - The window: a command-set selection showing (the highlight and the chain), and a click
   changing the reading.
