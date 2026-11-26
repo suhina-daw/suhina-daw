@@ -241,8 +241,9 @@ fn hovering_previews_and_clicking_selects() {
     let view = &harness.state().0;
     let at = view.transform(view.area).to_screen([0.0, 0.0]);
     harness.hover_at(at);
+    // The harness moves egui's clock by its step on every frame, so the frames of `run` have
+    // already rested on the point for longer than `HOVER_PREVIEW_SECONDS`: no wall-clock wait.
     harness.run();
-    std::thread::sleep(std::time::Duration::from_millis(60));
     harness.hover_at(at + Vec2::new(0.5, 0.0));
     harness.run();
     assert!(harness.state().1.contains(&MapEvent::Preview(0)), "{:?}", harness.state().1);
@@ -364,10 +365,11 @@ fn the_status_tooltip_says_why_samples_are_missing() {
     assert!(harness.query_by_label("2: unsupported codec: adpcm").is_none());
     let at = harness.get_by_label(status).rect().center();
     harness.hover_at(at);
+    // Each step moves egui's clock by the harness's step, so these frames rest on the status
+    // past the tooltip's delay without a wall-clock wait.
     for _ in 0..30 {
         harness.step();
     }
-    std::thread::sleep(std::time::Duration::from_millis(600));
     harness.run();
     harness.get_by_label("2 could not be read");
     harness.get_by_label("2: unsupported codec: adpcm");

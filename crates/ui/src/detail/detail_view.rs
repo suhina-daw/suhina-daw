@@ -1001,14 +1001,15 @@ pub(crate) fn device_switch(
     (bright, dim): (egui::Color32, egui::Color32),
 ) {
     let own =
-        crate::kit::element::BUTTON.id("device-on").response(response).attr(crate::kit::element::Checked, on).look();
+        crate::kit::element::BUTTON.id("device-on").response(response).attr(crate::kit::element::Checked, on).enter();
     if on {
-        painter.rect_filled(switch, 0.0, own.themed(crate::kit::element::Paint::Background).unwrap_or(bright));
+        let fill = own.look().themed(crate::kit::element::Paint::Background).unwrap_or(bright);
+        crate::kit::widgets::button_surface(painter, switch, &own, response, true, fill, 0.0);
     } else {
         painter.rect_stroke(
             switch,
             0.0,
-            theme::hairline(own.themed(crate::kit::element::Paint::Border).unwrap_or(dim)),
+            theme::hairline(own.look().themed(crate::kit::element::Paint::Border).unwrap_or(dim)),
             egui::StrokeKind::Inside,
         );
     }

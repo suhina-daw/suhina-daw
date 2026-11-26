@@ -83,6 +83,62 @@ pub fn button(ui: &mut Ui, text: &str) -> Response {
     widgets::button_with_id(ui, ui.painter(), rect, id, text, text, false)
 }
 
+/// [`button`] with `text` on it, named `name` for readers and tests ("Change keys of …").
+pub fn button_named(ui: &mut Ui, text: &str, name: &str) -> Response {
+    let width = widgets::text_width(ui, text, font()) + 2.0 * INSET;
+    let (_, rect) = ui.allocate_space(Vec2::new(width, HEIGHT));
+    let id = ui.scope_id().with(("kit-button", name));
+    widgets::button_with_id(ui, ui.painter(), rect, id, text, name, false)
+}
+
+/// [`button`], taking no click and drawn `:disabled` unless `enabled`. The response, for a hover
+/// text that says why it is off (`on_disabled_hover_text`).
+pub fn button_if(ui: &mut Ui, text: &str, enabled: bool) -> Response {
+    ui.add_enabled_ui(enabled, |ui| button(ui, text)).inner
+}
+
+/// [`button`] for an action that removes or discards something: its words in
+/// `label[kind="error"]`'s `color`.
+pub fn danger_button(ui: &mut Ui, text: &str) -> Response {
+    let width = widgets::text_width(ui, text, font()) + 2.0 * INSET;
+    let (_, rect) = ui.allocate_space(Vec2::new(width, HEIGHT));
+    let id = ui.scope_id().with(("kit-button", text));
+    widgets::labeled_button(ui, ui.painter(), rect, id, (text, text), widgets::Push::Danger)
+}
+
+/// One of several choices, a line across the row: `text` on a `button[kind="entry"]`, `[checked]`
+/// while it is the one chosen (its fill), with the pointer's fill under the pointer. Named `text`,
+/// selected while `on`; a click asks to choose it.
+pub fn choice(ui: &mut Ui, text: &str, on: bool) -> Response {
+    let (_, rect) = ui.allocate_space(Vec2::new(ui.available_width(), HEIGHT));
+    choice_in(ui, rect, (text, text), on, None)
+}
+
+/// [`choice`] with its words in `ink` (a sample's kind's color) rather than the button's `color`.
+pub fn choice_inked(ui: &mut Ui, text: &str, on: bool, ink: Color32) -> Response {
+    let (_, rect) = ui.allocate_space(Vec2::new(ui.available_width(), HEIGHT));
+    choice_in(ui, rect, (text, text), on, Some(ink))
+}
+
+/// [`choice`] as wide as its words, named `name`: an item among others in a horizontal row (a
+/// list's view, a layout).
+pub fn choice_word(ui: &mut Ui, text: &str, name: &str, on: bool) -> Response {
+    let width = widgets::text_width(ui, text, font()) + 2.0 * INSET;
+    let (_, rect) = ui.allocate_space(Vec2::new(width, HEIGHT));
+    choice_in(ui, rect, (text, name), on, None)
+}
+
+fn choice_in(ui: &Ui, rect: Rect, (text, name): (&str, &str), on: bool, ink: Option<Color32>) -> Response {
+    let response = ui.interact(rect, ui.scope_id().with(("kit-choice", name)), Sense::click());
+    response.widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), on, name));
+    let el = BUTTON.attribute("kind", "entry").attr(crate::kit::element::Checked, on).response(&response).enter();
+    let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
+    widgets::button_surface(ui.painter(), rect, &el, &response, on, fill, 2.0);
+    let words = rect.shrink2(Vec2::new(INSET, 0.0));
+    widgets::text_in(ui.painter(), words, Align2::LEFT_CENTER, text, font(), ink.unwrap_or_else(|| el.color()));
+    response
+}
+
 /// A tick box with `text` beside it ([`widgets::check_box`]). The response; a click asks for the
 /// other value.
 pub fn check_box(ui: &mut Ui, text: &str, on: bool) -> Response {
@@ -115,10 +171,11 @@ pub fn disclosure(ui: &mut Ui, text: &str, open: bool) -> Response {
     let response = ui.interact(rect, ui.scope_id().with(("kit-disclosure", text)), Sense::click());
     response.widget_info(|| WidgetInfo::selected(Role::Button, ui.is_enabled(), open, text));
     let entry = BUTTON.attribute("kind", "entry");
-    if response.hovered() || response.has_focus() {
-        let fill = entry.clone().pointer(true, false, false).look().background();
-        ui.painter().rect_filled(rect, 2.0, fill);
-    }
+    let hot = response.hovered() || response.has_focus();
+    let fill = if hot { entry.clone().pointer(true, false, false).look().background() } else { Color32::TRANSPARENT };
+    let el = entry.clone().response(&response).enter();
+    widgets::button_surface(ui.painter(), rect, &el, &response, open, fill, 2.0);
+    drop(el);
     let ink = entry.response(&response).look().color();
     widgets::chevron(ui.painter(), Pos2::new(rect.left() + 6.0, rect.center().y), open, ink);
     let words = Rect::from_min_max(Pos2::new(rect.left() + 16.0, rect.top()), rect.max);
@@ -133,10 +190,11 @@ pub fn arrow_button(ui: &mut Ui, name: &str, left: bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(LINE), Sense::click());
     response.widget_info(|| WidgetInfo::labeled(Role::Button, ui.is_enabled(), name));
     let entry = BUTTON.attribute("kind", "entry");
-    if response.hovered() || response.has_focus() {
-        let fill = entry.clone().pointer(true, false, false).look().background();
-        ui.painter().rect_filled(rect, 2.0, fill);
-    }
+    let hot = response.hovered() || response.has_focus();
+    let fill = if hot { entry.clone().pointer(true, false, false).look().background() } else { Color32::TRANSPARENT };
+    let el = entry.clone().response(&response).enter();
+    widgets::button_surface(ui.painter(), rect, &el, &response, false, fill, 2.0);
+    drop(el);
     let ink = entry.response(&response).look().color();
     let c = rect.center();
     let x = if left { 1.5 } else { -1.5 };

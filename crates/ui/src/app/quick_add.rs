@@ -228,11 +228,7 @@ fn run_all(searches: Vec<PreparedSearch>, cancel: &AtomicBool) -> Vec<Found> {
 
 /// A toggle button of the palette, named for tests and assistive tools as `Quick add: <title>`.
 fn toggle_button(ui: &mut Ui, on: bool, title: &str) -> bool {
-    let text = egui::RichText::new(title).size(theme::TEXT_SMALL);
-    let response = ui.selectable_label(on, text);
-    let label = format!("Quick add: {title}");
-    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label.clone()));
-    response.clicked()
+    crate::kit::controls::choice_word(ui, title, &format!("Quick add: {title}"), on).clicked()
 }
 
 impl App {
