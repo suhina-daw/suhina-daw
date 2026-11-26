@@ -567,13 +567,13 @@ local function press(channel, note)
             local armed = not (strip ~= nil and strip.armed == true)
             suhina.command("track.setArm", { track = id, armed = armed })
         elseif note == CROSSFADE_AB then
-            -- The button has two sides: A and B alternate; off is chosen in the window.
+            -- A, B, then off, as the strip's button does.
             local assign = strip ~= nil and strip.crossfade_assign or "off"
             local next
             if assign == "a" then
                 next = "b"
             elseif assign == "b" then
-                next = "a"
+                next = "off"
             else
                 next = "a"
             end

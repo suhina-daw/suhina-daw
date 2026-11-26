@@ -407,6 +407,17 @@ fn the_crossfader_and_the_ab_button_drive_their_commands() {
         "B lights red: {:?}",
         fake.sends.borrow()
     );
+    // B turns off, and the LED goes dark; off starts again at A.
+    fake.press(66);
+    assert_eq!(fake.last_command().assign.as_deref(), Some("off"));
+    fake.strips_assigns(&[(7, "off")]);
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 66, 0].as_slice()),
+        "off is dark: {:?}",
+        fake.sends.borrow()
+    );
+    fake.press(66);
+    assert_eq!(fake.last_command().assign.as_deref(), Some("a"));
 }
 
 /// The alternate Live mode hands every LED to the host, so a knob's ring follows its parameter
