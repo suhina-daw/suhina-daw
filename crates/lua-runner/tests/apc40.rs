@@ -23,6 +23,7 @@ struct Command {
     value: Option<f64>,
     normalized: Option<f64>,
     assign: Option<String>,
+    scene: Option<u64>,
     gesture: Option<String>,
 }
 
@@ -99,6 +100,10 @@ impl Fake {
                     let field = |key: &str| params.and_then(|t| t.get::<Value>(key).ok());
                     let count = |key: &str| field(key).and_then(|v| number(&v)).map(|n| n as u32);
                     let text_field = |key: &str| field(key).and_then(|v| text(&v));
+                    let scene = field("scene").and_then(|v| match v {
+                        Value::Table(table) => table.get::<Value>("id").ok().and_then(|id| number(&id)),
+                        _ => None,
+                    });
                     let device = field("device").and_then(|v| match v {
                         Value::Integer(n) => Some(n.to_string()),
                         Value::Number(n) => Some(format!("{n:?}")),
@@ -114,6 +119,7 @@ impl Fake {
                         value: field("value").and_then(|v| number(&v)),
                         normalized: field("normalized").and_then(|v| number(&v)),
                         assign: text_field("assign"),
+                        scene: scene.map(|n| n as u64),
                         gesture: args.get(2).and_then(text),
                     });
                     Ok(true)
@@ -301,6 +307,42 @@ impl Fake {
         handler.call::<()>((3u64, strips)).unwrap();
     }
 
+    /// The launcher grid's scenes, each with its id, and no clips: enough for the scene
+    /// launch buttons and their lights.
+    fn launcher_grid(&self, scenes: &[(u64, &str)]) {
+        let grid = self.lua.create_table().unwrap();
+        let list = self.lua.create_table().unwrap();
+        for (index, (id, name)) in scenes.iter().enumerate() {
+            let scene = self.lua.create_table().unwrap();
+            scene.set("scene_id", *id).unwrap();
+            scene.set("name", *name).unwrap();
+            list.set(index + 1, scene).unwrap();
+        }
+        grid.set("scenes", list).unwrap();
+        grid.set("tracks", self.lua.create_table().unwrap()).unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((1u64, grid)).unwrap();
+    }
+
+    /// The launcher's state: which track (0 to 7) plays which scene (0 to 4), the rest idle.
+    fn launcher_state(&self, playing: &[(u32, u32)]) {
+        let state = self.lua.create_table().unwrap();
+        state.set("running", true).unwrap();
+        let tracks = self.lua.create_table().unwrap();
+        for track in 0..8u32 {
+            let column = self.lua.create_table().unwrap();
+            if let Some((_, scene)) = playing.iter().find(|(t, _)| *t == track) {
+                let now = self.lua.create_table().unwrap();
+                now.set("scene", *scene).unwrap();
+                column.set("playing", now).unwrap();
+            }
+            tracks.set(track + 1, column).unwrap();
+        }
+        state.set("tracks", tracks).unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((2u64, state)).unwrap();
+    }
+
     fn last_command(&self) -> Command {
         self.commands.borrow().last().cloned().unwrap_or_default()
     }
@@ -432,6 +474,44 @@ fn the_track_and_master_select_buttons_set_the_selection() {
     let command = fake.last_command();
     assert_eq!(command.id, "track.select", "{command:?}");
     assert_eq!(command.track_name.as_deref(), Some("main"), "{command:?}");
+}
+
+/// A scene launch button lights green while any track plays its scene, and a press on a lit
+/// one stops that scene; a blank one launches it (#1677).
+#[test]
+fn the_scene_launch_buttons_light_and_toggle_their_scene() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.launcher_grid(&[(10, "Intro"), (11, "Verse"), (12, "Chorus"), (13, "Bridge"), (14, "Out")]);
+    // Track 1 plays scene 1 (the second row): its launch button is green, the first is blank.
+    let before = fake.sends.borrow().len();
+    fake.launcher_state(&[(0, 1)]);
+    let sent = fake.sends.borrow()[before..].to_vec();
+    assert!(
+        sent.iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 83, 21].as_slice()),
+        "the playing scene lights green: {sent:?}"
+    );
+    assert!(
+        !sent.iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 82, 21].as_slice()),
+        "a stopped scene is not lit: {sent:?}"
+    );
+    // A press on the lit scene stops the row it launched.
+    fake.press(83);
+    let command = fake.last_command();
+    assert_eq!(command.id, "scene.stop", "{command:?}");
+    assert_eq!(command.scene, Some(11), "{command:?}");
+    // Stopped, it goes blank, and a press launches it again.
+    let before = fake.sends.borrow().len();
+    fake.launcher_state(&[]);
+    assert!(
+        fake.sends.borrow()[before..].iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 83, 0].as_slice()),
+        "the stopped scene blanks: {:?}",
+        &fake.sends.borrow()[before..]
+    );
+    fake.press(83);
+    let command = fake.last_command();
+    assert_eq!(command.id, "scene.launch", "{command:?}");
+    assert_eq!(command.scene, Some(11), "{command:?}");
 }
 
 /// CC 15 sets the crossfader, and a track's note 66 button toggles A and B; the strip reading

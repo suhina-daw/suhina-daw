@@ -273,15 +273,26 @@ local function stop_velocity(track)
     return OFF
 end
 
-local function scene_velocity(scene)
+-- Whether any track plays a clip of this scene, which lights its launch button.
+local function scene_playing(scene)
     if is_nil(state) then
-        return OFF
+        return false
     end
     for track = 0, TRACKS - 1 do
         local column = state.tracks[track + 1]
         if column ~= nil and not is_nil(column.playing) and column.playing.scene == scene then
-            return GREEN
+            return true
         end
+    end
+    return false
+end
+
+local function scene_velocity(scene)
+    if scene_playing(scene) then
+        return GREEN
+    end
+    if is_nil(state) then
+        return OFF
     end
     for track = 0, TRACKS - 1 do
         local column = state.tracks[track + 1]
@@ -512,11 +523,17 @@ local function press(channel, note)
         end
         suhina.command("clip.launch", { track = id, scene = scene })
     elseif channel == 0 and note >= 82 and note <= 86 then
-        local row = (not is_nil(grid)) and grid.scenes[note - 82 + 1] or nil
+        local scene = note - 82
+        local row = (not is_nil(grid)) and grid.scenes[scene + 1] or nil
         if is_nil(row) then
             return
         end
-        suhina.command("scene.launch", { scene = { id = row.scene_id } })
+        -- A lit scene launch button stops its scene; a blank one launches it.
+        if scene_playing(scene) then
+            suhina.command("scene.stop", { scene = { id = row.scene_id } })
+        else
+            suhina.command("scene.launch", { scene = { id = row.scene_id } })
+        end
     elseif channel == 0 and note == 91 then
         if state ~= nil and state.running == true then
             suhina.command("transport.stop")

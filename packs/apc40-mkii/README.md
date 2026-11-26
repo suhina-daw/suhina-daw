@@ -35,7 +35,8 @@ affiliation with Akai, and the name says what hardware the script is for — no 
 ## What it wires, and what it does not yet
 
 Wired: the clip grid (`clip.launch`, a slot's stop button for an empty slot), the scene
-buttons (`scene.launch`), the track stop, the activator (`track.setMute`), solo
+buttons (`scene.launch`, and `scene.stop` on a lit one — a button lights green while its scene
+plays and goes blank when stopped), the track stop, the activator (`track.setMute`), solo
 (`track.setSolo`), record arm (`track.setArm`), the track select buttons and master select
 (`track.select`), play/stop and the metronome, the crossfader (`mixer.setCrossfader`, one
 gesture) and each track's A/B button (`track.setCrossfadeAssign`), the eight faders
