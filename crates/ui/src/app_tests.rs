@@ -797,6 +797,49 @@ fn the_quick_add_palette_adds_effects_to_main() {
     assert_eq!(app.track_name(TrackId::MAIN), "Main");
 }
 
+/// Ctrl+A with a track header clicked last selects every track but the returns, in both views,
+/// and leaves the clips and the scroll alone; with a clip or lane clicked last it still selects
+/// every clip.
+#[test]
+fn ctrl_a_on_a_track_header_selects_every_track() {
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let project = app.session().unwrap().project().clone();
+    let tracks: Vec<TrackId> = project
+        .tracks
+        .iter()
+        .map(|t| t.id)
+        .filter(|t| project.channel_of_track(*t).is_none_or(|c| c.role != suhina_engine::model::ChannelRole::Effect))
+        .collect();
+    assert!(tracks.len() > 1, "the demo has several tracks");
+    let first = tracks[0];
+    let last = *tracks.last().unwrap();
+
+    app.shown = View::Arrangement;
+    app.arrangement.selected_tracks = vec![last];
+    app.arrangement.track_focus = true;
+    app.arrangement.reveal = None;
+    app.do_action("selection.selectAll", &mut Vec::new());
+    assert_eq!(app.arrangement.selected_tracks, tracks, "every track, the returns left out");
+    assert_eq!(app.view.selected_tracks, tracks, "the Launcher view's selection too");
+    assert!(app.arrangement.selected_clips().is_empty(), "no clip picked");
+    assert_eq!(app.arrangement.reveal, None, "the view does not scroll");
+
+    // In the Launcher view, a header clicked last does the same.
+    app.shown = View::Session;
+    app.view.selected = Some(first);
+    app.view.selected_tracks = vec![first];
+    app.view.track_focus = true;
+    app.do_action("selection.selectAll", &mut Vec::new());
+    assert_eq!(app.view.selected_tracks, tracks);
+
+    // A lane or clip clicked last: the clips, as before.
+    app.shown = View::Arrangement;
+    app.arrangement.track_focus = false;
+    app.do_action("selection.selectAll", &mut Vec::new());
+    assert!(!app.arrangement.selected_clips().is_empty(), "every clip");
+}
+
 /// With Settings › Plug-ins › Open editor when added on, a plug-in a command adds is
 /// remembered with its project until it runs; built-in devices and the setting off remember
 /// nothing, and one that never reports running is let go at its deadline, however many frames
