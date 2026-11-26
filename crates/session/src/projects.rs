@@ -1418,6 +1418,9 @@ impl Projects {
         }
         self.suspend_active()?;
         self.tabs.active = Some(id);
+        // A surface program's subscriptions follow the active project: the first look after
+        // the switch pushes each reading again, even one that reads the same as before.
+        self.extensions.forget_subscription_values();
         Ok(())
     }
 

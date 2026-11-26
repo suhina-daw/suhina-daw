@@ -598,6 +598,14 @@ impl Extensions {
         self.subs.iter().map(|sub| (sub.program.clone(), sub.token, sub.cmd.clone(), sub.params.clone())).collect()
     }
 
+    /// Forgets every subscription's last value, so the next look pushes each one again even
+    /// when the new project's reading is the same as the old one's.
+    pub(crate) fn forget_subscription_values(&mut self) {
+        for sub in &mut self.subs {
+            sub.last = None;
+        }
+    }
+
     /// Takes the reads' results in, and says what to push: a `state` for every subscription
     /// whose value changed from the last one sent — the first read after a subscribe always
     /// has. A refused read pushes nothing; the next look reads again.
