@@ -151,6 +151,7 @@ pub(crate) fn build(
             .collect()
     });
     let mut chains = chains;
+    let chained: Vec<TrackId> = chains.iter().map(|chain| chain.track).collect();
 
     let targets: Vec<Option<(usize, ChannelId)>> = chains
         .iter()
@@ -190,9 +191,11 @@ pub(crate) fn build(
         let post =
             gains_until(project, chain.track, target.map(|(_, ch)| ch), live_pan.is_none()).unwrap_or((0.0, 0.0));
         chain.set_post(post);
-        // The fade belongs to the last chain on the path to Main: an inner chain feeding a bus
-        // is already scaled by the bus's own assign.
-        let assign = target.is_none().then(|| crossfade_assign(project, chain.track)).flatten();
+        // Every path is scaled once by its governing assign. A track's own chain takes it when
+        // no group above it is assigned; an assigned group's chain takes its own. A chain inside
+        // an assigned group waits for the group's chain, unless that group has no chain, where
+        // the last chain before its output takes the fade.
+        let assign = crossfade_chain_assign(project, chain.track, &chained);
         chain.set_crossfade_assign(assign, project.crossfader.0);
         // A key hears this channel's fader, not the gains of later buses that happen to be
         // folded into its audible output. In particular a zero-level output is not a mute.
@@ -445,12 +448,13 @@ pub(crate) fn cue_gains(project: &Project, track: TrackId, pan: bool) -> Option<
     Some(((left * scale) as f32, (right * scale) as f32))
 }
 
-/// The assign whose fade this track's output takes: the outermost assigned group above it,
-/// which governs everything inside, or its own assign when no group above it is assigned. `None`
-/// for off (`docs/spec/crossfader.md`).
-fn crossfade_assign(project: &Project, track: TrackId) -> Option<suhina_model::CrossfadeAssign> {
+/// The assign that governs a track and the track that carries it: the outermost assigned group
+/// above it, or the track itself when no group above it is assigned. `None` for off
+/// (`docs/spec/crossfader.md`).
+fn crossfade_governing(project: &Project, track: TrackId) -> Option<(suhina_model::CrossfadeAssign, TrackId)> {
     use suhina_model::CrossfadeAssign;
     let mut assign = project.track(track)?.crossfade_assign;
+    let mut owner = track;
     let mut parent = project.track(track).and_then(|t| t.parent);
     let mut hops = 0;
     while let Some(group) = parent {
@@ -461,11 +465,40 @@ fn crossfade_assign(project: &Project, track: TrackId) -> Option<suhina_model::C
             && found != CrossfadeAssign::Off
         {
             assign = found;
+            owner = group;
         }
         parent = project.track(group).and_then(|t| t.parent);
         hops += 1;
     }
-    (assign != CrossfadeAssign::Off).then_some(assign)
+    (assign != CrossfadeAssign::Off).then_some((assign, owner))
+}
+
+/// The assign the chain for `track` applies, if this chain is where its governing fade happens.
+/// It is, at the track or group that owns the assign itself. A chain inside that owner waits
+/// only when a chain for the owner, or for a group between the two, will scale the summed sound
+/// (`chained`); otherwise the last chain before the owner's output takes it.
+fn crossfade_chain_assign(
+    project: &Project,
+    track: TrackId,
+    chained: &[TrackId],
+) -> Option<suhina_model::CrossfadeAssign> {
+    let (assign, owner) = crossfade_governing(project, track)?;
+    if owner == track {
+        return Some(assign);
+    }
+    let mut parent = project.track(track).and_then(|t| t.parent);
+    let mut hops = 0;
+    while let Some(group) = parent {
+        if hops > suhina_model::MAX_GROUP_DEPTH || chained.contains(&group) {
+            return None;
+        }
+        if group == owner {
+            break;
+        }
+        parent = project.track(group).and_then(|t| t.parent);
+        hops += 1;
+    }
+    Some(assign)
 }
 
 /// A track's equal-power pan (when `pan`) and the volume of every channel from its own up to,
