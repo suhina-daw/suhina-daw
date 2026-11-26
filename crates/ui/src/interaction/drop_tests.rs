@@ -139,3 +139,44 @@ fn devices_go_on_the_track_or_make_one() {
             .is_none()
     );
 }
+
+/// A carried file's clip length is what `clip.addFiles` gives it: a sample over its own tempo
+/// or the project's, a MIDI file in whole bars, unknown until the browser has read it.
+#[test]
+fn a_dropped_file_is_as_long_as_the_clip_it_becomes() {
+    let project = (120.0, 4.0);
+    let at_its_tempo = DroppedFile::new(true, "loop".into(), Some(8.0), Some(90.0), 0.0, project);
+    assert_eq!(at_its_tempo.beats, Some(12.0), "8 s at 90 BPM");
+    let at_the_projects = DroppedFile::new(true, "hit".into(), Some(1.5), None, 0.0, project);
+    assert_eq!(at_the_projects.beats, Some(3.0), "1.5 s at the project's 120 BPM");
+    let midi = DroppedFile::new(false, "riff".into(), None, None, 5.0, project);
+    assert_eq!(midi.beats, Some(8.0), "5 beats of notes make two whole bars");
+    assert_eq!(DroppedFile::new(true, "unread".into(), None, None, 0.0, project).beats, None);
+}
+
+/// The ghost clips land where `clip.addFiles` puts the clips: the target's kind on it, end to
+/// end, or one each with `separate`; the rest on new tracks below, one per kind or one each.
+#[test]
+fn carried_files_are_laid_out_as_the_drop_places_them() {
+    let file = |audio: bool, name: &str, beats: Option<f64>| DroppedFile { audio, name: name.into(), beats };
+    let files =
+        [file(true, "a", Some(4.0)), file(true, "b", Some(8.0)), file(false, "m", Some(4.0)), file(true, "c", None)];
+    let rows =
+        |ghosts: &[GhostClip]| ghosts.iter().map(|g| (g.row, g.start, g.length, g.name.clone())).collect::<Vec<_>>();
+
+    // On an audio track, one track: the samples end to end on it, the MIDI file on a new track.
+    assert_eq!(
+        rows(&ghost_layout(&files, Some(true), false, 2.0, 4.0)),
+        [(0, 2.0, 4.0, "a".into()), (0, 6.0, 8.0, "b".into()), (0, 14.0, 4.0, "c".into()), (1, 2.0, 4.0, "m".into())]
+    );
+    // One track each: the first sample on it, every other file on a new track of its own.
+    assert_eq!(
+        rows(&ghost_layout(&files, Some(true), true, 2.0, 4.0)),
+        [(0, 2.0, 4.0, "a".into()), (1, 2.0, 8.0, "b".into()), (2, 2.0, 4.0, "c".into()), (3, 2.0, 4.0, "m".into())]
+    );
+    // Under the tracks: new tracks only, one for the samples and one for the MIDI file.
+    assert_eq!(
+        rows(&ghost_layout(&files, None, false, 0.0, 4.0)),
+        [(1, 0.0, 4.0, "a".into()), (1, 4.0, 8.0, "b".into()), (1, 12.0, 4.0, "c".into()), (2, 0.0, 4.0, "m".into())]
+    );
+}

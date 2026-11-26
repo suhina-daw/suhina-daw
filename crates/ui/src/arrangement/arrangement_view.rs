@@ -774,8 +774,10 @@ fn show_lanes(
             target.color_or(crate::kit::element::caption_ink()),
         );
     }
+    // The grid runs on under the last track, through the empty space, so a drop or a double-click
+    // there is placed against the same lines as on a lane.
     let grid_bands =
-        [egui::Rangef::new(lanes_area.top(), tracks_bottom), egui::Rangef::new(fixed.top(), fixed.bottom())];
+        [egui::Rangef::new(lanes_area.top(), lanes_area.bottom()), egui::Rangef::new(fixed.top(), fixed.bottom())];
     let grid_painter = painter
         .with_clip_rect(Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(lanes_area.top(), area.bottom())));
     let (grid_bar, grid_beat) = (grid_color(true), grid_color(false));
@@ -2240,13 +2242,65 @@ fn show_lanes(
                 egui::Stroke::new(1.5, outline),
                 egui::StrokeKind::Inside,
             );
-            // One track each: the new tracks the other files go onto, below the tracks, from
-            // the same beat.
-            if probe.separate && matches!(probe.target, Some(DropTarget::Lane { .. })) && empty.height() > 4.0 {
-                let x = probe.pointer.x.clamp(time.left(), time.right());
-                let below = Rect::from_x_y_ranges(egui::Rangef::new(x, time.right()), empty.y_range());
-                painter.rect_filled(below, 0.0, target.background_or(target.color().gamma_multiply(0.12)));
-                painter.rect_stroke(below.shrink(0.5), 0.0, egui::Stroke::new(1.0, outline), egui::StrokeKind::Inside);
+            // The files as the clips they become: each at its length, where it lands, on the
+            // track dropped on and on the new tracks below the tracks, laid out as `clip.addFiles`
+            // lays them out (› `drop::ghost_layout`).
+            let start = match probe.target {
+                Some(DropTarget::Lane { beat, .. } | DropTarget::NewTracks { beat: Some(beat), .. }) => Some(beat),
+                _ => None,
+            };
+            if let Some(start) = start
+                && !probe.clip
+                && !probe.dropped.is_empty()
+            {
+                let target_track = match probe.target {
+                    Some(DropTarget::Lane { track, .. }) => Some(track),
+                    _ => None,
+                };
+                let target_row = target_track.and_then(|t| rows.iter().find(|r| r.track == t));
+                let target_audio =
+                    target_track.and_then(|t| timeline.lanes.iter().find(|l| l.track == t)).map(|l| !l.notes);
+                let ghosts = crate::interaction::drop::ghost_layout(
+                    &probe.dropped,
+                    target_audio,
+                    probe.separate,
+                    start,
+                    bar_beats,
+                );
+                // A new track's row as tall as a new track's lane.
+                let height = DEFAULT_LANE;
+                let fill = target.background_or(target.color().gamma_multiply(0.28));
+                let ghost_painter = painter.with_clip_rect(Rect::from_x_y_ranges(
+                    time.x_range(),
+                    egui::Rangef::new(lanes_area.top(), lanes_area.bottom()),
+                ));
+                for ghost in &ghosts {
+                    let rows_y = match (ghost.row, target_row) {
+                        (0, Some(row)) => row.time.y_range(),
+                        (0, None) => continue,
+                        (n, _) => {
+                            let top = empty.top() + (n - 1) as f32 * height + 1.0;
+                            egui::Rangef::new(top, top + height - 2.0)
+                        }
+                    };
+                    let x = egui::Rangef::new(
+                        x_of(ghost.start),
+                        x_of(ghost.start + ghost.length).max(x_of(ghost.start) + 2.0),
+                    );
+                    let rect = Rect::from_x_y_ranges(x, rows_y);
+                    ghost_painter.rect_filled(rect, 2.0, fill);
+                    ghost_painter.rect_stroke(rect, 2.0, egui::Stroke::new(1.0, outline), egui::StrokeKind::Inside);
+                    if rect.height() >= 12.0 && rect.width() >= 24.0 {
+                        widgets::text_in(
+                            &ghost_painter.with_clip_rect(rect.intersect(ghost_painter.clip_rect())),
+                            rect.shrink2(Vec2::new(5.0, 0.0)),
+                            Align2::LEFT_TOP,
+                            &ghost.name,
+                            theme::ui_font(theme::TEXT_SMALL),
+                            target.color_or(crate::kit::element::caption_ink()),
+                        );
+                    }
+                }
             }
         }
     }

@@ -303,8 +303,11 @@ onto **one track each**, side by side: in the Arrangement all at the dropped bea
 Launcher all in the dropped scene, the first on the track it was dropped on and the others on
 new tracks after it. Settings › Importing › Dropping files › Several files flips this (one track each
 without Ctrl). While they hover, the label says which (`Add 3 clips, one track each: Bass and 2 new
-tracks`) and, in the Arrangement, the empty space below the tracks is outlined from the dropped
-beat, where the new tracks come. Files dragged in from the system (Explorer, Finder) show the same
+tracks`). In the Arrangement each file is drawn while it hovers as the clip it becomes, at its
+length and where it lands: on the track under the pointer and, for the new tracks, in rows in the
+empty space below the tracks, laid out as the drop places them (a sample as long as its tempo, the
+file's own or the project's, makes it; a MIDI file in whole bars). A file the browser has not read
+yet is drawn a bar long until it has. Files dragged in from the system (Explorer, Finder) show the same
 label and outline and land where the pointer is, as files from the browser do: on Windows, which
 sends the window no pointer moves during such a drag, the pointer is read from the screen.
 

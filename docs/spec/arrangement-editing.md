@@ -125,8 +125,8 @@ the drag; the clip is drawn where it will land while it is dragged).
 
 ## The grid
 
-The Arrangement view has one grid, drawn as vertical lines across the lanes and used by
-everything that snaps. It is the Arrangement's own, apart from the control bar's **Quantize**
+The Arrangement view has one grid, drawn as vertical lines across the lanes, and on through the
+empty space under the last track, where files are dropped, and used by everything that snaps. It is the Arrangement's own, apart from the control bar's **Quantize**
 box, which only sets when launched clips start ([clip launching](clip-launching.md) › Launch
 quantisation). It works as the piano roll's grid does ([clip editor](ui-clip-editor.md) › Grid
 and snapping) and is chosen from the same menu, at the right end of the Arrangement's toolbar,
