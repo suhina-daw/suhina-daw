@@ -246,10 +246,11 @@ pub fn dials(id: &str) -> Vec<String> {
     dials_with(id, &[])
 }
 
-/// [`dials`] with the device's current values: the page and operator the panel shows (the
-/// hidden `panel.page` and `panel.op` parameters) and the model a page's dials follow (the FM
-/// Synth's ADSR or Rates envelope) choose which dials are visible. A controller follows the page
-/// the user changed, not only the page the panel opens on.
+/// [`dials`] with the reading's values: the page and operator the panel shows (the hidden
+/// `panel.page` and `panel.op` parameters) and the model a page's dials follow (the FM Synth's
+/// ADSR or Rates envelope) choose which dials are visible. The window publishes a selection when
+/// its track or device changes, so a controller maps the page the panel opened on until it reads
+/// the selection again.
 pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
     let Some(info) = info(id) else { return Vec::new() };
     let value = |id: &str| -> f64 {
@@ -325,7 +326,12 @@ pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
             }
         }
     }
-    page_dials.extend(always.into_iter().map(str::to_string));
+    // A dial that is also on the page (Random's Amount) is the page's once, not twice.
+    for id in always {
+        if !page_dials.iter().any(|seen| seen == id) {
+            page_dials.push(id.to_string());
+        }
+    }
     page_dials
 }
 

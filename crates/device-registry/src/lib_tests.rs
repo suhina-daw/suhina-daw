@@ -652,3 +652,12 @@ fn the_fm_synths_dials_are_native_widgets() {
         assert!(control.drawing.is_empty(), "{id} draws no dial by hand");
     }
 }
+
+/// The Random page's own Amount dial is also one that stays on every page: the controller's list
+/// carries it once, in the page's place, not twice (#1718).
+#[test]
+fn the_fm_synths_random_amount_is_a_dial_once() {
+    let page = dials_with("fm-synth", &[("panel.page".to_string(), 8.0)]);
+    assert_eq!(&page[..2], ["random.amount", "random.seed"], "{page:?}");
+    assert_eq!(page.iter().filter(|id| *id == "random.amount").count(), 1, "{page:?}");
+}
