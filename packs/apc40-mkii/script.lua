@@ -612,7 +612,8 @@ local function cc_received(channel, controller, value)
         local args = {
             track = selection.track,
             device = device.path,
-            param = param.id,
+            -- A built-in's id is text, a plug-in's a number: the command takes text.
+            param = tostring(param.id),
         }
         if type(param.normalized) == "number" then
             args.normalized = value / 127

@@ -230,6 +230,42 @@ impl Fake {
         handler.call::<()>((token, selection)).unwrap();
     }
 
+    /// A running plug-in's selection, as `project.selection` gives it: numeric parameter ids,
+    /// the switches among the sliders, and the sliders' ids in `dials`.
+    fn plugin_selection(&self, token: u64, track: u32, path: u32) {
+        let selection = self.lua.create_table().unwrap();
+        selection.set("track", track).unwrap();
+        selection.set("track_name", "Serum").unwrap();
+        let device = self.lua.create_table().unwrap();
+        device.set("path", path).unwrap();
+        device.set("enabled", true).unwrap();
+        let params = [
+            (101, "Bypass", "toggle", 0.0, 1.0, 0.0),
+            (102, "Cutoff", "continuous", 0.0, 1.0, 0.5),
+            (103, "Mode", "continuous", 0.0, 3.0, 1.0),
+        ];
+        let list = self.lua.create_table().unwrap();
+        for (index, (id, name, kind, min, max, value)) in params.iter().enumerate() {
+            let param = self.lua.create_table().unwrap();
+            param.set("id", *id).unwrap();
+            param.set("name", *name).unwrap();
+            param.set("kind", *kind).unwrap();
+            param.set("min", *min).unwrap();
+            param.set("max", *max).unwrap();
+            param.set("value", *value).unwrap();
+            param.set("unit", "").unwrap();
+            list.set(index + 1, param).unwrap();
+        }
+        device.set("params", list).unwrap();
+        let dials = self.lua.create_table().unwrap();
+        dials.set(1, 102).unwrap();
+        dials.set(2, 103).unwrap();
+        device.set("dials", dials).unwrap();
+        selection.set("device", device).unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((token, selection)).unwrap();
+    }
+
     /// One port message: CC 16 or a device-section note.
     fn message(&self, bytes: &[u8]) {
         let handler: mlua::Function = self.lua.named_registry_value("on_port_message").unwrap();
@@ -317,6 +353,30 @@ fn the_device_knobs_turn_the_selected_devices_parameters_in_banks_of_eight() {
     let command = fake.last_command();
     assert_eq!(command.param.as_deref(), Some("dial6"), "{command:?}");
     assert!(command.normalized.unwrap_or_default() < 0.001, "{command:?}");
+}
+
+/// A plug-in's generated panel gives its sliders to the knobs, in the panel's order: a switch
+/// between them stays on the panel, and a numeric parameter id reaches `device.setParam` as the
+/// text it takes (#1679).
+#[test]
+fn a_plugins_sliders_take_the_device_knobs_in_panel_order() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.plugin_selection(4, 2, 1);
+    // The first knob at half: the panel's first slider, not the switch before it.
+    fake.knob(0, 64);
+    let command = fake.last_command();
+    assert_eq!(command.id, "device.setParam", "{command:?}");
+    assert_eq!(command.track, Some(2), "{command:?}");
+    assert_eq!(command.device.as_deref(), Some("1"), "{command:?}");
+    assert_eq!(command.param.as_deref(), Some("102"), "the numeric id as text: {command:?}");
+    assert_eq!(command.normalized, None, "a plug-in takes its own value: {command:?}");
+    assert!((command.value.unwrap_or_default() - 64.0 / 127.0).abs() < 1e-6, "{command:?}");
+    // The next slider, a list of four: its value is across the plug-in's range.
+    fake.knob(1, 127);
+    let command = fake.last_command();
+    assert_eq!(command.param.as_deref(), Some("103"), "{command:?}");
+    assert!((command.value.unwrap_or_default() - 3.0).abs() < 1e-6, "{command:?}");
 }
 
 /// A logarithmic dial sends the reading's normalized position, not a linear value: its knob
