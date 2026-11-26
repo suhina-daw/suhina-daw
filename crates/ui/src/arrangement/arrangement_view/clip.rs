@@ -2282,7 +2282,7 @@ pub(super) fn take_lanes(
             let r = clicked(delete, "Delete take", format!("Delete {}", take.name));
             let el = crate::kit::element::BUTTON.id("take-delete").response(&r).enter();
             let fill = el.background_or(motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r)));
-            painter.rect_filled(delete, 2.0, fill);
+            widgets::button_surface(painter, delete, &el, &r, false, fill, 2.0);
             let delete_ink = el.color_or(ink);
             drop(el);
             // A cross drawn, not a glyph: the interface font has no multiplication cross.
@@ -2301,7 +2301,7 @@ pub(super) fn take_lanes(
             let off = motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r));
             let (fill, _) = widgets::toggle_inks(&el, plain.as_ref(), (el.accent(), off), (ink, ink));
             let (_, text) = widgets::toggle_inks(&el, plain.as_ref(), (fill, fill), (ink_on(fill), ink));
-            painter.rect_filled(solo, 2.0, fill);
+            widgets::toggle_face(painter, solo, &el, &r, fill, widgets::toggle_image(&el, plain.as_ref(), soloed));
             widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", small.clone(), text);
             drop(el);
             if r.clicked() {
@@ -2323,7 +2323,7 @@ pub(super) fn take_lanes(
             let r = clicked(promote, "Put the whole take on the track", format!("Put {} on the track", take.name));
             let el = crate::kit::element::BUTTON.id("take-promote").response(&r).enter();
             let fill = el.background_or(motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r)));
-            painter.rect_filled(promote, 2.0, fill);
+            widgets::button_surface(painter, promote, &el, &r, false, fill, 2.0);
             let promote_ink = el.color_or(ink);
             drop(el);
             widgets::text_in(painter, promote, Align2::CENTER_CENTER, "\u{2191}", small.clone(), promote_ink);

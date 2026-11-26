@@ -98,6 +98,10 @@ use suhina_theme_render::{Subject, scenes};
 ///
 /// The menu bar's titles (#1487 › P8) are elements a theme styles (`menu-bar bar-item[kind="menu"]`),
 /// 5 more nodes in each scene and no identity (474 and 721; 486 and 733 on Windows).
+///
+/// On Windows the window's three buttons are `button` elements a sheet styles (they were egui
+/// buttons with no frame), 3 more nodes in the Launcher and 1 in the FM synth (489 and 734); their
+/// identities are shared with the other buttons', so the recorded identities stay.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
@@ -145,7 +149,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 486,
+            nodes: 489,
             identities: 472,
             unstyled: 0,
             fresh: 0,
@@ -163,7 +167,7 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 733,
+            nodes: 734,
             identities: 722,
             unstyled: 0,
             fresh: 0,

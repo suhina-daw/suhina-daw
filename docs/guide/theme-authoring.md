@@ -418,7 +418,7 @@ specific selector to win over Suhina's.
   Suhina Studio as in any theme.
 - **Shared controls.** The base sheet gives Suhina's own controls their looks: a `button` (its
   fill, text, edge and the ring while it has the keys, a step brighter under the pointer), the
-  toggles (`button[kind="toggle"]`, and `toggle` for a switch a view draws itself: dim words, and
+  toggles (`button[kind="toggle"]`, and `toggle` for a switch a view draws itself: off, a button's look, and
   when `[checked]` the chosen fill and the text on it; solo, `button[kind="solo"]`, is lit in the
   accent, arm, `button[kind="arm"]`, in the recording colors), `knob`, the level bars' tracks (`value[kind="bar"]`, `pan[kind="bar"]`) and their
   `value-fill` and `value-handle`, the pan field and its `pan-center`, `send`, the line under a
@@ -471,7 +471,7 @@ specific selector to win over Suhina's.
   did not fit `button[kind="more"]`, and the fills it paints itself, `browser-fill`), the detail
   panels (their fills `detail-fill`, a device's header, nodes, outline, lines, parameters and
   canvas colors `device-canvas`, a group's branches `device-row[kind="branch"]`, the fields
-  `value[kind="field"]`, the buttons `button[kind="panel"]`, switches `button[kind="panel-toggle"]`
+  `value[kind="field"]`, the buttons push buttons `button[kind="push"]`, switches `button[kind="toggle"]`
   and lists `dropdown[kind="panel"]`, the Clip and Devices switch `editor-tab[kind="switch"]`) and
   the piano roll (its grid, rows, notes, velocities, ruler, loop bar, keys, strips, tools and
   toolbar menus). **A rule for every `button` hides their lit looks too**: state
@@ -485,9 +485,7 @@ specific selector to win over Suhina's.
   the toolbar's words and switches (the time signature `toolbar-module[kind="signature"]`, the
   launch quantisation `[kind="grid"]`, Map `button[kind="map"]`, Play `button[kind="play"]`, the
   browser's switch `button[kind="browser"]`, a connected agent `button[kind="agent"]`), a menu's
-  title on the menu bar (`bar-item[kind="menu"]`, which also names the words of the piano roll
-  toolbar's Grid, Workflow and Ghosts menus: scope a rule with `menu-bar` or
-  `piano-roll-toolbar` to reach one of them), the status bar's counts
+  title on the menu bar (`bar-item[kind="menu"]`), the status bar's counts
   (`bar-item[kind="status-counts"]`), Settings' pages' list (`settings-nav`, `[checked]` for the page
   shown), its switches, choices and presets (`button[kind="switch"]`, `"option"`, `"preset"`), a tick
   box (`button[kind="check"]`; the track color window's choices, tick boxes, buttons and sliders
@@ -499,8 +497,7 @@ specific selector to win over Suhina's.
   `button[kind="check"][checked]`. A bar's plain `color` no longer reaches a menu's title or the
   tabs' names: color the bar through `--text-secondary`, or give them a rule
   (`menu-bar bar-item[kind="menu"], project-tabs label[kind="caption"] { color: … }`).
-- **egui's own widgets** (the fields, drop-downs, check boxes and entries of Settings and the
-  menus) take `widget`: at rest, `:hover`, `:active`, `[checked]` for the selection,
+- **egui's own widgets** (the fields and drop-downs of Settings and the menus) take `widget`: at rest, `:hover`, `:active`, `[checked]` for the selection,
   `[kind="window"]` for egui's windows and menus, `[kind="field"]` behind a text field. Its words
   at rest are `--text-value`, a `button`'s `--text-primary`; your rules for `button`, `text-input`,
   `menu` and `scroll-bar` still go over it. What egui draws that takes no input, its separators,
@@ -683,12 +680,12 @@ control is dragged or shows the arrow of the drag's direction; `auto` keeps the 
 |---|---|
 | Toolbar `toolbar` | `toolbar-module`, modules `#browser`, `#tempo`, `#position`, `#signature`, `#grid`, `#count-in`, `#metronome`, `#views`, `#performance`, `#mapping`, `#agents`; `#control-play`, `#control-stop`, `#control-record`, `#control-metronome-toggle`, `#control-browser-toggle` |
 | Arrangement header `arrangement track-header` | `track-name`, `track-number`, `#control-track-on`, `#control-solo`, `#control-cue`, `#control-arm`, `#control-automation`, `#control-monitor`, `fold`, `#arrangement-volume`, `#arrangement-pan`, `send`, `value-fill`, `value-handle` |
-| Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `tempo-mark`, `loop-region`, `loop-line`, `marker`, `playhead`, `start-marker`, `grid-line`, `time-selection`, `marquee`, `track-lane`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade`, `clip-fade-handle`, `clip-envelope`, `take-header`, `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `arrangement-tool`, `add-track`, `#add-midi-track`, `#add-audio-track`, `#add-return-track` |
+| Timeline `arrangement` | `ruler`, `ruler-number`, `ruler-tick`, `tempo-mark`, `loop-region`, `loop-line`, `marker`, `playhead`, `start-marker`, `grid-line`, `time-selection`, `marquee`, `track-lane`, `clip`, `clip-name`, `clip-waveform`, `clip-notes`, `clip-gain`, `clip-fade`, `clip-fade-handle`, `clip-envelope`, `take-header`, `automation-header`, `automation-lane`, `automation-line`, `automation-point`, `automation-pin`, `arrangement-tool`, `#control-add-midi-track`, `#control-add-audio-track`, `#control-add-return-track` |
 | Launcher and mixer `session`, `mixer` | `track-column`, `slot`, `slot-mark`, `slot-record`, `scene`, `scene-column`, `mapping-overlay`, `#mixer-volume`, `#mixer-pan`, `pan-center`, `#mixer-send-N`, `fader`, `fader-cap`, `fader-rail`, `fader-scale`, `meter`, `meter-level`, `meter-clip`, `device-list`, `device-row`, `scroll-bar`, `#mixer-divider`, `#mixer-splitter` |
 | Piano roll `piano-roll` | `piano-grid`, `piano-row`, `piano-row-black`, `piano-key`, `piano-key-black`, `piano-key-c`, `piano-key-hover`, `piano-key-black-hover`, `piano-key-line`, `piano-scale-mark`, `piano-scale-strip`, `piano-range`, `piano-time-selection`, `piano-insert-mark`, `piano-note`, `velocity`, `piano-slice`, `start-marker`, `loop-region`, `ruler-number`, `ruler-tick`, `piano-tool` with `#piano-<tool>`, `midi-tools` (with `slider#quantise-amount`), `clip-info`, `editor-tab` (`#tab-clip`, `#tab-devices`, `#tab-notes`, `#tab-transform`) |
 | Browser `browser` | `browser-place`, `browser-row`, `browser-play`, `browser-tag-dot`, `browser-preview-wave`, `#browser-search`, `#browser-new-folder` (`text-input`) |
 | Devices `device`, `#device-<id>` | `device-header`, `device-control`, `slider`, `slider-rail`, `slider-fill`, `slider-handle`, `knob`, `value` |
-| Dialogs `settings`, `dialog`, `start-page`, `plugin-manager` | `button` (also egui's check boxes and drop-downs), `button[checked]` (a chosen item), `text-input`, `settings-nav`, `progress`, `progress-fill`, `menu`, `popup` |
+| Dialogs `settings`, `dialog`, `start-page`, `plugin-manager` | `button` (also the drop-downs' faces), `button[kind="check"]` (a tick box), `button[kind="entry"]` (a choice in a list, `[checked]` the chosen one), `button[checked]` (a chosen item), `text-input`, `settings-nav`, `progress`, `progress-fill`, `menu`, `popup` |
 
 States: the pointer's and focus are pseudo-classes, `:hover`, `:active`, `:disabled`, `:focus`;
 what Suhina knows about a part is an attribute, `[checked]`, `[selected]`, `[muted]`,
@@ -733,15 +730,15 @@ Elements, by name:
 | `browser-fill`, `detail-fill` | the fills the browser and the detail area paint for themselves where the region behind gives none, by `kind` (`panel`, `window`; the browser's splitter `splitter`, stronger under the pointer; the detail's `control` and `hover` for the hide and close buttons, `outline` the edge of a button that cannot be pressed) |
 | `device-canvas` | the colors a device's own drawings take, read in the device's scope: `color` the text, `background-color` the controls, `border-color` the lines, `accent-color` the accent; `kind="secondary"`, `"value"`, `"inverse"` (`color`) and `"panel"`, `"window"`, `"active"` (`background-color`) the others |
 | `#control-device-on` | a device's on switch (`[checked]` while it runs): a rule for every `button` reaches it, as it does any button, so a theme with one states `#control-device-on[checked]` |
-| `button[kind="close"]`, `button[kind="more"]` | an expanded panel's × and the browser's more tags: only a rule for them reaches them, not one for every `button` |
-| `device[kind="group"]`, `device-row` | a device group's panel, and its branches (`[selected]` while shown, `[muted]` while muted); its `+ Branch` is `add-track[kind="branch"]`; a device's `accent-color` outlines it while selected |
+| `button[kind="close"]`, `button[kind="more"]` | an expanded panel's × and the browser's more tags: buttons like any other, so a rule for every `button` reaches them too; the base sheet draws the … with no fill until the pointer is on it |
+| `device[kind="group"]`, `device-row` | a device group's panel, and its branches (`[selected]` while shown, `[muted]` while muted); its `+ Branch` is a push button, `#control-add-branch`; a device's `accent-color` outlines it while selected |
 | `icon[kind]` in the piano roll | its tool pointer (`pointer`, the ring its `background-color`) and the strip's magnifier (`magnifier`); a clip's color swatch is `icon[kind="swatch"]` |
 | `start-page`, `plugin-manager` | the page with no project open, the Plug-in manager |
 | `dialog-title`, `dialog-actions`, `list-row`, `theme-card` | a dialog's title row (`background-color`; its words `label[kind="title"]`); a dialog's row of buttons (a flex row: `justify-content`, `gap`); a row of a list a click picks, in a dialog, on the start page, in the quick-add and project switcher lists and the Plug-in manager (`[selected]` for the picked one); a theme's card in the picker (`[selected]` for the theme in use: `border-color`, `background-color` for its tint, `accent-color` for the word *Active*) |
 | `color-swatch`, `color-field`, `slider[kind="band"]` | the color picker's: a swatch of the palette, the saved colors or the Steps grid, in a menu or the color window (`border-color` of `:hover` outlines the one under the pointer, of `[selected]` the chosen one just outside it, with a black line inside its edge; `accent-color` of `:focus` rings the one with the keys; `[kind="add"]` is the + that saves the current color, its `color` for its outline and +, `:hover` and `:disabled`; `[kind="square"]` the square beside a picker's name, its `border-color`); Field's saturation/value plane (`border-color`, `border-width`, `:focus`); the Hue slider's band (its `slider-rail`'s `background-color` for the hairline round and between its steps, its `slider-handle`'s for the handle's edge, `accent-color` for the ring while it has the keys) |
 | Control bar, tabs, Settings and dialogs | their words are `label` by kind (`hint` for headings and notes, `caption`, `title`, `value`, `error`), their rules, and the outlines of the start page's cards, `separator[kind="row"]`, their buttons `button` (lit ones `[checked]`: a rule for every `button` leaves them lit), the start page's tabs `editor-tab#tab-recent` and `#tab-templates`, the toolbar's RAM and CPU bars `meter` and `meter-level` (`[kind="hot"]`); `divider#detail-splitter[closed]` while the detail area is closed |
 | `send` | a send, in a mixer strip and in a track header |
-| `add-track` | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons after the last track |
+| `button[kind="push"]` after the last track | the **+ MIDI track**, **+ Audio track** and **+ Return track** buttons, push buttons as every view's |
 | `ruler`, `loop-region`, `playhead` | the Arrangement view's ruler, its loop bar and the play position line (also the piano roll's and the browser preview strip's) |
 | `divider` | the line between a strip's device list and its controls (`#mixer-divider`), the Launcher mixer's top line (`#mixer-splitter`), and the window's splitters (`#detail-splitter`, `#browser-splitter`) and the Arrangement's track header edge (`#arrangement-header-splitter`, painted only where a theme gives it a `background-color`) |
 | `separator[kind]` | the views' lines: the Launcher's between its bands (`band`), its columns (`column`) and its slots (`slot`); the Arrangement's under its rows (`row`), between its bands (`band`) and under each lane (`lane`), in their `color` |
@@ -775,7 +772,7 @@ Ids:
 | `#panel-browser`, `#panel-main`, `#panel-detail` | the window's panels |
 | `#views-top`, `#views-bottom` | the lines over and under the views (`separator`) |
 | `#mixer-send-1`, `#mixer-send-2`, … | a mixer strip's sends, from the left |
-| `#add-midi-track`, `#add-audio-track`, `#add-return-track` | the three add-track buttons |
+| `#control-add-midi-track`, `#control-add-audio-track`, `#control-add-return-track` | the three add-track buttons |
 | `#mixer-divider` | a strip's divider |
 | `#mixer-splitter` | the Launcher mixer's top line, which a drag resizes |
 | `#control-main-metronome`, `#control-mixer-monitor-in`, `#control-mixer-monitor-auto`, `#control-mixer-monitor-off` | the metronome in Main's strip and a strip's monitor buttons; while on, they take a color only from a rule for `[checked]`, so a rule for every `button` does not hide which one is on |
@@ -791,11 +788,18 @@ with a `background-color` does not repaint the buttons on it. A control's own su
 `background-color`, `background-image`, `border-radius`, `border-width` with `border-color`
 (no border is drawn without a width; `border-width: 0 0 1px` or `border-bottom-width` and the
 other sides draw some sides only), `box-shadow` and `opacity`; `transparent` paints nothing.
-A button shaped this way is not covered by the artwork Suhina ships, only by your own
-`button` artwork. For example, a toolbar as one surface with recessed displays:
+A button keeps its artwork (Suhina's `button.svg`, or your own `button` artwork) whatever
+background, radius or border you give it: the `background-color` colors the artwork (it is its
+`currentColor`), the radius rounds it, and your `background-image` and border are drawn over it.
+To draw a button as its CSS shape alone, say `image: none` on it. A push button with words (Save,
+Cancel, Settings' Help and Close, a dialog's Close) is `button[kind="push"]`, a dialog's main
+action `button[kind="primary"]` and one that stands back (a folder's Remove) `button[kind="secondary"]`;
+the base sheet rounds them (`border-radius: 4px`) and gives them no edge, except the main
+action's hairline in the accent; their edge is their border (`border-width`, `border-color`). For example, a toolbar as one surface with recessed
+displays:
 
 ```css
-#browser button, #metronome button { background-color: transparent; box-shadow: none; }
+#browser button, #metronome button { image: none; background-color: transparent; box-shadow: none; }
 #browser button:hover, #metronome button:hover { border-width: 1px; border-color: var(--accent); }
 #performance { background-color: transparent; }
 #tempo, #position { background-color: var(--my-well); border-radius: 4px; }
@@ -921,8 +925,9 @@ position line's color and thickness; `width: 0` hides it.
 
 `send` styles every send, in the mixer and in the Arrangement header, and `#mixer-send-1`
 one of them. `send { appearance: knob; }` draws the mixer's sends as knobs. `send` is
-a send's artwork and `send.fill` its level. `add-track` and `#add-midi-track` (and the two
-others) style the add-track buttons, `add-track` is their artwork.
+a send's artwork and `send.fill` its level. The add-track buttons are push buttons
+(`button[kind="push"]`, with the button artwork), each with an id of its own: `#control-add-midi-track`,
+`#control-add-audio-track` and `#control-add-return-track`.
 
 ### Level bars: the value and a handle
 
@@ -974,10 +979,15 @@ value) and `slider-handle` (`width`), with the artwork roles `slider.rail`, `sli
 ### Buttons and fields everywhere
 
 `button` (with `:hover`, `:active`, `:disabled` and `[checked]` for a chosen row in a list or
-menu) and `text-input` style Suhina's ordinary widgets too: the buttons, check boxes,
-drop-downs and text fields in Settings, in dialogs (Export audio, Save, the loading and closing
-dialogs), on the start page, in the browser, the sample map, the Plug-in manager and in
-popups. Scope them to one place with its element: `settings button`, `dialog text-input`.
+menu) and `text-input` style Suhina's ordinary widgets too: the buttons, drop-downs and text
+fields in Settings, in dialogs (Export audio, Save, the loading and closing dialogs), on the start
+page, in the browser, the sample map, the Plug-in manager and in popups. A tick box is
+`button[kind="check"]` with its words `label[kind="check"]`, a choice in a list (Settings' help,
+the sample map's layouts and its list, quick add's filters, a device's radio parameter)
+`button[kind="entry"]`, `[checked]` for the chosen one (drawn as a menu's rows are: a row of a
+menu or of a drop-down's list is `list-row[kind="menu"]`, `[selected]` for the chosen one, which a
+rule for every `button` does not reach), and a button that removes or discards
+something has its words in `label[kind="error"]`'s `color`. Scope them to one place with its element: `settings button`, `dialog text-input`.
 `border-width: 0` removes egui's own outline. egui draws one outline all round, so sides of
 different widths (`border-width: 0 0 2px`) give these widgets only the `border-color`; the
 browser's search field and Settings' theme swatches draw each side. Settings' choices of several parts (Ask, Panel,
@@ -998,11 +1008,12 @@ the plain `button`.
 egui's separators, the edges of its group frames and its labels are not buttons: style them with
 `widget[kind="static"]`, and hide its lines with `widget[kind="static"] { border-color: transparent; }`.
 A disabled egui widget is drawn faded in its own state's look, so `button:disabled` does not reach
-egui's widgets at all.
+egui's widgets at all; it does style Suhina's own buttons that cannot be pressed now (dim words, as
+the base sheet gives them).
 
 A region's own `border-radius` and border (a `menu`'s, `settings`', a `dialog`'s) frame the region;
-the widgets inside take theirs from the `button` rules that reach them, so a round menu does not make
-its rows pills. Give the rows their own with a scoped rule: `menu button { border-radius: 4px; }`.
+the widgets inside take theirs from the rules that reach them, so a round menu does not make
+its rows pills. Give the rows their own with a scoped rule: `menu list-row[kind="menu"] { border-radius: 4px; }`.
 A drop-down's or a text field's own radius and border are its field's; the rows of a drop-down's
 open list keep the field's words but take their radius, border and fill from `dropdown button`.
 

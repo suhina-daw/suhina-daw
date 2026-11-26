@@ -1342,6 +1342,11 @@ fn the_plug_in_manager_switches_a_plug_in_off_and_the_browser_no_longer_offers_i
     // Every plug-in in one table, sortable by its columns.
     assert!(harness.query_by_label("Sort the plug-ins by Vendor").is_some());
     assert!(harness.query_by_label("Use Alpha Verb").is_some());
+    // Each row's switch sits a whole row below the one before: a switch takes no room of its
+    // own, so the rows after it are not drawn over it.
+    let alpha = harness.get_by_label("Use Alpha Verb").rect();
+    let zeta = harness.get_by_label("Use Zeta Synth").rect();
+    assert!((zeta.top() - alpha.top()).abs() >= 22.0, "{alpha:?} and {zeta:?} are rows apart");
     harness.get_by_label("Use Zeta Synth").click();
     harness.run();
     let mut plugins = suhina_plugins::library::Library::new(Some(settings.join("plugins")), PathBuf::from("no-host"));

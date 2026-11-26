@@ -8,6 +8,7 @@
 use egui::{Align2, Id, Pos2, Rect, Sense, Ui, Vec2, pos2};
 
 use crate::interaction::pick::PickField;
+use crate::kit::controls;
 use crate::kit::motion;
 use crate::kit::theme::{self, Colors, PAD};
 use crate::kit::widgets;
@@ -1115,16 +1116,18 @@ pub fn show(ui: &mut Ui, settings: &mut Settings, sources: Sources<'_>, state: &
     // Help, beside Close: how each setting's description is shown.
     let help = Rect::from_min_size(Pos2::new(close.left() - 58.0, close.top()), Vec2::new(52.0, close.height()));
     let help_response = widgets::button_area(ui, help, Id::unique("settings-help"), "Settings help");
-    widgets::flat_button(ui, &painter, help, &help_response, "Help", (theme::TEXT, None));
+    widgets::push_face(ui, &painter, help, &help_response, ("Help", widgets::Push::Plain), None);
     if help_response.clicked() {
         state.help_open = true;
     }
     let response = widgets::button_area(ui, close, Id::unique("settings-close"), "Close settings");
-    widgets::flat_button(ui, &painter, close, &response, "Close", (theme::TEXT, None));
+    widgets::push_face(ui, &painter, close, &response, ("Close", widgets::Push::Plain), None);
     // Undock or dock, left of Help.
     let toggle = Rect::from_min_max(pos2(help.left() - 116.0, title.top()), pos2(help.left() - 6.0, title.bottom()));
     let label = if state.window { "Dock" } else { "Open in window" };
-    if ui.put(toggle, egui::Button::new(label)).clicked() {
+    if widgets::button_with_id(ui, &painter, toggle, Id::unique("settings-window-toggle"), label, label, false)
+        .clicked()
+    {
         state.window = !state.window;
     }
     let top = title.bottom() + 16.0;
@@ -1231,9 +1234,9 @@ pub fn ask_leave(state: &mut PageState, to: Leave) {
 
 /// The ways a setting's description can be shown, as the Help dialog offers them.
 const DESCRIPTION_CHOICES: [(Descriptions, &str); 3] = [
-    (Descriptions::Tooltip, "Tooltip: point at a setting's name to read what it does"),
-    (Descriptions::Icon, "? icon: point at the ? next to a setting to read what it does"),
-    (Descriptions::Shown, "Below the name: each setting's description is always shown"),
+    (Descriptions::Tooltip, "Tooltip: point at a setting's name"),
+    (Descriptions::Icon, "? icon: point at the ? beside a setting"),
+    (Descriptions::Shown, "Below the name: always shown"),
 ];
 
 /// Help over the Settings window: what the names and descriptions are, and how a description is
@@ -1247,8 +1250,7 @@ fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome:
         ui.label(egui::RichText::new(text).font(theme::ui_font(theme::TEXT_SMALL)).color(ink().caption));
         ui.add_space(6.0);
         for (choice, label) in DESCRIPTION_CHOICES {
-            let text = egui::RichText::new(label).font(theme::ui_font(theme::TEXT_SMALL));
-            if ui.radio(settings.setting_descriptions == choice, text).clicked()
+            if controls::choice(ui, label, settings.setting_descriptions == choice).clicked()
                 && settings.setting_descriptions != choice
             {
                 settings.setting_descriptions = choice;
@@ -1256,7 +1258,7 @@ fn help_dialog(ui: &Ui, settings: &mut Settings, state: &mut PageState, outcome:
             }
         }
         ui.add_space(8.0);
-        ui.button(egui::RichText::new("Close").font(theme::ui_font(theme::TEXT))).clicked()
+        controls::button(ui, "Close").clicked()
     });
     if modal.inner || modal.should_close() {
         state.help_open = false;
@@ -1721,7 +1723,9 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
             dialog_field(ui, "Name", "Theme name", &mut new.info.name);
             dialog_field(ui, "Author", "Theme author", &mut new.info.author);
             dialog_field(ui, "Description", "Theme description", &mut new.info.description);
-            ui.checkbox(&mut new.artwork, "Include the default artwork");
+            if controls::check_box(ui, "Include the default artwork", new.artwork).clicked() {
+                new.artwork = !new.artwork;
+            }
             ui.label(
                 egui::RichText::new(
                     "Copies the built-in control images into the theme's assets folder, with a rule for each in its \
@@ -1731,11 +1735,11 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
                 .color(ink().caption),
             );
             ui.horizontal(|ui| {
-                if ui.button("Create theme").clicked() {
+                if controls::button(ui, "Create theme").clicked() {
                     request = Some(ThemeRequest::NewTheme(new.clone()));
                     done = true;
                 }
-                done |= ui.button("Cancel").clicked();
+                done |= controls::button(ui, "Cancel").clicked();
             });
         }
         ThemeDialog::Info { id, info } => {
@@ -1745,11 +1749,11 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
             dialog_field(ui, "Description", "Theme description", &mut info.description);
             dialog_field(ui, "Default variant", "Default variant name", &mut info.default_variant);
             ui.horizontal(|ui| {
-                if ui.add_enabled(!info.name.trim().is_empty(), egui::Button::new("Save")).clicked() {
+                if controls::button_if(ui, "Save", !info.name.trim().is_empty()).clicked() {
                     request = Some(ThemeRequest::EditInfo { id: id.clone(), info: info.clone() });
                     done = true;
                 }
-                done |= ui.button("Cancel").clicked();
+                done |= controls::button(ui, "Cancel").clicked();
             });
         }
         ThemeDialog::Delete { id, name, revert } => {
@@ -1762,12 +1766,11 @@ fn theme_dialog(ui: &Ui, themes: &ThemesView, mut dialog: ThemeDialog) -> (Optio
             dialog_title(ui, &question);
             ui.label(format!("{what} will be moved to the Trash."));
             ui.horizontal(|ui| {
-                let button = egui::Button::new(egui::RichText::new(action).color(crate::kit::element::error_ink()));
-                if ui.add(button).clicked() {
+                if controls::danger_button(ui, action).clicked() {
                     request = Some(ThemeRequest::Delete(id.clone()));
                     done = true;
                 }
-                done |= ui.button("Cancel").clicked();
+                done |= controls::button(ui, "Cancel").clicked();
             });
         }
     })
@@ -2055,8 +2058,9 @@ fn theme_card(
             // + adds a variant: grayed when the theme has no settings a variant could hold.
             let area = place(variants.len());
             let enabled = !themes.declared.is_empty();
-            let plus = ui.interact(area, Id::unique(("theme-new-variant", base)), Sense::click());
-            plus.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, "New variant"));
+            let id = Id::unique(("theme-new-variant", base));
+            // Disabled in a cell of its own when grayed, so the button's face takes `:disabled`.
+            let plus = widgets::button_area(&widgets::cell(ui, area, enabled), area, id, "New variant");
             let plus = if enabled {
                 plus.on_hover_text("New variant from the values in use")
             } else {
@@ -2068,21 +2072,17 @@ fn theme_card(
                 state.scrolled = None;
             }
             if ui.is_rect_visible(area) {
-                // Drawn as the theme's buttons are: their fill, edge and text, lighter under the
-                // pointer and pressed, faded when grayed.
-                let visuals = if enabled { *ui.style().interact(&plus) } else { ui.visuals().widgets.inactive };
-                let fade = |color: egui::Color32| if enabled { color } else { ui.visuals().disable(color) };
-                let corner = 6.0_f32.min(area.height() / 2.0);
-                let painter = ui.painter();
-                painter.rect_filled(area, corner, fade(visuals.weak_bg_fill));
-                painter.rect_stroke(
+                // A push `button`: its artwork or box, edge and words, under the pointer and
+                // pressed too, and `:disabled` when grayed.
+                widgets::push_face_sized(
+                    ui,
+                    ui.painter(),
                     area,
-                    corner,
-                    egui::Stroke::new(visuals.bg_stroke.width.max(1.0), fade(visuals.bg_stroke.color)),
-                    egui::StrokeKind::Inside,
+                    &plus,
+                    ("+", widgets::Push::Plain),
+                    None,
+                    theme::TEXT + 4.0,
                 );
-                let text = fade(visuals.fg_stroke.color);
-                widgets::text_in(painter, area, Align2::CENTER_CENTER, "+", theme::ui_font(theme::TEXT + 4.0), text);
             }
         }
     }
@@ -2125,7 +2125,7 @@ fn paint_swatch(painter: &egui::Painter, rect: Rect, color: egui::Color32) -> f3
 fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Option<ThemeRequest>, bool) {
     let mut request = None;
     let mut close = false;
-    if ui.button("Back to themes").clicked() {
+    if controls::button(ui, "Back to themes").clicked() {
         if themes.edited {
             state.theme_leave = Some(Leave::Back);
         } else {
@@ -2148,11 +2148,11 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
     ui.horizontal(|ui| {
         if themes.new_variant {
             // Nothing is written yet: Save makes the variant, Cancel leaves nothing behind.
-            if ui.button("Save").clicked() {
+            if controls::button(ui, "Save").clicked() {
                 request = Some(ThemeRequest::SaveAsNew);
                 state.skin_editor.forget_drafts();
             }
-            if ui.button("Cancel").clicked() {
+            if controls::button(ui, "Cancel").clicked() {
                 request = Some(ThemeRequest::Discard);
                 state.skin_editor.forget_drafts();
                 state.theme_editor = false;
@@ -2165,17 +2165,17 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
         } else {
             "The default variant is the theme's own values; save your changes as a new variant"
         });
-        let save = ui.add_enabled(themes.saveable && themes.edited, egui::Button::new("Save"));
+        let save = controls::button_if(ui, "Save", themes.saveable && themes.edited);
         if let Some(reason) = refused {
             save.on_disabled_hover_text(reason);
         } else if save.clicked() {
             request = Some(ThemeRequest::Save);
         }
-        if ui.button("Save as new variant").clicked() {
+        if controls::button(ui, "Save as new variant").clicked() {
             request = Some(ThemeRequest::SaveAsNew);
             state.skin_editor.forget_drafts();
         }
-        if ui.add_enabled(themes.edited, egui::Button::new("Discard changes")).clicked() {
+        if controls::button_if(ui, "Discard changes", themes.edited).clicked() {
             state.theme_discard = true;
         }
     });
@@ -2229,11 +2229,11 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
                     } else {
                         ("Save as new variant", ThemeRequest::SaveAsNew)
                     };
-                    if ui.button(label).clicked() {
+                    if controls::button(ui, label).clicked() {
                         Some(Some(save))
-                    } else if ui.button("Don't save").clicked() {
+                    } else if controls::button(ui, "Don't save").clicked() {
                         Some(Some(ThemeRequest::Discard))
-                    } else if ui.button("Cancel").clicked() {
+                    } else if controls::button(ui, "Cancel").clicked() {
                         Some(None)
                     } else {
                         None
@@ -2261,10 +2261,9 @@ fn theme_editor(ui: &mut Ui, themes: &ThemesView, state: &mut PageState) -> (Opt
             dialog_title(ui, &format!("Discard your changes to {}?", themes.variant_name));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                let button = egui::Button::new(egui::RichText::new("Discard").color(crate::kit::element::error_ink()));
-                if ui.add(button).clicked() {
+                if controls::danger_button(ui, "Discard").clicked() {
                     Some(true)
-                } else if ui.button("Cancel").clicked() {
+                } else if controls::button(ui, "Cancel").clicked() {
                     Some(false)
                 } else {
                     None
@@ -2382,7 +2381,7 @@ fn shortcuts_page(
         Pos2::new(head.right(), head.top() + 1.0 + SEGMENT),
     );
     let response = widgets::button_area(ui, reset, Id::unique("reset-keys"), "Reset all keys");
-    widgets::flat_button(ui, painter, reset, &response, "Reset all", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, reset, &response, ("Reset all", widgets::Push::Plain), None);
     if response.clicked() {
         *keymap = Keymap::default();
         state.capture = None;
@@ -2465,15 +2464,11 @@ fn shortcuts_page(
                         let text = egui::RichText::new(shown).font(theme::mono_font(theme::TEXT_SMALL)).color(color);
                         ui.add(egui::Label::new(text).truncate());
                     });
-                    let change = ui.add(egui::Button::new(egui::RichText::new("Change").font(small.clone())));
-                    let label = format!("Change keys of {}", action.id);
-                    change.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+                    let change = controls::button_named(ui, "Change", &format!("Change keys of {}", action.id));
                     if change.clicked() {
                         state.capture = Some(action.id.clone());
                     }
-                    let clear = ui.add(egui::Button::new(egui::RichText::new("Clear").font(small.clone())));
-                    let label = format!("Clear keys of {}", action.id);
-                    clear.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+                    let clear = controls::button_named(ui, "Clear", &format!("Clear keys of {}", action.id));
                     if clear.clicked() && !keys.is_empty() {
                         keymap.set(&action.id, Vec::new());
                         changed = true;
@@ -2528,15 +2523,13 @@ pub(crate) fn plugin_folders(
     for folder in &plugins.folders {
         let r = line(y, 18.0);
         let check = Rect::from_min_size(Pos2::new(r.left(), r.top() + 1.0), Vec2::splat(16.0));
-        let mut enabled = folder.enabled;
         // Off while a scan runs: its result replaces the library, switches too.
-        let response = ui.put(check, |ui: &mut egui::Ui| {
-            ui.add_enabled(!plugins.scanning, egui::Checkbox::without_text(&mut enabled))
-        });
         let label = format!("Scan {}", folder.path);
-        response.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, folder.enabled, &label));
-        if response.changed() {
-            request = Some(PluginRequest::SetFolderEnabled(folder.path.clone(), enabled));
+        let id = Id::unique(("plugin-folder-scan", &folder.path));
+        let cell = widgets::cell(ui, check, !plugins.scanning);
+        let response = widgets::check_box_named(&cell, painter, check, id, ("", &label), folder.enabled);
+        if response.clicked() {
+            request = Some(PluginRequest::SetFolderEnabled(folder.path.clone(), !folder.enabled));
         }
         let right = if folder.standard { r.right() } else { r.right() - 68.0 };
         let text = Rect::from_min_max(Pos2::new(check.right() + 6.0, r.top()), Pos2::new(right - 96.0, r.bottom()));
@@ -2554,7 +2547,7 @@ pub(crate) fn plugin_folders(
                 Id::unique(("remove-folder", &folder.path)),
                 format!("Remove {}", folder.path),
             );
-            widgets::flat_button(ui, painter, remove, &response, "Remove", (theme::TEXT_SMALL, Some("secondary")));
+            widgets::push_face(ui, painter, remove, &response, ("Remove", widgets::Push::Secondary), None);
             if response.clicked() {
                 request = Some(PluginRequest::RemoveFolder(folder.path.clone()));
             }
@@ -2608,7 +2601,7 @@ pub(crate) fn plugin_folders(
         widgets::text_in(painter, cell, Align2::CENTER_CENTER, title, small.clone(), color);
     }
     let response = widgets::button_area(ui, add, Id::unique("add-folder"), "Add plug-in folder");
-    widgets::flat_button(ui, painter, add, &response, "Add", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, add, &response, ("Add", widgets::Push::Plain), None);
     let entered = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     if response.clicked() || entered {
         // Nothing typed: the system's folder picker, so Add always does something.
@@ -2633,7 +2626,6 @@ fn plugin_actions(
     plugins: &mut PluginsView,
 ) -> Option<PluginRequest> {
     let mut request = None;
-    let small = theme::ui_font(theme::TEXT_SMALL);
     let line = |y: &mut f32, height: f32| {
         let rect = Rect::from_min_size(Pos2::new(page.left(), *y), Vec2::new(page.width(), height));
         *y += height;
@@ -2663,17 +2655,10 @@ fn plugin_actions(
             Pos2::new(buttons.left() + index as f32 * (half + 1.0), buttons.top()),
             Vec2::new(half, buttons.height()),
         );
-        let response = widgets::button_area(ui, cell, Id::unique(("scan", index)), text);
-        let el = crate::kit::element::BUTTON.response(&response).enter();
-        // While a scan runs, the buttons stand back: the region's fill under the hint's ink.
-        let fill = if plugins.scanning {
-            el.background_or(crate::kit::style_class::surface_or(crate::kit::element::app_fill("panel")))
-        } else {
-            el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background)
-        };
-        painter.rect_filled(cell, 0.0, fill);
-        let color = if plugins.scanning { ink().hint } else { el.color() };
-        widgets::text_in(painter, cell, Align2::CENTER_CENTER, text, small.clone(), color);
+        // Push buttons, `:disabled` while a scan runs.
+        let area = widgets::cell(ui, cell, !plugins.scanning);
+        let response = widgets::button_area(&area, cell, Id::unique(("scan", index)), text);
+        widgets::push_face(&area, painter, cell, &response, (text, widgets::Push::Plain), None);
         if response.clicked() && !plugins.scanning {
             request = Some(PluginRequest::Scan { all });
         }
@@ -2684,7 +2669,7 @@ fn plugin_actions(
     label(painter, r, "Plug-in manager", "Every plug-in found, switched on or off, and why files failed");
     let open = control_rect(r, 2);
     let response = widgets::button_area(ui, open, Id::unique("open-plugin-manager"), "Open the plug-in manager");
-    widgets::flat_button(ui, painter, open, &response, "Manage plug-ins", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, open, &response, ("Manage plug-ins", widgets::Push::Plain), None);
     if response.clicked() {
         plugins.manager.open = true;
     }
@@ -2835,7 +2820,7 @@ fn driver_panel_row(ui: &Ui, painter: &egui::Painter, r: Rect) -> bool {
     let rect = Rect::from_min_size(Pos2::new(r.right() - 150.0, r.top() + 1.0), Vec2::new(150.0, SEGMENT));
     let response =
         widgets::button_area(ui, rect, Id::unique("asio-control-panel"), "Open the active ASIO driver's control panel");
-    widgets::flat_button(ui, painter, rect, &response, "Control panel…", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, rect, &response, ("Control panel…", widgets::Push::Plain), None);
     response.clicked()
 }
 
@@ -3228,7 +3213,7 @@ fn now_rows(ui: &Ui, painter: &egui::Painter, page: Rect, y: &mut f32, settings:
     label(painter, r, "Playing on", &output);
     let refresh = Rect::from_min_size(Pos2::new(r.right() - 120.0, r.top() + 1.0), Vec2::new(120.0, SEGMENT));
     let response = widgets::button_area(ui, refresh, Id::unique("audio-refresh"), "List the audio devices again");
-    widgets::flat_button(ui, painter, refresh, &response, "List devices again", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, refresh, &response, ("List devices again", widgets::Push::Plain), None);
     let r = row(y);
     label(painter, r, "Delay to the speakers", &format!("Measured from the engine to the speakers: {latency}"));
     let r = row(y);

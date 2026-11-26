@@ -865,7 +865,7 @@ fn audio_block(
         let widgets::Lit { el, toggle, lit } =
             widgets::lit_toggle_kind(ui, &response, crate::kit::element::BUTTON.id(&name), &[Checked], on, "monitor");
         let (fill, ink) = toggle.at(lit);
-        painter.rect_filled(area, 0.0, fill);
+        widgets::toggle_surface(painter, area, &el, &response, fill, toggle.image(lit), 0.0);
         drop(el);
         widgets::text_in(
             painter,
