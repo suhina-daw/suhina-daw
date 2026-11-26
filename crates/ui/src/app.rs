@@ -3826,7 +3826,7 @@ impl App {
             // A drag from the browser, or files from the system: the views say what is under the
             // pointer.
             let dragged = self.browser.drag.clone().or_else(|| system.as_ref().map(|(items, _)| items.clone()));
-            let dropped = dragged.as_deref().map(|items| self.dropped_files(items)).unwrap_or_default();
+            let dropped = dragged.as_deref().map(|items| self.carried_files(items)).unwrap_or_default();
             let probe = dragged.as_ref().and_then(|items| {
                 self.drag_pointer(ui.ctx()).map(|pointer| DropProbe {
                     separate: items.iter().filter(|i| i.kind.is_file_clip()).count() > 1

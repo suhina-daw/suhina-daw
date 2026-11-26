@@ -2199,6 +2199,8 @@ fn show_lanes(
     let lanes = Rect::from_x_y_ranges(time.x_range(), egui::Rangef::new(marker_row.bottom(), area.bottom()));
     state.pointer_beat =
         ui.ctx().pointer_hover_pos().filter(|p| lanes.contains(*p)).map(|p| beat_at(p.x, false).max(0.0));
+    // A new track's row as tall as a new track's lane is drawn, for the files carried over.
+    let new_lane_height = state.zoomed_height().round().max(MIN_LANE);
     if let Some(probe) = state.drop.as_mut() {
         for row in rows.iter() {
             let Some(lane) = timeline.lanes.iter().find(|l| l.track == row.track) else { continue };
@@ -2267,8 +2269,7 @@ fn show_lanes(
                     start,
                     bar_beats,
                 );
-                // A new track's row as tall as a new track's lane.
-                let height = DEFAULT_LANE;
+                let height = new_lane_height;
                 let fill = target.background_or(target.color().gamma_multiply(0.28));
                 let ghost_painter = painter.with_clip_rect(Rect::from_x_y_ranges(
                     time.x_range(),

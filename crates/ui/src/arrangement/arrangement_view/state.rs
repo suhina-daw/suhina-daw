@@ -1110,7 +1110,7 @@ impl ArrangementViewState {
 
     /// How tall a row is that has not been resized: the theme's height or the default size, as far
     /// as the lanes have been zoomed.
-    fn zoomed_height(&self) -> f32 {
+    pub(super) fn zoomed_height(&self) -> f32 {
         let base =
             crate::kit::style_class::theme_track_height().unwrap_or(f32::from(self.sizes.height(self.sizes.tracks)));
         (base * self.lane_zoom).clamp(MIN_LANE, MAX_LANE)

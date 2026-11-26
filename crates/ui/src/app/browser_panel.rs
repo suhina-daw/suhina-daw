@@ -186,7 +186,7 @@ impl App {
     /// The samples and MIDI files among `items`, each with the length its clip will have, from
     /// what the browser has read of it (asked for here when it has not, so it comes in a few
     /// frames into the drag) and the project's tempo and bar.
-    pub(super) fn dropped_files(&mut self, items: &[BrowserItem]) -> Vec<drop::DroppedFile> {
+    pub(super) fn carried_files(&mut self, items: &[BrowserItem]) -> Vec<drop::DroppedFile> {
         let project = self.session().map_or((120.0, 4.0), |s| {
             let transport = &s.project().transport;
             (transport.tempo_bpm, transport.meter().position(0.0).bar_beats)
