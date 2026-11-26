@@ -24,8 +24,9 @@ covers:
   install, with its tests: the shipped content installs when the store does not hold it, a
   removal is remembered, and only a copy still carrying exactly the recorded content is
   updated. The script's device control section is tested against a stand-in Suhina
-  (`crates/lua-runner/tests/apc40.rs`): the dials, the bank pages, the switches left out and the
-  device arrows change the selected device (#1679). The whole script's run through the supervisor — the mode
+  (`crates/lua-runner/tests/apc40.rs`): the dials, the bank pages, the switches left out, a
+  plug-in's sliders taking the knobs in its panel's order, and the device arrows change the
+  selected device (#1679). The whole script's run through the supervisor — the mode
   message, a press of each strip button, the LEDs — follows.
 
 ## What ships

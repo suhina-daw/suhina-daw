@@ -52,7 +52,8 @@ its dial's normalized position, so a logarithmic time or frequency moves with th
 and a page or operator change in the window moves the bank with it. While a knob turns, the
 script leaves its ring to the knob: a host ring write resets the encoder's own value, and the
 next report would jump. The ring goes to the dial's position when the bank or device changes, or
-when a value comes from elsewhere. Switches and choices stay on the device's panel. The bank
+when a value comes from elsewhere. Switches and choices stay on the device's panel; a plug-in's
+generated panel gives its sliders to the knobs the same way, in the panel's order. The bank
 arrows light where there is another page, the device arrows while a device is selected, and the
 track select buttons light for the selected track.
 

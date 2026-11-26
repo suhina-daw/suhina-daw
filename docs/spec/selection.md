@@ -81,9 +81,15 @@ agent attached to the app may run them (the selection is project state, not sett
   right and top to bottom, then the dials that stay on every page in the panel's section order,
   then the other pages' dials in the panel's order — so a controller's knobs follow the device's
   layout, not its parameter order, and Bank pages through them. A compact panel with no native
-  dials keeps its continuous parameters in parameter order. A dial also carries `normalized`:
-  the position its panel's dial shows, 0 to 1, beside `value`. A plug-in's parameters are its
-  stored values, and `device.pluginParams` is the way to its full list.
+  dials keeps its continuous parameters in parameter order. A built-in's dial also carries
+  `normalized`: the position its panel's dial shows, 0 to 1, beside `value`. A running plug-in's parameters
+  are the ones its generated panel draws, in the panel's order: `name`, `group`, `min`, `max`,
+  `default`, `value`, `text`, `steps`, `list` and `automatable`, with `kind` `continuous` for a
+  slider and `toggle` for a switch, and with `dials` naming the sliders so a controller's knobs
+  turn them in the same order. The value is the project's where it keeps one and the plug-in's
+  otherwise; the list is refreshed in the background as the panel's is, and a plug-in that is
+  not running, or has not listed yet, shows the stored values. `device.pluginParams` lists the
+  same parameters for an agent or a command.
 - With nothing selected, both are nothing and the parameters are empty.
 
 ### A controller's dials
@@ -122,7 +128,9 @@ controller's ring uses the same normalized position either way
   the already-selected track changing nothing; the ends, the empty chain and no selected track
   doing nothing and not erroring; a named bad device or track refused with its reason; the
   built-in parameters carrying `name`, `min`, `max`, `unit`, `kind` and `normalized`, with the
-  dials in panel order and a page change moving them.
+  dials in panel order and a page change moving them; a plug-in's generated panel listing its
+  sliders as dials, with a switch between them left out and its project's value winning over
+  the plug-in's.
 - A removal clearing the selection, and undo not restoring it.
 - The window: a command-set selection showing (the highlight and the chain), and a click
   changing the reading.
