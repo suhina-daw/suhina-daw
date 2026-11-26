@@ -39,10 +39,12 @@ impl Selection {
     }
 
     /// Keeps only what the project still holds: a removed track or device (or the main channel
-    /// going) leaves nothing selected. Undo restores the project, never the selection — it is
-    /// not an edit.
+    /// going) leaves nothing selected. A presentation folder has no mixer channel but is a
+    /// track still, so it stays selected and stepping can reach its children. Undo restores the
+    /// project, never the selection — it is not an edit.
     pub fn prune(&mut self, project: &Project) {
         if let Some(track) = self.track
+            && project.track(track).is_none()
             && project.channel_of_track(track).is_none()
         {
             self.clear();

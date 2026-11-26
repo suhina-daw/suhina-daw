@@ -179,47 +179,34 @@ impl Link {
         Ok(())
     }
 
-    /// The complete lines already readable, without waiting: what the peer sent while the
-    /// handshake and the environment were being made. A partial line stays for the blocking
-    /// read, and a line over the cap is refused the way [`Self::read_line`] refuses one.
+    /// The complete lines the blocking reads already buffered after the handshake's `ports`:
+    /// what the peer sent while the environment was being made. A partial line stays for the
+    /// blocking read, and a line over the cap is refused the way [`Self::read_line`] refuses
+    /// one. A pipe's mode cannot be switched safely to look for more (on Windows that fails
+    /// while the handle is busy), and bytes not yet read wait for the running loop in order.
     fn drain_lines(&mut self) -> Result<Vec<String>, String> {
-        self.reader.get_mut().set_nonblocking(true).map_err(|e| format!("cannot make the socket nonblocking: {e}"))?;
-        let outcome = self.drain_while_nonblocking();
-        self.reader
-            .get_mut()
-            .set_nonblocking(false)
-            .map_err(|e| format!("cannot make the socket blocking again: {e}"))?;
-        outcome
-    }
-
-    fn drain_while_nonblocking(&mut self) -> Result<Vec<String>, String> {
         let mut lines = Vec::new();
-        'drain: loop {
-            match self.reader.fill_buf() {
-                Ok(available) => {
-                    let Some(end) = available.iter().rposition(|b| *b == b'\n') else {
-                        // Nothing complete: an empty buffer is a closed connection, and a
-                        // partial line is for the blocking read to finish.
-                        break Ok(lines);
-                    };
-                    for line in available[..=end].split(|b| *b == b'\n') {
-                        if line.is_empty() {
-                            continue;
-                        }
-                        if line.len() > surface::MAX_LINE {
-                            break 'drain Err("a line longer than the protocol allows".into());
-                        }
-                        match std::str::from_utf8(line) {
-                            Ok(text) => lines.push(text.to_string()),
-                            Err(_) => break 'drain Err("a line that is not UTF-8 text".into()),
-                        }
+        loop {
+            let consumed = {
+                let available = self.reader.buffer();
+                let Some(end) = available.iter().rposition(|b| *b == b'\n') else {
+                    break;
+                };
+                for line in available[..=end].split(|b| *b == b'\n') {
+                    if line.is_empty() {
+                        continue;
                     }
-                    self.reader.consume(end + 1);
+                    if line.len() > surface::MAX_LINE {
+                        return Err("a line longer than the protocol allows".into());
+                    }
+                    let text = std::str::from_utf8(line).map_err(|_| "a line that is not UTF-8 text")?;
+                    lines.push(text.to_string());
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break Ok(lines),
-                Err(e) => break Err(format!("cannot read: {e}")),
-            }
+                end + 1
+            };
+            self.reader.consume(consumed);
         }
+        Ok(lines)
     }
 }
 
