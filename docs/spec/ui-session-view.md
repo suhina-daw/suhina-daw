@@ -3,7 +3,7 @@ description: Functional spec of the main window and the Launcher view: regions, 
 read_when: Launcher view, main window layout, clip slot behaviour, scene launch, launch keys, mapping mode, Map button, Ctrl+M, mixer section, browser structure
 type: spec
 status: draft
-last_verified: 2026-11-23
+last_verified: 2026-11-26
 covers:
   - crates/ui/src/session/session_view.rs
   - crates/ui/src/session/mixer_strip.rs
@@ -279,7 +279,8 @@ columns, so the outline follows the tracks by identity through a reordered list,
 folder, or a folded group. The view outlines those visible slots in a 2 px theme color — the
 first surface in the theme's recording red, the second in its accent, the third in its selection
 color — clipped to the tracks and scenes there are, so the APC40 MkII's 8×5 box follows its Bank
-Select arrows. At most 16 surfaces report a window; a seventeenth is refused. It is not saved and
+Select arrows. A reordered track or presentation folder between two of the window's columns breaks
+the outline into separate visible runs; it never encloses a track the surface does not control. At most 16 surfaces report a window; a seventeenth is refused. It is not saved and
 records no undo step; a surface that has not reported one, or whose program stops, draws nothing.
 The Clip/Dev and Detail View actions queue for the window's next frame, at most eight at a
 time; a further action is refused rather than silently lost.

@@ -24,12 +24,23 @@ fn a_surface_outline_follows_launcher_columns_not_visible_column_numbers() {
         (Some(1), span(30.0, 40.0)),
         (None, span(40.0, 50.0)),
     ];
-    assert_eq!(surface_track_span(&surface, spans), Some(span(10.0, 40.0)), "launcher 1 and 2");
+    assert_eq!(
+        surface_track_runs(&surface, spans),
+        [span(10.0, 20.0), span(30.0, 40.0)],
+        "a reordered launcher 0 between 2 and 1 is not enclosed"
+    );
     let spans = [(None, span(0.0, 10.0)), (Some(2), span(10.0, 20.0)), (Some(0), span(20.0, 30.0))];
-    assert_eq!(surface_track_span(&surface, spans), Some(span(10.0, 20.0)), "only launcher 2 is visible");
-    let folded = [(Some(0), span(20.0, 30.0)), (Some(2), span(10.0, 20.0))];
+    assert_eq!(surface_track_runs(&surface, spans), [span(10.0, 20.0)], "only launcher 2 is visible");
+    // A presentation folder has no Launcher index and breaks a run too.
+    let folder = [(Some(1), span(0.0, 10.0)), (None, span(10.0, 20.0)), (Some(2), span(20.0, 30.0))];
+    assert_eq!(
+        surface_track_runs(&surface, folder),
+        [span(0.0, 10.0), span(20.0, 30.0)],
+        "the folder between launcher 1 and 2 is not enclosed"
+    );
+    let folded = [(Some(0), span(10.0, 20.0)), (Some(2), span(20.0, 30.0))];
     let surface = suhina_session::ControlSurfaceWindow { track: 0, tracks: 3, ..surface };
-    assert_eq!(surface_track_span(&surface, folded), Some(span(10.0, 30.0)), "folded launcher 1 leaves a gap");
+    assert_eq!(surface_track_runs(&surface, folded), [span(10.0, 30.0)], "folded launcher 1 leaves no gap");
 }
 
 /// The most the mixer grows leaves the body the slot rows and the room a track column's border and

@@ -236,27 +236,31 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 /// the whole column in its track's color.
 const EMPTY_TINT: f32 = 0.12;
 
-/// Draws the Launcher view in the space left in `ui` and adds what the user asked for to
-/// `actions`. `progress` is how far each column's playing clip is (0 … 1), by column index.
-/// The x range the visible Launcher columns of a control surface's window cover. A window
+/// The x ranges the visible Launcher columns of a control surface's window cover. A window
 /// counts Launcher columns; the spans are visible UI columns, which also hold presentation
 /// folders and omit folded children, so the launcher index on each column is what is matched.
-fn surface_track_span(
+/// Matches that are not visible one after another are separate ranges, so an outline never
+/// reaches across a folder or a reordered track the surface does not control.
+fn surface_track_runs(
     surface: &suhina_session::ControlSurfaceWindow,
     spans: impl IntoIterator<Item = (Option<usize>, egui::Rangef)>,
-) -> Option<egui::Rangef> {
+) -> Vec<egui::Rangef> {
     let end = surface.track.saturating_add(surface.tracks);
-    spans.into_iter().fold(None, |range, (launcher, span)| {
+    let mut runs = Vec::new();
+    let mut run: Option<egui::Rangef> = None;
+    for (launcher, span) in spans {
         if launcher.is_some_and(|index| (surface.track..end).contains(&index)) {
-            Some(range.map_or(span, |range: egui::Rangef| {
-                egui::Rangef::new(range.min.min(span.min), range.max.max(span.max))
-            }))
-        } else {
-            range
+            run = Some(run.map_or(span, |range: egui::Rangef| egui::Rangef::new(range.min, span.max)));
+        } else if let Some(range) = run.take() {
+            runs.push(range);
         }
-    })
+    }
+    runs.extend(run);
+    runs
 }
 
+/// Draws the Launcher view in the space left in `ui` and adds what the user asked for to
+/// `actions`. `progress` is how far each column's playing clip is (0 … 1), by column index.
 pub fn show(
     ui: &mut Ui,
     grid: &TrackGrid,
@@ -453,21 +457,23 @@ pub fn show(
     let slot_painter = painter.with_clip_rect(body.intersect(tracks_clip));
     for (index, surface) in grid.control_surfaces.iter().enumerate() {
         let visible = spans.iter().map(|(column, span)| (column.launcher, *span));
-        let Some(x) = surface_track_span(surface, visible) else { continue };
+        let runs = surface_track_runs(surface, visible);
         let scene_end = (surface.scene + surface.scenes).min(grid.scenes.len());
-        if scene_end <= surface.scene {
+        if runs.is_empty() || scene_end <= surface.scene {
             continue;
         }
         let top = bands.top + surface.scene as f32 * slot_pitch();
         let bottom = top + (scene_end - surface.scene) as f32 * slot_pitch() - 1.0;
-        let outline = Rect::from_min_max(Pos2::new(x.min, top), Pos2::new(x.max, bottom));
         let color = match index % 3 {
             0 => crate::kit::element::error_ink(),
             1 => crate::kit::element::accent_ink(),
             _ => crate::kit::selection::fill(&crate::kit::element::SESSION.enter())
                 .unwrap_or_else(crate::kit::element::accent_ink),
         };
-        slot_painter.rect_stroke(outline.shrink(0.5), 0.0, egui::Stroke::new(2.0, color), StrokeKind::Inside);
+        for x in runs {
+            let outline = Rect::from_min_max(Pos2::new(x.min, top), Pos2::new(x.max, bottom));
+            slot_painter.rect_stroke(outline.shrink(0.5), 0.0, egui::Stroke::new(2.0, color), StrokeKind::Inside);
+        }
     }
     if let Some(probe) = state.drop.as_mut() {
         let row_of = |y: f32| ((y - bands.top) / slot_pitch()).floor().max(0.0) as usize;
