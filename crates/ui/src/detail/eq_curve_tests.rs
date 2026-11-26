@@ -166,3 +166,50 @@ fn only_a_top_level_device_is_watched_by_the_analyser() {
     assert_eq!(watch_key(&DeviceAt(vec![1, 0, 0])), None, "a grouped device is not tapped");
     assert_eq!(watch_key(&DeviceAt(vec![2, 1, 3, 0, 1])), None, "nested groups too");
 }
+
+/// A strip's dial dragged and let go keeps the value it was dragged to: the frame the drag ends
+/// sends the value as it is, not the one the press began at, so the band does not jump back on
+/// release (each value sent is applied, as the window applies it).
+#[test]
+fn a_strip_dragged_and_let_go_keeps_its_new_value() {
+    let bounds = Rect::from_min_size(Pos2::ZERO, Vec2::new(440.0, 168.0));
+    let start = value(&panel_parameters(), "a1Frequency");
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(bounds.size())
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(
+            move |ui, (parameters, actions): &mut (Vec<GraphParameter>, Vec<Action>)| {
+                // Every value sent so far is the device's, as the project would have it.
+                for action in actions.iter().filter(|a| a.id == "device.setParam") {
+                    let id = action.params["param"].as_str().unwrap_or_default();
+                    if let (Some(p), Some(v)) =
+                        (parameters.iter_mut().find(|p| p.id == id), action.params["value"].as_f64())
+                    {
+                        p.value = v;
+                    }
+                }
+                show(ui, bounds, &parameters.clone(), TrackId(1), &DeviceAt::at(0), actions);
+            },
+            (panel_parameters(), Vec::new()),
+        );
+    harness.run();
+    // The Frequency strip, the first of the three: its dial under the caption.
+    let dial = Pos2::new(STRIPS[0] + STRIPS[2] / 2.0, STRIPS[1] + 13.0 + 14.0);
+    harness.hover_at(dial);
+    harness.step();
+    harness.drag_at(dial);
+    harness.step();
+    for dy in [10.0, 25.0, 40.0] {
+        harness.hover_at(dial - Vec2::new(0.0, dy));
+        harness.step();
+    }
+    let dragged = value(&harness.state().0, "a1Frequency");
+    assert!(dragged > start, "the drag up raised it: {start} -> {dragged}");
+    harness.drop_at(dial - Vec2::new(0.0, 40.0));
+    harness.step();
+    harness.run();
+    let kept = value(&harness.state().0, "a1Frequency");
+    assert!((kept - dragged).abs() < 1e-9, "let go, it stays where it was dragged: {dragged} -> {kept}");
+}
