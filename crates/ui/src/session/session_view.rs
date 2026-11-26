@@ -238,6 +238,25 @@ const EMPTY_TINT: f32 = 0.12;
 
 /// Draws the Launcher view in the space left in `ui` and adds what the user asked for to
 /// `actions`. `progress` is how far each column's playing clip is (0 … 1), by column index.
+/// The x range the visible Launcher columns of a control surface's window cover. A window
+/// counts Launcher columns; the spans are visible UI columns, which also hold presentation
+/// folders and omit folded children, so the launcher index on each column is what is matched.
+fn surface_track_span(
+    surface: &suhina_session::ControlSurfaceWindow,
+    spans: impl IntoIterator<Item = (Option<usize>, egui::Rangef)>,
+) -> Option<egui::Rangef> {
+    let end = surface.track.saturating_add(surface.tracks);
+    spans.into_iter().fold(None, |range, (launcher, span)| {
+        if launcher.is_some_and(|index| (surface.track..end).contains(&index)) {
+            Some(range.map_or(span, |range: egui::Rangef| {
+                egui::Rangef::new(range.min.min(span.min), range.max.max(span.max))
+            }))
+        } else {
+            range
+        }
+    })
+}
+
 pub fn show(
     ui: &mut Ui,
     grid: &TrackGrid,
@@ -433,18 +452,15 @@ pub fn show(
     // take the accent and the selection color in turn.
     let slot_painter = painter.with_clip_rect(body.intersect(tracks_clip));
     for (index, surface) in grid.control_surfaces.iter().enumerate() {
-        let Some(first) = spans.get(surface.track) else { continue };
-        let last_index = (surface.track + surface.tracks).min(spans.len());
+        let visible = spans.iter().map(|(column, span)| (column.launcher, *span));
+        let Some(x) = surface_track_span(surface, visible) else { continue };
         let scene_end = (surface.scene + surface.scenes).min(grid.scenes.len());
-        if last_index <= surface.track || scene_end <= surface.scene {
+        if scene_end <= surface.scene {
             continue;
         }
-        let Some(last) = spans.get(last_index - 1) else { continue };
-        let left = first.1.min;
-        let right = last.1.max;
         let top = bands.top + surface.scene as f32 * slot_pitch();
         let bottom = top + (scene_end - surface.scene) as f32 * slot_pitch() - 1.0;
-        let outline = Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, bottom));
+        let outline = Rect::from_min_max(Pos2::new(x.min, top), Pos2::new(x.max, bottom));
         let color = match index % 3 {
             0 => crate::kit::element::error_ink(),
             1 => crate::kit::element::accent_ink(),

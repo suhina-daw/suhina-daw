@@ -274,11 +274,15 @@ scene can change it. Dragging or typing into the control bar's time signature ch
 ### Control surfaces
 
 A surface program reports the part of the Launcher it shows with `surface.setWindow`: its first
-track and scene, and the tracks and scenes it has room for. The view outlines those slots in a
-2 px theme color — the first surface in the theme's recording red, the second in its accent, the
-third in its selection color — clipped to the tracks and scenes there are, so the APC40 MkII's
-8×5 box follows its Bank Select arrows. It is not saved and records no undo step; a surface
-that has not reported one draws nothing.
+track and scene, and the tracks and scenes it has room for. Its track numbers count Launcher
+columns, so the outline follows the tracks by identity through a reordered list, a presentation
+folder, or a folded group. The view outlines those visible slots in a 2 px theme color — the
+first surface in the theme's recording red, the second in its accent, the third in its selection
+color — clipped to the tracks and scenes there are, so the APC40 MkII's 8×5 box follows its Bank
+Select arrows. At most 16 surfaces report a window; a seventeenth is refused. It is not saved and
+records no undo step; a surface that has not reported one, or whose program stops, draws nothing.
+The Clip/Dev and Detail View actions queue for the window's next frame, at most eight at a
+time; a further action is refused rather than silently lost.
 
 ### Launch keys
 
