@@ -475,10 +475,10 @@ impl App {
                     actions.push(delete);
                     return;
                 }
-                // A device selected in the detail area (its panel's click) is deleted before any
-                // clip, while the detail shows the chain.
+                // A device the user picked is deleted before any clip. A device the session
+                // followed after a header click is not: Delete there takes the track.
                 if action == "selection.delete"
-                    && (self.detail_shows_devices() || self.device_focus)
+                    && self.device_focus
                     && let Some((track, at)) = self.selected_device.clone()
                     // Main's chain too, which has no track of its own (#690).
                     && self.session().is_some_and(|s| {
@@ -1439,12 +1439,29 @@ impl App {
     /// the selection names changes.
     pub(super) fn follow_session_selection(&mut self) {
         let Some(session) = self.session() else { return };
-        let Some(track) = session.selected_track() else { return };
+        let Some(track) = session.selected_track() else {
+            // An empty selection clears a window highlight whose track has gone, as a removal
+            // does. A window pick of a track that exists stays until the frame publishes it.
+            if let Some(shown) = self.selected_track()
+                && session.project().track(shown).is_none()
+            {
+                self.arrangement.selected_tracks.clear();
+                self.view.selected = None;
+                self.view.selected_tracks.clear();
+                self.view.selected_slot = None;
+                self.selected_device = None;
+                self.device_picks.clear();
+            }
+            return;
+        };
         let device = session.selected_device_path();
         if self.selected_track() != Some(track) {
             self.arrangement.select_one(track);
             self.view.selected = Some(track);
             self.view.selected_tracks = vec![track];
+            if self.view.selected_slot.is_some_and(|(slot_track, _)| slot_track != track) {
+                self.view.selected_slot = None;
+            }
         }
         let picked = device.map(|path| (track, detail_view::DeviceAt(path)));
         if self.selected_device != picked {
@@ -1471,15 +1488,15 @@ impl App {
         }
         let Some(track) = self.selected_track() else { return };
         let Some(session) = self.session() else { return };
-        if session.project().channel_of_track(track).is_none() {
-            return;
-        }
-        if session.selected_track() != Some(track) {
+        let selected_track = session.selected_track();
+        if selected_track != Some(track) {
             self.run(&Action::new("track.select", json!({ "track": track.0 })));
-            return;
         }
+        // A device clicked on another track goes in the same frame as that track's selection;
+        // otherwise the next frame would follow the track's first device and replace it.
         let Some((picked_track, at)) = self.selected_device.clone().filter(|(t, _)| *t == track) else { return };
-        if session.selected_device_path().as_deref() != Some(at.0.as_slice()) {
+        let now = self.session().and_then(Session::selected_device_path);
+        if now.as_deref() != Some(at.0.as_slice()) {
             self.run(&Action::new("device.select", json!({ "track": picked_track.0, "device": at.value() })));
         }
     }
