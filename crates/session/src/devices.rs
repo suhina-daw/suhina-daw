@@ -769,7 +769,7 @@ pub(crate) fn read_device(session: &mut Session, params: &Value) -> Result<Value
             };
             path
         }
-        Some(value) => match crate::device_groups::parse_path(&value) {
+        Some(value) => match crate::device_groups::parse_path(value) {
             Some(path) if path.len() % 2 == 1 => path,
             Some(_) => return Ok(Value::Null),
             None => {
