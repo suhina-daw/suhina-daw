@@ -855,7 +855,8 @@ fn a_drag_ends_on_mouse_up_and_the_next_drag_is_a_step_of_its_own() {
 /// runs), and one drag is one undo step; a double-click centers it.
 #[test]
 fn the_main_crossfader_drags_and_undoes_as_one_step() {
-    let mut harness = window(demo_app());
+    // Frames close enough together for the double-click at the end.
+    let mut harness = window_with_step(demo_app(), 1.0 / 60.0);
     let value = |h: &Harness<'static, App>| h.state().session().map_or(f64::NAN, |s| s.project().crossfader.0);
     assert_eq!(value(&harness), 0.5);
     let at = harness.get_by_label("Main crossfader").rect().center();
@@ -875,10 +876,11 @@ fn the_main_crossfader_drags_and_undoes_as_one_step() {
     harness.run();
     assert_eq!(value(&harness), 0.5, "one drag is one undo step");
     // A double-click centers the crossfader, even after a value from elsewhere.
-    harness.get_by_label("Main crossfader").click_secondary();
+    harness.state_mut().run(&Action::new("mixer.setCrossfader", json!({ "value": 0.8 })));
     harness.run();
-    harness.key_press(Key::Escape);
-    harness.run();
+    assert!((value(&harness) - 0.8).abs() < 1e-9);
+    double_click_at(&mut harness, at);
+    assert_eq!(value(&harness), 0.5, "a double-click centers the crossfader");
 }
 
 /// Each track strip has one A/B/off button: a click cycles the track's assign, and one undo

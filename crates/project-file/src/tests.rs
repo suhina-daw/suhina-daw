@@ -2023,6 +2023,28 @@ fn warp_settings_out_of_range_save_as_they_play() {
     assert!(read.arrangement.lanes.iter().flat_map(|l| &l.clips).all(|c| c.audio.warp == own));
 }
 
+/// The project's crossfader and a track's assign refuse the wrong shape and name the field.
+#[test]
+fn a_malformed_crossfader_or_assign_is_refused() {
+    let project = Project { tracks: vec![Track::new(TrackId(1), "A")], ..Project::default() };
+    let written: Value = serde_json::from_str(&to_json(&project)).unwrap();
+    let read = |field: &str, value: Value| {
+        let mut bad = written.clone();
+        match field {
+            "crossfader" => bad["project"]["crossfader"] = value,
+            _ => bad["project"]["tracks"][0]["crossfade_assign"] = value,
+        }
+        from_json(&bad.to_string())
+    };
+    let error = read("crossfader", json!("half")).unwrap_err().to_string();
+    assert!(error.contains("project.crossfader"), "{error}");
+    let error = read("assign", json!(1)).unwrap_err().to_string();
+    assert!(error.contains(r#"project.tracks[0].crossfade_assign: expected "a", "b" or "off""#), "{error}");
+    let error = read("assign", json!("center")).unwrap_err().to_string();
+    assert!(error.contains(r#"got "center""#), "{error}");
+    assert_eq!(read("assign", Value::Null).unwrap().tracks[0].crossfade_assign, CrossfadeAssign::Off);
+}
+
 /// Version 17: the crossfader and a track's assign survive a save and read, and their defaults
 /// are centered and off.
 #[test]

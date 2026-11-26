@@ -1256,8 +1256,8 @@ fn the_launcher_window_is_reported_to_the_window() {
     assert_eq!((command.track, command.scene), (Some(1), Some(1)), "{command:?}");
 }
 
-/// CC 15 sets the crossfader, and a track's note 66 button toggles A and B; the strip reading
-/// lights it yellow on A and red on B.
+/// CC 15 sets the crossfader, and a track's note 66 button cycles A, B and off; the strip
+/// reading lights it yellow on A and orange on B.
 #[test]
 fn the_crossfader_and_the_ab_button_drive_their_commands() {
     let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
@@ -1274,7 +1274,7 @@ fn the_crossfader_and_the_ab_button_drive_their_commands() {
     let command = fake.last_command();
     assert_eq!(command.id, "track.setCrossfadeAssign", "{command:?}");
     assert_eq!(command.assign.as_deref(), Some("a"), "{command:?}");
-    // The reading says A: the button burns yellow. Then A turns into B, red.
+    // The reading says A: the button burns yellow. Then A turns into B, orange.
     fake.strips_assigns(&[(7, "a")]);
     assert!(
         fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 66, 1].as_slice()),
@@ -1286,7 +1286,7 @@ fn the_crossfader_and_the_ab_button_drive_their_commands() {
     fake.strips_assigns(&[(7, "b")]);
     assert!(
         fake.sends.borrow().iter().any(|(_, bytes)| bytes.as_slice() == [0x90, 66, 2].as_slice()),
-        "B lights red: {:?}",
+        "B lights orange: {:?}",
         fake.sends.borrow()
     );
     // B turns off, and the LED goes dark; off starts again at A.

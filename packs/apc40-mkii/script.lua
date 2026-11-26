@@ -696,7 +696,7 @@ local function arm_velocity(track)
     return OFF_BUTTON
 end
 
--- The crossfader A/B button's LED: yellow on A, red on B, off when the track is off the
+-- The crossfader A/B button's LED: yellow on A, orange on B, off when the track is off the
 -- crossfader. A single LED, so off has no colour of its own.
 local function crossfade_velocity(track)
     local strip = strip_of(track)

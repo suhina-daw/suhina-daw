@@ -64,9 +64,9 @@ its per-track A/B buttons drive the same two commands.
 
 ## The window
 
-- **Main's strip** holds a horizontal **crossfader** above its metronome, labeled **A** at the
-  left and **B** at the right, its handle at the value. It is dragged left or right (double-click
-  centers it); every frame is heard, and one drag is one undo step.
+- **Main's strip** holds a horizontal **crossfader** beside its metronome in the toggle row,
+  labeled **A** at the left and **B** at the right, its handle at the value. It is dragged left or
+  right (double-click centers it); every frame is heard, and one drag is one undo step.
 - **Each track, group and return strip** holds one compact **A/B/off** button under its pan:
   its face reads `A`, `B` or `Off`, lit while it is assigned. A click cycles A, B, off, running
   `track.setCrossfadeAssign`. Main has no assign button.
@@ -77,10 +77,9 @@ its per-track A/B buttons drive the same two commands.
 
 - **CC 15** (the crossfader) sends `0` to `127` as `0` to `1` through `mixer.setCrossfader` with
   one gesture, so a slide is one undo step and is heard while it moves.
-- **Note 66** on a track's own MIDI channel is that track's **A/B** button: A becomes B, B
-  becomes A, and off becomes A, through `track.setCrossfadeAssign`. Its LED is yellow for A and
-  orange for B, and off when the track is off; the button has no third LED, so off is chosen in
-  the window or with the command.
+- **Note 66** on a track's own MIDI channel is that track's **A/B/off** button: A becomes B, B
+  becomes off, and off becomes A, through `track.setCrossfadeAssign`. Its LED is yellow for A and
+  orange for B, and dark when the track is off.
 - The track reading the script follows (`project.tracks`) carries each track's
   `crossfade_assign`, so the button and its LED start on the side the project has.
 
@@ -97,9 +96,9 @@ Every earlier file reads as centered with every track off.
 
 - The engine renders two tracks, one A and one B, at the A end, the center and the B end: only
   A, both at `√½`, only B; an off track is at full level at all three. A movement across the
-  value fades one out and the other in without a jump.
+  value fades the A side out and brings the B side in without a jump.
 - A group assigned A governs its children, and with the group off an inner track's own assign
-  works.
+  works, also when the group has a processing chain of its own.
 - The commands: set, undo and redo; malformed values (`NaN`, out of range) and an unknown
   assign refused; a gesture's frames are one undo step; the project file round trip writes and
   reads version 17.
