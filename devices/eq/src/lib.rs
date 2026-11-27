@@ -462,6 +462,16 @@ impl Part {
     }
 }
 
+/// The narrowest spacing between two Spectral parts, in octaves: a range narrower than five of
+/// these uses fewer parts, so no two parts watch and cut the same frequency.
+const PART_MIN_OCTAVES: f64 = 0.15;
+
+/// How many parts a Spectral band uses over a range from `low` to `high` Hz.
+fn parts_for(low: f64, high: f64) -> usize {
+    let octaves = (high / low.max(1.0)).max(1.0).log2();
+    ((octaves / PART_MIN_OCTAVES).floor() as usize + 1).clamp(1, SPECTRAL_PARTS)
+}
+
 /// A Spectral part's Q for the band's Detail (0 to 1): broad at 0, narrow and selective at 1.
 fn part_q(detail: f64) -> f64 {
     1.5 + detail.clamp(0.0, 1.0) * 10.5
@@ -501,8 +511,10 @@ struct Band {
     detail: f64,
     /// Frames to the next retune of a Dynamic or Spectral band's moving gain.
     dynamic_in: u32,
-    /// A Spectral band's narrow parts.
+    /// A Spectral band's narrow parts, and how many of them it uses: fewer when its range is
+    /// too narrow for five distinct parts (near the top of the spectrum).
     parts: [Part; SPECTRAL_PARTS],
+    parts_in_use: usize,
 }
 
 impl Band {
@@ -528,6 +540,7 @@ impl Band {
             detail: 0.5,
             dynamic_in: 0,
             parts: [Part::new(); SPECTRAL_PARTS],
+            parts_in_use: SPECTRAL_PARTS,
         }
     }
 
@@ -560,6 +573,8 @@ pub struct Eq {
     audition_band: Option<usize>,
     audition_filters: [Svf; 2],
     audition_mix: Smoother,
+    /// A band to listen to next: the output fades back to the whole EQ first, then over to it.
+    audition_next: Option<usize>,
 }
 
 impl Default for Eq {
@@ -591,6 +606,7 @@ impl Eq {
             audition_band: None,
             audition_filters: [Svf::default(); 2],
             audition_mix: Smoother::new(0.0, 1),
+            audition_next: None,
         };
         eq.rebuild();
         eq
@@ -660,6 +676,9 @@ impl Eq {
             _ => SvfCoefficients::bandpass(sr, frequency, 0.3),
         };
         b.dynamics.set_detector(detector);
+        if b.mode != Mode::Spectral {
+            return;
+        }
         let (low, high) = match b.kind {
             Kind::LowShelf => (frequency / 8.0, frequency),
             Kind::HighShelf => (frequency, (frequency * 8.0).min(top)),
@@ -669,8 +688,16 @@ impl Eq {
             }
         };
         let part_q = part_q(b.detail);
+        let used = parts_for(low, high);
+        b.parts_in_use = used;
         for (i, part) in b.parts.iter_mut().enumerate() {
-            let at = (i as f64 + 0.5) / SPECTRAL_PARTS as f64;
+            if i >= used {
+                // Not used over so narrow a range: at rest, flat.
+                part.tuned_db = 0.0;
+                part.dynamics.reset();
+                continue;
+            }
+            let at = (i as f64 + 0.5) / used as f64;
             part.frequency = (low * (high / low.max(1.0)).powf(at)).clamp(FREQUENCY.0, top);
             part.dynamics.set_detector(SvfCoefficients::bandpass(sr, part.frequency, part_q));
             let bell = SvfCoefficients::bell(sr, part.frequency, part_q, part.tuned_db);
@@ -781,6 +808,7 @@ impl Eq {
         self.scale = Smoother::new(self.value(param::SCALE) as f32, ramp);
         self.filters = [[[Svf::default(); 4]; 2]; BANDS];
         self.audition_band = self.auditioned();
+        self.audition_next = None;
         self.audition_filters = [Svf::default(); 2];
         self.audition_mix = Smoother::new(if self.audition_band.is_some() { 1.0 } else { 0.0 }, fade);
         for band in 0..BANDS {
@@ -847,16 +875,16 @@ impl Eq {
             b.pending = false;
             b.kind = kind;
             b.place = place;
-            if b.mode != mode {
-                // A new mode starts at rest.
-                b.mode = mode;
-                b.dynamic_db = 0.0;
-                b.dynamics.reset();
-                for part in &mut b.parts {
-                    part.dynamics.reset();
-                    part.filters.iter_mut().for_each(Svf::reset);
-                    part.tuned_db = 0.0;
-                }
+            // The band is silent here, after it stopped or before a new type, placement or mode:
+            // its dynamics start again at rest, so a band never fades in already moving from
+            // what it heard before.
+            b.mode = mode;
+            b.dynamic_db = 0.0;
+            b.dynamics.reset();
+            for part in &mut b.parts {
+                part.dynamics.reset();
+                part.filters.iter_mut().for_each(Svf::reset);
+                part.tuned_db = 0.0;
             }
             b.active = on;
             if on {
@@ -873,6 +901,7 @@ impl Eq {
     /// bell after the band's own filter.
     fn run_bands(&mut self, sides: &mut [f64; 2], mid_side: bool) {
         let sr = self.sample_rate;
+        let scale = f64::from(self.scale.current());
         for band in 0..BANDS {
             let Some(b) = self.bands.get_mut(band) else { continue };
             if !b.active || b.flat || b.place.mid_side() != mid_side {
@@ -891,8 +920,10 @@ impl Eq {
                     }
                 } else {
                     let part_q = part_q(b.detail);
-                    for part in &mut b.parts {
-                        let change = part.dynamics.process(*sides, listen, b.threshold, b.range);
+                    let used = b.parts_in_use;
+                    for part in b.parts.iter_mut().take(used) {
+                        // Scale multiplies a part's gain change as it does every gain.
+                        let change = part.dynamics.process(*sides, listen, b.threshold, b.range) * scale;
                         if due && (change - part.tuned_db).abs() > 0.01 {
                             if part.tuned_db.abs() < 1e-9 {
                                 // Skipped while flat, its state is stale.
@@ -984,20 +1015,38 @@ impl Device for Eq {
             param::AUDITION => {
                 // A new band to listen to starts its filter from silence and fades the output
                 // over to it; letting go fades back to the whole EQ.
+                // Another band while one is heard fades out first and swaps at silence.
                 match self.auditioned() {
-                    Some(band) => {
-                        if self.audition_band != Some(band) {
-                            self.audition_filters = [Svf::default(); 2];
-                        }
+                    Some(band) if self.audition_band == Some(band) => {
+                        self.audition_next = None;
+                        self.audition_mix.set_target(1.0);
+                    }
+                    Some(band) if self.audition_band.is_none() || self.audition_mix.current() == 0.0 => {
+                        self.audition_next = None;
+                        self.audition_filters = [Svf::default(); 2];
                         self.audition_band = Some(band);
                         self.tune_audition();
                         self.audition_mix.set_target(1.0);
                     }
-                    None => self.audition_mix.set_target(0.0),
+                    Some(band) => {
+                        self.audition_next = Some(band);
+                        self.audition_mix.set_target(0.0);
+                    }
+                    None => {
+                        self.audition_next = None;
+                        self.audition_mix.set_target(0.0);
+                    }
                 }
             }
             _ => {
                 let (band, field) = (index / param::PER_BAND, index % param::PER_BAND);
+                // Deleting the band being heard alone fades back to the whole EQ, and the
+                // audition is let go so a rebuild cannot bring it back.
+                if field == param::IN_USE && value < 0.5 && self.audition_band == Some(band) {
+                    let _ = self.params.set(param::AUDITION, 0.0);
+                    self.audition_next = None;
+                    self.audition_mix.set_target(0.0);
+                }
                 match field {
                     param::ON | param::TYPE | param::IN_USE | param::PLACE | param::MODE => self.switch_band(band),
                     param::RANGE | param::THRESHOLD | param::ATTACK | param::RELEASE | param::DETAIL => {
@@ -1073,7 +1122,15 @@ impl Device for Eq {
                     *o += mix * (h - *o);
                 }
             } else if self.audition_mix.is_settled() && mix == 0.0 {
-                self.audition_band = None;
+                match self.audition_next.take() {
+                    Some(band) => {
+                        self.audition_filters = [Svf::default(); 2];
+                        self.audition_band = Some(band);
+                        self.tune_audition();
+                        self.audition_mix.set_target(1.0);
+                    }
+                    None => self.audition_band = None,
+                }
             }
             frame[0] = out[0] as f32;
             frame[1] = out[1] as f32;

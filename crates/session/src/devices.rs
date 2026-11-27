@@ -1963,6 +1963,12 @@ pub(crate) fn set_automation(session: &mut Session, params: &Value) -> Result<Va
         DeviceKind::Builtin(id) => {
             let info =
                 suhina_device_registry::info(id).ok_or_else(|| format!("{id:?} is not a device this version knows"))?;
+            // The EQ's audition is passing state: it has no lane, as it has no stored value.
+            if id == "eq" && param == "audition" {
+                return Err(
+                    "the EQ's audition cannot be automated: device.audition sets it while a band is held".into()
+                );
+            }
             let spec = info
                 .param_index(param)
                 .and_then(|i| info.params.get(i))

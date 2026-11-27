@@ -645,16 +645,28 @@ fn parse_frequency(typed: &str) -> Option<f64> {
     }
     let rest: String = chars.collect();
     let rest = rest.trim();
-    let (octave, cents) = match rest
-        .find(['+', ' '])
-        .filter(|&at| at > 0)
-        .or_else(|| rest.get(1..).and_then(|r| r.find('-').map(|at| at + 1)))
-    {
-        Some(at) => (rest.get(..at)?.trim(), rest.get(at..)?.trim()),
-        None => (rest, ""),
+    // Cents alone ("A +13") keep octave 4.
+    let (octave, cents) = if rest.starts_with(['+', '-']) {
+        ("", rest)
+    } else {
+        match rest
+            .find(['+', ' '])
+            .filter(|&at| at > 0)
+            .or_else(|| rest.get(1..).and_then(|r| r.find('-').map(|at| at + 1)))
+        {
+            Some(at) => (rest.get(..at)?.trim(), rest.get(at..)?.trim()),
+            None => (rest, ""),
+        }
     };
     let octave: i64 = if octave.is_empty() { 4 } else { octave.parse().ok()? };
+    // A typed octave is hostile input: only octaves a frequency in range can have.
+    if !(-1..=10).contains(&octave) {
+        return None;
+    }
     let cents: f64 = if cents.is_empty() { 0.0 } else { cents.trim_start_matches('+').trim().parse().ok()? };
+    if !cents.is_finite() || cents.abs() > 1200.0 {
+        return None;
+    }
     let midi = (octave + 1) * 12 + class;
     Some(440.0 * 2f64.powf((midi as f64 - 69.0 + cents / 100.0) / 12.0))
 }
@@ -764,7 +776,7 @@ fn fold(bins: &[rustfft::num_complex::Complex<f32>], window_sum: f32, rate: f64)
             }
         }
         let db = 20.0 * f64::from(2.0 * peak / window_sum).max(1e-9).log10();
-        *bands_out = (db as f32).clamp(-90.0, 30.0);
+        *bands_out = (db as f32).clamp(-130.0, 30.0);
     }
     bands
 }
@@ -976,6 +988,15 @@ fn place_menu(panel: &mut Panel<'_>, response: &Response, slot: usize, band: Ban
     }
 }
 
+/// The dynamics' parameters, which a new band takes at their defaults and a split copies.
+const DYNAMICS_FIELDS: [&str; 6] = ["Mode", "Range", "Threshold", "Attack", "Release", "Detail"];
+
+/// The edits that put band `slot`'s mode and dynamics at their defaults, for a band made anew in
+/// a slot that may have held a Dynamic or Spectral band before.
+fn dynamics_defaults(panel: &Panel<'_>, slot: usize) -> Vec<(usize, &'static str, f64)> {
+    DYNAMICS_FIELDS.iter().filter_map(|&field| panel.parameter(slot, field).map(|p| (slot, field, p.default))).collect()
+}
+
 /// Splits a band into a pair: it takes the first placement of `pair`, and a copy of it in the
 /// first free slot takes the second, so the two sides can then be set apart. One undo step.
 fn split_band(panel: &mut Panel<'_>, slot: usize, band: Band, pair: (usize, usize)) {
@@ -990,7 +1011,11 @@ fn split_band(panel: &mut Panel<'_>, slot: usize, band: Band, pair: (usize, usiz
             (copy, "Gain", band.gain),
             (copy, "Q", band.q),
             (copy, "Place", pair.1 as f64),
-        ],
+        ]
+        .into_iter()
+        // The copy has the band's mode and dynamics too: only the placements differ.
+        .chain(DYNAMICS_FIELDS.iter().filter_map(|&field| panel.parameter(slot, field).map(|p| (copy, field, p.value))))
+        .collect::<Vec<_>>(),
         "eq-curve-split",
     );
 }
@@ -1201,7 +1226,10 @@ fn value_dial(ui: &mut egui::Ui, panel: &mut Panel<'_>, cell: Rect, slot: usize,
             panel.widen_for(value);
         }
         panel.edit(&[(slot, field_name, value)], "eq-curve-typed");
-    } else if next != at || response.double_clicked() || response.drag_stopped() {
+    } else if response.drag_stopped() && !response.double_clicked() {
+        // The release closes the gesture with the value the drag left.
+        panel.edit(&[(slot, field_name, parameter.value)], "eq-curve-dial");
+    } else if next != at || response.double_clicked() {
         let value = if response.double_clicked() { parameter.default } else { denormalized(next) };
         if field == 1 {
             panel.widen_for(value);
@@ -1779,10 +1807,21 @@ fn draw_display(
                 band
             })
             .collect();
-        painter.add(egui::Shape::line(
-            curve_points(plot, range, &moved, |band| band.place == 0),
-            Stroke::new(1.3, mode_color(1).gamma_multiply(0.9)),
-        ));
+        // One live curve per placement that has a moving band: the stereo one, and each side's.
+        for place in 0..PLACE_NAMES.len() {
+            if !panel
+                .bands
+                .iter()
+                .zip(live)
+                .any(|(b, c)| b.heard() && b.mode == 1 && c.abs() > 0.05 && b.place == place)
+            {
+                continue;
+            }
+            painter.add(egui::Shape::line(
+                curve_points(plot, range, &moved, |band| band.place == 0 || band.place == place),
+                Stroke::new(1.3, mode_color(1).gamma_multiply(0.9)),
+            ));
+        }
     }
 
     // A double click on the background makes a band there; a click clears the selection; the
@@ -1982,9 +2021,20 @@ fn draw_stroke(
     if let Some(pointer) = ui.input(|i| i.pointer.interact_pos()).filter(|_| background.dragged()) {
         let along = ((pointer.x - display.left()) / display.width()).clamp(0.0, 0.999);
         let column = (along * STROKE_COLUMNS as f32) as usize;
-        if let Some(cell) = columns.get_mut(column) {
-            *cell = Some(y_db(pointer.y, plot, range));
+        let gain = y_db(pointer.y, plot, range);
+        // A fast drag skips columns between frames: every column from the last one to this one
+        // takes the line between their gains.
+        let last_id = stroke_id.with("last");
+        let last = ui.ctx().data(|d| d.get_temp::<(usize, f64)>(last_id)).filter(|_| !background.drag_started());
+        let (from, from_gain) = last.unwrap_or((column, gain));
+        let (low, high) = (from.min(column), from.max(column));
+        for c in low..=high {
+            let t = if high == low { 1.0 } else { (c as f64 - from as f64) / (column as f64 - from as f64) };
+            if let Some(cell) = columns.get_mut(c) {
+                *cell = Some(from_gain + (gain - from_gain) * t.clamp(0.0, 1.0));
+            }
         }
+        ui.ctx().data_mut(|d| d.insert_temp(last_id, (column, gain)));
         ui.ctx().data_mut(|d| d.insert_temp(stroke_id, columns.clone()));
     }
     let points: Vec<Pos2> = columns
@@ -2010,6 +2060,8 @@ fn draw_stroke(
                 (slot, "Q", q),
                 (slot, "Place", 0.0),
             ]);
+            let defaults = dynamics_defaults(panel, slot);
+            edits.extend(defaults);
             made.push(slot);
         }
         panel.edit(&edits, "eq-curve-draw");
@@ -2131,18 +2183,19 @@ fn add_band(panel: &mut Panel<'_>, pointer: Pos2, display: Rect, plot: Rect) {
     } else {
         (3.0, (gain * 10.0).round() / 10.0)
     };
-    panel.edit(
-        &[
-            (slot, "InUse", 1.0),
-            (slot, "On", 1.0),
-            (slot, "Type", kind),
-            (slot, "Frequency", frequency),
-            (slot, "Gain", gain),
-            (slot, "Q", suhina_device_eq::DEFAULT_Q),
-            (slot, "Place", 0.0),
-        ],
-        "eq-curve-add",
-    );
+    // A slot freed by a delete keeps its old values: the new band takes the defaults of its mode
+    // and dynamics, so it is Static whatever the slot held before.
+    let mut edits = vec![
+        (slot, "InUse", 1.0),
+        (slot, "On", 1.0),
+        (slot, "Type", kind),
+        (slot, "Frequency", frequency),
+        (slot, "Gain", gain),
+        (slot, "Q", suhina_device_eq::DEFAULT_Q),
+        (slot, "Place", 0.0),
+    ];
+    edits.extend(dynamics_defaults(panel, slot));
+    panel.edit(&edits, "eq-curve-add");
     panel.select(slot);
 }
 
@@ -2289,10 +2342,19 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
             panel.listen = Some(slot);
         }
         let start = ui.ctx().data_mut(|d| {
-            if held && d.get_temp::<[f32; 2]>(state_id).is_none() {
-                d.insert_temp(state_id, [frequency_x(band.frequency, display), db_y(band.gain, plot, range)]);
+            // The drag's start and its dB per point, fixed for the whole drag: the display may widen
+            // as the gain passes its range, and the gain under a still pointer must not jump.
+            if held && d.get_temp::<[f64; 3]>(state_id).is_none() {
+                d.insert_temp(
+                    state_id,
+                    [
+                        f64::from(frequency_x(band.frequency, display)),
+                        band.gain,
+                        2.0 * range / f64::from(plot.height()),
+                    ],
+                );
             }
-            d.get_temp::<[f32; 2]>(state_id)
+            d.get_temp::<[f64; 3]>(state_id)
         });
         let fine = if ui.input(|i| i.modifiers.shift) { 0.25 } else { 1.0 };
         // The other selected bands' values as the drag began, to move them by the same steps.
@@ -2307,15 +2369,15 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
             ui.ctx().data_mut(|d| d.insert_temp(group_id, others));
         }
         let others = ui.ctx().data(|d| d.get_temp::<Vec<(usize, f64, f64)>>(group_id)).unwrap_or_default();
-        if let Some([start_x, start_y]) = start {
+        if let Some([start_x, start_gain, db_per_point]) = start {
+            let start_x = start_x as f32;
             let mut edits: Vec<(usize, &str, f64)> = Vec::new();
             if response.dragged() && !others.is_empty() {
                 // Every selected band moves by the same octaves and decibels as this one.
                 let total = response.total_drag_delta().unwrap_or_default();
                 let start_frequency = x_frequency(start_x, display);
                 let octaves = (x_frequency(start_x + total.x * fine, display) / start_frequency).log2();
-                let decibels = -f64::from(total.y * fine / plot.height()) * 2.0 * range;
-                let start_gain = y_db(start_y, plot, range);
+                let decibels = -f64::from(total.y * fine) * db_per_point;
                 let mut moved = vec![(slot, start_frequency, start_gain)];
                 moved.extend(others.iter().copied());
                 for (s, frequency, gain) in moved {
@@ -2336,8 +2398,7 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
                 if band.gain_editable() {
                     // Past the display's edge the gain goes on to the parameter's range, and the
                     // display widens to show it.
-                    let y = start_y + total.y * fine;
-                    let gain = (((plot.bottom() - y) / plot.height()) as f64 * 2.0 * range - range).clamp(-30.0, 30.0);
+                    let gain = (start_gain - f64::from(total.y * fine) * db_per_point).clamp(-30.0, 30.0);
                     if gain != band.gain {
                         edits.push((slot, "Gain", gain));
                         panel.widen_for(gain);
@@ -2361,7 +2422,7 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
             panel.edit(&edits, "eq-curve-dot");
         }
         if !held {
-            ui.ctx().data_mut(|d| d.remove::<[f32; 2]>(state_id));
+            ui.ctx().data_mut(|d| d.remove::<[f64; 3]>(state_id));
             if response.drag_stopped() {
                 ui.ctx().data_mut(|d| d.remove::<Vec<(usize, f64, f64)>>(group_id));
             }
@@ -2620,8 +2681,12 @@ fn list_value(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, slot: usize,
     });
     if response.double_clicked() {
         panel.edit(&[(slot, field_name, parameter.default)], "eq-curve-list");
+    } else if response.drag_stopped() {
+        // The release closes the gesture with the value the drag left, never one recomputed
+        // from a drag delta egui no longer has.
+        panel.edit(&[(slot, field_name, parameter.value)], "eq-curve-list");
     } else if let Some(start) = start
-        && (response.dragged() || response.drag_stopped())
+        && response.dragged()
     {
         let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
         let total = response.total_drag_delta().unwrap_or_default();

@@ -203,7 +203,9 @@ fn a_typed_frequency_reads_numbers_k_notation_and_notes() {
     near("Bb3", 233.082);
     near("A4 +13", 440.0 * 2f64.powf(13.0 / 1200.0));
     near("A4-20", 440.0 * 2f64.powf(-20.0 / 1200.0));
-    for nonsense in ["", "k", "H4", "A4 +x", "kk"] {
+    near("A +13", 440.0 * 2f64.powf(13.0 / 1200.0));
+    near("A -20", 440.0 * 2f64.powf(-20.0 / 1200.0));
+    for nonsense in ["", "k", "H4", "A4 +x", "kk", "A999999999999999999", "A11", "A4 +5000"] {
         assert_eq!(parse_frequency(nonsense), None, "{nonsense}");
     }
     assert_eq!(parse_number("-3,5"), Some(-3.5));

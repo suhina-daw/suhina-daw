@@ -3,7 +3,7 @@ description: The built-in parametric EQ of up to 24 bands - its parameters, the 
 read_when: eq, equaliser, equalizer, parametric eq, 24 bands, band slots, placement, mid/side, tilt, bell, shelf, notch, cut, adaptive q, svf, EQ Eight import, Eq8, eq panel, band column, band list, expanded strip, analyser
 type: spec
 status: current
-last_verified: 2026-11-27
+last_verified: 2026-11-03
 covers:
   - devices/eq/**
   - crates/dsp/src/svf.rs
@@ -114,8 +114,8 @@ in band order on their part, and it is decoded again (`L = M + S`, `R = M − S`
 at the end. Running the left/right bands before the mid/side ones is this device's decision: it
 keeps a project saved in Stereo, Left/Right or Mid/Side sounding exactly as before, and skipping
 the encoding while no mid or side band runs keeps the left/right path free of its rounding. A slot
-not in use and a band that is off cost nothing; a band of a type with gain and no gain is skipped
-too.
+not in use and a band that is off cost nothing; a Static band of a type with gain and no gain is
+skipped too (a Dynamic or Spectral band runs, since its gain can move).
 
 - **Responses.** Every band is a state-variable filter integrated with the trapezoidal rule
   (`dsp::Svf`), mixed to give exactly the cookbook response of its type at its frequency, gain
@@ -413,7 +413,7 @@ Each entry: what was chosen, what it costs, why.
    measured (they need automation during a render). A bell whose Q falls fast swells a little
    while its resonance empties (half again the level for 20 ms from Q 6 to 0.3), with no step.
 7. **The curve display is the device's own maths, drawn at 48 kHz; the analyser reads the
-   device's output, and Audition is still left out.** The display sums the same filter
+   device's output.** The display sums the same filter
    sections the device runs (`band_sections`), so what the panel shows is what the device
    renders and there is no second response implementation to drift from. Cost: about 6 000
    magnitude evaluations per curve per frame, on the UI thread, at the display's 256 points.
@@ -423,8 +423,8 @@ Each entry: what was chosen, what it costs, why.
    boost or cut shows on the line the moment the dot moves. The other candidate — the input,
    what is being equalised — shows the problem rather than the effect. The tap is the meters'
    pattern: the mono mixdown and the ring stores are the audio thread's whole cost, only while
-   a panel watches, and the FFT runs on the UI thread. Audition remains a panel part left for
-   later (the device-specs AGENTS › Scope).
+   a panel watches, and the FFT runs on the UI thread. Audition is its own section above: it
+   works on an EQ on a track's own chain with a player, not yet inside a device group.
 
 ## Known differences
 
@@ -441,7 +441,8 @@ a fit, so a Q between the measured ones is interpolated.
 
 ## Cost
 
-One instance at its defaults (four bands on, none with gain): 0.36 % of one core at 48 kHz (60 s
+Measured on the two-curve EQ, before the band slots (a baseline, not measured again yet): one
+instance at its defaults (four bands on, none with gain): 0.36 % of one core at 48 kHz (60 s
 rendered in 0.22 s, release build, Apple M-series), inside the 1 % budget. Sixteen 48 dB cuts in
 the two-curve EQ's Left/Right (64 sections): 3.6 %; the `cost` test now runs 24 bands of 48 dB
 cuts, half of them on the mid and side (96 sections), not measured again yet. Run `cargo test --release -p suhina-device-eq cost -- --ignored

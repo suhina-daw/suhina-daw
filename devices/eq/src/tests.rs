@@ -241,6 +241,12 @@ fn each_placement_runs_where_it_says() {
     let (l, r) = run(&placed(4.0), 0.1, 0.0);
     // Mid 0.05, side 0.05 × 3.98: left 0.249, right 0.149 (out of phase).
     assert!((l - 0.249).abs() < 0.002 && (r - 0.149).abs() < 0.002, "side, one side: {l} {r}");
+    // The right side is the mid less the side: out of phase with the left.
+    let mut signal = sine(1_000.0, 0.1, 0.0, 44_100);
+    eq(&placed(4.0)).process(&ProcessContext::default(), &mut signal);
+    let half = signal.as_chunks::<2>().0.len() / 2;
+    let correlation: f64 = signal.as_chunks::<2>().0[half..].iter().map(|f| f64::from(f[0]) * f64::from(f[1])).sum();
+    assert!(correlation < 0.0, "the right is out of phase: {correlation}");
     // On the mid a centered sound is all mid.
     let (l, r) = run(&placed(3.0), 0.1, 0.1);
     assert!((l / 0.1 - boost).abs() < 0.01 && (r / 0.1 - boost).abs() < 0.01, "mid: {l} {r}");
@@ -480,4 +486,37 @@ fn a_cut_or_notch_stays_static_whatever_its_mode() {
         let asked = gain_at(&mut eq(&moving(kind, 1.0, DEFAULT_Q)), 2_000.0, 0.1);
         assert!((still - asked).abs() < 1e-9, "{}: {still} against {asked}", TYPE_NAMES[kind]);
     }
+}
+
+#[test]
+fn deleting_the_auditioned_band_fades_back_to_the_whole_eq() {
+    let mut settings = single(3, 2.0, 12.0);
+    settings.push((param::AUDITION, 3.0));
+    let mut e = eq(&settings);
+    e.set_param(param::band(2, param::IN_USE), 0.0);
+    assert_eq!(e.param(param::AUDITION), Some(0.0), "the audition is let go");
+    // The slot is gone and nothing else has gain: a 1 kHz tone passes unchanged.
+    assert!(gain_db(&mut e, 1_000.0).abs() < 0.1);
+}
+
+#[test]
+fn a_spectral_band_at_the_top_uses_fewer_distinct_parts() {
+    let mut settings = moving(5, 2.0, DEFAULT_Q);
+    settings.push(a(3, param::FREQUENCY, 22_000.0));
+    let e = eq(&settings);
+    let used = e.bands[2].parts_in_use;
+    assert!(used < SPECTRAL_PARTS, "{used}");
+    let frequencies: Vec<f64> = e.bands[2].parts[..used].iter().map(|p| p.frequency).collect();
+    assert!(frequencies.windows(2).all(|w| w[1] > w[0]), "distinct parts: {frequencies:?}");
+    assert_eq!(parts_for(1_000.0, 8_000.0), SPECTRAL_PARTS);
+    assert_eq!(parts_for(1_000.0, 1_000.0), 1);
+}
+
+#[test]
+fn scale_multiplies_a_spectral_bands_cuts() {
+    let mut zero = moving(3, 2.0, 0.5);
+    zero.push((param::SCALE, 0.0));
+    let mut e = eq(&zero);
+    let probe = e.bands[2].parts[2].frequency;
+    assert!(gain_at(&mut e, probe, 0.1).abs() < 0.1, "at Scale 0 % nothing moves");
 }

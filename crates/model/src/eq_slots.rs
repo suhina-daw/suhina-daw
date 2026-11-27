@@ -8,7 +8,7 @@
 //! its own placement: curve A stays bands 1–8, curve B becomes bands 9–16, and the Mode becomes
 //! the placements of those sixteen bands, so the EQ sounds as it did.
 
-use crate::{Device, DeviceKind, DeviceParam};
+use crate::{AutomationLane, Device, DeviceKind, DeviceParam};
 
 /// The id a two-curve EQ's parameter has now: `b<n><Field>` is band 8 + n; any other id is kept.
 pub fn eq_slot_id(id: &str) -> Option<String> {
@@ -51,9 +51,38 @@ pub fn eq_two_curves_to_slots(params: &mut Vec<DeviceParam>) {
     }
 }
 
+/// The placements of bands 1–8 and 9–16, and whether 9–16 are in use, for a Mode value.
+fn placements(mode: f64) -> (f64, f64, f64) {
+    match mode.round() as i64 {
+        1 => (1.0, 2.0, 1.0),
+        2 => (3.0, 4.0, 1.0),
+        _ => (0.0, 0.0, 0.0),
+    }
+}
+
+/// A lane of the Mode as the lanes of the placements and In Use flags it sets: the same points at
+/// the same beats, each value the placement (or flag) that Mode value gives, so the routing changes
+/// at the times it did. The lanes are stepped as the Mode's choice was.
+fn mode_lanes(lane: &AutomationLane) -> Vec<AutomationLane> {
+    let mapped = |param: String, pick: fn((f64, f64, f64)) -> f64| {
+        let mut points = lane.points.clone();
+        for point in points.iter_mut() {
+            point.value = pick(placements(point.value));
+        }
+        AutomationLane { param, points, enabled: lane.enabled }
+    };
+    let mut lanes = Vec::with_capacity(24);
+    for band in 1..=8 {
+        lanes.push(mapped(format!("a{band}Place"), |p| p.0));
+        lanes.push(mapped(format!("a{}Place", band + 8), |p| p.1));
+        lanes.push(mapped(format!("a{}InUse", band + 8), |p| p.2));
+    }
+    lanes
+}
+
 /// [`eq_two_curves_to_slots`] for a device, when it is the built-in EQ and saved with two
-/// curves: its values, and its automation lanes' parameters with them. A lane of the Mode, which
-/// has no slot, is dropped.
+/// curves: its values, and its automation lanes' parameters with them. A lane of the Mode becomes
+/// lanes of the placements and In Use flags that give the same routing at the same times.
 pub fn eq_device_to_slots(device: &mut Device) {
     if device.kind != DeviceKind::Builtin("eq".into()) {
         return;
@@ -63,7 +92,15 @@ pub fn eq_device_to_slots(device: &mut Device) {
         return;
     }
     eq_two_curves_to_slots(&mut device.params);
+    let from_mode: Vec<AutomationLane> =
+        device.automation.iter().filter(|lane| lane.param == "mode").flat_map(mode_lanes).collect();
     device.automation.retain(|lane| lane.param != "mode");
+    // A lane the project already has for one of these parameters is kept as it is.
+    for lane in from_mode {
+        if !device.automation.iter().any(|kept| kept.param == lane.param) {
+            device.automation.push(lane);
+        }
+    }
     for lane in &mut device.automation {
         if let Some(id) = eq_slot_id(&lane.param) {
             lane.param = id;
@@ -111,12 +148,33 @@ mod tests {
     }
 
     #[test]
+    fn a_mode_lane_becomes_the_placements_lanes() {
+        let mut device = Device::new("EQ", DeviceKind::Builtin("eq".into()));
+        device.params = vec![DeviceParam::new("mode", 0.0)];
+        let mut points = crate::IdList::default();
+        for (beat, value) in [(0.0, 0.0), (4.0, 1.0), (8.0, 2.0)] {
+            points.push(crate::AutomationPoint { beat, value, curve: Default::default() });
+        }
+        device.automation = vec![crate::AutomationLane { param: "mode".into(), points, enabled: true }];
+        eq_device_to_slots(&mut device);
+        assert!(device.automation.iter().all(|l| l.param != "mode"));
+        assert_eq!(device.automation.len(), 24, "8 placements, 8 placements and 8 In Use flags");
+        let values = |param: &str| -> Vec<(f64, f64)> {
+            let lane = device.automation.iter().find(|l| l.param == param).unwrap();
+            lane.points.entries().map(|(_, p)| (p.beat, p.value)).collect()
+        };
+        assert_eq!(values("a1Place"), [(0.0, 0.0), (4.0, 1.0), (8.0, 3.0)], "Stereo, Left, Mid");
+        assert_eq!(values("a16Place"), [(0.0, 0.0), (4.0, 2.0), (8.0, 4.0)], "unused, Right, Side");
+        assert_eq!(values("a9InUse"), [(0.0, 0.0), (4.0, 1.0), (8.0, 1.0)], "curve B joins from Left/Right");
+    }
+
+    #[test]
     fn a_devices_automation_moves_with_its_values() {
         let mut device = Device::new("EQ", DeviceKind::Builtin("eq".into()));
         device.params = vec![DeviceParam::new("mode", 2.0)];
         let lane =
             |param: &str| crate::AutomationLane { param: param.into(), points: Default::default(), enabled: true };
-        device.automation = vec![lane("b2Frequency"), lane("mode"), lane("a1Gain")];
+        device.automation = vec![lane("b2Frequency"), lane("a1Gain")];
         eq_device_to_slots(&mut device);
         let lanes: Vec<_> = device.automation.iter().map(|l| l.param.as_str()).collect();
         assert_eq!(lanes, ["a10Frequency", "a1Gain"]);

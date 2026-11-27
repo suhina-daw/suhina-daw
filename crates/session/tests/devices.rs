@@ -1546,6 +1546,15 @@ fn an_eqs_audition_is_never_stored() {
         run(&mut session, "device.setParam", json!({ "track": "Keys", "device": 0, "param": "audition", "value": 3 }))
             .is_err()
     );
+    assert!(
+        run(
+            &mut session,
+            "device.setAutomation",
+            json!({ "track": "Keys", "device": 0, "param": "audition", "points": [[0, 3], [4, 0]] })
+        )
+        .is_err(),
+        "audition has no lane"
+    );
     assert!(run(&mut session, "device.audition", json!({ "track": "Keys", "device": 0, "band": 25 })).is_err());
     assert!(run(&mut session, "device.audition", json!({ "track": "Keys", "device": 0, "band": 1.5 })).is_err());
     run(&mut session, "device.add", json!({ "track": "Keys", "id": "utility" })).unwrap();
