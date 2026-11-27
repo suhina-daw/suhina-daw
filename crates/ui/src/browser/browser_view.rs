@@ -383,7 +383,7 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
             Chip::List => !showing_map,
             Chip::Map => showing_map,
         };
-        let lit = widgets::lit_toggle_kind(ui, &response, BUTTON.builder(), &[Checked], chosen, "chip");
+        let lit = widgets::lit_toggle_words(ui, &response, BUTTON.builder(), &[Checked], chosen, "chip");
         if response.clicked() {
             match chip {
                 Chip::Recent(group) => {
@@ -2700,9 +2700,9 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
                 .unwrap_or_else(|| hot.background().gamma_multiply(hover)),
         );
     }
-    let check = BUTTON.attribute("kind", "tag-check").response(&response).attr(Checked, on).look();
+    let check = BUTTON.attribute("kind", "tag-check").response(&response).attr(Checked, on).enter();
     let box_rect = Rect::from_min_size(Pos2::new(rect.left() + 6.0, rect.center().y - BOX / 2.0), Vec2::splat(BOX));
-    painter.rect_filled(box_rect, 3.0, check.background());
+    widgets::button_surface(painter, box_rect, &check, &response, on, check.background(), 3.0);
     if on {
         let r = box_rect.shrink(2.5);
         let tick = [
@@ -2712,6 +2712,7 @@ fn tag_entry(ui: &mut Ui, tag: &suhina_library::Tag, on: bool) -> egui::Response
         ];
         painter.add(egui::Shape::line(tick.to_vec(), Stroke::new(1.5, check.color())));
     }
+    drop(check);
     let swatch = Pos2::new(box_rect.right() + 6.0 + SWATCH / 2.0, rect.center().y);
     painter.circle_filled(swatch, SWATCH / 2.0, tag_color(&tag.color));
     let text_rect = Rect::from_min_max(Pos2::new(rect.left() + text_left, rect.top()), rect.right_bottom());
@@ -2778,7 +2779,7 @@ fn plugins_view_switch(
         if response.clicked() && chosen != view {
             run(projects, "library.setPluginsView", json!({ "view": view.name() }), out);
         }
-        let lit = widgets::lit_toggle_kind(ui, &response, BUTTON.builder(), &[Checked], chosen == view, "chip");
+        let lit = widgets::lit_toggle_words(ui, &response, BUTTON.builder(), &[Checked], chosen == view, "chip");
         let (fill, text) = lit.colors();
         widgets::toggle_surface(&painter, rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         widgets::text_in(&painter, rect, Align2::CENTER_CENTER, name, theme::ui_font(theme::TEXT_SMALL), text);
@@ -3387,10 +3388,11 @@ fn footer_overflow(
     });
     let response = widgets::button_area(ui, clipped, Id::unique("browser-footer-more"), "More tags");
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "More tags".to_string()));
-    let fill = widgets::hover(ui, &response);
-    // `button[kind="more"]`: its `background-color` under the pointer, fading in with it.
-    let hot = BUTTON.attribute("kind", "more").hover_ends(fill).1;
-    painter.rect_filled(clipped, 0.0, hot.background().gamma_multiply(fill));
+    // `button[kind="more"]`: no fill until the pointer is on it (the base sheet's), fading in.
+    {
+        let el = BUTTON.attribute("kind", "more").response(&response).enter();
+        widgets::hover_face(ui, painter, clipped, &el, &response, false, 0.0);
+    }
     painter.text(clipped.center(), Align2::CENTER_CENTER, "…", theme::ui_font(theme::TEXT_SMALL), tier.secondary);
     if tags.iter().any(|t| state.tag_filter.contains(&t.id)) {
         painter.circle_stroke(clipped.center(), DOT / 2.0 + 1.5, Stroke::new(1.0, tier.primary));

@@ -431,23 +431,34 @@ fn draw_export(
     let at = |left: f32, width: f32| {
         Rect::from_min_size(Pos2::new(checks.left() + left, checks.top() + 1.0), Vec2::new(width, LINE - 2.0))
     };
-    ui.put(at(0.0, 96.0), egui::Checkbox::new(&mut state.normalize, "Normalize"))
-        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Normalize".to_string()));
+    let check = |ui: &Ui, rect: Rect, label: (&str, &str), on: bool| {
+        crate::kit::widgets::check_box_named(
+            ui,
+            ui.painter(),
+            rect,
+            egui::Id::unique(("export-check", label.0)),
+            label,
+            on,
+        )
+        .clicked()
+    };
+    if check(ui, at(0.0, 96.0), ("Normalize", "Normalize"), state.normalize) {
+        state.normalize = !state.normalize;
+    }
     if state.dither_applies() {
-        ui.put(at(100.0, 84.0), egui::Checkbox::new(&mut state.dither, "Dither"))
-            .widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Dither".to_string()));
+        if check(ui, at(100.0, 84.0), ("Dither", "Dither"), state.dither) {
+            state.dither = !state.dither;
+        }
     } else {
         // Grayed where it does not apply: 32f needs none, and ogg takes no depth.
-        let mut off = false;
         ui.scope(|scope| {
             scope.disable();
-            scope.put(at(100.0, 84.0), egui::Checkbox::new(&mut off, "Dither")).widget_info(|| {
-                egui::WidgetInfo::labeled(egui::Role::CheckBox, false, "Dither does not apply".to_string())
-            });
+            check(scope, at(100.0, 84.0), ("Dither", "Dither does not apply"), false);
         });
     }
-    ui.put(at(188.0, 120.0), egui::Checkbox::new(&mut state.overwrite, "Overwrite"))
-        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, "Overwrite".to_string()));
+    if check(ui, at(188.0, 120.0), ("Overwrite", "Overwrite"), state.overwrite) {
+        state.overwrite = !state.overwrite;
+    }
     y += LINE + 8.0;
 
     // What the export will run as, or why it will not; while it runs, that.

@@ -784,7 +784,7 @@ fn the_arrangement_track_on_toggle_is_control_track_on() {
     let orange = egui::Color32::from_rgb(0xFF, 0x88, 0x00);
     let blue = egui::Color32::from_rgb(0x00, 0x88, 0xFF);
     suhina_ui::kit::native_css::set_user_sheet(Some(
-        "#control-track-on { background-color: #ff8800; } #control-track-on[checked] { background-color: #0088ff; }"
+        "button { image: none; } #control-track-on { background-color: #ff8800; } #control-track-on[checked] { background-color: #0088ff; }"
             .into(),
     ));
     let mut h = window(demo_app());
@@ -1342,6 +1342,15 @@ fn the_mixer_splitter_takes_hover_and_active_and_still_drags() {
 /// box (#1336). The browser and the detail area show, in both views.
 #[test]
 fn no_bundled_theme_has_a_view_painting_past_its_region() {
+    use suhina_ui::kit::platform::{Platform, with};
+    // Windows too: Suhina draws the window's buttons there.
+    for system in [Platform::HOST, Platform::Windows] {
+        with(system, no_view_paints_past_its_region);
+    }
+}
+
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+fn no_view_paints_past_its_region() {
     let themes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("themes");
     let mut names: Vec<String> = std::fs::read_dir(&themes)
         .expect("the bundled themes")
@@ -1433,6 +1442,14 @@ fn the_detail_panel_answers_to_its_kind() {
 /// File menu, the Export dialog and Settings.
 #[test]
 fn padded_regions_hold_their_views_inside_their_content_box() {
+    use suhina_ui::kit::platform::{Platform, with};
+    for system in [Platform::HOST, Platform::Windows] {
+        with(system, padded_regions_hold_their_views);
+    }
+}
+
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+fn padded_regions_hold_their_views() {
     const BOXES: &str = "application-bar, menu-bar, project-tabs, toolbar, status-bar, workspace-panel, \
         browser, session, arrangement, mixer, detail, clip-editor, piano-roll, sample-map, popup, settings, \
         dialog, start-page, plugin-manager, export, track-column, track-header, midi-tools, clip-info, \

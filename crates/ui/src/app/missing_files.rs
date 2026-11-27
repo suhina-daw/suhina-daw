@@ -663,10 +663,10 @@ impl MissingFiles {
             ui.horizontal_centered(|ui| {
                 let text = format!("{count} audio file{} missing", if count == 1 { " is" } else { "s are" });
                 ui.label(egui::RichText::new(text).color(crate::kit::element::name_ink()));
-                if ui.button("Find…").clicked() {
+                if crate::kit::controls::button(ui, "Find…").clicked() {
                     self.open = true;
                 }
-                if ui.button("Later").clicked() {
+                if crate::kit::controls::button(ui, "Later").clicked() {
                     self.bar_hidden = true;
                 }
             });

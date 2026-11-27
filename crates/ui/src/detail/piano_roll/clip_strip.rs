@@ -42,8 +42,8 @@ pub(super) fn show(
         "focus",
     );
     let (fill, ink) = lit.colors();
+    crate::kit::widgets::toggle_surface(&painter, switch, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
     drop(lit);
-    painter.rect_filled(switch, 0.0, fill);
     painter.text(switch.center(), Align2::CENTER_CENTER, "Focus", theme::mono_font(theme::TEXT_TINY), ink);
 
     // The clips, over the grid; their names `piano-clip-strip`'s `color`, `[selected]` on the one

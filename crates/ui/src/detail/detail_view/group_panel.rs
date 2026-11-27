@@ -403,8 +403,8 @@ pub(super) fn group_panel(
             branch.mute,
         );
         let (fill, text) = lit.colors();
+        widgets::toggle_surface(painter, mute, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         drop(lit);
-        painter.rect_filled(mute, 0.0, fill);
         widgets::text_in(painter, mute, Align2::CENTER_CENTER, "M", theme::ui_font(theme::TEXT_SMALL), text);
         if response.clicked() {
             actions.push(Action::new(
@@ -424,7 +424,7 @@ pub(super) fn group_panel(
         );
         // `button#solo[kind="solo"]`, `[checked]` while soloed, as a track's solo; the lit side is
         // looked up while it fades out too.
-        let lit = widgets::lit_toggle_kind(
+        let lit = widgets::lit_toggle_words(
             ui,
             &response,
             crate::kit::element::BUTTON.id("solo"),
@@ -433,8 +433,8 @@ pub(super) fn group_panel(
             "solo",
         );
         let (fill, text) = lit.colors();
+        widgets::toggle_surface(painter, solo, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         drop(lit);
-        painter.rect_filled(solo, 0.0, fill);
         widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", theme::ui_font(theme::TEXT_SMALL), text);
         if response.clicked() {
             actions.push(Action::new(
@@ -450,17 +450,8 @@ pub(super) fn group_panel(
         Id::unique(("branch-add", track.0, &device.at)),
         format!("Add a branch to {}", device.name),
     );
-    // `add-track[kind="branch"]`: as the buttons that add a track, quiet until hovered.
-    let el = crate::kit::element::ADD_TRACK.attribute("kind", "branch").response(&response).enter();
-    let fill = motion::mix(
-        crate::detail::detail_fill("window"),
-        el.look_hovered(true).background(),
-        widgets::hover(ui, &response),
-    );
-    el.paint_with(painter, add, crate::kit::element::Native { radius: 0.0, fill });
-    let ink = el.color_or(super::hint_ink());
-    widgets::text_in(painter, add, Align2::CENTER_CENTER, "+ Branch", theme::ui_font(theme::TEXT_SMALL), ink);
-    drop(el);
+    // A push button, as the buttons that add a track: `#control-add-branch`.
+    widgets::push_face(ui, painter, add, &response, ("+ Branch", widgets::Push::Plain), Some("add-branch"));
     if response.clicked() {
         actions.push(Action::new("branch.add", json!({ "track": track.0, "device": at })));
     }

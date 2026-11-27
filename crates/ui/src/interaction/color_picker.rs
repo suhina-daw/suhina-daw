@@ -146,10 +146,9 @@ fn swatch_grid(
         let response = ui.interact(rect, scope.with("more"), Sense::click());
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), name));
         let button = crate::kit::element::BUTTON.response(&response).enter();
-        let fill = button.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
-        ui.painter().rect_filled(rect, 0.0, fill);
+        let ink = widgets::hover_face(ui, ui.painter(), rect, &button, &response, false, 0.0);
         let font = theme::ui_font(theme::TEXT_SMALL);
-        widgets::text_in(ui.painter(), rect, egui::Align2::CENTER_CENTER, "...", font, button.color());
+        widgets::text_in(ui.painter(), rect, egui::Align2::CENTER_CENTER, "...", font, ink);
         drop(button);
         if response.clicked() {
             picked = Some(GridPick::More);
@@ -469,19 +468,8 @@ pub fn swatch_row(ui: &mut Ui, current: Option<Rgb>) -> Option<Pick> {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(SWATCH), Sense::click());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, any_open, "Any color"));
     let any = crate::kit::element::BUTTON.response(&response).enter();
-    ui.painter().rect_filled(
-        rect,
-        0.0,
-        any.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
-    );
-    widgets::text_in(
-        ui.painter(),
-        rect,
-        egui::Align2::CENTER_CENTER,
-        "+",
-        theme::ui_font(theme::TEXT_SMALL),
-        any.color(),
-    );
+    let any_ink = widgets::hover_face(ui, ui.painter(), rect, &any, &response, any_open, 0.0);
+    widgets::text_in(ui.painter(), rect, egui::Align2::CENTER_CENTER, "+", theme::ui_font(theme::TEXT_SMALL), any_ink);
     drop(any);
     if response.clicked() {
         any_open = !any_open;

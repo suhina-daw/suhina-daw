@@ -306,15 +306,12 @@ pub(crate) fn menu_width(ui: &Ui, (caption, word): (Option<&str>, &str)) -> f32 
     MENU_PAD + caption + word + CHEVRON + MENU_PAD
 }
 
-/// A toolbar menu's button in `rect`, drawn as the Rows group's toggles are, so the right side of
-/// the toolbar has one look (› Layout): no fill until hovered or while its menu is open, rounded,
-/// a dim `caption` when given, its `word` in `ink` and a chevron right after. Its accessible label
-/// is `label`. Returns its response, for the menu to open from.
+/// A toolbar menu's button in `rect`, drawn as the toolbar's other buttons are, so the toolbar
+/// has one look (› Layout): a dim `caption` when given, its `word` and a chevron right after. Its
+/// accessible label is `label`. Returns its response, for the menu to open from.
 ///
-/// It is `dropdown[kind="subtle"]`, quiet on the bar as a track header's routing fields are: only
-/// a rule for that kind reaches it (its `background-color` while hovered or open, its `color`),
-/// not one for every `dropdown`. Its words are `bar-item[kind="menu"]`'s `color`, `[muted]` while
-/// `dim`, `[checked]` while it is lit. Its caption is `label[kind="hint"]`.
+/// It is `piano-tool[kind="menu"]`, `[checked]` while its menu is open and `[muted]` while `dim`:
+/// no fill until hovered or open, as the sheet says. Its caption is `label[kind="hint"]`.
 pub(crate) fn menu_face(
     ui: &Ui,
     rect: Rect,
@@ -326,21 +323,13 @@ pub(crate) fn menu_face(
     let rect =
         Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 1.0), Pos2::new(rect.right(), rect.bottom() - 1.0));
     let response = widgets::button_area(ui, rect, id, label);
-    let lit = response.hovered() || egui::Popup::menu(&response).is_open();
-    let plain = crate::kit::element::DROPDOWN.response(&response).probe();
-    let own = crate::kit::element::DROPDOWN.response(&response).attribute("kind", "subtle").look();
-    let fill = if lit { ui.visuals().widgets.hovered.weak_bg_fill } else { Color32::TRANSPARENT };
-    let words = crate::kit::element::BAR_ITEM
-        .attribute("kind", "menu")
-        .attr(crate::kit::element::Muted, dim)
-        .attr(crate::kit::element::Checked, lit)
-        .look();
-    // What only a rule for the kind gives: not what a rule for every dropdown does.
-    let fill = own.unlike(&plain, crate::kit::element::Paint::Background, fill);
-    let ink = own.themed_unlike(&plain, crate::kit::element::Paint::Color).unwrap_or_else(|| words.color());
     let caption_ink = crate::detail::detail_view::hint_ink();
+    let ink =
+        tool_face(ui, ui.painter(), rect, &response, crate::kit::element::PIANO_TOOL.attribute("kind", "menu"), |el| {
+            el.attr(crate::kit::element::Checked, egui::Popup::menu(&response).is_open())
+                .attr(crate::kit::element::Muted, dim)
+        });
     let painter = ui.painter();
-    painter.rect_filled(rect, 3.0, fill);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut x = rect.left() + MENU_PAD;
     for (text, color, after) in
@@ -353,6 +342,23 @@ pub(crate) fn menu_face(
     }
     chevron(painter, Pos2::new(x + CHEVRON / 2.0, rect.center().y), ink);
     response
+}
+
+/// The face every button of the toolbar has in `rect`: `tool` (a `piano-tool`) with the states
+/// `states` adds, its fill fading to the one it has under the pointer (none at rest, as the base
+/// sheet says) and its corners rounded. Returns its ink.
+fn tool_face<'a>(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    response: &'a egui::Response,
+    tool: crate::kit::element::Builder<'a>,
+    states: impl FnOnce(crate::kit::element::Builder<'a>) -> crate::kit::element::Builder<'a>,
+) -> Color32 {
+    let el = states(tool.response(response)).enter();
+    let fill = el.hover_fade(widgets::hover(ui, response), crate::kit::element::Look::background);
+    el.paint_with(painter, rect, crate::kit::element::Native { radius: 3.0, fill });
+    el.color()
 }
 
 /// A small chevron pointing down, centered on `at`: a toolbar menu's sign that it opens a list.
@@ -452,21 +458,9 @@ fn row_toggle(
 ) -> bool {
     let response = widgets::button_area(ui, input, Id::unique(("piano-roll-rows", button.name())), button.name());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, button.name()));
-    // Lit as a selected word is (the selection's fill and ink), as the toolbar's words were. It is
-    // `piano-tool#piano-fold` (and the others), `[checked]` while on: only a rule for the lit
-    // state lights it, so one for every `piano-tool` does not hide which is on.
-    let visuals = ui.visuals();
-    let tool = || crate::kit::element::PIANO_TOOL.id(button.id()).attribute("kind", button.id()).response(&response);
-    // Its words are `piano-tool`'s `color`, brighter under the pointer.
-    let off = (
-        if response.hovered() { visuals.widgets.hovered.weak_bg_fill } else { Color32::TRANSPARENT },
-        tool().look().color(),
-    );
-    let (lit_fill, lit_ink) = (visuals.selection.bg_fill, visuals.selection.stroke.color);
-    let (el, sides) = tool().enter_toggle(&[crate::kit::element::Checked], on, false);
-    let toggle = widgets::Toggle::of(&el, sides.as_ref(), widgets::UnlitInk::Own, off, lit_fill, |_| lit_ink);
-    let (fill, ink) = toggle.at(if on { 1.0 } else { 0.0 });
-    painter.rect_filled(rect, 3.0, fill);
+    // `piano-tool#piano-fold` (and the others), `[checked]` while on.
+    let tool = crate::kit::element::PIANO_TOOL.id(button.id()).attribute("kind", button.id());
+    let ink = tool_face(ui, painter, rect, &response, tool, |el| el.attr(crate::kit::element::Checked, on));
     // An icon alone sits in the middle of its box, as the toolbar's other buttons' do; beside a
     // word it stands the same room from the left edge.
     let left = if word.is_some() { BUTTON_ROOM * scale / 2.0 } else { (rect.width() - rect.height()) / 2.0 };

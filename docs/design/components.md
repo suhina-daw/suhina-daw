@@ -3,7 +3,7 @@ description: Measurements, states and tokens of every UI component, from the min
 read_when: widget sizes, marker row, clip slot states, value field, slider, knob, toggle, meter, track header levels, device panel, piano roll layout, audition button, velocity lane top edge, ghost menu, ghost notes look, Scale menu, scale rows, key column mark, folded rows
 type: spec
 status: draft
-last_verified: 2026-11-23
+last_verified: 2026-11-26
 covers:
   - crates/ui/src/kit/theme.rs
   - crates/ui/src/session/session_view.rs
@@ -181,7 +181,7 @@ and closes the menu. A choice matching every target's current color makes no edi
 A track's or a clip's menu (an arrangement or a launcher clip's) shows the palette as an evenly
 spaced grid of twelve columns, square swatches 3 points apart across and down (`color-swatch`),
 as large as fills the menu's width that its other entries set, 14 points at least. Under it two
-arrow buttons (`button[kind="entry"]`, as the menu's entries) turn the grid to the saved colors
+arrow buttons (`button[kind="entry"]`, drawn as a menu's rows are) turn the grid to the saved colors
 and back, the page's name beside them; the saved colors take the palette's 36 cells, past 35 the
 last a `button` cell, **...**, that opens the color window. The **More colors** button
 (`button`) ends that row; its tooltip shows the configured shortcut (F2 by default), and it opens a separate
