@@ -306,7 +306,11 @@ fn every_layout_loads_and_names_only_its_devices_parameters() {
     // back to the generated list unnoticed.
     for info in DEVICES {
         if let Some(layout) = layout(&info.id) {
-            let panel = layout.and_then(|l| l.panel(info)).unwrap_or_else(|e| panic!("{}: {e}", info.id));
+            let panel = layout
+                .as_ref()
+                .map_err(|e| e.to_string())
+                .and_then(|layout| layout.panel(info).map_err(|e| e.to_string()))
+                .unwrap_or_else(|e| panic!("{}: {e}", info.id));
             assert_eq!(panel_ids(&panel), info.params.iter().map(|p| p.id.clone()).collect::<Vec<_>>());
         }
     }
@@ -314,6 +318,18 @@ fn every_layout_loads_and_names_only_its_devices_parameters() {
         assert!(super::info(id).is_some(), "panel.json for unknown device {id}");
     }
     assert!(layout("sampler").is_some(), "the sampler has its own layout");
+}
+
+/// A layout is parsed once for its dials, however often a reading asks: the FM Synth's panel is
+/// 4.4 MB, and `project.selection` is re-read on every look. The cache is local to the test, so
+/// another test cannot warm the counter first.
+#[test]
+fn a_devices_layout_is_parsed_once_for_its_dials() {
+    let cache = LayoutCache::new();
+    let first = dials_in(&cache, "fm-synth", &[]);
+    let second = dials_in(&cache, "fm-synth", &[]);
+    assert_eq!(first, second, "the same dials on every read");
+    assert_eq!(cache.parses(), 1, "the layout was parsed more than once");
 }
 
 #[test]

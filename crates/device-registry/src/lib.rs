@@ -7,6 +7,8 @@
 
 use std::any::Any;
 use std::path::Path;
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use suhina_device_api::{Device, DeviceError, DeviceInfo, ParamKind};
@@ -224,16 +226,65 @@ pub fn info(id: &str) -> Option<&'static DeviceInfo> {
     entry(id).map(|entry| entry.info)
 }
 
-/// The layout of the device with this id, when it has one (ADR 0021 › Amendment: device panels
-/// for built-in devices): the `.sd` UI part only, its parameters named by id. A device crate
-/// gives it in Rust, or as `devices/<name>/panel.json`.
-pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
-    match entry(id)?.layout {
+/// Every layout, parsed once while Suhina runs: a controller's subscription reads a device's
+/// dials on every look, and the FM Synth's panel is 4.4 MB. The value-dependent part of a
+/// reading — the page and operator a panel shows — stays outside the cache.
+/// One device's layout, parsed on its first read.
+type CachedLayout = OnceLock<Option<Result<Layout, DeviceSdkError>>>;
+
+struct LayoutCache {
+    cells: OnceLock<Vec<CachedLayout>>,
+    #[cfg(test)]
+    parses: AtomicUsize,
+}
+
+impl LayoutCache {
+    const fn new() -> Self {
+        Self {
+            cells: OnceLock::new(),
+            #[cfg(test)]
+            parses: AtomicUsize::new(0),
+        }
+    }
+
+    /// The layout of `id`, parsed on its first call and borrowed afterwards; `None` for an
+    /// unknown id or a device whose panel is generated.
+    fn get(&self, id: &str) -> Option<&Result<Layout, DeviceSdkError>> {
+        let index = ENTRIES.iter().position(|entry| entry.info.id == id)?;
+        let cells = self.cells.get_or_init(|| (0..ENTRIES.len()).map(|_| OnceLock::new()).collect());
+        cells[index]
+            .get_or_init(|| {
+                #[cfg(test)]
+                self.parses.fetch_add(1, Ordering::Relaxed);
+                parse_layout(index)
+            })
+            .as_ref()
+    }
+
+    #[cfg(test)]
+    fn parses(&self) -> usize {
+        self.parses.load(Ordering::Relaxed)
+    }
+}
+
+/// The layout entry `index` names, from its own source.
+fn parse_layout(index: usize) -> Option<Result<Layout, DeviceSdkError>> {
+    match ENTRIES[index].layout {
         LayoutSource::Generated => None,
         LayoutSource::Json(text) => Some(Layout::from_json(text)),
         LayoutSource::JsonWithImages(text, images) => Some(with_images(text, images)),
         LayoutSource::Rust(make) => Some(Ok(make())),
     }
+}
+
+static LAYOUTS: LayoutCache = LayoutCache::new();
+
+/// The layout of the device with this id, when it has one (ADR 0021 › Amendment: device panels
+/// for built-in devices): the `.sd` UI part only, its parameters named by id. A device crate
+/// gives it in Rust, or as `devices/<name>/panel.json`. Parsed once per id while Suhina runs;
+/// the reference is shared, so a reading does not parse it again.
+pub fn layout(id: &str) -> Option<&'static Result<Layout, DeviceSdkError>> {
+    LAYOUTS.get(id)
 }
 
 /// A built-in device's dials as parameter ids, in its compact panel's reading order: the
@@ -252,6 +303,12 @@ pub fn dials(id: &str) -> Vec<String> {
 /// compact panel with no native dials falls back to its continuous parameters. A controller
 /// follows the reading, so a page or operator change in the window moves its dials with it.
 pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
+    dials_in(&LAYOUTS, id, values)
+}
+
+/// [`dials_with`] against a cache: a test passes its own, so the parse counter cannot be warmed
+/// by another test.
+fn dials_in(cache: &LayoutCache, id: &str, values: &[(String, f64)]) -> Vec<String> {
     let Some(info) = info(id) else { return Vec::new() };
     let value = |id: &str| -> f64 {
         values
@@ -260,8 +317,8 @@ pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
             .find(|(key, _)| key == id)
             .map_or_else(|| info.params.iter().find(|p| p.id == id).map_or(0.0, |p| p.default), |(_, value)| *value)
     };
-    let Some(Ok(layout)) = layout(id) else { return generated_dials(info) };
-    let Some(ui) = layout.ui else { return generated_dials(info) };
+    let Some(Ok(layout)) = cache.get(id) else { return generated_dials(info) };
+    let Some(ui) = &layout.ui else { return generated_dials(info) };
     let parameter = |id: &str, normalized: bool| -> f64 {
         let Some(param) = info.params.iter().find(|p| p.id == id) else { return 0.0 };
         if normalized { param.to_normalized(value(id)) } else { value(id) }
@@ -423,7 +480,7 @@ pub fn panel(id: &str) -> Option<&'static Panel> {
                 .iter()
                 .map(|info| {
                     layout(&info.id)
-                        .and_then(Result::ok)
+                        .and_then(|result| result.as_ref().ok())
                         .and_then(|layout| layout.panel(info).ok())
                         .unwrap_or_else(|| builtin::generated(info))
                 })
