@@ -152,7 +152,7 @@ impl ParamType {
             Self::AutomationValue => "a number, \"-inf\", or true or false",
             Self::Curve => "four numbers from -0.5 to 1.5 or one number from -1 to 1",
             Self::Curves => "a list of curves, each like curve or null",
-            Self::Points => "a list of [offset, value] pairs",
+            Self::Points => "a list of [offset, value] or [offset, value, curvature] entries",
             Self::Text => "a text",
             Self::Tracks => "a list of track ids or names",
             Self::Texts | Self::Path(PathKind::Files) => "a list of texts",
@@ -194,9 +194,9 @@ impl ParamType {
             | Self::Path(PathKind::WriteFolder | PathKind::LibraryItem | PathKind::Place) => value.is_string(),
             Self::Tracks | Self::Texts | Self::Integers | Self::Notes | Self::Numbers | Self::Clips => value.is_array(),
             Self::Curves => value.is_array(),
-            Self::Points => {
-                value.as_array().is_some_and(|l| l.iter().all(|p| p.as_array().is_some_and(|p| p.len() == 2)))
-            }
+            Self::Points => value
+                .as_array()
+                .is_some_and(|l| l.iter().all(|p| p.as_array().is_some_and(|p| matches!(p.len(), 2 | 3)))),
             Self::Items => value.is_array(),
             Self::Path(PathKind::Files) => value.is_array(),
             Self::Range | Self::MappingTarget => value.is_object(),
@@ -595,7 +595,7 @@ impl<T> CommandSpec<T> {
                         "type": "array",
                         "items": { "type": "number" },
                         "minItems": 2,
-                        "maxItems": 2,
+                        "maxItems": 3,
                     }),
                     ParamType::Clips => json!({
                         "type": "object",

@@ -761,7 +761,14 @@ fn expression_value(expression: &NoteExpression) -> Value {
     for kind in ExpressionKind::ALL {
         let curve = expression.curve(kind);
         if !curve.is_empty() {
-            let points = curve.iter().map(|p| json!([number(p.offset), number(p.value)])).collect();
+            // A straight segment writes two numbers, a curved one its curvature as a third.
+            let points = curve
+                .iter()
+                .map(|p| match p.curve {
+                    0.0 => json!([number(p.offset), number(p.value)]),
+                    curve => json!([number(p.offset), number(p.value), number(curve)]),
+                })
+                .collect();
             map.insert(kind.name().into(), Value::Array(points));
         }
     }
@@ -804,13 +811,21 @@ fn read_expression(
         let mut curve = Vec::with_capacity(items.len());
         for (i, item) in items.iter().enumerate() {
             let at = format!("{at}.{name}[{i}]");
-            let pair = match item.as_array().map(Vec::as_slice) {
-                Some([offset, value]) => offset.as_f64().zip(value.as_f64()),
+            let point = match item.as_array().map(Vec::as_slice) {
+                Some([offset, value]) => offset.as_f64().zip(value.as_f64()).map(|(o, v)| (o, v, 0.0)),
+                Some([offset, value, curve]) => {
+                    offset.as_f64().zip(value.as_f64()).zip(curve.as_f64()).map(|((o, v), c)| (o, v, c))
+                }
                 _ => None,
             };
-            let Some((offset, value)) = pair.filter(|(o, v)| o.is_finite() && v.is_finite()) else {
-                return Err(format!("{at}: expected [offset, value], two numbers").into());
+            let Some((offset, value, curve_of)) =
+                point.filter(|(o, v, c)| o.is_finite() && v.is_finite() && c.is_finite())
+            else {
+                return Err(format!("{at}: expected [offset, value] or [offset, value, curvature], numbers").into());
             };
+            if !(-1.0..=1.0).contains(&curve_of) {
+                return Err(format!("{at}: curvature {curve_of} is outside -1 to 1").into());
+            }
             if !(0.0..=duration).contains(&offset) {
                 return Err(format!("{at}: offset {offset} is outside the note (0 to {duration})").into());
             }
@@ -820,7 +835,7 @@ fn read_expression(
             if curve.last().is_some_and(|last: &ExpressionPoint| offset <= last.offset) {
                 return Err(format!("{at}: offset {offset} is not after the point before it").into());
             }
-            curve.push(ExpressionPoint::new(offset, value));
+            curve.push(ExpressionPoint::curved(offset, value, curve_of));
         }
         *expression.curve_mut(kind) = curve;
     }

@@ -203,3 +203,47 @@ fn kinds_round_trip_their_names() {
     }
     assert_eq!(ExpressionKind::from_name("slide"), None);
 }
+
+#[test]
+fn a_curved_segment_bulges_toward_higher_values_and_keeps_its_ends() {
+    let up = NoteExpression {
+        pitch: vec![ExpressionPoint::curved(0.0, 0.0, 1.0), ExpressionPoint::new(1.0, 4.0)],
+        ..NoteExpression::default()
+    };
+    assert_eq!(up.value_at(ExpressionKind::Pitch, 0.0), 0.0);
+    assert_eq!(up.value_at(ExpressionKind::Pitch, 1.0), 4.0);
+    assert!(up.value_at(ExpressionKind::Pitch, 0.5) > 2.0, "rises early");
+    let down = NoteExpression {
+        pitch: vec![ExpressionPoint::curved(0.0, 4.0, 1.0), ExpressionPoint::new(1.0, 0.0)],
+        ..NoteExpression::default()
+    };
+    assert!(down.value_at(ExpressionKind::Pitch, 0.5) > 2.0, "a falling segment bulges up too");
+    let low = NoteExpression {
+        pitch: vec![ExpressionPoint::curved(0.0, 0.0, -1.0), ExpressionPoint::new(1.0, 4.0)],
+        ..NoteExpression::default()
+    };
+    assert!(low.value_at(ExpressionKind::Pitch, 0.5) < 2.0, "rises late");
+    assert_eq!(shaped(0.5, 0.0, 4.0), 0.5);
+    assert_eq!(shaped(0.5, 1.0, 0.0), 0.5);
+    assert_eq!(shaped(0.5, f64::NAN, 4.0), 0.5);
+}
+
+#[test]
+fn curvature_outside_its_range_is_refused() {
+    let bad = NoteExpression { pitch: vec![ExpressionPoint::curved(0.0, 0.0, 1.5)], ..NoteExpression::default() };
+    assert_eq!(bad.validate(1.0), Err(ExpressionError::CurveOutside(1.5)));
+    let nan = NoteExpression { pitch: vec![ExpressionPoint::curved(0.0, 0.0, f64::NAN)], ..NoteExpression::default() };
+    assert_eq!(nan.validate(1.0), Err(ExpressionError::NotFinite));
+}
+
+#[test]
+fn a_split_keeps_the_cut_segments_curvature_on_the_right() {
+    let expression = NoteExpression {
+        pitch: vec![ExpressionPoint::curved(0.0, 0.0, 0.5), ExpressionPoint::new(2.0, 4.0)],
+        ..NoteExpression::default()
+    };
+    let (left, right) = expression.split(1.0);
+    assert_eq!(left.pitch[0].curve, 0.5);
+    assert_eq!(right.pitch[0].curve, 0.5);
+    assert_eq!(right.pitch[0].value, expression.value_at(ExpressionKind::Pitch, 1.0));
+}

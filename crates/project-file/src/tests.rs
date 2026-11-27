@@ -2056,6 +2056,17 @@ fn a_notes_expression_curves_round_trip() {
     let written = to_json(&project);
     assert!(!written.contains("\"pitch\"") && !written.contains("\"pressure\""), "{written}");
     assert_eq!(from_json(&written), Ok(project));
+    // A curved segment writes its curvature as a third number and reads it back; one outside -1
+    // to 1 is refused.
+    let mut project = everything();
+    if let Some(note) = notes_of(&mut project).and_then(|notes| notes.get_mut(0)) {
+        note.expression_mut().pitch = vec![ExpressionPoint::curved(0.0, 0.0, 0.5), ExpressionPoint::new(0.25, 2.0)];
+    }
+    let written = to_json(&project);
+    assert!(written.contains("0.5]"), "{written}");
+    assert_eq!(from_json(&written), Ok(project));
+    let bad = written.replacen("0.5]", "1.5]", 1);
+    assert!(from_json(&bad).is_err());
 }
 
 /// A project without curves writes byte for byte what version 16 wrote, apart from the version,

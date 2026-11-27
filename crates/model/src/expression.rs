@@ -75,11 +75,20 @@ pub struct ExpressionPoint {
     pub offset: f64,
     /// In the kind's units (see [`ExpressionKind`]).
     pub value: f64,
+    /// The shape of the segment from this point to the next, -1 to 1: 0 is straight, positive
+    /// bulges toward higher values and negative toward lower ones ([`shaped`]). The last point's
+    /// is not used.
+    pub curve: f64,
 }
 
 impl ExpressionPoint {
     pub const fn new(offset: f64, value: f64) -> Self {
-        Self { offset, value }
+        Self { offset, value, curve: 0.0 }
+    }
+
+    /// A point whose segment to the next one has `curve` (-1 to 1).
+    pub const fn curved(offset: f64, value: f64, curve: f64) -> Self {
+        Self { offset, value, curve }
     }
 }
 
@@ -96,6 +105,8 @@ pub enum ExpressionError {
     NotIncreasing,
     /// More points than one curve may have.
     TooManyPoints(usize),
+    /// A segment's curvature is outside -1 to 1.
+    CurveOutside(f64),
 }
 
 impl std::fmt::Display for ExpressionError {
@@ -110,6 +121,9 @@ impl std::fmt::Display for ExpressionError {
                 write!(f, "a {} value {value} is outside {low} to {high}", kind.name())
             }
             ExpressionError::NotIncreasing => write!(f, "expression points must have increasing offsets"),
+            ExpressionError::CurveOutside(curve) => {
+                write!(f, "a segment's curvature {curve} is outside -1 to 1")
+            }
             ExpressionError::TooManyPoints(count) => {
                 write!(f, "a curve has {count} points, more than {MAX_CURVE_POINTS}")
             }
@@ -253,6 +267,7 @@ impl NoteExpression {
             }
             if delta > 0.0 {
                 let boundary = curve_value(curve, delta);
+                let shape = segment_curve(curve, delta);
                 let before = curve.len();
                 curve.retain(|point| point.offset > delta);
                 let dropped = curve.len() < before;
@@ -260,7 +275,7 @@ impl NoteExpression {
                     point.offset -= delta;
                 }
                 if let Some(value) = boundary.filter(|_| dropped) {
-                    curve.insert(0, ExpressionPoint::new(0.0, value));
+                    curve.insert(0, ExpressionPoint::curved(0.0, value, shape));
                 }
             } else {
                 for point in curve.iter_mut() {
@@ -300,13 +315,13 @@ impl NoteExpression {
                 l.push(ExpressionPoint::new(at, boundary));
             }
             if curve.first().is_some_and(|first| first.offset <= at) {
-                r.push(ExpressionPoint::new(0.0, boundary));
+                r.push(ExpressionPoint::curved(0.0, boundary, segment_curve(curve, at)));
             }
             r.extend(
                 curve
                     .iter()
                     .filter(|point| point.offset > at)
-                    .map(|point| ExpressionPoint::new(point.offset - at, point.value)),
+                    .map(|point| ExpressionPoint { offset: point.offset - at, ..*point }),
             );
         }
         (left, right)
@@ -335,7 +350,7 @@ impl NoteExpression {
                 if curve.last().is_some_and(|last| last.offset >= offset) {
                     continue;
                 }
-                curve.push(ExpressionPoint::new(offset, point.value));
+                curve.push(ExpressionPoint { offset, ..*point });
             }
         }
         Ok(out)
@@ -362,7 +377,27 @@ pub fn curve_value(curve: &[ExpressionPoint], offset: f64) -> Option<f64> {
         return Some(next.value);
     }
     let t = (offset - prev.offset) / span;
-    Some(prev.value + (next.value - prev.value) * t)
+    let rise = next.value - prev.value;
+    Some(prev.value + rise * shaped(t, prev.curve, rise))
+}
+
+/// A segment's progress `t` (0 to 1 along its time) as its curvature shapes it: `t^e` with
+/// `e = 2^(-3 · curve · sign(rise))`, so a positive curvature bulges toward higher values whichever
+/// way the segment goes. Straight for curvature 0, a flat segment or a curvature that is not a
+/// number.
+pub fn shaped(t: f64, curve: f64, rise: f64) -> f64 {
+    if curve == 0.0 || rise == 0.0 || !curve.is_finite() {
+        return t;
+    }
+    let exponent = 2f64.powf(-3.0 * curve.clamp(-1.0, 1.0) * rise.signum());
+    t.clamp(0.0, 1.0).powf(exponent)
+}
+
+/// The curvature of the segment `offset` falls in: the last point at or before it, 0 before the
+/// first point.
+fn segment_curve(curve: &[ExpressionPoint], offset: f64) -> f64 {
+    let index = curve.partition_point(|point| point.offset <= offset);
+    index.checked_sub(1).and_then(|i| curve.get(i)).map_or(0.0, |point| point.curve)
 }
 
 /// Checks one curve: finite numbers, inside the note and the kind's range, strictly increasing,
@@ -374,8 +409,11 @@ pub fn validate_curve(kind: ExpressionKind, curve: &[ExpressionPoint], duration:
     let (low, high) = kind.range();
     let mut previous: Option<f64> = None;
     for point in curve {
-        if !(point.offset.is_finite() && point.value.is_finite()) {
+        if !(point.offset.is_finite() && point.value.is_finite() && point.curve.is_finite()) {
             return Err(ExpressionError::NotFinite);
+        }
+        if !(-1.0..=1.0).contains(&point.curve) {
+            return Err(ExpressionError::CurveOutside(point.curve));
         }
         if point.offset < 0.0 || point.offset > duration {
             return Err(ExpressionError::OffsetOutside { offset: point.offset, duration });

@@ -186,7 +186,13 @@ make room; command clients must supply a nonoverlapping configuration explicitly
 
 ## Note curves and editing
 
-Each saved note may own three optional curves. Points have finite beat offsets in
+Each saved note may own three optional curves. A point may carry a curvature, -1 to 1, for the
+segment from it to the next point: 0 is straight; otherwise the segment's progress `t` (0 to 1
+along its time) becomes `t^e` with `e = 2^(-3 · curvature · sign(rise))`, so a positive curvature
+bulges toward higher values and a negative one toward lower values whichever way the segment goes.
+A flat segment and the last point ignore it. Split, crop and stretch keep each point's curvature
+(a cut segment keeps its shape's curvature, an approximation of the exact part); join keeps both
+sides'. Points have finite beat offsets in
 `0..=note.duration` and finite values in the runtime ranges. Offsets are strictly increasing;
 editing replaces an existing equal-time point, while malformed files with duplicates are
 rejected. Interpolation is linear; before the first point and after the last, hold its value.

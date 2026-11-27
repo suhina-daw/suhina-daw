@@ -27,8 +27,10 @@ pub(crate) fn set_expression(session: &mut Session, params: &Value) -> Result<Va
     let name = args.raw_str("kind").ok_or("kind must be \"pitch\", \"pressure\" or \"timbre\"")?;
     let kind = ExpressionKind::from_name(name)
         .ok_or_else(|| format!("kind must be \"pitch\", \"pressure\" or \"timbre\", not {name:?}"))?;
-    let list =
-        args.value("points").and_then(Value::as_array).ok_or("points must be a list of [offset, value] pairs")?;
+    let list = args
+        .value("points")
+        .and_then(Value::as_array)
+        .ok_or("points must be a list of [offset, value] or [offset, value, curvature] entries")?;
     if list.len() > MAX_CURVE_POINTS {
         return Err(format!("a curve has at most {MAX_CURVE_POINTS} points, got {}", list.len()).into());
     }
@@ -59,13 +61,19 @@ pub(crate) fn set_expression(session: &mut Session, params: &Value) -> Result<Va
     })
 }
 
-/// One entry of `points`: `[offset, value]`, two finite numbers.
+/// One entry of `points`: `[offset, value]`, or `[offset, value, curvature]` for a curved segment
+/// after the point, finite numbers.
 fn point(value: &Value, at: usize) -> Result<ExpressionPoint, CommandError> {
-    let pair = value.as_array().filter(|pair| pair.len() == 2);
-    let numbers = pair.and_then(|pair| Some((pair[0].as_f64()?, pair[1].as_f64()?)));
+    let numbers = value.as_array().and_then(|entry| match entry.as_slice() {
+        [offset, value] => Some((offset.as_f64()?, value.as_f64()?, 0.0)),
+        [offset, value, curve] => Some((offset.as_f64()?, value.as_f64()?, curve.as_f64()?)),
+        _ => None,
+    });
     match numbers {
-        Some((offset, value)) if offset.is_finite() && value.is_finite() => Ok(ExpressionPoint::new(offset, value)),
-        _ => Err(format!("point {at} must be [offset, value], two numbers").into()),
+        Some((offset, value, curve)) if offset.is_finite() && value.is_finite() && curve.is_finite() => {
+            Ok(ExpressionPoint::curved(offset, value, curve))
+        }
+        _ => Err(format!("point {at} must be [offset, value] or [offset, value, curvature], numbers").into()),
     }
 }
 

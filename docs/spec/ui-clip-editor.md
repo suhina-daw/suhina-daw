@@ -1326,6 +1326,31 @@ button opens its clip in the editor.
   and arpeggiate, inversions; a length field (`note.resize`) and a legato mode that also moves
   starts.
 
+### MPE LFO
+
+**Built:** the clip panel's Transform tab lists **MPE LFO**. It writes a low-frequency oscillation
+into one curve of each selected note (every note when none is selected), replacing that curve, one
+`note.lfoExpression`, one undo step:
+
+- **Target:** Pitch, Slide or Pressure.
+- **Wave:** Sine, Square, Triangle or Random; **Shape**, -1 to 1, skews the wave: the sine and
+  triangle lean toward the start (negative) or the end (positive), the square's pulse narrows or
+  widens, the random wave's steps glide (positive) or jump (negative). **Reseed** picks another
+  random wave.
+- **Rate:** one cycle per 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 or 1/128 of a bar, each also
+  dotted or triplet; **Time shift**, -100 to 100 % of a cycle: positive delays the start, negative
+  moves the phase.
+- **Amount:** how far the wave swings either way: up to 96 semitones for pitch, 0 to 127 for slide
+  and pressure, negative turning it over; **Base**: the value it swings around (semitones from the
+  note, or 0 to 127).
+- **Attack** and **Decay**, 0 to 100 % of the note: the swing grows from nothing over the attack
+  and falls back to nothing over the last part of the note given by the decay; together they are at
+  most 100 %, and raising one lowers the other.
+
+Each note gets points every 1/32 of a cycle (at most every 1/256 beat), and the turning points of
+square and random waves on both sides, within the curve's limit; values outside the target's range
+are held at its ends.
+
 ## Shortcuts
 
 The piano roll's keys work after a click anywhere in a MIDI clip's detail area: the piano roll,
@@ -1492,36 +1517,75 @@ file.
 
 ## MPE
 
-**Built ([#930](https://github.com/suhina-daw/suhina-daw/issues/930), first part):** the toolbar's
-Rows group has an **MPE** toggle (`piano-tool#piano-mpe`, `[checked]` while on). While it is on,
-each note's own pitch curve ([ADR 0039](../decisions/0039-per-note-expression.md) › 6,
-[MPE spec](mpe.md#note-curves-and-editing)) is drawn over the grid: from the note's start at its
-first value, through its points, held to the note's end, its height the key it bends to (between
-the rows either side of it while the rows are folded). The selected notes' curves are bright, with
-a handle on every point and the name of the key the bend ends on; every other note's curve shows
-faintly, brighter while the pointer is over the note or its curve. The lane shows pressure or
-slide the same way, and a note without a curve draws nothing there.
+**Built ([#930](https://github.com/suhina-daw/suhina-daw/issues/930)):** the toolbar's Rows group
+has an **MPE** toggle (`piano-tool#piano-mpe`, `[checked]` while on); **Show MPE** / **Hide MPE**
+in the right-click menu does the same where a narrow toolbar hides it. While it is on, the notes'
+own curves ([ADR 0039](../decisions/0039-per-note-expression.md) › 6,
+[MPE spec](mpe.md#note-curves-and-editing)) are shown and edited.
 
-- A **double-click** on the empty grid, or on a selected note itself, within the time of a
-  selected note adds a point to the
-  selected note whose row is nearest: at the grid line nearest the pointer, bending to the whole
-  semitone under it (Alt: exactly where the pointer is). A note's first point after its start also
-  gets one at its start at the note's own pitch, so the bend starts from the note. A click there
-  does not clear the selection while MPE is on. **Show MPE** / **Hide MPE** in the right-click menu
-  does the same as the toggle, which a narrow toolbar hides.
-- **Dragging a handle** moves its point, on the grid and on whole semitones (Alt frees both), kept
-  between its neighbours and inside the note.
-- **Alt and a drag on the line between two points** bends that segment: up bulges it upward, down
-  downward (a flat segment does not bend). The bend is kept as points along it, so playback,
-  export and the file see an ordinary curve.
-- **Double-clicking a handle** removes the point; a curve left with only points at the note's own
-  pitch goes.
+### Showing the curves
 
-Each edit is one `note.setExpression` that replaces the note's whole curve, one undo step.
+- **Pitch** is drawn over the grid: from the note's start at its first value, through its points,
+  held to the note's end, its height the key it bends to (between the rows either side of it while
+  the rows are folded). The selected notes' curves are bright, drawn in the strong text color over
+  an edge of the grid's own, with a handle on every point and the name of the key the bend ends
+  on. Every other note's curve shows faintly, brighter while the pointer is over the note or its
+  curve. A note without a curve draws nothing.
+- **Expression lanes** below the notes: **Velocity**, **Release** (release velocity),
+  **Pressure** and **Slide** (timbre), each with a toggle in the column at the lane's left. The
+  lanes shown share the room below the notes from the top in that order; the lane edge still makes
+  the room taller or shorter. Velocity and Pressure and Slide are on when MPE is turned on, Release
+  is off. With MPE off the room holds the velocity lane alone, as before.
+- While the pointer is over a point, or a point is dragged or added, its value is shown beside it:
+  a pitch in semitones with its sign and two decimals (`+4.00 st`), a lane value from 0 to 127.
 
-**Later ([#930](https://github.com/suhina-daw/suhina-daw/issues/930)):** pressure and slide in the
-lane below the notes; keyboard and accessibility paths to the points; playback of the curves
-through the instruments ([#928](https://github.com/suhina-daw/suhina-daw/issues/928)).
+### Editing points
+
+Points are edited on the selected notes' curves; a press on another note selects it as usual.
+The grid does not hold points while MPE is on: a point goes exactly where the pointer is. **Alt**
+puts it on the nearest grid line and, for pitch, on the nearest whole semitone.
+
+- A **click on a curve's line** adds a point there, on the line, at the value the line has there.
+- A **double-click** on the empty grid or on a selected note, within the time of a selected note,
+  adds a point to the selected note whose row is nearest, at the pitch under the pointer. In a lane,
+  a double-click in a selected note's time adds a point at the value under the pointer. A curve's
+  first point after the note's start also gets one at its start at the neutral value (the note's
+  own pitch, no pressure, the middle of slide), so the change starts from the note.
+- A **click on a point** removes it; a curve left with only neutral points goes.
+- **Dragging a point** moves it. Dragged past a neighbour, the neighbour goes. **Shift** keeps
+  the drag to the axis it first moved along, and a vertical drag with Shift moves a tenth as far,
+  for fine values.
+- **Shift and a drag on a line** moves the segment up or down: both its points by the same amount.
+- **Alt and a drag on a line** curves the segment: up bulges it toward higher values, down toward
+  lower ones. **Alt and a double-click on a line** makes it straight again. A flat segment does not
+  curve.
+- **Shift and a click on a point** adds it to the selected points or takes it out; **Ctrl+A**
+  (Cmd+A) while MPE is on and one note is selected selects every point of the curve last edited
+  (pitch unless a lane was). Dragging a selected point moves every selected point by the same
+  time and value, each kept inside the note and its range.
+- **Ctrl and a vertical drag in a lane** (Cmd on macOS) scales the pressure or slide curves of the
+  selected notes together, each value multiplied by the same factor, kept from 0 to 1.
+- **Right-click on a point**: **Edit value…** sets it from the keyboard (semitones, or 0 to 127),
+  **Delete point**. **Right-click on a selected note or its curve**: **Clear expression** removes
+  every curve of the selected notes.
+
+### Drawing
+
+With the **Draw** tool and MPE on, a drag over a selected note's time draws its pitch freehand:
+one point where the pointer is, at most one every 1/64 beat, replacing the points the stroke passes
+over. In a lane it draws that lane's curve. Alt draws steps as wide as the grid.
+
+### Commands
+
+Each edit is one command and one undo step: `note.setExpression` replaces one curve of one note
+(each point `[offset, value]` or `[offset, value, curvature]`); `note.clearExpression` removes
+every curve of `notes`; `note.scaleExpression` multiplies one kind's values in `notes` by
+`factor`, each kept in its range (not pitch); `note.setReleaseVelocity` sets release velocity
+(`notes` with `velocity`, 1 to 127, or `velocities`, one per note).
+
+**Later ([#930](https://github.com/suhina-daw/suhina-daw/issues/930)):** keyboard and
+accessibility paths to the points; built-in instruments playing saved curves
+([#928](https://github.com/suhina-daw/suhina-daw/issues/928)).
 
 ## Commands
 
