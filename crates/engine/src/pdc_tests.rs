@@ -47,12 +47,63 @@ impl Native for Gain {
     }
 }
 
+/// A native effect that decides when it is built (its reset) whether it delays by
+/// [`SWITCH_FRAMES`], from its parameter, as the EQ decides whether a Spectral band delays it.
+static SWITCH_PARAMS: [ParamInfo; 1] = [ParamInfo::toggle("0", "Delay", false)];
+static SWITCH: DeviceInfo = DeviceInfo::new("pdc-switch", "Switch", Role::Effect, &SWITCH_PARAMS);
+const SWITCH_FRAMES: usize = 64;
+
+struct Switch {
+    wanted: bool,
+    delaying: bool,
+    ring: [f32; SWITCH_FRAMES * 2],
+    cursor: usize,
+}
+
+impl Native for Switch {
+    fn info(&self) -> &DeviceInfo {
+        &SWITCH
+    }
+    fn prepare(&mut self, _: f64) -> Result<(), DeviceError> {
+        self.reset();
+        Ok(())
+    }
+    fn reset(&mut self) {
+        self.delaying = self.wanted;
+        self.ring = [0.0; SWITCH_FRAMES * 2];
+        self.cursor = 0;
+    }
+    fn set_param(&mut self, index: usize, value: f64) {
+        if index == 0 {
+            self.wanted = value >= 0.5;
+        }
+    }
+    fn param(&self, index: usize) -> Option<f64> {
+        (index == 0).then_some(if self.wanted { 1.0 } else { 0.0 })
+    }
+    fn latency(&self) -> u32 {
+        if self.delaying { SWITCH_FRAMES as u32 } else { 0 }
+    }
+    fn process(&mut self, _: &ProcessContext, buffer: &mut [f32]) {
+        if self.delaying {
+            for sample in buffer {
+                if let Some(held) = self.ring.get_mut(self.cursor) {
+                    std::mem::swap(sample, held);
+                }
+                self.cursor = (self.cursor + 1) % self.ring.len();
+            }
+        }
+    }
+}
+
 struct Devices;
 
 impl DeviceFactory for Devices {
     fn create(&self, id: &str, rate: f64, asset: Option<&DeviceAsset>) -> Option<Box<dyn Native>> {
         if id == "pdc-gain" {
             Some(Box::new(Gain(1.0)))
+        } else if id == "pdc-switch" {
+            Some(Box::new(Switch { wanted: false, delaying: false, ring: [0.0; SWITCH_FRAMES * 2], cursor: 0 }))
         } else {
             suhina_device_registry::factory().create(id, rate, asset)
         }
@@ -635,6 +686,63 @@ fn pdc_automation_adopts_new_upstream_latency_with_running_instances() {
             assert!(output[off..on].iter().all(|sample| *sample == 0.0), "{layout:?} hosted {hosted}: late transition");
             assert!(output[on] > 0.01, "{layout:?} hosted {hosted}: late return");
         }
+    }
+}
+
+/// A track whose audio steps up at source frame 3000, through a `pdc-switch` that delays or not,
+/// at the top of its chain or inside a device group.
+fn switch_fixture(delaying: bool, grouped: bool) -> (Project, AudioPool) {
+    let source = crate::fade_tests::region("step.wav", false, StretchMode::Repitch, 2.0);
+    let mut project = crate::fade_tests::project(source, 4.0, 0.0, 0.0);
+    let mut switch = Device::new("Switch", DeviceKind::Builtin("pdc-switch".into()));
+    switch.params.push(DeviceParam::new("0", if delaying { 1.0 } else { 0.0 }));
+    project.channels[0].devices = if grouped { vec![group(vec![vec![switch]])] } else { vec![switch] };
+    let mut audio = AudioPool::new();
+    let samples = (0..16000).map(|n| if n < 3000 { 0.0 } else { 0.25 }).collect();
+    audio.files.insert("step.wav".into(), Arc::new(AudioData { sample_rate: RATE, channels: 1, samples }));
+    (project, audio)
+}
+
+/// The first frame of `out` (stereo) that is over 0.1.
+fn first_step(out: &[f32]) -> Option<usize> {
+    out.chunks(2).position(|pair| pair[0] > 0.1)
+}
+
+/// A device that decides its delay when it is built and is switched to delay while the graph
+/// runs: the new graph compensates its delay, so the running device that does not delay must not
+/// stay. The sound then steps where a graph built delaying from the start steps.
+#[test]
+fn pdc_a_running_device_whose_delay_changed_gives_way_to_the_fresh_one() {
+    for grouped in [false, true] {
+        let (before, audio) = switch_fixture(false, grouped);
+        let (after, _) = switch_fixture(true, grouped);
+        let build = |project: &Project| {
+            let mut renderer = Renderer::build(
+                project,
+                RenderInputs::from_audio(&audio, Arc::new(Devices)),
+                RATE,
+                RenderOptions::PLAYING,
+            )
+            .unwrap();
+            renderer.set_offline(true);
+            renderer
+        };
+        let mut reference = build(&after);
+        let mut expected = vec![0.0; 6144 * 2];
+        for block in expected.chunks_mut(64 * 2) {
+            reference.process(block);
+        }
+        let mut renderer = build(&before);
+        let mut controller = renderer.controller();
+        let mut out = vec![0.0; 6144 * 2];
+        renderer.process(&mut out[..1024 * 2]);
+        controller.update(&after).unwrap();
+        for block in out[1024 * 2..].chunks_mut(64 * 2) {
+            renderer.process(block);
+        }
+        assert_eq!(renderer.latency(), reference.latency(), "grouped {grouped}");
+        assert_eq!(renderer.latency(), SWITCH_FRAMES as u32, "grouped {grouped}");
+        assert_eq!(first_step(&out), first_step(&expected), "grouped {grouped}: the step is where it belongs");
     }
 }
 
