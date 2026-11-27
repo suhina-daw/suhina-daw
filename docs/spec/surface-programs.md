@@ -121,6 +121,10 @@ process, and the crate carries no first-party `unsafe`.
 - **Waiting on answers.** `suhina.command` and `suhina.read` wait for their token's answer:
   while one waits, the runner keeps answering pings and queues port messages, and runs their
   handlers only after the waiting handler returns. A handler never runs inside another handler.
+- **Quitting.** When the app quits, each claimed output gets every note and controller off on
+  every channel before the port closes, so a controller's LEDs go dark instead of keeping the
+  last frame. The reset is the host's, not the script's: the script's last line is not needed to
+  run after Suhina has stopped reading.
 
 ### The script's environment
 

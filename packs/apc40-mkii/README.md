@@ -51,7 +51,8 @@ along the chain (`device.selectPrevious`, `device.selectNext`), Bank left/right 
 previous eight dials, and Device On/Off switches the device (`device.setEnabled`). Switches and
 choices stay on the device's panel. Each knob's ring shows its dial's position, the bank arrows
 light where there is another page, the device arrows while a device is selected, and the track
-select buttons light for the selected track.
+select buttons light for the selected track. Quitting Suhina turns every LED off before the MIDI
+output closes, so the controller is dark when the app is gone.
 
 Not yet: the sends, user mode, crossfader, Device Lock, the Clip/Dev and Detail View buttons,
 the tempo encoder, nudge, tap tempo, session record and shift; blinking queued pads; and the

@@ -476,6 +476,23 @@ fn the_shipped_apc40_script_puts_each_strip_button_on_its_command() {
     assert_eq!(tracks[0]["armed"], json!(true), "{tracks}");
 }
 
+/// Quitting turns a controller dark: the host sends every note and controller off before the
+/// claimed output closes, so the APC40's last LEDs do not stay lit after Suhina is gone.
+#[test]
+fn quitting_turns_the_claimed_controllers_lights_off() {
+    let mut fixture = Fixture::claiming("apc40-mkii", include_str!("../../../packs/apc40-mkii/script.lua"));
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
+    fixture.pump_until(|f| f.midi.written_for("APC out").iter().any(|m| m.starts_with(&mode)), "the mode message");
+    let before = fixture.midi.written_for("APC out").len();
+    assert!(fixture.projects.close_all(std::time::Duration::from_secs(2)), "the projects close in time");
+    let written = fixture.midi.written_for("APC out");
+    let reset = &written[before..];
+    assert!(reset.iter().any(|m| m.as_slice() == [0x90, 50, 0]), "the activator's LED is off: {reset:?}");
+    assert!(reset.iter().any(|m| m.as_slice() == [0xB0, 0, 0]), "the first controller is zeroed: {reset:?}");
+}
+
 /// A killed process is seen as crashed and restarted by the supervisor itself.
 #[test]
 fn a_killed_process_is_restarted() {

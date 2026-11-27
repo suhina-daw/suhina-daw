@@ -928,6 +928,9 @@ impl Projects {
     /// was let go in time: a plug-in still busy then is left to its host, which ends when this
     /// process does.
     pub fn close_all(&mut self, timeout: std::time::Duration) -> bool {
+        // A controller keeps its last lights after the app closes its output: turn every claimed
+        // controller dark before the projects, and the app, go.
+        self.devices.midi.reset_outputs(timeout);
         let started = std::time::Instant::now();
         let going = self.let_go_all();
         if going.is_empty() {

@@ -15,6 +15,7 @@
 //! runs; when the program stops, the port goes back to the usual path.
 
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use serde_json::{Value, json};
@@ -88,6 +89,8 @@ const OUTPUT_QUEUE_BYTES: usize = 8 * 1024 * 1024;
 /// of the port's own does the waiting; it ends when the port goes, after the writes it holds.
 struct OutputWorker {
     queue: Arc<OutputQueue>,
+    /// The all-off reset was queued: a second close after a quit's reset sends nothing twice.
+    cleared: AtomicBool,
 }
 
 impl OutputWorker {
@@ -102,15 +105,39 @@ impl OutputWorker {
                 if let Err(e) = out.send(&bytes) {
                     suhina_plugins::trace!("midi out {port}: {e}");
                 }
+                worker.finish();
             }
         });
-        Self { queue }
+        Self { queue, cleared: AtomicBool::new(false) }
     }
 
     /// Enqueues the write; a queue at its caps is a driver that cannot keep up, and the oldest
     /// write goes to make room — never a wait on the session's look.
     fn write(&self, bytes: &[u8]) {
         self.queue.push(bytes.to_vec());
+    }
+
+    /// Says every note and controller off, on every channel, for the quit path: a controller
+    /// keeps its last LEDs after the host closes the port, and this is what turns them dark. The
+    /// APC40's off is note-on 0 and CC 0, as its script's own LED writes are.
+    fn all_off(&self) {
+        if self.cleared.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        for channel in 0..16u8 {
+            for note in 0..128u8 {
+                self.write(&[0x90 | channel, note, 0]);
+            }
+            for controller in 0..128u8 {
+                self.write(&[0xB0 | channel, controller, 0]);
+            }
+        }
+    }
+
+    /// Waits until the queue and the write in the driver are done, or the timeout passes: the
+    /// quit path waits on this so the reset reaches the device before the process ends.
+    fn wait_empty(&self, timeout: std::time::Duration) -> bool {
+        self.queue.wait_empty(timeout)
     }
 }
 
@@ -131,6 +158,8 @@ struct OutputQueue {
 struct OutputQueueState {
     writes: std::collections::VecDeque<Vec<u8>>,
     bytes: usize,
+    /// One write the worker has taken and not finished sending.
+    in_flight: usize,
     closed: bool,
 }
 
@@ -154,12 +183,41 @@ impl OutputQueue {
         loop {
             if let Some(bytes) = state.writes.pop_front() {
                 state.bytes = state.bytes.saturating_sub(bytes.len());
+                state.in_flight += 1;
                 return Some(bytes);
             }
             if state.closed {
                 return None;
             }
             state = self.ready.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+    }
+
+    /// The write the worker took was sent (or failed): the quit path may now finish.
+    fn finish(&self) {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.in_flight = state.in_flight.saturating_sub(1);
+        drop(state);
+        self.ready.notify_all();
+    }
+
+    /// Whether every write has left the queue and the driver, within `timeout`.
+    fn wait_empty(&self, timeout: std::time::Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if state.writes.is_empty() && state.in_flight == 0 {
+                return true;
+            }
+            if state.closed {
+                return false;
+            }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            let (guard, _) = self.ready.wait_timeout(state, left).unwrap_or_else(std::sync::PoisonError::into_inner);
+            state = guard;
         }
     }
 
@@ -482,6 +540,29 @@ impl MidiInputs {
         // session's look is not held by the driver.
         suhina_plugins::trace!("midi out {port}: {bytes:02x?}");
         out.write(bytes);
+    }
+
+    /// Sends every note and controller off on every output, then waits up to `timeout` for the
+    /// workers to write them: quitting must leave a controller dark, not lit by its last frame.
+    pub(crate) fn reset_outputs(&self, timeout: std::time::Duration) {
+        let deadline = std::time::Instant::now() + timeout;
+        // The last frame's writes go first, so the reset is not pushed out by them; then the
+        // offs, then their writes, before the app closes the ports.
+        for (_, _, _, out) in &self.outs {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() || !out.wait_empty(left) {
+                break;
+            }
+        }
+        for (_, _, _, out) in &self.outs {
+            out.all_off();
+        }
+        for (_, _, _, out) in &self.outs {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() || !out.wait_empty(left) {
+                break;
+            }
+        }
     }
 
     fn fail(&mut self, name: &str, error: String) -> Vec<String> {
