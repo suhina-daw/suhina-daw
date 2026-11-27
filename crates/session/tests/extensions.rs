@@ -310,6 +310,34 @@ fn a_failed_add_leaves_the_destination_clear() {
 }
 
 #[test]
+fn adding_refuses_a_folder_over_the_byte_or_file_cap_cleanly() {
+    let fixture = Fixture::new("capped", |id| manifest_for(id, SCRIPT));
+    let root = crate::temp_dir::TempDir::new("extensions-capped-store");
+    let source = crate::temp_dir::TempDir::new("extensions-capped-source");
+    for entry in ["extension.json", "script.lua", "LICENCE.txt"] {
+        std::fs::copy(fixture.folder().join(entry), source.join(entry)).expect("copied");
+    }
+    // A sparse file says it is over the byte cap without taking the bytes on disk.
+    let payload = std::fs::File::create(source.join("payload.bin")).expect("made");
+    payload.set_len(256 * 1024 * 1024 + 1).expect("sized");
+    let mut projects = projects_with(&root);
+    let error =
+        run(&mut projects, "extensions.add", json!({ "folder": source.display().to_string() })).expect_err("refused");
+    assert!(error.message().contains("256 MiB"), "{}", error.message());
+    assert!(!root.join("capped").exists(), "a refused copy leaves no destination");
+
+    // The same for a folder with one file too many.
+    std::fs::remove_file(source.join("payload.bin")).expect("removed");
+    for index in 0..1025 {
+        std::fs::File::create(source.join(format!("file-{index}"))).expect("made");
+    }
+    let error =
+        run(&mut projects, "extensions.add", json!({ "folder": source.display().to_string() })).expect_err("refused");
+    assert!(error.message().contains("1024 files"), "{}", error.message());
+    assert!(!root.join("capped").exists(), "a refused copy leaves no destination");
+}
+
+#[test]
 fn a_refused_extension_is_listed_with_its_reason() {
     let fixture = Fixture::new("broken", |id| manifest_for(id, SCRIPT));
     std::fs::write(fixture.folder().join("extension.json"), "{ not json").expect("written");

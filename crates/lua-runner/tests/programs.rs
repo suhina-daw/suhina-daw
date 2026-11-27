@@ -24,6 +24,9 @@ struct Fixture {
     id: String,
     root: std::path::PathBuf,
     midi: Arc<Midi>,
+    /// Woken by every supervisor event and every stand-in MIDI write: the pump's wait, with
+    /// no clock.
+    wake: std::sync::mpsc::Receiver<()>,
 }
 
 const SCRIPT_OK: &str =
@@ -180,7 +183,7 @@ impl Fixture {
         projects.set_midi_system(system);
         // An open session, so the scripts' commands and reads run on a project.
         projects.add(Session::new(blank_project()), None).expect("the session opens");
-        Self { root, id: id.to_string(), projects, midi }
+        Self { root, id: id.to_string(), projects, midi, wake: programs::test_watch() }
     }
 
     fn folder(&self) -> std::path::PathBuf {
@@ -211,13 +214,13 @@ impl Fixture {
     }
 
     /// Services the session and waits until `done` says the waited thing is observable —
-    /// in the queue, or already drained and written out by one of the looks — breathing on
-    /// the programs' event signal between looks. What a test waits for is its own
-    /// observable (a marker written to a port), not a frame count (AGENTS.md rule 7); a
-    /// look may be what produces the waited thing (a script's command is answered where
-    /// the frame drains), so the wait cannot be a plain one on the supervisor's signal.
+    /// in the queue, or already drained and written out by one of the looks. The wait is on
+    /// the test wake: every supervisor event and every stand-in MIDI write wakes it, so the
+    /// pump never decides its result on a clock (AGENTS.md rule 7). A look may be what
+    /// produces the waited thing (a script's command is answered where the frame drains), so
+    /// it runs again after every wake.
     fn pump_until(&mut self, done: impl Fn(&Self) -> bool, what: &str) {
-        for _ in 0..4_000 {
+        loop {
             if done(self) {
                 return;
             }
@@ -225,11 +228,11 @@ impl Fixture {
             if done(self) {
                 return;
             }
-            if let Err(reason) = self.projects.test_extensions_breath() {
+            if let Some(reason) = self.projects.test_extensions_reason() {
                 panic!("the program ended without {what}: {reason}");
             }
+            self.wake.recv().unwrap_or_else(|e| panic!("{what}: the test wake ended: {e}"));
         }
-        panic!("{what} never became observable: {:?}", self.midi.written_for("APC out"));
     }
 
     /// Sends the claimed ports to the running program.
@@ -426,6 +429,68 @@ fn a_script_error_is_reported_and_restart_brings_the_script_back() {
     let listed = fixture.projects.execute("extensions.list", &json!({})).expect("listed");
     let entry = find(&listed, &fixture.id).expect("listed");
     assert_eq!(entry["lastError"], Value::Null, "{entry}");
+}
+
+/// The shipped APC40 MkII script through the real supervisor: its mode message goes out when
+/// the claimed ports open, and each of the four per-track strip buttons sends its command and
+/// the LED its state asks for. The device section is covered by the stand-in in `apc40.rs`.
+#[test]
+fn the_shipped_apc40_script_puts_each_strip_button_on_its_command() {
+    let mut fixture = Fixture::claiming("apc40-mkii", include_str!("../../../packs/apc40-mkii/script.lua"));
+    // The blank project's first track is the strip's channel 0.
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    let track = tracks[0]["id"].as_u64().expect("the first track's id");
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
+    fixture.pump_until(|f| f.midi.written_for("APC out").iter().any(|m| m.starts_with(&mode)), "the mode message");
+    fixture.pump_until(
+        |f| f.midi.written_for("APC out").iter().any(|m| m.as_slice() == [0x90, 50, 127]),
+        "the strip state",
+    );
+    // Clip stop: the command reaches the session, which refuses it without a player but still
+    // answers the script; the press is what this slice checks.
+    fixture.midi.play("APC in", 1, &[0x90, 52, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.stop" && params["track"] == json!(track)));
+    fixture.projects.poll_plugins();
+    // Activator: the track mutes, and the activator LED goes dark.
+    fixture.midi.play("APC in", 1, &[0x90, 50, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.setMute" && params["tracks"][0] == json!(track)));
+    fixture.projects.poll_plugins();
+    fixture.pump_until(|f| written_contains(f, [0x90, 50, 0]), "the muted activator's LED");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    assert_eq!(tracks[0]["mute"], json!(true), "{tracks}");
+    // Solo: the track solos, and the solo LED lights.
+    fixture.midi.play("APC in", 1, &[0x90, 49, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.setSolo" && params["tracks"][0] == json!(track)));
+    fixture.projects.poll_plugins();
+    fixture.pump_until(|f| written_contains(f, [0x90, 49, 127]), "the solo LED");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    assert_eq!(tracks[0]["solo"], json!(true), "{tracks}");
+    // Record arm: the track arms, and the arm LED goes red.
+    fixture.midi.play("APC in", 1, &[0x90, 48, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.setArm" && params["track"] == json!(track)));
+    fixture.projects.poll_plugins();
+    fixture.pump_until(|f| written_contains(f, [0x90, 48, 5]), "the armed track's LED");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    assert_eq!(tracks[0]["armed"], json!(true), "{tracks}");
+}
+
+/// Quitting turns a controller dark: the host sends every note and controller off before the
+/// claimed output closes, so the APC40's last LEDs do not stay lit after Suhina is gone.
+#[test]
+fn quitting_turns_the_claimed_controllers_lights_off() {
+    let mut fixture = Fixture::claiming("apc40-mkii", include_str!("../../../packs/apc40-mkii/script.lua"));
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
+    fixture.pump_until(|f| f.midi.written_for("APC out").iter().any(|m| m.starts_with(&mode)), "the mode message");
+    let before = fixture.midi.written_for("APC out").len();
+    assert!(fixture.projects.close_all(std::time::Duration::from_secs(2)), "the projects close in time");
+    let written = fixture.midi.written_for("APC out");
+    let reset = &written[before..];
+    assert!(reset.iter().any(|m| m.as_slice() == [0x90, 50, 0]), "the activator's LED is off: {reset:?}");
+    assert!(reset.iter().any(|m| m.as_slice() == [0xB0, 0, 0]), "the first controller is zeroed: {reset:?}");
 }
 
 /// A killed process is seen as crashed and restarted by the supervisor itself.
@@ -865,12 +930,11 @@ fn a_subscription_of_an_edit_pushes_nothing() {
     let mut fixture = Fixture::claiming("subedit", SCRIPT_SUBSCRIBE_EDIT);
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
-    // The looks the subscription's reads would have run on: no state is pushed.
+    // The looks the subscription's reads would have run on: no state is pushed. The program
+    // is running, so the subscribe is already queued; the looks service it, and there is no
+    // clock to wait on.
     for _ in 0..200 {
         fixture.projects.poll_plugins();
-        if let Err(reason) = fixture.projects.test_extensions_breath() {
-            panic!("the program ended: {reason}");
-        }
     }
     assert!(fixture.midi.written_for("APC out").is_empty(), "{:?}", fixture.midi.written_for("APC out"));
 }
@@ -1169,6 +1233,8 @@ impl MidiOut for Out {
         let mut written = self.written.lock().unwrap();
         written.push((self.name.clone(), bytes.to_vec()));
         self.signal.notify_all();
+        drop(written);
+        programs::test_wake();
         Ok(())
     }
 }
@@ -1184,16 +1250,19 @@ impl MidiSystem for Midi {
 
     fn open(&self, name: &str, _: Arc<LiveInput>) -> Result<Box<dyn std::any::Any + Send>, String> {
         self.live.lock().unwrap().push(name.to_string());
+        programs::test_wake();
         Ok(Box::new(Keep { name: name.to_string(), open: Arc::clone(&self.live), closed: Arc::clone(&self.closed) }))
     }
 
     fn open_raw(&self, name: &str, sink: Arc<dyn RawSink>) -> Result<Box<dyn std::any::Any + Send>, String> {
         self.raw.lock().unwrap().push((name.to_string(), sink));
         self.raw_log.lock().unwrap().push(name.to_string());
+        programs::test_wake();
         Ok(Box::new(RawKeep { name: name.to_string(), open: Arc::clone(&self.raw), closed: Arc::clone(&self.closed) }))
     }
 
     fn open_output(&self, name: &str) -> Result<Box<dyn MidiOut>, String> {
+        programs::test_wake();
         Ok(Box::new(Out {
             name: name.to_string(),
             written: Arc::clone(&self.written),

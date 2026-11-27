@@ -35,9 +35,9 @@ covers:
   the device section locks its device (releasing it when the device is gone or replaced) and
   holds its bank (a replacement at the same path starts its own bank), a stepped or listed
   plug-in parameter snaps to its panel's step, and Clip/Dev View and Detail View queue the
-  window's actions. The whole
-  script's run through the supervisor — the mode
-  message, a press of each strip button, the LEDs — follows.
+  window's actions. The whole script's run through the real supervisor — the mode message,
+  clip stop, activator, solo and record arm, and their LEDs — is covered in
+  `crates/lua-runner/tests/programs.rs`.
 
 ## What ships
 
@@ -97,8 +97,8 @@ one; ADR 0019 › 10).
   runs against a stand-in Suhina; the dials, the bank pages, the switches left out and the device
   arrows are driven and the commands and rings they send are checked (#1679).
 - The whole shipped script, end to end (`crates/lua-runner/tests/programs.rs`), run against the
-  pack's files: the mode message goes out when the ports open, a press of each strip button sends
-  its command, and the LEDs follow the project.
+  pack's files: the mode message goes out when the ports open, a press of clip stop, activator,
+  solo and record arm sends its command, and the trigger and state LEDs follow.
 - The start: a fresh library gets the `Scripts/MIDI/` folder and the store entry, and a removed
   shipped script stays removed on the next start.
 

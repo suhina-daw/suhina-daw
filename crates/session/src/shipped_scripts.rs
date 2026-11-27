@@ -15,8 +15,8 @@ use crate::extensions::{Extensions, Manifest};
 
 /// One shipped script: its manifest's `id` — the folder it unpacks into under `Scripts/MIDI/` —
 /// and its files as `(name, bytes)`, embedded from the tree's `packs/<id>/` ([ADR 0036] › 3).
-/// Beside the script ride its manifest and a README carrying where the script's knowledge
-/// comes from and its licence ([ADR 0036] › 1 and 6).
+/// Beside the script ride its manifest, a README carrying where the script's knowledge comes
+/// from, and the publisher's licence text ([ADR 0036] › 1 and 6).
 pub struct ShippedScript {
     pub id: &'static str,
     pub files: &'static [(&'static str, &'static [u8])],
@@ -31,6 +31,7 @@ pub fn scripts() -> &'static [ShippedScript] {
             ("extension.json", include_bytes!("../../../packs/apc40-mkii/extension.json")),
             ("script.lua", include_bytes!("../../../packs/apc40-mkii/script.lua")),
             ("README.md", include_bytes!("../../../packs/apc40-mkii/README.md")),
+            ("LICENSE-CC0.txt", include_bytes!("../../../packs/apc40-mkii/LICENSE-CC0.txt")),
         ],
     }];
     SCRIPTS

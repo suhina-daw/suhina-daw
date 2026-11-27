@@ -160,10 +160,6 @@ pub struct Projects {
 const OUTPUT_RETRY: std::time::Duration = std::time::Duration::from_secs(2);
 /// How often an output playing in place of the chosen device looks whether it is back.
 const OUTPUT_WATCH: std::time::Duration = std::time::Duration::from_secs(3);
-/// The tests' pump-while-waiting ([`Projects::test_extensions_breath`]): a breath between
-/// looks on the programs' event signal.
-const PUMP_BREATH: std::time::Duration = std::time::Duration::from_millis(10);
-
 const PROJECT: Param = param("project", ParamType::Integer, "project id, from project.list");
 
 static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
@@ -956,6 +952,9 @@ impl Projects {
     /// was let go in time: a plug-in still busy then is left to its host, which ends when this
     /// process does.
     pub fn close_all(&mut self, timeout: std::time::Duration) -> bool {
+        // A controller keeps its last lights after the app closes its output: turn every claimed
+        // controller dark before the projects, and the app, go.
+        self.devices.midi.reset_outputs(timeout);
         let started = std::time::Instant::now();
         let going = self.let_go_all();
         if going.is_empty() {
@@ -1039,19 +1038,11 @@ impl Projects {
         self.extensions.peek_for_event(which)
     }
 
-    /// One breath of the tests' pump-while-waiting, called between looks: waits on the
-    /// running programs' event signal for a breath, and answers why the wait cannot go on
-    /// — the supervisor is over and no event can come.
-    pub fn test_extensions_breath(&mut self) -> Result<(), String> {
-        let Some(shared) = self.extensions.event_queue() else {
-            return Ok(());
-        };
-        let guard = shared.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _ = shared.signal.wait_timeout(guard, PUMP_BREATH).unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(reason) = shared.terminal.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone() {
-            return Err(reason);
-        }
-        Ok(())
+    /// Why the running program's supervisor is over, for the tests' pump: `None` while it can
+    /// still report an event.
+    pub fn test_extensions_reason(&self) -> Option<String> {
+        let shared = self.extensions.event_queue()?;
+        shared.terminal.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 
     /// The plug-in library. Taking it for changing counts as changing it: sessions get a new

@@ -86,7 +86,8 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
 | `extensions.restart` | stops its program and starts it again (a crashed or wedged one) on what the folder holds now — the manifest is read again, so the restart runs a script whose checksum was checked this run |
 
 - Adding never copies a program into a project and never writes outside
-  `<settings>/extensions/<id>/`.
+  `<settings>/extensions/<id>/`. The copy is bounded before it can enter the store: at most
+  1,024 files, 256 MiB, and 8 folder levels, with a failure naming the cap reached.
 - `extensions.remove` refuses while a job of that extension runs, and names the job. A surface
   program is not a job: remove stops the program (the supervisor's bounded stop) and forgets the
   extension.
@@ -144,6 +145,11 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
 - Downloading an extension or a model, and a registry or store to find one in.
 - Trust beyond the SHA-256 in the manifest and the user's explicit add: no signature, no sandbox
   beyond the process boundary and the declared permissions.
+- **Enforcement of the declared permissions on a surface program's commands:** they are shown,
+  but a program is not yet limited by `project.read`, `project.write`, `files.write:<folder>` or
+  `audio.read`, nor by the restrictions an attached MCP agent has. Every command dispatchable by
+  the window is reachable until
+  [#1725](https://github.com/suhina-daw/suhina-daw/issues/1725) lands.
 - Extensions on the audio thread (real-time effects), and extensions that edit the project directly
   rather than through commands.
 - Commands of an extension's own outside the namespace its manifest declares.
