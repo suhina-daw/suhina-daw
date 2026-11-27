@@ -83,14 +83,14 @@ pub fn title_row(painter: &Painter, row: Rect, title: &str) -> Entered {
 /// How wide the Close button at the right of a dialog's title row is.
 const CLOSE_WIDTH: f32 = 52.0;
 
-/// The Close button at the right of a dialog's title row `bar` ([`Painted::title`]), a flat
-/// button answering to `id`, named "Close `title`". Drawn while the title row's element from
+/// The Close button at the right of a dialog's title row `bar` ([`Painted::title`]), a push
+/// button ([`widgets::push_face`]) answering to `id`, named "Close `title`". Drawn while the title row's element from
 /// [`paint`] is still entered, so the theme styles it as part of that row. A click closes.
 pub fn close_button(ui: &Ui, painter: &Painter, bar: Rect, id: egui::Id, title: &str) -> egui::Response {
     let rect =
         Rect::from_min_size(Pos2::new(bar.right() - CLOSE_WIDTH, bar.top()), Vec2::new(CLOSE_WIDTH, bar.height()));
     let response = widgets::button_area(ui, rect, id, format!("Close {title}"));
-    widgets::flat_button(ui, painter, rect, &response, "Close", (theme::TEXT_SMALL, None));
+    widgets::push_face(ui, painter, rect, &response, ("Close", widgets::Push::Plain), None);
     response
 }
 

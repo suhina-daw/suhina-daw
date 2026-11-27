@@ -183,6 +183,10 @@ const CONTROL_IDS: &[&str] = &[
     "track-on",
     "automation",
     "monitor",
+    "add-midi-track",
+    "add-audio-track",
+    "add-return-track",
+    "add-branch",
 ];
 
 /// The level fields of the track headers and the mixer, by their placement names.
@@ -256,7 +260,9 @@ pub const ELEMENTS: &[Element] = &[
             "backdrop-blur",
         ]),
     element("application-bar", Region, "The bar at the very top, with the application's menus.")
-        .parts(&["group", "bar-item"]),
+        .parts(&["group", "bar-item", "window-button"]),
+    element("window-button", Control, "One of the window's own buttons, where Suhina draws the title bar (Windows): `window-button[kind=\"minimize\"]`, `[kind=\"maximize\"]` and `[kind=\"close\"]`, by its `background-color` (`:hover` under the pointer, `:active` pressed) and its `color` for the glyph. The user-agent sheet gives them the system's look in every theme; it is not a `button`, so a rule for every `button` does not reach it, and it draws no artwork.")
+        .attributes(&["kind"]),
     element("menu-bar", Region, "The menu bar."),
     element("menu", Region, "An open menu of the menu bar.").settings(FLOATING),
     element("project-tabs", Region, "The bar of open projects' tabs.").parts(&["project-tab"]),
@@ -269,9 +275,9 @@ pub const ELEMENTS: &[Element] = &[
         .ids(Ids::Listed { prefix: "", names: GROUP_IDS })
         .attributes(&["kind"]),
     element("flexible-space", Drawn, "A gap in a bar that takes the room left over."),
-    element("bar-item", Part, "An item of the status bar, the application bar or the piano roll's toolbar, by id; the words of the piano roll toolbar's menus (Grid, Workflow, Ghosts) are `bar-item[kind=\"menu\"]`, `[muted]` while what it names is off and `[checked]` while the menu is hovered or open; a menu's title on the menu bar is `bar-item[kind=\"menu\"]` too, its `background-color` the fill behind it while `[checked]` (scope a rule with `menu-bar` or `piano-roll-toolbar` to reach one of them), and the status bar's counts `[kind=\"status-counts\"]`.")
+    element("bar-item", Part, "An item of the status bar, the application bar or the piano roll's toolbar, by id; a menu's title on the menu bar is `bar-item[kind=\"menu\"]`, its `background-color` the fill behind it while `[checked]`, and the status bar's counts `[kind=\"status-counts\"]`.")
         .ids(Ids::Listed { prefix: "", names: BAR_ITEM_IDS })
-        .attributes(&["kind", "muted", "checked"]),
+        .attributes(&["kind", "checked"]),
     element("status-bar", Region, "The bar at the bottom of the window.").parts(&["bar-item"]),
     element("notice-bar", Region, "The strip over the views that asks about an opened project or names missing files."),
     element("workspace-panel", Region, "A panel of the window: the browser, the main view, the detail area.")
@@ -339,7 +345,6 @@ pub const ELEMENTS: &[Element] = &[
             "ruler",
             "loop-region",
             "playhead",
-            "add-track",
             "grid-line",
             "time-selection",
             "marquee",
@@ -368,10 +373,6 @@ pub const ELEMENTS: &[Element] = &[
     element("fold", Control, "The triangle that folds a track or a group.")
         .attributes(&["checked"])
         .artwork(&[own("fold")]),
-    element("add-track", Control, "The buttons that add a track, after the last one; a device group's `+ Branch` is `add-track[kind=\"branch\"]`.")
-        .ids(Ids::Prefixed("add-"))
-        .attributes(&["kind"])
-        .artwork(&[own("add-track")]),
     element(
         "track-lane",
         Container,
@@ -480,9 +481,9 @@ pub const ELEMENTS: &[Element] = &[
         .attributes(&["selected", "muted", "kind"]),
     element("piano-slice", Drawn, "The line a slice drag cuts along, `kind=\"cut\"` or `kind=\"delete\"` for the right button's; its `background-color` over what a delete takes away.")
         .attributes(&["kind"]),
-    element("piano-tool", Control, "A tool button of the piano roll, `[checked]` while chosen, `:disabled` while it cannot be used; `kind` is its id without `#` (`piano-fold`).")
+    element("piano-tool", Control, "A button of the piano roll's toolbar, `[checked]` while chosen or on, `:disabled` while it cannot be used; `kind` is its id without `#` (`piano-fold`). Every one has the same look: no fill until hovered, and the `[checked]` fill while on. The toolbar's menus (Grid, Workflow, Ghosts) are `piano-tool[kind=\"menu\"]`, `[checked]` while open and `[muted]` while what they name is off.")
         .ids(Ids::Prefixed("piano-"))
-        .attributes(&["checked", "kind"])
+        .attributes(&["checked", "kind", "muted"])
         .artwork(&[
             own("piano.select"),
             own("piano.draw"),
@@ -534,7 +535,7 @@ pub const ELEMENTS: &[Element] = &[
     element("slider-fill", Part, "A slider's fill up to its value."),
     element("slider-handle", Part, "A slider's handle."),
     // Controls everywhere.
-    element("button", Control, "A button or switch; also egui's check boxes and drop-downs. A device's on switch is `#control-device-on` (`[checked]` while it runs), which a rule for every `button` reaches as it does any button; an expanded panel's × `button[kind=\"close\"]` and the browser's more tags `button[kind=\"more\"]` take only a rule for their kind. The toggles Suhina's own views draw (a track's on switch, cue, a view's switches) are `button[kind=\"toggle\"]`, solo `button[kind=\"solo\"]` and arm `button[kind=\"arm\"]`, lit with `[checked]`: their base look is dim words on the control fill, and the chosen fill and its text when lit; a rule for every `button` overrides it for the properties it sets, lit ones too, so state the lit look as well. The Launcher's, the mixer's and the Arrangement's own switches are `button[kind=\"record\"]` (the control bar's Record, `[checked]` while it records), `button[kind=\"metronome\"]` (the metronome's switches, `[checked]` while it clicks), `button[kind=\"monitor\"]` (a strip's In, Auto and Off, `[checked]` on the one chosen), `button[kind=\"envelope\"]` (a clip's Edit gain envelope and Free move), `button[kind=\"lanes\"]` (a track's automation switch, `[checked]` while its lanes show) and `button[kind=\"shape\"]` (an automation lane's shape pick, `[checked]` on the chosen one). The detail panels' and the browser's own: a panel's push button `button[kind=\"panel\"]` and switch `[kind=\"panel-toggle\"]`, an entry of a panel's list or of any menu (the menu bar's, a right-click menu's or a drop-down's list) `[kind=\"entry\"]` (`[checked]` the chosen one; scope a rule with `menu-bar` to reach the menu bar's alone), the browser's filter chips `[kind=\"chip\"]`, a tag's tick box `[kind=\"tag-check\"]`, the preview's play `[kind=\"preview\"]` and the piano roll's Focus switch `[kind=\"focus\"]`, each lit with `[checked]`. The app's own: the toolbar's Map `button[kind=\"map\"]` (`[checked]` while keys are being mapped), a connected agent's name `[kind=\"agent\"]`, Play `[kind=\"play\"]` (`#control-play`, `[playing]` while the transport runs), the browser's switch `[kind=\"browser\"]` (`#control-browser-toggle`, `[checked]` while it shows), a button that stands back `[kind=\"secondary\"]`, a tick box `[kind=\"check\"]`, a part of a row of choices in Settings `[kind=\"option\"]` or `[kind=\"preset\"]`, a yes/no switch `[kind=\"switch\"]`, each lit with `[checked]`.")
+    element("button", Control, "A button or switch; also egui's check boxes and drop-downs. A device's on switch is `#control-device-on` (`[checked]` while it runs), which a rule for every `button` reaches as it does any button; an expanded panel's × is `button[kind=\"close\"]` and the browser's more tags `button[kind=\"more\"]`, buttons a rule for every `button` reaches too. The toggles Suhina's own views draw (a track's on switch, cue, a view's switches) are `button[kind=\"toggle\"]`, solo `button[kind=\"solo\"]` and arm `button[kind=\"arm\"]`, lit with `[checked]`: off, their base look is a button's (dim words are for a button that cannot be pressed), and the chosen fill and its text when lit; a rule for every `button` overrides it for the properties it sets, lit ones too, so state the lit look as well. The Launcher's, the mixer's and the Arrangement's own switches are `button[kind=\"record\"]` (the control bar's Record, `[checked]` while it records), `button[kind=\"metronome\"]` (the metronome's switches, `[checked]` while it clicks), `button[kind=\"monitor\"]` (a strip's In, Auto and Off, `[checked]` on the one chosen), `button[kind=\"envelope\"]` (a clip's Edit gain envelope and Free move), `button[kind=\"lanes\"]` (a track's automation switch, `[checked]` while its lanes show) and `button[kind=\"shape\"]` (an automation lane's shape pick, `[checked]` on the chosen one). The detail panels' and the browser's own: a panel's buttons are push buttons, `button[kind=\"push\"]` (`:disabled` while they cannot be pressed), and its switches and tick boxes toggles, `[kind=\"toggle\"]`, a button drawn as a menu's rows are (a choice in a list, a section's disclosure row, a grid's widths and values in its menu) `[kind=\"entry\"]` (`[checked]` the chosen one), the browser's filter chips `[kind=\"chip\"]`, a tag's tick box `[kind=\"tag-check\"]`, the preview's play `[kind=\"preview\"]` and the piano roll's Focus switch `[kind=\"focus\"]`, each lit with `[checked]`. The app's own: the toolbar's Map `button[kind=\"map\"]` (`[checked]` while keys are being mapped), a connected agent's name `[kind=\"agent\"]`, Play `[kind=\"play\"]` (`#control-play`, `[playing]` while the transport runs), the browser's switch `[kind=\"browser\"]` (`#control-browser-toggle`, `[checked]` while it shows), a button that stands back `[kind=\"secondary\"]`, a tick box `[kind=\"check\"]`, a part of a row of choices in Settings `[kind=\"option\"]` or `[kind=\"preset\"]`, a yes/no switch `[kind=\"switch\"]`, each lit with `[checked]`.")
         .ids(Ids::Listed { prefix: "control-", names: CONTROL_IDS })
         .attributes(&["checked", "playing", "recording", "armed", "muted", "kind"])
         .artwork(&[
@@ -549,7 +550,7 @@ pub const ELEMENTS: &[Element] = &[
             own("automation"),
             own("monitor"),
         ]),
-    element("toggle", Drawn, "The colors of a switch its view draws itself, with no `button` of its own (a clip panel's On and Off, a device group's Mute): dim words, `[checked]` when it is on; the `button[kind=\"toggle\"]` of a switch drawn as a button is looked up the same way.")
+    element("toggle", Drawn, "The colors of a switch its view draws itself, with no `button` of its own (a clip panel's On and Off, a device group's Mute): a button's words, `[checked]` when it is on; the `button[kind=\"toggle\"]` of a switch drawn as a button is looked up the same way.")
         .attributes(&["checked"]),
     element("value", Control, "A value field, such as a volume bar or a clip panel's number field; drawn as a bar, its track is `value[kind=\"bar\"]`; a field of the clip, MIDI and follow panels and of a device group is `value[kind=\"field\"]` (tinted under the pointer, stronger while dragged), a device's parameter's value `value[kind=\"parameter\"]`.")
         .parts(&["value-fill", "value-handle"])
@@ -647,7 +648,7 @@ pub const ELEMENTS: &[Element] = &[
         .settings(FLOATING),
     element("dialog-title", Part, "A dialog's title row, with its Close button: its `background-color`, its words `label[kind=\"title\"]`."),
     element("dialog-actions", Part, "A dialog's row of buttons along the bottom of what it holds, laid out as a flex row: `justify-content` and `gap` place them, and a `flexible-space` in it, where a dialog puts one, takes the room left."),
-    element("list-row", Control, "A row of a list in a dialog or on the start page that a click picks (a recent project, a template): its `background-color` under the pointer, its `color` for its name. A dialog's row is `list-row[kind=\"dialog\"]`, a row of the Plug-in manager's table `list-row[kind=\"plugin\"]` (its fill while picked and under the pointer), a row of the missing files panel's table `list-row[kind=\"missing-file\"]` (the same) and the color picker's row beside a name `list-row[kind=\"picker\"]`.").attributes(&["selected", "kind"]),
+    element("list-row", Control, "A row of a list in a dialog or on the start page that a click picks (a recent project, a template): its `background-color` under the pointer, its `color` for its name. A dialog's row is `list-row[kind=\"dialog\"]`, a row of the Plug-in manager's table `list-row[kind=\"plugin\"]` (its fill while picked and under the pointer), a row of the missing files panel's table `list-row[kind=\"missing-file\"]` (the same), the color picker's row beside a name `list-row[kind=\"picker\"]`, and a row of a floating list (a picker that searches, such as a device chain's) `list-row[kind=\"floating\"]` (its fill while picked and under the pointer), and a row of any menu or of a drop-down's list (the menu bar's, a right-click menu's, a panel's list) `list-row[kind=\"menu\"]`, highlighted while `[selected]` (the chosen one; scope a rule with `menu-bar` to reach the menu bar's alone).").attributes(&["selected", "kind"]),
     element("start-page", Region, "The page shown with no project open."),
     element("plugin-manager", Region, "The Plug-in manager."),
     element("theme-card", Control, "A theme's card in the theme picker, `[selected]` for the theme in use: its `border-color` for its edge (and for a swatch's ring), its `background-color` for the tint under the theme in use and its `accent-color` for the word *Active*.")

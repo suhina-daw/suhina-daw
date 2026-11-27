@@ -2090,19 +2090,19 @@ fn switch_fills(css: &str, on: bool) -> Vec<egui::Color32> {
         .collect()
 }
 
+/// A clip panel's switch is a toggle as every view's is: `button[kind="toggle"]`, lit by its
+/// `[checked]` rule.
 #[test]
-fn a_clip_panel_switch_takes_the_theme_s_button_and_stays_lit_while_on() {
+fn a_clip_panel_switch_is_a_toggle_lit_by_its_checked_rule() {
     let red = egui::Color32::from_rgb(0xFF, 0, 0);
     let green = egui::Color32::from_rgb(0, 0xFF, 0);
-    // A rule for every button paints a switch that is off.
-    let every = "button { background-color: #FF0000; }";
-    assert!(switch_fills(every, false).contains(&red), "off takes the button's background");
-    // One that is on keeps its lit fill, so it still shows it is on.
-    assert!(!switch_fills(every, true).contains(&red), "on keeps its lit fill");
-    // Unless the sheet gives `[checked]` a background of its own.
-    let checked = "button { background-color: #FF0000; } button[checked] { background-color: #00FF00; }";
-    let fills = switch_fills(checked, true);
-    assert!(fills.contains(&green) && !fills.contains(&red), "{fills:?}");
+    // Drawn as CSS shapes (`image: none`), so a fill is a rectangle's color.
+    let sheet = "button { image: none; } button[kind=\"toggle\"] { background-color: #FF0000; } \
+                 button[kind=\"toggle\"][checked] { background-color: #00FF00; }";
+    let off = switch_fills(sheet, false);
+    assert!(off.contains(&red) && !off.contains(&green), "off: {off:?}");
+    let on = switch_fills(sheet, true);
+    assert!(on.contains(&green) && !on.contains(&red), "on: {on:?}");
 }
 
 /// A check box shows its whole name where it fits and its short one where it does not, so a
@@ -2370,4 +2370,45 @@ fn sidechain_to_searches_the_keyed_devices() {
     let set: Vec<_> = harness.state().iter().filter(|a| a.id == "device.setKey").cloned().collect();
     assert_eq!(set.len(), 1, "{:?}", harness.state());
     assert_eq!((&set[0].params["track"], &set[0].params["source"]), (&json!(17), &json!(1)));
+}
+
+/// A device's on/off parameter draws its tick box in the middle of its cell, as the device's
+/// panel places it.
+#[test]
+fn a_toggle_parameter_s_tick_box_is_in_the_middle_of_its_cell() {
+    use super::parameters::parameter_widget;
+    use suhina_device_sdk::{ParameterControl, ParameterUi};
+    let parameter = GraphParameter {
+        text: String::new(),
+        default: 0.0,
+        control: ParameterControl::Toggle,
+        unit: String::new(),
+        id: "on".into(),
+        name: "On".into(),
+        min: 0.0,
+        max: 1.0,
+        value: 1.0,
+        ui: ParameterUi::default(),
+    };
+    let cell = egui::Rect::from_min_size(Pos2::new(40.0, 20.0), egui::Vec2::new(120.0, 30.0));
+    let ctx = egui::Context::default();
+    theme::install(&ctx);
+    let mut value = 1.0;
+    let mut hit = None;
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        hit = Some(parameter_widget(ui, &parameter, cell, None, &mut value).rect);
+    });
+    output.textures_delta.clear();
+    // The mark: the 11-point square drawn for it.
+    let mark = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if (rect.rect.width() - 11.0).abs() < 0.01 => Some(rect.rect),
+            _ => None,
+        })
+        .unwrap();
+    assert!((mark.center().x - cell.center().x).abs() < 0.5, "{mark:?} in {cell:?}");
+    assert!((mark.center().y - cell.center().y).abs() < 0.5, "{mark:?} in {cell:?}");
+    assert!(hit.unwrap().contains(mark.center()));
 }

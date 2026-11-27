@@ -11,7 +11,8 @@ use crate::kit::menu;
 
 /// A grid menu's entries, all in the menu itself, compact: Snap to grid; the adaptive widths in
 /// rows of three and the fixed values in two rows of five under headings; Narrow grid, Widen grid
-/// and Triplet grid, drawn with the kit's menu rows (`kit::menu`). `keys` are the key labels of
+/// and Triplet grid, drawn with the kit's menu rows (`kit::menu`), the widths and values as
+/// toggles drawn alike ([`menu::choice`]). `keys` are the key labels of
 /// snap, narrow, widen and triplet (empty for none). The chosen ones are filled; an entry
 /// `enabled` refuses is grayed out. The piano roll's toolbar, the Arrangement's toolbar and its
 /// menus show the same entries. Returns the grid picked.
@@ -48,7 +49,11 @@ pub fn grid_entries(
                         // The whole cell, also while egui measures the menu (an entry asks then only
                         // for its own words' width).
                         ui.set_min_width(width);
-                        pick(ui, menu::Entry::new(name).chosen(*on).named(label), *result);
+                        // A toggle drawn as the menu's rows are, lit while chosen.
+                        if menu::choice(ui, name, label, *on, enabled(result)).clicked() {
+                            picked.set(Some(*result));
+                            ui.close();
+                        }
                     });
                 }
             });
