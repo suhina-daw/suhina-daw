@@ -213,12 +213,13 @@ This is what is built of the modes above: channel-MPE compatibility, chosen auto
   arrangement note that still sounds follows its curve in the new graph from where it is; a
   launched note holds its values until it ends.
 - **Formats.** A CLAP and a VST2 plug-in get every member channel's notes, bend, pressure and
-  CC74 as MIDI on that channel. A VST3 plug-in gets the notes on their channels, but the
-  member channels' controls move no parameter: VST3 takes controllers through `IMidiMapping`,
-  which Suhina asks for the first channel only (some plug-ins crash when asked about another,
-  [plug-in hosting](plugin-hosting.md)), and through it one note's bend would bend every
-  note. Per-note pitch for VST3 needs its note expression (above), a follow-up; until then a
-  plug-in's CLAP or VST2 build plays the curves.
+  CC74 as MIDI on that channel. A VST3 plug-in gets the notes on their channels, and each
+  member channel's bend, pressure and CC74 as parameter changes through that channel's own
+  `IMidiMapping` assignment, as for the first channel: a plug-in that plays MPE maps every
+  channel's controllers to parameters of its own. The member channels are asked only of a
+  plug-in that maps pitch bend on the first ([plug-in hosting](plugin-hosting.md)); a channel it
+  maps nothing for moves nothing, never the first channel's parameter, through which one note's
+  bend would bend every note.
 - **Follow-ups.** Built-in instruments (FM Synth, Sampler) play the curves once they take
   identified notes (#1598); recording curves from an MPE controller; the per-plug-in mode
   command; native CLAP and VST3 note expression.

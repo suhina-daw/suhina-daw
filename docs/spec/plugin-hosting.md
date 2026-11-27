@@ -114,10 +114,11 @@ storage bound and failed-update behaviour. While the transport is stopped the po
 moved.
 A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
 pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
-through the plug-in's `IMidiMapping` (asked for the first MIDI channel only: some plug-ins
-crash when asked about the second; controls on the other channels, an MPE member channel's
-bend, pressure and CC74, move no parameter, as one note's bend would otherwise bend every
-note: [MPE › Plug-in boundaries](mpe.md#plug-in-boundaries)), and gives the latest value of each to the edit
+through the plug-in's `IMidiMapping` for the event's own channel (the other fifteen channels
+are asked, when the plug-in is started, only of a plug-in that maps pitch bend on the first, so
+a plug-in that takes no MIDI controllers is never asked about another channel; a channel it maps
+nothing for moves nothing, never the first channel's parameter, as one note's bend would
+otherwise bend every note: [MPE › Plug-in boundaries](mpe.md#plug-in-boundaries)), and gives the latest value of each to the edit
 controller as well (`setParamNormalized`, on the main thread between messages), so the
 plug-in's editor shows a wheel moved on the hardware; a CLAP host sends note events to note port 0 and
 controllers, bend and channel pressure as MIDI messages, and gives a plug-in without audio
