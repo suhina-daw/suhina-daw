@@ -145,6 +145,11 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
 - Downloading an extension or a model, and a registry or store to find one in.
 - Trust beyond the SHA-256 in the manifest and the user's explicit add: no signature, no sandbox
   beyond the process boundary and the declared permissions.
+- **Enforcement of the declared permissions on a surface program's commands:** they are shown,
+  but a program is not yet limited by `project.read`, `project.write`, `files.write:<folder>` or
+  `audio.read`, nor by the restrictions an attached MCP agent has. Every command dispatchable by
+  the window is reachable until
+  [#1725](https://github.com/suhina-daw/suhina-daw/issues/1725) lands.
 - Extensions on the audio thread (real-time effects), and extensions that edit the project directly
   rather than through commands.
 - Commands of an extension's own outside the namespace its manifest declares.
