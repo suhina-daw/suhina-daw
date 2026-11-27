@@ -37,8 +37,8 @@ It is designed so that Live's EQ Eight imports into it parameter for parameter
 
 ## Parameters
 
-Values are plain values in their unit (ADR 0004). Ids are stable. Every band slot has thirteen
-parameters, ids `a<n><Field>` for band n = 1 … 24 (group "Band n"), indices `(n − 1) × 13 + field`.
+Values are plain values in their unit (ADR 0004). Ids are stable. Every band slot has fourteen
+parameters, ids `a<n><Field>` for band n = 1 … 24 (group "Band n"), indices `(n − 1) × 14 + field`.
 Bands 1–8 keep the ids the EQ always had, so a project, its automation and an import address them
 unchanged.
 
@@ -57,15 +57,16 @@ unchanged.
 | 10 | `a1Attack` | Band 1 Attack | 0.5 ms – 200 ms, default 10 ms | seconds, logarithmic |
 | 11 | `a1Release` | Band 1 Release | 10 ms – 2 s, default 120 ms | seconds, logarithmic |
 | 12 | `a1Detail` | Band 1 Detail | 0 – 100 %, default 50 % | percent, linear |
+| 13 | `a1Trigger` | Band 1 Trigger | Band, Key | choice |
 
 The first eight types keep their indices, so a saved or imported type is the same type. Then:
 
 | # | Id | Name | Range | Default | Unit, scale |
 |---|---|---|---|---|---|
-| 312 | `output` | Output | −12 – +12 dB | 0 dB | decibels, linear |
-| 313 | `scale` | Scale | −200 – +200 % | 100 % | percent, linear |
-| 314 | `adaptiveQ` | Adaptive Q | off/on | on | toggle |
-| 315 | `audition` | Audition | 0 – 24 | 0 | whole number |
+| 336 | `output` | Output | −12 – +12 dB | 0 dB | decibels, linear |
+| 337 | `scale` | Scale | −200 – +200 % | 100 % | percent, linear |
+| 338 | `adaptiveQ` | Adaptive Q | off/on | on | toggle |
+| 339 | `audition` | Audition | 0 – 24 | 0 | whole number |
 
 `audition` is never stored: `device.setParam` refuses it, a project and an import never hold it,
 and only `device.audition` sets it, through the engine (*Audition* below).
@@ -160,8 +161,11 @@ band of another type runs Static whatever its Mode says. A project without these
 them at their defaults, Static, so it sounds as it did; an import sets none. The dynamics are one
 block of `crates/dsp` (`band_dynamics::BandDynamics`, AGENTS.md rule 8):
 
-- **The detector** hears the sound coming into the band, on its placement (both sides of a Stereo
-  band, linked: the louder decides): a band pass at a bell's frequency and Q, a low pass under a
+- **The detector** hears the sound coming into the band, or with Trigger on Key the device's key
+  (its sidechain, `docs/spec/sidechain.md`; the EQ is a keyed built-in, `KEYED_BUILTINS`), on the
+  band's placement (both sides of a Stereo band, linked: the louder decides; a Mid or Side band
+  hears the key's mid or side). A keyed band of an EQ with no key connected hears its own sound;
+  a frame the key does not cover is silence, as the compressor reads it. Through its filter: a band pass at a bell's frequency and Q, a low pass under a
   low shelf's frequency, a high pass over a high shelf's, a broad band pass (Q 0.3) for a tilt.
 - **The follower** follows its level in dB with the band's Attack and Release (the compressor's
   `AttackRelease`).
@@ -183,7 +187,7 @@ block of `crates/dsp` (`band_dynamics::BandDynamics`, AGENTS.md rule 8):
   two-curve project's mode lane becomes 24 of them.
 - **The live gain change** of every band (a Dynamic band's, or a Spectral band's deepest part)
   goes to the panel as the device's readouts (ADR 0032), one per band in band order.
-- **Not yet:** an automatic threshold, a free trigger with its own range, a side-chain, the
+- **Not yet:** an automatic threshold, a free trigger with its own range, the
   detector's tilt, a relative (soft) threshold for Spectral, and a linear-phase or look-ahead
   Spectral (issue #1169 keeps them).
 
@@ -241,7 +245,9 @@ Measurements in canvas px, `[x, y, w, h]`:
   previous and next `[50, 2, 19, 18]`, `[71, 2, 19, 18]`; on/off `[2, 22, 20, 18]` and the shape
   menu `[24, 22, 66, 18]` (the type's glyph and a short name); the placement menu
   `[2, 42, 28, 18]` (its letter in its colour), listen `[32, 42, 28, 18]` (held, the band is heard
-  alone) and delete `[62, 42, 28, 18]`; the mode, three buttons St, Dy and Sp `[2, 62, 88, 16]`
+  alone) and delete `[62, 42, 28, 18]`; the key button K `[68, 62, 22, 16]` (a Dynamic or Spectral
+  band's detector hears the device's key; dimmed for a Static band); the mode, three buttons St,
+  Dy and Sp `[2, 62, 64, 16]`
   (a click picks the mode and opens its dynamics, St closes them; a click on the band's own Dy or
   Sp opens or closes them; a mode the type cannot take is dimmed); then three dials, cells
   `[2, 80 + 28·i, 88, 27]`, each a dial at the left with its caption and value beside it (9.5 pt):
@@ -339,8 +345,8 @@ Measurements in canvas px, `[x, y, w, h]`:
   follows its band only when the settings say so): on/off, the number and listen over the shape
   and placement menus `[8, 8 … 77]`, the Frequency, Gain and Q dials `[108, 176, 250]` (dial on
   top, caption and value under it), the mode stacked `[318, 8, 26, 69]`, then delete, previous and
-  next. With the dynamics open it is 210 px wider: Range, Threshold, Attack and Release (Range,
-  Threshold, Detail and Attack for a Spectral band), 50 px apart. The widget tells the strip from the compact panel by the layer it is
+  next. With the dynamics open it is 250 px wider: Range, Threshold, Attack and Release (Range,
+  Threshold, Detail and Attack for a Spectral band), 50 px apart, and the key button K. The widget tells the strip from the compact panel by the layer it is
   drawn in (the strip's is the foreground).
 - **The band list.** While the strip is open, the compact panel shows a list of the bands in use
   in place of the column and the display, `[2, 2, 480, 164]`, with a header row and rows of 20

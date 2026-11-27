@@ -51,7 +51,7 @@ const STRIP_PANEL_MIN_HEIGHT: f32 = 340.0;
 /// The floating band panel's size in the strip.
 const FLOATING: Vec2 = Vec2::new(372.0, 84.0);
 /// How much wider the floating panel is while it shows the band's dynamics.
-const FLOATING_DYNAMICS: f32 = 210.0;
+const FLOATING_DYNAMICS: f32 = 250.0;
 /// The lane under the strip's curve the floating panel sits in.
 const FLOATING_LANE: f32 = 100.0;
 /// The display's dB ranges, top to bottom ±this; a click on the range button steps through them,
@@ -120,6 +120,8 @@ struct Band {
     mode: usize,
     range: f64,
     detail: f64,
+    /// Whether its detector hears the device's key.
+    keyed: bool,
     sections: [SvfCoefficients; 4],
     count: usize,
 }
@@ -470,7 +472,7 @@ fn parameter_by_field<'a>(parameters: &'a [GraphParameter], slot: usize, field: 
 }
 
 /// A band's parameters' fields in the device's order (`suhina_device_eq::param`).
-const BAND_FIELDS: [&str; 13] = [
+const BAND_FIELDS: [&str; 14] = [
     "On",
     "Type",
     "Frequency",
@@ -484,6 +486,7 @@ const BAND_FIELDS: [&str; 13] = [
     "Attack",
     "Release",
     "Detail",
+    "Trigger",
 ];
 
 /// Every band slot, in use or not, from the panel's parameters.
@@ -509,6 +512,7 @@ fn bands(parameters: &[GraphParameter]) -> Vec<Band> {
                 mode: effective_mode(named("Mode"), kind),
                 range: named("Range"),
                 detail: named("Detail"),
+                keyed: named("Trigger") >= 0.5,
                 sections,
                 count,
             }
@@ -1427,7 +1431,8 @@ fn draw_column(ui: &mut egui::Ui, panel: &mut Panel<'_>, column: Rect) {
         return;
     }
     // Row 4: the mode, Static, Dynamic or Spectral.
-    mode_row(ui, panel, at(2.0, 62.0, 88.0, 16.0), slot, band, false);
+    mode_row(ui, panel, at(2.0, 62.0, 64.0, 16.0), slot, band, false);
+    key_button(ui, panel, at(68.0, 62.0, 22.0, 16.0), slot, band);
     // The dials: Frequency, Gain and Q, or the band's dynamics while they are open.
     let fields = if panel.state.dynamics && band.mode > 0 {
         [RANGE, THRESHOLD, if band.mode == 2 { DETAIL } else { ATTACK }]
@@ -1481,6 +1486,23 @@ fn mode_row(ui: &mut egui::Ui, panel: &mut Panel<'_>, row: Rect, slot: usize, ba
                 panel.state.dynamics = mode > 0;
             }
         }
+    }
+}
+
+/// The key button: a Dynamic or Spectral band's detector hears the device's key (its sidechain,
+/// set in the device's header) instead of the band's own sound; dimmed for a Static band.
+fn key_button(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, slot: usize, band: Band) {
+    let colors = super::device_canvas::colors();
+    let lit = (band.keyed && band.mode > 0).then_some(mode_color(band.mode));
+    let label = format!("Band {} key", slot + 1);
+    let ink = if band.mode > 0 { colors.text_secondary } else { colors.text_secondary.gamma_multiply(0.35) };
+    let response =
+        small_button(ui, rect, panel.address.ids.with(("eq-key", slot, rect.min.x as i32)), &label, lit, |p, r, c| {
+            p.text(r.center(), Align2::CENTER_CENTER, "K", theme::ui_font(9.0), if lit.is_some() { c } else { ink });
+        })
+        .on_hover_text("The band's detector hears the device's sidechain key instead of the band");
+    if response.clicked() && band.mode > 0 {
+        panel.edit(&[(slot, "Trigger", if band.keyed { 0.0 } else { 1.0 })], "eq-curve-trigger");
     }
 }
 
@@ -1617,6 +1639,7 @@ fn draw_floating_panel(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect) 
             [rect.min + Vec2::new(FLOATING.x + 2.0, 8.0), rect.min + Vec2::new(FLOATING.x + 2.0, FLOATING.y - 8.0)],
             Stroke::new(1.0, colors.border),
         );
+        key_button(ui, panel, at(FLOATING.x + 212.0, 8.0, 30.0, 20.0), slot, band);
         let fields =
             if band.mode == 2 { [RANGE, THRESHOLD, DETAIL, ATTACK] } else { [RANGE, THRESHOLD, ATTACK, RELEASE] };
         for (i, field) in fields.into_iter().enumerate() {

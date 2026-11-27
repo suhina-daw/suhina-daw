@@ -636,7 +636,7 @@ fn gain_db(gain: f64) -> f64 {
 }
 
 /// The built-in devices that read a key; a plug-in reads one through its first auxiliary input.
-pub(crate) const KEYED_BUILTINS: [&str; 1] = ["compressor"];
+pub(crate) const KEYED_BUILTINS: [&str; 2] = ["compressor", "eq"];
 
 /// Whether `device` has a sidechain input to read a key with.
 pub fn reads_a_key(device: &Device) -> bool {

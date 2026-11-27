@@ -69,6 +69,9 @@ pub const PLACE_NAMES: [&str; 5] = ["Stereo", "Left", "Right", "Mid", "Side"];
 /// A band's modes, in [`param::MODE`] order: Static as the EQ always was, Dynamic (its gain moves
 /// with its level) or Spectral (only what stands out inside it moves).
 pub const MODE_NAMES: [&str; 3] = ["Static", "Dynamic", "Spectral"];
+/// What a Dynamic or Spectral band's detector hears, in [`param::TRIGGER`] order: the sound coming
+/// into the band, or the device's key (its sidechain) through the band's own detector filter.
+pub const TRIGGER_NAMES: [&str; 2] = ["Band", "Key"];
 /// How many narrow parts a spectral band watches and moves on its own.
 pub const SPECTRAL_PARTS: usize = 5;
 /// The placements' short names, as the panel's placement button reads them.
@@ -102,7 +105,8 @@ pub mod param {
     pub const ATTACK: usize = 10;
     pub const RELEASE: usize = 11;
     pub const DETAIL: usize = 12;
-    pub(crate) const PER_BAND: usize = 13;
+    pub const TRIGGER: usize = 13;
+    pub(crate) const PER_BAND: usize = 14;
 
     /// The index of `field` (one of the constants above) of band `band` (from 0).
     pub const fn band(band: usize, field: usize) -> usize {
@@ -216,6 +220,12 @@ macro_rules! params {
                     0.5,
                     Unit::Percent,
                     Scale::Linear,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).choice(
+                    concat!("a", $n, "Trigger"),
+                    concat!("Band ", $n, " Trigger"),
+                    &TRIGGER_NAMES,
+                    0,
                 ),
             )*
             ParamInfo::continuous("output", "Output", (-12.0, 12.0), 0.0, Unit::Decibels, Scale::Linear),
@@ -551,6 +561,8 @@ struct Band {
     range: f64,
     threshold: f64,
     detail: f64,
+    /// Whether its detector hears the device's key instead of the band's own sound.
+    keyed: bool,
     /// Frames to the next retune of a Dynamic or Spectral band's moving gain.
     dynamic_in: u32,
     /// A Spectral band's narrow parts, and how many of them it uses: fewer when its range is
@@ -580,6 +592,7 @@ impl Band {
             range: -6.0,
             threshold: -24.0,
             detail: 0.5,
+            keyed: false,
             dynamic_in: 0,
             parts: [Part::new(); SPECTRAL_PARTS],
             parts_in_use: SPECTRAL_PARTS,
@@ -686,12 +699,14 @@ impl Eq {
         let range = self.band_value(band, param::RANGE);
         let threshold = self.band_value(band, param::THRESHOLD);
         let detail = self.band_value(band, param::DETAIL);
+        let keyed = self.band_value(band, param::TRIGGER) >= 0.5;
         let attack = self.band_value(band, param::ATTACK);
         let release = self.band_value(band, param::RELEASE);
         if let Some(b) = self.bands.get_mut(band) {
             b.range = range;
             b.threshold = threshold;
             b.detail = detail;
+            b.keyed = keyed;
             b.dynamics.set_times(attack, release, sr);
             for part in &mut b.parts {
                 part.dynamics.set_times(attack, release, sr);
@@ -936,7 +951,7 @@ impl Eq {
     /// `sides`, in band order. A Dynamic band's detector hears the sound coming into it, and its
     /// gain change retunes it every [`RETUNE_FRAMES`]; a Spectral band's parts each move a narrow
     /// bell after the band's own filter.
-    fn run_bands(&mut self, sides: &mut [f64; 2], mid_side: bool) {
+    fn run_bands(&mut self, sides: &mut [f64; 2], key: Option<[f64; 2]>, mid_side: bool) {
         let sr = self.sample_rate;
         let scale = f64::from(self.scale.current());
         for band in 0..BANDS {
@@ -950,7 +965,9 @@ impl Eq {
                 let due = b.dynamic_in == 0;
                 b.dynamic_in = if due { RETUNE_FRAMES - 1 } else { b.dynamic_in - 1 };
                 if b.mode == Mode::Dynamic {
-                    let change = b.dynamics.process(*sides, listen, b.threshold, b.range);
+                    // A keyed band's detector hears the key (on the same part of the signal).
+                    let heard = if b.keyed { key.unwrap_or(*sides) } else { *sides };
+                    let change = b.dynamics.process(heard, listen, b.threshold, b.range);
                     retune = due && (change - b.dynamic_db).abs() > 0.01;
                     if retune {
                         b.dynamic_db = change;
@@ -960,7 +977,8 @@ impl Eq {
                     let used = b.parts_in_use;
                     for part in b.parts.iter_mut().take(used) {
                         // Scale multiplies a part's gain change as it does every gain.
-                        let change = part.dynamics.process(*sides, listen, b.threshold, b.range) * scale;
+                        let heard = if b.keyed { key.unwrap_or(*sides) } else { *sides };
+                        let change = part.dynamics.process(heard, listen, b.threshold, b.range) * scale;
                         if due && (change - part.tuned_db).abs() > 0.01 {
                             if part.tuned_db.abs() < 1e-9 {
                                 // Skipped while flat, its state is stale.
@@ -1093,7 +1111,12 @@ impl Device for Eq {
                 }
                 match field {
                     param::ON | param::TYPE | param::IN_USE | param::PLACE | param::MODE => self.switch_band(band),
-                    param::RANGE | param::THRESHOLD | param::ATTACK | param::RELEASE | param::DETAIL => {
+                    param::RANGE
+                    | param::THRESHOLD
+                    | param::ATTACK
+                    | param::RELEASE
+                    | param::DETAIL
+                    | param::TRIGGER => {
                         self.configure_dynamics(band);
                         self.tune(band);
                     }
@@ -1108,7 +1131,22 @@ impl Device for Eq {
     }
 
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {
-        for frame in buffer.as_chunks_mut::<2>().0 {
+        self.run(buffer, None);
+    }
+
+    /// The same, with the device's key: a band whose Trigger is Key hears it (a frame the key does
+    /// not cover is silence, as the compressor reads it).
+    fn process_keyed(&mut self, _context: &ProcessContext, key: &[f32], buffer: &mut [f32]) {
+        self.run(buffer, Some(key));
+    }
+}
+
+impl Eq {
+    /// Every frame of `buffer`, with the device's key when it has one. Never allocates.
+    fn run(&mut self, buffer: &mut [f32], key: Option<&[f32]>) {
+        let keys = key.map(|k| k.as_chunks::<2>().0);
+        for (index, frame) in buffer.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+            let key_frame = keys.map(|k| k.get(index).map_or([0.0, 0.0], |f| [f64::from(f[0]), f64::from(f[1])]));
             // Controls: glide, retune what moved, and finish fades.
             let scale_moving = !self.scale.is_settled();
             self.scale.next_value();
@@ -1149,11 +1187,12 @@ impl Device for Eq {
             // Audio: the bands on left and right first, then, only while a mid or side band
             // runs, the mid/side encoding with its bands, decoded again.
             let mut sides = frame.map(f64::from);
-            self.run_bands(&mut sides, false);
+            self.run_bands(&mut sides, key_frame, false);
             if mid_side {
                 let [l, r] = sides;
                 let mut encoded = [(l + r) * 0.5, (l - r) * 0.5];
-                self.run_bands(&mut encoded, true);
+                let key_encoded = key_frame.map(|[kl, kr]| [(kl + kr) * 0.5, (kl - kr) * 0.5]);
+                self.run_bands(&mut encoded, key_encoded, true);
                 let [m, s] = encoded;
                 sides = [m + s, m - s];
             }

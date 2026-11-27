@@ -548,3 +548,25 @@ fn a_spectral_readout_carries_its_deepest_part() {
     assert_eq!(used, SPECTRAL_PARTS);
     assert!(centers.windows(2).all(|w| w[1] > w[0]) && q > 10.0);
 }
+
+#[test]
+fn a_keyed_band_moves_with_the_key_and_not_its_own_sound() {
+    // A quiet 1 kHz tone through a Dynamic bell whose Trigger is Key: a loud key in the band cuts
+    // it; without a key connected it hears its own (quiet) sound and leaves it alone.
+    let mut settings = moving(3, 1.0, 1.0);
+    settings.push(a(3, param::TRIGGER, 1.0));
+    let tone = sine(1_000.0, 0.01, 0.01, 44_100);
+    let key = sine(1_000.0, 0.5, 0.5, 44_100);
+    let mut keyed = tone.clone();
+    eq(&settings).process_keyed(&ProcessContext::default(), &key, &mut keyed);
+    let cut = 20.0 * (level(&keyed, 1_000.0, 0) / 0.01).log10();
+    assert!(cut < -6.0, "the key drives the cut: {cut}");
+    let mut alone = tone.clone();
+    eq(&settings).process(&ProcessContext::default(), &mut alone);
+    let left = 20.0 * (level(&alone, 1_000.0, 0) / 0.01).log10();
+    assert!(left.abs() < 0.2, "no key: its own quiet sound moves nothing: {left}");
+    // A band whose Trigger is Band ignores the key.
+    let mut own = tone.clone();
+    eq(&moving(3, 1.0, 1.0)).process_keyed(&ProcessContext::default(), &key, &mut own);
+    assert!((20.0 * (level(&own, 1_000.0, 0) / 0.01).log10()).abs() < 0.2);
+}
