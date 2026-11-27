@@ -798,37 +798,33 @@ fn analyser_bands(
     // The watch's generation so the held levels know when the row's owner changed: a graph
     // swap resets the watch (and the ring with it).
     let watch_generation = spectrum.watch(device % spectrum::ROWS, track, device);
-    let (samples, _) = spectrum.samples(track, device)?;
     let cursor = spectrum.appended(track, device).unwrap_or_default();
     let cursor_id = egui::Id::unique(("eq-spectrum-cursor", track.0, device));
     if cursor != ui.ctx().data(|d| d.get_temp::<usize>(cursor_id)).unwrap_or(0) {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
     }
     ui.ctx().data_mut(|d| d.insert_temp(cursor_id, cursor));
-    // The meter reads the newest tenth of the ring: its peak, in dB.
-    let recent = samples.len().saturating_sub(RING / 10);
-    let peak = samples.get(recent..).unwrap_or_default().iter().fold(0.0f32, |m, s| m.max(s.abs()));
-    let peak_db = (20.0 * f64::from(peak).max(1e-6).log10()) as f32;
-    // With the analyser off only the meter is drawn: no transform, no fold.
-    if !spectrum_shown {
-        return Some(([ANALYSER_DB.1 as f32 * 2.0; ANALYSER_BANDS], peak_db));
-    }
-    let cache = egui::Id::unique("eq-spectrum-analyser");
-    let (window, plan) = ui.ctx().data_mut(|d| {
-        if d.get_temp::<(Arc<[f32; RING]>, Arc<dyn rustfft::Fft<f32>>)>(cache).is_none() {
-            let plan: Arc<dyn rustfft::Fft<f32>> = rustfft::FftPlanner::<f32>::new().plan_fft_forward(RING);
-            d.insert_temp(cache, (Arc::new(hann()), plan));
+    // The ring's reading is folded once for each new append, not once a frame per panel: while
+    // nothing new came in (or the compact panel and the strip both ask), the last fold is reused.
+    let folded_id = egui::Id::unique(("eq-spectrum-folded", track.0, device));
+    let folded = ui.ctx().data(|d| d.get_temp::<(usize, u32, bool, Arc<[f32; ANALYSER_BANDS]>, f32)>(folded_id));
+    let (bands, peak_db) = match folded {
+        Some((at, generation, shown, bands, peak))
+            if at == cursor && generation == watch_generation && shown == spectrum_shown =>
+        {
+            (*bands, peak)
         }
-        d.get_temp::<(Arc<[f32; RING]>, Arc<dyn rustfft::Fft<f32>>)>(cache)
-    })?;
-    let mut bins: Vec<rustfft::num_complex::Complex<f32>> = samples
-        .iter()
-        .zip(window.iter())
-        .map(|(&sample, &weight)| rustfft::num_complex::Complex::new(sample * weight, 0.0))
-        .collect();
-    plan.process(&mut bins);
-    let sum = window.iter().sum::<f32>().max(1.0);
-    let bands = fold(&bins, sum, spectrum.sample_rate());
+        _ => {
+            let (bands, peak) = read_spectrum(ui, spectrum, track, device, spectrum_shown)?;
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(folded_id, (cursor, watch_generation, spectrum_shown, Arc::new(bands), peak))
+            });
+            (bands, peak)
+        }
+    };
+    if !spectrum_shown {
+        return Some((bands, peak_db));
+    }
     let shown_id = egui::Id::unique(("eq-spectrum-shown", track.0, device));
     let now = ui.input(|i| i.time);
     // The held levels belong to one monitor at one watch generation: a session switch reuses
@@ -886,6 +882,43 @@ fn smooth(points: &[Pos2], steps: usize) -> Vec<Pos2> {
         out.push(*last);
     }
     out
+}
+
+/// The ring's newest reading: the analyser's bands (none while it is off) and the meter's peak
+/// in dB. The transform's window and plan are made once and kept.
+fn read_spectrum(
+    ui: &egui::Ui,
+    spectrum: &suhina_engine::spectrum::Spectrum,
+    track: TrackId,
+    device: usize,
+    spectrum_shown: bool,
+) -> Option<([f32; ANALYSER_BANDS], f32)> {
+    let (samples, _) = spectrum.samples(track, device)?;
+    // The meter reads the newest tenth of the ring: its peak, in dB.
+    let recent = samples.len().saturating_sub(RING / 10);
+    let peak = samples.get(recent..).unwrap_or_default().iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let peak_db = (20.0 * f64::from(peak).max(1e-6).log10()) as f32;
+    // With the analyser off only the meter is drawn: no transform, no fold.
+    if !spectrum_shown {
+        return Some(([ANALYSER_DB.1 as f32 * 2.0; ANALYSER_BANDS], peak_db));
+    }
+    let cache = egui::Id::unique("eq-spectrum-analyser");
+    let (window, plan) = ui.ctx().data_mut(|d| {
+        if d.get_temp::<(Arc<[f32; RING]>, Arc<dyn rustfft::Fft<f32>>)>(cache).is_none() {
+            let plan: Arc<dyn rustfft::Fft<f32>> = rustfft::FftPlanner::<f32>::new().plan_fft_forward(RING);
+            d.insert_temp(cache, (Arc::new(hann()), plan));
+        }
+        d.get_temp::<(Arc<[f32; RING]>, Arc<dyn rustfft::Fft<f32>>)>(cache)
+    })?;
+    let mut bins: Vec<rustfft::num_complex::Complex<f32>> = samples
+        .iter()
+        .zip(window.iter())
+        .map(|(&sample, &weight)| rustfft::num_complex::Complex::new(sample * weight, 0.0))
+        .collect();
+    plan.process(&mut bins);
+    let sum = window.iter().sum::<f32>().max(1.0);
+    let bands = fold(&bins, sum, spectrum.sample_rate());
+    Some((bands, peak_db))
 }
 
 /// The analyser's Hann window over the ring's length.
@@ -2004,8 +2037,8 @@ fn draw_display(
     // flattened onto its edge.
     let curves = painter.with_clip_rect(plot.expand2(Vec2::new(0.0, 1.0)).intersect(display));
     let frequencies = grid();
-    let responses: Vec<Option<Vec<f64>>> =
-        panel.bands.iter().map(|band| band.heard().then(|| band_db(band, &frequencies))).collect();
+    let cache = panel.address.ids.with("eq-responses");
+    let responses: Vec<Option<Vec<f64>>> = cached_responses(ui, cache, &panel.bands, &frequencies);
     let scale = value(panel.parameters, "scale");
     let adaptive = value(panel.parameters, "adaptiveQ") >= 0.5;
     let to_points = |db: &[f64]| line_points(db, &frequencies, plot, range);
@@ -2290,6 +2323,38 @@ fn band_db(band: &Band, frequencies: &[f64]) -> Vec<f64> {
             20.0 * magnitude.max(1.0e-6).log10()
         })
         .collect()
+}
+
+/// Each heard band's response, reused from the last frame for every band whose filter sections
+/// did not change: while one dot is dragged, only that band's curve is computed again.
+fn cached_responses(ui: &egui::Ui, id: egui::Id, bands: &[Band], frequencies: &[f64]) -> Vec<Option<Vec<f64>>> {
+    let key = |band: &Band| -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        band.count.hash(&mut hasher);
+        for c in &band.sections[..band.count] {
+            format!("{c:?}").hash(&mut hasher);
+        }
+        hasher.finish()
+    };
+    let kept: Vec<Option<(u64, Arc<Vec<f64>>)>> = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
+    let fresh: Vec<Option<(u64, Arc<Vec<f64>>)>> = bands
+        .iter()
+        .enumerate()
+        .map(|(slot, band)| {
+            if !band.heard() {
+                return None;
+            }
+            let k = key(band);
+            match kept.get(slot).cloned().flatten() {
+                Some((was, response)) if was == k => Some((k, response)),
+                _ => Some((k, Arc::new(band_db(band, frequencies)))),
+            }
+        })
+        .collect();
+    let out = fresh.iter().map(|cell| cell.as_ref().map(|(_, r)| r.as_ref().clone())).collect();
+    ui.ctx().data_mut(|d| d.insert_temp(id, fresh));
+    out
 }
 
 /// The sum of the responses of the heard bands `pick` chooses.
