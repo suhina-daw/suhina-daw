@@ -254,6 +254,17 @@ fn tilted(db: f64, frequency: f64, tilt: f64) -> f64 {
     db + tilt * (frequency / 1000.0).log2()
 }
 
+/// Whether a toggle keyed `id` has not happened yet in this pass, marking it done. The panel can be
+/// drawn more than once in one pass, and a toggle (a Ctrl-click, a switch) must flip once.
+fn once(ui: &egui::Ui, id: egui::Id) -> bool {
+    let pass = ui.ctx().cumulative_pass_nr();
+    let first = ui.ctx().data(|d| d.get_temp::<u64>(id)) != Some(pass);
+    if first {
+        ui.ctx().data_mut(|d| d.insert_temp(id, pass));
+    }
+    first
+}
+
 /// The panel's state as kept between frames: as it is now, and as the frame `frame` began, last
 /// written in pass `pass` (see `show`).
 #[derive(Clone, Copy)]
@@ -1502,6 +1513,7 @@ fn draw_column(ui: &mut egui::Ui, panel: &mut Panel<'_>, column: Rect) {
         icon(p, r, Icon::Previous, c)
     })
     .clicked()
+        && once(ui, panel.address.ids.with("once-prev"))
     {
         panel.step_selection(false);
     }
@@ -1509,6 +1521,7 @@ fn draw_column(ui: &mut egui::Ui, panel: &mut Panel<'_>, column: Rect) {
         icon(p, r, Icon::Next, c)
     })
     .clicked()
+        && once(ui, panel.address.ids.with("once-next"))
     {
         panel.step_selection(true);
     }
@@ -1668,7 +1681,7 @@ fn dials_switch(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, slot: usiz
         },
     )
     .on_hover_text(if open { "Show the band's frequency, gain and Q" } else { "Show the band's dynamics" });
-    if response.clicked() && band.mode > 0 {
+    if response.clicked() && band.mode > 0 && once(ui, panel.address.ids.with("once-dials")) {
         panel.state.dynamics = !open;
     }
 }
@@ -1684,7 +1697,9 @@ fn listen_button(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, id: egui:
     } else {
         "A band of an EQ inside a group cannot be heard alone yet"
     };
-    if small_button(ui, rect, id, label, lit, |p, r, c| icon(p, r, Icon::Phones, c)).clicked() {
+    if small_button(ui, rect, id, label, lit, |p, r, c| icon(p, r, Icon::Phones, c)).clicked()
+        && once(ui, panel.address.ids.with("once-listen"))
+    {
         panel.state.audition = !on;
     }
 }
@@ -1775,6 +1790,7 @@ fn draw_floating_panel(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect) 
         icon(p, r, Icon::Previous, c)
     })
     .clicked()
+        && once(ui, panel.address.ids.with("once-prev"))
     {
         panel.step_selection(false);
     }
@@ -1782,6 +1798,7 @@ fn draw_floating_panel(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect) 
         icon(p, r, Icon::Next, c)
     })
     .clicked()
+        && once(ui, panel.address.ids.with("once-next"))
     {
         panel.step_selection(true);
     }
@@ -2166,6 +2183,7 @@ fn draw_display(
         |p, r, c| icon(p, r, Icon::Piano, c),
     )
     .clicked()
+        && once(ui, panel.address.ids.with("once-piano"))
     {
         panel.state.piano = !piano_on;
     }
@@ -2178,7 +2196,7 @@ fn draw_display(
         analyser_on.then_some(colors.accent),
         |p, r, c| icon(p, r, Icon::Analyser, c),
     );
-    if analyser.clicked() {
+    if analyser.clicked() && once(ui, panel.address.ids.with("once-analyser")) {
         panel.state.analyser = !analyser_on;
     }
     let mut settings = panel.state.spectrum;
@@ -2194,6 +2212,7 @@ fn draw_display(
         |p, r, c| icon(p, r, Icon::Pencil, c),
     )
     .clicked()
+        && once(ui, panel.address.ids.with("once-draw"))
     {
         panel.state.draw = !draw_on;
     }
@@ -2207,6 +2226,7 @@ fn draw_display(
         |p, r, c| icon(p, r, Icon::Phones, c),
     )
     .clicked()
+        && once(ui, panel.address.ids.with("once-audition"))
     {
         panel.state.audition = !audition_on;
     }
@@ -2220,6 +2240,7 @@ fn draw_display(
         |p, r, c| icon(p, r, Icon::Gear, c),
     )
     .clicked()
+        && once(ui, panel.address.ids.with("once-settings"))
     {
         panel.state.settings = !settings_on;
     }
@@ -2245,7 +2266,9 @@ fn draw_display(
     );
     if range_button.clicked() {
         let at = DB_RANGES.iter().position(|r| *r == range).unwrap_or(2);
-        panel.state.db_range = DB_RANGES[(at + 1) % DB_RANGES.len()];
+        if once(ui, panel.address.ids.with("once-range")) {
+            panel.state.db_range = DB_RANGES[(at + 1) % DB_RANGES.len()];
+        }
     }
     if panel.state.settings {
         draw_settings(ui, panel, display);
@@ -2778,7 +2801,9 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
         // A drag on a band already selected keeps the others, so they move together.
         let adding = adds_to_selection(ui);
         if response.clicked() && adding {
-            panel.state.group ^= 1 << slot;
+            if once(ui, panel.address.ids.with(("once-group", slot))) {
+                panel.state.group ^= 1 << slot;
+            }
             panel.state.selected = if panel.in_group(slot) { Some(slot) } else { panel.group().first().copied() };
         } else if response.clicked()
             || response.secondary_clicked()
