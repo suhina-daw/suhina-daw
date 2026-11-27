@@ -148,7 +148,7 @@ fn the_piano_roll_s_bar_numbers_are_inside_its_ruler() {
 fn a_muted_note_s_border_is_its_dashes_alone() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
-    let first = notes(&h)[0];
+    let first = notes(&h)[0].clone();
     let label = format!("Note {} at beat {}", key_name(first.key), first.time);
     tool(&mut h, "Mute");
     h.get_by_label(&label).click();

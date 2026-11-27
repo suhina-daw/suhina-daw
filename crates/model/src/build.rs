@@ -28,6 +28,7 @@ impl Note {
             channel: 0,
             muted: false,
             velocity_range: 0,
+            expression: None,
         }
     }
 }

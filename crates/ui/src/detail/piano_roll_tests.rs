@@ -14,6 +14,7 @@ fn note(time: f64, duration: f64, key: u8) -> Note {
         channel: 0,
         muted: false,
         velocity_range: 0,
+        expression: None,
     }
 }
 
@@ -141,7 +142,7 @@ fn zoomed_out_the_grid_stays_on_the_bar_lines_with_triplets_and_odd_bars() {
     let mut three = clip(Vec::new());
     (three.bar_beats, three.grid) = (3.0, 2.0);
     let grabbed = note(2.0, 0.5, 60);
-    assert_eq!(resize_by(-0.5, &grabbed, &[grabbed], note_grid(&three, 40.0), false), 0.5);
+    assert_eq!(resize_by(-0.5, &grabbed, &[grabbed.clone()], note_grid(&three, 40.0), false), 0.5);
 }
 
 #[test]
@@ -162,12 +163,14 @@ fn a_resize_puts_the_end_on_the_grid_and_keeps_notes_long_enough() {
     let grid = sixteenths();
     let grabbed = note(1.0, 1.0, 60);
     let other = note(3.0, 0.5, 62);
-    assert_eq!(resize_by(0.3, &grabbed, &[grabbed, other], grid, false), 0.25);
-    assert!((resize_by(0.3, &grabbed, &[grabbed], grid, true) - 0.3).abs() < 1e-12);
+    assert_eq!(resize_by(0.3, &grabbed, &[grabbed.clone(), other.clone()], grid, false), 0.25);
+    assert!((resize_by(0.3, &grabbed, &[grabbed.clone()], grid, true) - 0.3).abs() < 1e-12);
     // Dragged onto its start: one step long.
-    assert_eq!(resize_by(-1.0, &grabbed, &[grabbed], grid, false), -0.75);
+    assert_eq!(resize_by(-1.0, &grabbed, &[grabbed.clone()], grid, false), -0.75);
     // The other selected note is shorter: it keeps the shortest length.
-    assert!((resize_by(-0.75, &grabbed, &[grabbed, other], grid, false) - (MIN_LENGTH - 0.5)).abs() < 1e-12);
+    assert!(
+        (resize_by(-0.75, &grabbed, &[grabbed.clone(), other.clone()], grid, false) - (MIN_LENGTH - 0.5)).abs() < 1e-12
+    );
 }
 
 #[test]
@@ -299,7 +302,7 @@ fn a_chords_stems_are_told_apart_by_the_heights_of_their_heads() {
     let layout = folded_layout(KeyRows::default());
     let quiet = Note { velocity: 30.0 / 127.0, ..note(0.0, 1.0, 60) };
     let loud = Note { velocity: 120.0 / 127.0, ..note(0.0, 1.0, 64) };
-    let notes = [quiet, loud];
+    let notes = [quiet.clone(), loud.clone()];
     let x = layout.x_of(0.5);
     let head = |n: &Note| layout.lane.bottom() - 2.0 - velocity_height(n.velocity, layout.lane);
     let none = BTreeSet::new();
@@ -405,11 +408,11 @@ fn a_note_off_the_grid_drags_magnetically() {
     assert_eq!(edits::magnetic(1.0, 0.3, &on.notes, grid), 0.25);
     // The end of an off-grid note is dragged the same way: free, then onto a line or its offset.
     let humanised = note(1.0, 1.03, 60);
-    assert!((resize_by(0.1, &humanised, &[humanised], grid, false) - 0.1).abs() < 1e-9, "free first");
-    assert!((resize_by(0.225, &humanised, &[humanised], grid, false) - 0.22).abs() < 1e-9, "onto 2.25");
+    assert!((resize_by(0.1, &humanised, &[humanised.clone()], grid, false) - 0.1).abs() < 1e-9, "free first");
+    assert!((resize_by(0.225, &humanised, &[humanised.clone()], grid, false) - 0.22).abs() < 1e-9, "onto 2.25");
     // And its start.
     let late = note(1.03, 1.0, 60);
-    assert!((start_by(-0.04, &late, &[late], grid, false) + 0.03).abs() < 1e-9, "onto 1.0");
+    assert!((start_by(-0.04, &late, &[late.clone()], grid, false) + 0.03).abs() < 1e-9, "onto 1.0");
 }
 
 #[test]
@@ -596,15 +599,15 @@ fn notes_under_selected_ones_show_what_making_room_leaves() {
     let n = note(1.0, 2.0, 60);
     let cover = |from: f64, to: f64| (60u8, from, to);
     for whole in [false, true] {
-        assert_eq!(left_after(&n, &[], whole), Some(n));
-        assert_eq!(left_after(&n, &[(62, 0.0, 4.0)], whole), Some(n), "another key's note covers nothing");
+        assert_eq!(left_after(&n, &[], whole), Some(n.clone()));
+        assert_eq!(left_after(&n, &[(62, 0.0, 4.0)], whole), Some(n.clone()), "another key's note covers nothing");
         assert_eq!(left_after(&n, &[cover(0.5, 3.5)], whole), None, "covered whole");
         assert_eq!(left_after(&n, &[cover(1.0, 3.0)], whole), None, "covered exactly");
         // Starting first: what comes before the first that covers it.
         let head = left_after(&n, &[cover(2.5, 4.0), cover(1.5, 2.0)], whole).unwrap();
         assert!((head.time - 1.0).abs() < 1e-9 && (head.duration - 0.5).abs() < 1e-9, "{head:?}");
         // Touching it, not covering it.
-        assert_eq!(left_after(&n, &[cover(3.0, 4.0), cover(0.0, 1.0)], whole), Some(n));
+        assert_eq!(left_after(&n, &[cover(3.0, 4.0), cover(0.0, 1.0)], whole), Some(n.clone()));
     }
     // Covered from its start: what runs on past it, or (Delete them) nothing.
     let tail = left_after(&n, &[cover(1.0, 2.0)], false).unwrap();
@@ -779,9 +782,9 @@ fn a_rectangle_covers_whole_grid_steps() {
     let long = note(0.25, 3.0, 60);
     let middle = layout.note_rect(&long).center();
     let sliver = Rect::from_min_max(Pos2::new(100.0, middle.y - 1.0), Pos2::new(110.0, middle.y + 1.0));
-    assert_eq!(swept_span(grid, &layout, &[long], sliver), (0.25, 3.25));
+    assert_eq!(swept_span(grid, &layout, &[long.clone()], sliver), (0.25, 3.25));
     let clear = Rect::from_min_max(Pos2::new(100.0, middle.y + 40.0), Pos2::new(110.0, middle.y + 42.0));
-    assert_eq!(swept_span(grid, &layout, &[long], clear), (1.0, 1.5), "one it misses is not");
+    assert_eq!(swept_span(grid, &layout, &[long.clone()], clear), (1.0, 1.5), "one it misses is not");
 }
 
 #[test]

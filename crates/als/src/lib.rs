@@ -982,6 +982,7 @@ impl Reader {
                     channel: 0,
                     muted,
                     velocity_range: 0,
+                    expression: None,
                 });
             }
         }

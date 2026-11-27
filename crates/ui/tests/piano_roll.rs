@@ -248,7 +248,7 @@ fn the_selection_follows_its_notes_through_another_writers_edits() {
     h.run();
     assert_eq!(selected(&h), [1, 2]);
     let now = notes(&h);
-    assert_eq!((now[1], now[2]), (n[2], n[3]), "the same two notes are selected");
+    assert_eq!((now[1].clone(), now[2].clone()), (n[2].clone(), n[3].clone()), "the same two notes are selected");
     // Undo puts the first note back: the selection moves back with its notes.
     undo(&mut h);
     assert_eq!(selected(&h), [2, 3]);
@@ -270,7 +270,7 @@ fn dragging_a_note_moves_the_selection_by_grid_steps_and_alt_moves_freely() {
     let from = note_rect(&h, &before[0]).center() - vec2(6.0, 0.0);
     // 1.3 beats right and one row up: an eighth grid makes it 1.5 beats, three steps.
     drag(&mut h, from, from + vec2(beat * 1.3, -row), Modifiers::NONE);
-    let moved = notes(&h)[0];
+    let moved = notes(&h)[0].clone();
     assert_eq!((moved.time, moved.key), (before[0].time + 1.5, before[0].key + 1));
     assert_eq!(&notes(&h)[1..], &before[1..]);
     undo(&mut h);
@@ -414,7 +414,7 @@ fn arrows_move_the_selection_by_a_grid_step_a_semitone_or_an_octave() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
     let before = notes(&h);
-    let first = before[0];
+    let first = before[0].clone();
     pick(&mut h, 0);
     // The grid is an eighth: half a beat.
     key(&mut h, Modifiers::NONE, Key::ArrowRight);
@@ -440,7 +440,7 @@ fn arrows_move_the_selection_by_a_grid_step_a_semitone_or_an_octave() {
 fn shift_left_and_right_change_the_selections_length_by_a_grid_step() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer);
-    let first = notes(&h)[0];
+    let first = notes(&h)[0].clone();
     pick(&mut h, 0);
     key(&mut h, Modifiers::SHIFT, Key::ArrowRight);
     key(&mut h, Modifiers::SHIFT, Key::ArrowRight);
@@ -468,7 +468,7 @@ fn copy_and_paste_put_the_notes_on_the_selection_and_select_them() {
     key(&mut h, Modifiers::COMMAND, Key::V);
     let after = notes(&h);
     assert_eq!(after.len(), before.len() + 1, "the original stays under its copy");
-    let pasted = after[before.len()];
+    let pasted = after[before.len()].clone();
     assert_eq!((pasted.time, pasted.key), (before[1].time, before[1].key), "on the copied note");
     assert_eq!(selected(&h), [before.len()]);
     // The copy, selected, goes up an octave and the original stays.
@@ -495,7 +495,7 @@ fn cut_removes_the_notes_and_paste_brings_them_back() {
     assert!(selected(&h).is_empty());
     // Nothing selected: the insert mark stays where the cut note was, so the paste puts it back.
     key(&mut h, Modifiers::COMMAND, Key::V);
-    let back = *notes(&h).last().unwrap();
+    let back = notes(&h).last().unwrap().clone();
     assert_eq!((back.time, back.key), (before[0].time, before[0].key));
     undo(&mut h);
     undo(&mut h);

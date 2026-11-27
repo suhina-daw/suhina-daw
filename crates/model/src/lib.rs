@@ -15,6 +15,7 @@ pub mod automation;
 mod build;
 mod clip_audio;
 mod comping;
+pub mod expression;
 mod groups;
 mod id_list;
 mod ids;
@@ -32,6 +33,10 @@ pub use clip_audio::{
     CLIP_GAIN_MAX_DB, CLIP_TEMPO_RANGE, ClipAudio, ENVELOPE_RANGE, GAIN_POINT_RANGE, GRAIN_RANGE, GainPoint,
     MAX_GAIN_POINTS, SCATTER_RANGE, SliceAt, SliceTail, TRANSPOSE_RANGE, TempoSource, WarpSettings, db_to_gain,
     envelope_db_at, gain_to_db, max_clip_gain,
+};
+pub use expression::{
+    ExpressionError, ExpressionKind, ExpressionPoint, MAX_CONTENT_EXPRESSION_POINTS, MAX_CURVE_POINTS,
+    MAX_PITCH_SEMITONES, NoteExpression,
 };
 pub use groups::{
     Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
@@ -684,7 +689,7 @@ pub enum LaneData {
 /// no clash, since a note is always named with its clip.
 pub type Notes = IdList<NoteId, Note>;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Note {
     /// Start in beats from the start of the content.
     pub time: f64,
@@ -706,6 +711,30 @@ pub struct Note {
     /// 127: rolled each time it starts, the played velocity kept within 1 to 127; 0 plays the
     /// velocity exactly ([ADR 0037](../../docs/decisions/0037-rolled-note-values.md)).
     pub velocity_range: i8,
+    /// The note's own pitch, pressure and timbre curves, if it has any
+    /// ([ADR 0039](../../docs/decisions/0039-per-note-expression.md) › 6). Shared between copies
+    /// of the project until one of them changes it.
+    pub expression: Option<Shared<NoteExpression>>,
+}
+
+impl Note {
+    /// The note's curves, or `None` when it has none.
+    pub fn expression(&self) -> Option<&NoteExpression> {
+        self.expression.as_deref().filter(|expression| !expression.is_empty())
+    }
+
+    /// The note's curves to change, created empty when it has none.
+    pub fn expression_mut(&mut self) -> &mut NoteExpression {
+        self.expression.get_or_insert_with(|| Shared::new(NoteExpression::default()))
+    }
+
+    /// Drops the curves when none is left, so an emptied note compares equal to one that never
+    /// had any.
+    pub fn tidy_expression(&mut self) {
+        if self.expression.as_deref().is_some_and(NoteExpression::is_empty) {
+            self.expression = None;
+        }
+    }
 }
 
 /// An audio file a clip plays: only the source. How it is mapped onto musical time, its gain and

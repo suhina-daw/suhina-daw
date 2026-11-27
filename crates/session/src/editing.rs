@@ -285,7 +285,7 @@ fn placed_notes(clip: &Clip, notes: &[Note]) -> Vec<(f64, Note)> {
             }
             let beat = clip.start + at + (note.time - from);
             if beat < clip_end {
-                placed.push((beat, *note));
+                placed.push((beat, note.clone()));
             }
         }
     };

@@ -562,7 +562,7 @@ impl PianoRollState {
             self.settle_selection(&clip.notes);
         }
         let acting = self.acting().clone();
-        let chosen: Vec<Note> = acting.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
+        let chosen: Vec<Note> = acting.iter().filter_map(|i| clip.notes.get(*i).cloned()).collect();
         let count = clip.notes.len();
         let mut params = clip.address.clone();
         if action == "selection.paste" {
@@ -1028,6 +1028,7 @@ impl PianoRollState {
             channel: 0,
             muted: false,
             velocity_range: 0,
+            expression: None,
         })
     }
 }

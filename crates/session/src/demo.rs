@@ -138,7 +138,7 @@ fn channel(id: ChannelId, name: &str, role: ChannelRole, output: Option<ChannelI
 /// A one-bar clip: a short figure around a root that differs per track.
 fn content_of(id: ContentId, name: &str, track: u8) -> ClipContent {
     let root = [36u8, 40, 60, 67][usize::from(track) % 4];
-    let notes = (0..4)
+    let notes = (0..4u8)
         .map(|beat| Note {
             time: f64::from(beat),
             duration: 0.5,
@@ -148,6 +148,7 @@ fn content_of(id: ContentId, name: &str, track: u8) -> ClipContent {
             channel: 0,
             muted: false,
             velocity_range: 0,
+            expression: None,
         })
         .collect();
     ClipContent {

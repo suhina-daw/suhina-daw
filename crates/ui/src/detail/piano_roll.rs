@@ -199,7 +199,7 @@ impl Gestures<'_> {
     /// Adds one note where `pos` is, `note.add` for it, and selects it.
     fn add_note(&self, state: &mut PianoRollState, actions: &mut Vec<Action>, pos: Pos2, free: bool) {
         if let Some(note) = state.new_note(self.layout, self.clip, self.grid, pos, free) {
-            actions.push(state.add_action(self.clip, &[note]));
+            actions.push(state.add_action(self.clip, std::slice::from_ref(&note)));
             // `note.add` appends: the new note is the next index.
             state.selected = BTreeSet::from([self.clip.notes.len()]);
             state.audition_keys([note.key]);
@@ -211,7 +211,7 @@ impl Gestures<'_> {
     /// long as the note last drawn or clicked. A stroke adds at most as many notes as one command
     /// takes, and never past the furthest beat.
     fn draw_run(&self, state: &mut PianoRollState, now: Pos2, free: bool) {
-        let Some(first) = state.stroke.first().copied() else { return };
+        let Some(first) = state.stroke.first().cloned() else { return };
         let length = if first.duration > 0.0 { first.duration } else { self.grid.step.max(MIN_LENGTH) };
         let end = if free {
             self.layout.beat_at(now.x).max(0.0)
@@ -223,7 +223,7 @@ impl Gestures<'_> {
             let taken = state.stroke.iter().any(|n| (n.time - time).abs() < EPSILON)
                 || self.clip.notes.iter().any(|n| n.key == first.key && (n.time - time).abs() < EPSILON);
             if !taken && state.stroke.len() < MAX_NOTES_PER_COMMAND {
-                state.stroke.push(Note { time, ..first });
+                state.stroke.push(Note { time, ..first.clone() });
             }
             time += length;
             if time > f64::from(BEAT_LIMIT) {
@@ -774,7 +774,7 @@ pub fn show(
             _ => {}
         }
     }
-    let chosen: Vec<Note> = state.selected.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
+    let chosen: Vec<Note> = state.selected.iter().filter_map(|i| clip.notes.get(*i).cloned()).collect();
     let preview = match (state.gesture.as_ref(), now) {
         (Some(Gesture::Draw { from }), Some(now)) if dragging || drag_stopped => {
             Some(Effect::Draw(drawn_note(state, &layout, clip, grid, *from, now, inputs.alt)))
@@ -793,12 +793,13 @@ pub fn show(
     };
     // While a note is dragged, the keys it is on sound; the keys that already sound go on.
     if dragging {
-        match preview {
+        match &preview {
             Some(Effect::Move(_, keys, rows)) => {
+                let (keys, rows) = (*keys, *rows);
                 state.audition_keys(chosen.iter().map(|n| edits::moved_key(&layout.rows, n.key, keys, rows)));
             }
             Some(Effect::Draw(Some(note))) => state.audition_keys([note.key]),
-            Some(Effect::Select(rect)) => state.audition_swept(&layout, clip, rect),
+            Some(Effect::Select(rect)) => state.audition_swept(&layout, clip, *rect),
             _ => {}
         }
     }

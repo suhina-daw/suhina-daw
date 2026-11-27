@@ -1698,6 +1698,7 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
                         // A file from before muted notes reads every note as unmuted.
                         muted: flag(n, "muted", false, &at)?,
                         velocity_range: velocity_range(n, &at)?,
+                        expression: None,
                     });
                 }
                 LaneData::Notes(notes.into())

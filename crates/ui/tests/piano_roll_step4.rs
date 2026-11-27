@@ -465,7 +465,7 @@ fn mouse_first_draws_with_the_left_button_and_deletes_with_the_right() {
     assert!(drawn.iter().any(|n| n.key == key && (n.time - time).abs() < 0.5), "{drawn:?}");
 
     // A right click on a note deletes it.
-    let target = notes(&h)[0];
+    let target = notes(&h)[0].clone();
     let at = note_rect(&h, &target).center();
     h.hover_at(at);
     h.step();
@@ -486,7 +486,7 @@ fn mouse_first_splits_with_shift_right_and_plays_with_alt_right() {
     mouse_first(&mut h);
     let before = notes(&h);
     // Shift and the right button over a note: the drag's line splits what it crosses.
-    let long = before.iter().max_by(|a, b| a.duration.total_cmp(&b.duration)).copied().unwrap();
+    let long = before.iter().max_by(|a, b| a.duration.total_cmp(&b.duration)).cloned().unwrap();
     let rect = note_rect(&h, &long);
     let from = pos2(rect.left() + 3.0, rect.center().y);
     let to = pos2(rect.left() + rect.width() * 0.5, rect.center().y);

@@ -8,7 +8,17 @@ use suhina_model::*;
 const SR: u32 = 48_000;
 
 fn note(time: f64, duration: f64, key: u8) -> Note {
-    Note { time, duration, key, velocity: 1.0, release_velocity: 0.5, channel: 0, muted: false, velocity_range: 0 }
+    Note {
+        time,
+        duration,
+        key,
+        velocity: 1.0,
+        release_velocity: 0.5,
+        channel: 0,
+        muted: false,
+        velocity_range: 0,
+        expression: None,
+    }
 }
 
 fn project_with(lanes: Vec<ContentLane>, clips: Vec<Clip>, tracks: u32) -> Project {
@@ -204,7 +214,7 @@ fn a_muted_note_is_silent_and_does_not_shorten_the_render() {
     assert_eq!(muted.len(), all.len(), "muting does not change the render length");
     assert!(rms(&muted, 0, muted.len() / 2) < rms(&all, 0, all.len() / 2));
     // The muted note is not there at all: the render is the other note's alone.
-    let alone = project_with(untargeted(vec![notes[0]]), vec![clip(0.0, 4.0)], 1);
+    let alone = project_with(untargeted(vec![notes[0].clone()]), vec![clip(0.0, 4.0)], 1);
     assert_eq!(muted, render_offline(&alone, SR, 256, suhina_device_registry::factory()).unwrap());
 
     // Every note muted: silence, and no length at all.
@@ -226,7 +236,7 @@ fn muting_one_of_two_notes_halves_the_sounding_notes() {
     let muted_rms = rms(&muted, 0, muted.len() / 2);
     assert!(muted_rms < all_rms * 0.9 && muted_rms > all_rms * 0.5, "one of two voices: {muted_rms} against {all_rms}");
 
-    let alone = project_with(untargeted(vec![notes[1]]), vec![clip(0.0, 4.0)], 1);
+    let alone = project_with(untargeted(vec![notes[1].clone()]), vec![clip(0.0, 4.0)], 1);
     assert_eq!(
         muted,
         render_offline(&alone, SR, 256, suhina_device_registry::factory()).unwrap(),

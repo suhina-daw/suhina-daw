@@ -53,6 +53,7 @@ fn project(tracks: u32) -> Project {
         channel: 0,
         muted: false,
         velocity_range: 0,
+        expression: None,
     }];
     let mut p = Project {
         contents: vec![ClipContent {

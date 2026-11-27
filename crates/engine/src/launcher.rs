@@ -620,14 +620,15 @@ impl Controller {
 }
 
 /// A note of a launch clip, in content beats, with its mix resolved.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct PlanNote {
     time: f64,
     duration: f64,
     frequency: f64,
     key: u8,
     /// The note as the clip holds it: its velocity and velocity range, rolled where it starts
-    /// (ADR 0037).
+    /// (ADR 0037). Without its expression curves, so the plan the audio thread holds owns no
+    /// shared curve data (ADR 0039 › 6).
     note: suhina_model::Note,
     track: suhina_model::TrackId,
     /// The track's gains, which the played velocity multiplies.
@@ -1138,7 +1139,7 @@ fn plan_clip(
                         duration: (end - time).max(0.0),
                         frequency: 440.0 * 2f64.powf((f64::from(note.key) - 69.0) / 12.0),
                         key: note.key.min(127),
-                        note: *note,
+                        note: suhina_model::Note { expression: None, ..note.clone() },
                         track: lane_track,
                         gain_left,
                         gain_right,

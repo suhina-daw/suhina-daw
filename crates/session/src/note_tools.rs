@@ -338,7 +338,7 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
         let mut moved = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
-            let mut humanized = *note;
+            let mut humanized = note.clone();
             humanized.time = (note.time + rng.next_within(beats)).clamp(0.0, MAX_BEAT);
             let midi = f64::from(midi_velocity(note.velocity)) + rng.next_within(steps);
             apply_velocity(&mut humanized, midi);
@@ -379,7 +379,7 @@ fn keep_off_the_next(notes: &mut Notes, touched: &[usize]) {
         if !(was_moved(a) || was_moved(b)) {
             continue;
         }
-        let (Some(first), Some(next)) = (notes.get(a).copied(), notes.get(b).copied()) else { continue };
+        let (Some(first), Some(next)) = (notes.get(a).cloned(), notes.get(b).cloned()) else { continue };
         if first.key != next.key || first.time + first.duration <= next.time + EPSILON {
             continue;
         }

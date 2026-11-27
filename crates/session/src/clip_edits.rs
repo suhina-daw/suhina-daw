@@ -251,7 +251,7 @@ fn crop_notes(notes: &mut Notes, start: f64, end: f64) -> (Vec<usize>, Vec<usize
     let mut deleted = Vec::new();
     let mut cut = Vec::new();
     for index in (0..notes.len()).rev() {
-        let Some(note) = notes.get(index).copied() else { continue };
+        let Some(note) = notes.get(index).cloned() else { continue };
         match cropped(&note, start, end) {
             None => {
                 notes.remove(index);

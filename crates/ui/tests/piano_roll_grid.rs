@@ -76,8 +76,8 @@ fn note_rect(h: &Harness<'static, App>, note: &Note) -> Rect {
 /// Where beat `time` of key `key` is on screen, measured from two notes.
 fn spot(h: &Harness<'static, App>, time: f64, key: u8) -> Pos2 {
     let n = notes(h);
-    let first = n[0];
-    let second = *n.iter().find(|m| m.time != first.time && m.key != first.key).unwrap();
+    let first = n[0].clone();
+    let second = n.iter().find(|m| m.time != first.time && m.key != first.key).unwrap().clone();
     let (a, b) = (note_rect(h, &first), note_rect(h, &second));
     let beat = (b.left() - a.left()) / (second.time - first.time) as f32;
     let row = (a.top() - b.top()) / (f32::from(second.key) - f32::from(first.key));

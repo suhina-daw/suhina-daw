@@ -149,7 +149,7 @@ pub(super) fn left_after(note: &Note, covers: &[(u8, f64, f64)], whole: bool) ->
     let end = note.time + note.duration;
     let mut row: Vec<(f64, f64)> = covers.iter().filter(|c| c.0 == note.key).map(|c| (c.1, c.2)).collect();
     if row.is_empty() {
-        return Some(*note);
+        return Some(note.clone());
     }
     row.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut start = note.time;
@@ -161,18 +161,22 @@ pub(super) fn left_after(note: &Note, covers: &[(u8, f64, f64)], whole: bool) ->
             break;
         }
         if start < from - EPSILON {
-            return Some(Note { time: start, duration: from - start, ..*note });
+            return Some(Note { time: start, duration: from - start, ..note.clone() });
         }
         start = start.max(to);
     }
     let covered_start = start > note.time + EPSILON;
-    (start < end - EPSILON && !(whole && covered_start)).then_some(Note { time: start, duration: end - start, ..*note })
+    (start < end - EPSILON && !(whole && covered_start)).then_some(Note {
+        time: start,
+        duration: end - start,
+        ..note.clone()
+    })
 }
 
 /// A paint stroke at `now`: the slot of the stroke's note length under the pointer gets a note
 /// in the row under it, unless the stroke has one there already.
 pub(super) fn paint(state: &mut PianoRollState, layout: &Layout, clip: &PianoClip, now: Pos2) {
-    let Some(first) = state.stroke.first().copied() else { return };
+    let Some(first) = state.stroke.first().cloned() else { return };
     let Some(key) = layout.key_at(now.y) else { return };
     let length = first.duration.max(MIN_LENGTH);
     let slots = ((layout.beat_at(now.x) - first.time) / length).floor();
@@ -187,7 +191,7 @@ pub(super) fn paint(state: &mut PianoRollState, layout: &Layout, clip: &PianoCli
     }
     let taken = clip.notes.iter().any(|n| n.key == key && (n.time - time).abs() < EPSILON);
     if !taken {
-        state.stroke.push(Note { time, key, ..first });
+        state.stroke.push(Note { time, key, ..first.clone() });
     }
 }
 
@@ -406,31 +410,31 @@ pub(super) fn draw(
     let shown = |i: usize, note: &Note| -> Note {
         if let Some(Effect::VelocityLine { set, .. }) = &preview {
             return match set.iter().find(|(index, _)| *index == i) {
-                Some((_, midi)) => Note { velocity: (midi.clamp(1.0, 127.0) / 127.0) as f32, ..*note },
-                None => *note,
+                Some((_, midi)) => Note { velocity: (midi.clamp(1.0, 127.0) / 127.0) as f32, ..note.clone() },
+                None => note.clone(),
             };
         }
         if !state.selected.contains(&i) {
-            return *note;
+            return note.clone();
         }
         match preview {
             Some(Effect::Move(beats, keys, rows)) => Note {
                 time: note.time + beats,
                 key: super::edits::moved_key(&layout.rows, note.key, keys, rows),
-                ..*note
+                ..note.clone()
             },
-            Some(Effect::Resize(by)) => Note { duration: (note.duration + by).max(MIN_LENGTH), ..*note },
+            Some(Effect::Resize(by)) => Note { duration: (note.duration + by).max(MIN_LENGTH), ..note.clone() },
             Some(Effect::ResizeStart(by)) => {
-                Note { time: note.time + by, duration: (note.duration - by).max(MIN_LENGTH), ..*note }
+                Note { time: note.time + by, duration: (note.duration - by).max(MIN_LENGTH), ..note.clone() }
             }
             Some(Effect::Velocity(by)) => {
                 let midi = (f64::from(suhina_session::midi_velocity(note.velocity)) + by).clamp(1.0, 127.0);
-                Note { velocity: (midi / 127.0) as f32, ..*note }
+                Note { velocity: (midi / 127.0) as f32, ..note.clone() }
             }
             Some(Effect::VelocityRange(range)) => {
-                Note { velocity_range: i8::try_from(range.clamp(-127, 127)).unwrap_or(0), ..*note }
+                Note { velocity_range: i8::try_from(range.clamp(-127, 127)).unwrap_or(0), ..note.clone() }
             }
-            _ => *note,
+            _ => note.clone(),
         }
     };
     let selecting = match preview {
@@ -502,7 +506,7 @@ pub(super) fn draw(
             };
             // With notes selected, the others step back, so the selection's stems stand out.
             let ink = if any_selected && !selected { ink.gamma_multiply(0.45) } else { ink };
-            stems.push(Stem { note, ink, selected });
+            stems.push(Stem { note: note.clone(), ink, selected });
         }
         if !rect.intersects(layout.grid) {
             continue;
@@ -569,7 +573,7 @@ pub(super) fn draw(
     }
     // Notes a draw or paint drag is making, outlined until they are added.
     let drawn = match &preview {
-        Some(Effect::Draw(Some(note))) => vec![*note],
+        Some(Effect::Draw(Some(note))) => vec![note.clone()],
         _ => state.stroke.clone(),
     };
     // `piano-note[kind="draft"]`.
