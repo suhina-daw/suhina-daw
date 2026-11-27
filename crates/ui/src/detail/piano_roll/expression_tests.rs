@@ -87,8 +87,7 @@ fn a_double_click_point_goes_to_the_nearest_selected_note_in_time() {
         Note::new(0.0, 2.0, 60, 0.8),
         Note::new(4.0, 2.0, 62, 0.8),
     ]);
-    let mut state = PianoRollState::default();
-    state.selected = [0, 1, 2].into();
+    let state = PianoRollState { selected: [0, 1, 2].into(), ..PianoRollState::default() };
     let layout = layout(&clip, &state);
     let near_upper = Pos2::new(layout.x_of(1.0), pitch_y(&layout, 58.0).unwrap());
     assert_eq!(note_for_point(&layout, &clip, &state, near_upper), Some(1));

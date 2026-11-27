@@ -375,8 +375,8 @@ pub(super) fn commit(
             let stroke: Vec<Note> = state
                 .stroke
                 .iter()
-                .cloned()
                 .filter(|p| !clip.notes.iter().any(|n| n.key == p.key && (n.time - p.time).abs() < EPSILON))
+                .cloned()
                 .collect();
             if !stroke.is_empty() {
                 actions.push(state.add_action(clip, &stroke));
@@ -413,7 +413,6 @@ pub(super) fn commit(
             let stroke: Vec<Note> = state
                 .stroke
                 .iter()
-                .cloned()
                 .filter(|p| {
                     !clip.notes.iter().any(|n| {
                         n.key == p.key
@@ -421,6 +420,7 @@ pub(super) fn commit(
                                 || (inside && n.time < p.time && p.time < n.time + n.duration - EPSILON))
                     })
                 })
+                .cloned()
                 .collect();
             if !stroke.is_empty() {
                 actions.push(state.add_action(clip, &stroke));
