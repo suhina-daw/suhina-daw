@@ -215,6 +215,11 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
     let accent = crate::kit::element::PIANO_NOTE.attr(crate::kit::element::Attr::Selected, true).look().accent();
     let ink = if ink == Color32::TRANSPARENT { ui.visuals().strong_text_color() } else { ink };
     let accent = if accent == Color32::TRANSPARENT { ink } else { accent };
+    // A selected note is drawn in the selection's color, so its curve takes the text's strong
+    // color over an edge of the grid's own, which stands out on the note and on the grid alike.
+    let bright = ui.visuals().strong_text_color();
+    let edge = crate::kit::element::PIANO_GRID.look().background();
+    let edge = if edge == Color32::TRANSPARENT { ui.visuals().extreme_bg_color } else { edge };
     let hover = ui.ctx().pointer_hover_pos();
     for (index, note) in clip.notes.iter().enumerate() {
         let curve = shown_curve(state, clip.notes.id(index), note, ExpressionKind::Pitch);
@@ -228,8 +233,11 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
         if !(selected || dragged(state, clip, index) || hovered(layout, note, &line, hover)) {
             continue;
         }
-        let color = if selected { accent } else { ink.gamma_multiply(0.7) };
-        painter.add(Shape::line(line, Stroke::new(if selected { 1.5 } else { 1.0 }, color)));
+        let color = if selected { bright } else { ink.gamma_multiply(0.7) };
+        if selected {
+            painter.add(Shape::line(line.clone(), Stroke::new(4.0, edge.gamma_multiply(0.8))));
+        }
+        painter.add(Shape::line(line, Stroke::new(if selected { 1.75 } else { 1.0 }, color)));
         if let Some(last) = curve.last().filter(|last| last.value.abs() >= 0.5)
             && let Some(end) = pitch_y(layout, f64::from(note.key) + last.value)
         {
@@ -240,6 +248,8 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
         }
         if selected {
             for (_, at) in handles(layout, note, ExpressionKind::Pitch, curve) {
+                painter.circle_filled(at, 4.5, edge);
+                painter.circle_stroke(at, 4.0, Stroke::new(1.5, accent));
                 painter.circle_filled(at, 3.0, color);
             }
         }
