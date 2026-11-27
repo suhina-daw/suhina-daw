@@ -3,7 +3,7 @@ description: Planned per-note expression behavior for live controllers, native i
 read_when: MPE, per-note expression, MIDI pressure, note curves, member channel, manager channel
 type: spec
 status: planned
-last_verified: 2026-11-20
+last_verified: 2026-11-27
 covers:
   - crates/device-api/src/lib.rs
   - crates/device-api/src/note_expression.rs

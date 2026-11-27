@@ -3,7 +3,7 @@ description: The built-in pitch MIDI effect - its parameters, how a note is tran
 read_when: pitch, MIDI effect, transpose notes, scale degrees, follow scale, clip scale in devices, block fold limit, key window, lowest and range, importing Live's Pitch, MidiPitcher elements, built-in MIDI effects
 type: spec
 status: current
-last_verified: 2026-10-19
+last_verified: 2026-11-27
 covers:
   - devices/pitch/**
 ---
