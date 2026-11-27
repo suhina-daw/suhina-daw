@@ -257,3 +257,27 @@ fn a_split_s_curve_plays_as_the_whole_did() {
     let envelope = Envelope::new(&hostile, 1000.0, false, Position::Value).unwrap();
     assert!((0..=8000).all(|f| (-1.0..=1.0).contains(&envelope.value_at(f))));
 }
+
+/// Three EQs saved with two curves whose mode was automated: each mode lane becomes 24 lanes of
+/// placements and In Use flags (docs/spec/eq.md › Projects saved with two curves), and the chain
+/// plays all 72, so every EQ's routing still changes on time.
+#[test]
+fn a_chain_plays_every_lane_of_three_migrated_eqs() {
+    let device = suhina_device_registry::create("eq", 48_000.0).unwrap();
+    let info = device.info();
+    let mut lanes = DeviceLanes::none();
+    for slot in 0..3 {
+        let mut eq = suhina_model::Device::new("EQ", suhina_model::DeviceKind::Builtin("eq".into()));
+        eq.params = vec![suhina_model::DeviceParam::new("mode", 0.0)];
+        eq.automation = vec![lane("mode", &[(0.0, 0.0), (4.0, 1.0), (8.0, 2.0)])];
+        suhina_model::eq_device_to_slots(&mut eq);
+        assert_eq!(eq.automation.len(), 24);
+        lanes.add(slot, device.as_ref(), &eq.automation, 100.0);
+    }
+    for slot in 0..3 {
+        for id in ["a1Place", "a8Place", "a16Place", "a9InUse", "a16InUse"] {
+            let param = info.param_index(id).unwrap();
+            assert!(lanes.covers(slot, param), "EQ {slot}'s {id} lane plays");
+        }
+    }
+}

@@ -511,6 +511,20 @@ fn a_spectral_band_at_the_top_uses_fewer_distinct_parts() {
     assert!(frequencies.windows(2).all(|w| w[1] > w[0]), "distinct parts: {frequencies:?}");
     assert_eq!(parts_for(1_000.0, 8_000.0), SPECTRAL_PARTS);
     assert_eq!(parts_for(1_000.0, 1_000.0), 1);
+    // Every count leaves at least the spacing between the parts' centers.
+    for octaves in [0.1, 0.3, 0.45, 0.6, 0.74, 1.0, 3.0] {
+        let used = parts_for(1_000.0, 1_000.0 * 2f64.powf(octaves));
+        assert!(used == 1 || octaves / used as f64 >= PART_MIN_OCTAVES, "{octaves} octaves, {used} parts");
+    }
+}
+
+#[test]
+fn a_spectral_band_at_the_bottom_uses_fewer_distinct_parts() {
+    // A low shelf at 10 Hz: its range below clamps to 10 Hz, so one part, not five on one spot.
+    let mut settings = moving(2, 2.0, DEFAULT_Q);
+    settings.push(a(3, param::FREQUENCY, 10.0));
+    let e = eq(&settings);
+    assert_eq!(e.bands[2].parts_in_use, 1);
 }
 
 #[test]

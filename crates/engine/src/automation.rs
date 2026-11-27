@@ -32,8 +32,11 @@ pub const MIX_STEP: usize = 16;
 /// How long a jump of a track's volume lane takes, in seconds: an S-shaped ramp centered on the
 /// jump, in the fader's position (`docs/spec/automation.md` › How the engine plays them).
 pub const VOLUME_SMOOTHING: f64 = 0.0044;
-/// Most built-in and `.sd` device lanes one chain plays; more are left out.
-const MAX_DEVICE_LANES: usize = 64;
+/// Most built-in and `.sd` device lanes one chain plays; more are left out. An EQ saved with two
+/// curves whose mode was automated alone brings 24 (docs/spec/eq.md › Projects saved with two
+/// curves), and its 24 band slots have many parameters, so a chain of a few such EQs still plays
+/// every lane.
+const MAX_DEVICE_LANES: usize = 256;
 /// Most parameter changes one block of a chain holds: each lane's at its first frame, its
 /// [`STEP`]s in the longest block and up to [`MAX_LANE_POINTS`] points.
 const MAX_LANE_POINTS: usize = 16;

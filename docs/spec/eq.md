@@ -172,12 +172,15 @@ block of `crates/dsp` (`band_dynamics::BandDynamics`, AGENTS.md rule 8):
   every 16 frames while the change moves by more than 0.01 dB. A Dynamic band with no gain of its
   own still runs, since its gain can move.
 - **Spectral** (a decision of this device's own: minimum phase, no look-ahead, no latency): the
-  band's own filter runs as it is, and five narrow parts spread over its range — a bell's width
-  between its half-gain points, or the three octaves a shelf lifts — each have their own detector
+  band's own filter runs as it is, and up to five narrow parts spread over its range — a bell's
+  width between its half-gain points, or the three octaves a shelf lifts, clamped to 10 Hz and
+  0.45 of the rate — as many as fit 0.15 octave apart, each with its own detector
   (a band pass at the part, Q from Detail: `1.5 + 10.5 · Detail`) and their own gain change, which
   tunes a bell of that Q at the part. So only the parts whose level passes the threshold move: a
   resonance is cut and the rest of the band is left alone. Detail sets how narrow and selective
   the parts are.
+- **Automation.** An EQ's lanes count toward the chain's 256 device lanes (`crates/engine`); a
+  two-curve project's mode lane becomes 24 of them.
 - **The live gain change** of every band (a Dynamic band's, or a Spectral band's deepest part)
   goes to the panel as the device's readouts (ADR 0032), one per band in band order.
 - **Not yet:** an automatic threshold, a free trigger with its own range, a side-chain, the

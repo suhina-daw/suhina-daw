@@ -466,10 +466,12 @@ impl Part {
 /// these uses fewer parts, so no two parts watch and cut the same frequency.
 const PART_MIN_OCTAVES: f64 = 0.15;
 
-/// How many parts a Spectral band uses over a range from `low` to `high` Hz.
+/// How many parts a Spectral band uses over a range from `low` to `high` Hz: as many as fit with
+/// at least [`PART_MIN_OCTAVES`] between their centers (each part has an equal share of the range),
+/// at least one and at most [`SPECTRAL_PARTS`].
 fn parts_for(low: f64, high: f64) -> usize {
     let octaves = (high / low.max(1.0)).max(1.0).log2();
-    ((octaves / PART_MIN_OCTAVES).floor() as usize + 1).clamp(1, SPECTRAL_PARTS)
+    ((octaves / PART_MIN_OCTAVES).floor() as usize).clamp(1, SPECTRAL_PARTS)
 }
 
 /// A Spectral part's Q for the band's Detail (0 to 1): broad at 0, narrow and selective at 1.
@@ -688,6 +690,9 @@ impl Eq {
             }
         };
         let part_q = part_q(b.detail);
+        // The parts spread over the range that is usable at this rate, clamped first, so none
+        // is clamped onto another at either end.
+        let (low, high) = (low.clamp(FREQUENCY.0, top), high.clamp(FREQUENCY.0, top));
         let used = parts_for(low, high);
         b.parts_in_use = used;
         for (i, part) in b.parts.iter_mut().enumerate() {
@@ -698,7 +703,7 @@ impl Eq {
                 continue;
             }
             let at = (i as f64 + 0.5) / used as f64;
-            part.frequency = (low * (high / low.max(1.0)).powf(at)).clamp(FREQUENCY.0, top);
+            part.frequency = low * (high / low.max(1.0)).powf(at);
             part.dynamics.set_detector(SvfCoefficients::bandpass(sr, part.frequency, part_q));
             let bell = SvfCoefficients::bell(sr, part.frequency, part_q, part.tuned_db);
             for filter in &mut part.filters {
