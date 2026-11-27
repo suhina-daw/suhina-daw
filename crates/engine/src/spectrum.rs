@@ -14,8 +14,9 @@ use suhina_model::TrackId;
 
 /// How many devices can be watched at once: a panel claims the row `device index mod ROWS`.
 pub const ROWS: usize = 16;
-/// The ring's length in frames, mono: about 43 ms at 48 kHz.
-pub const RING: usize = 2048;
+/// The ring's length in frames, mono: about 170 ms at 48 kHz, so the panel's transform resolves
+/// the low end (a bin is about 5.9 Hz at 48 kHz).
+pub const RING: usize = 8192;
 /// The track id of a watch row nobody claims.
 const NO_WATCH: u32 = u32::MAX;
 

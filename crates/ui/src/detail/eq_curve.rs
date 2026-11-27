@@ -49,9 +49,9 @@ const METER: [f32; 4] = [550.0, 2.0, 8.0, 164.0];
 /// curve, with a lane of its own below the display's lowest gain.
 const STRIP_PANEL_MIN_HEIGHT: f32 = 340.0;
 /// The floating band panel's size in the strip.
-const FLOATING: Vec2 = Vec2::new(372.0, 84.0);
+const FLOATING: Vec2 = Vec2::new(428.0, 84.0);
 /// How much wider the floating panel is while it shows the band's dynamics.
-const FLOATING_DYNAMICS: f32 = 250.0;
+const FLOATING_DYNAMICS: f32 = 214.0;
 /// The lane under the strip's curve the floating panel sits in.
 const FLOATING_LANE: f32 = 100.0;
 /// The display's dB ranges, top to bottom ±this; a click on the range button steps through them,
@@ -68,7 +68,7 @@ const DRAWN_RATE: f64 = DEFAULT_SAMPLE_RATE;
 /// 128 keeps a sine's peak narrow: each band spans about 6.2 % of its center frequency,
 /// about 27 Hz at 440 Hz, so the transforms closest to the tone carry its peak alone and
 /// the columns beside it read the skirts.
-const ANALYSER_BANDS: usize = 128;
+const ANALYSER_BANDS: usize = 256;
 /// The analyser's own vertical scale across the display's height: this level in dB at the top
 /// edge, this at the bottom. The line is not read against the gain grid — normal material
 /// sits far below the grid, so on it the line would fall below the display and never show
@@ -136,9 +136,26 @@ fn effective_mode(asked: f64, kind: usize) -> usize {
     }
 }
 
-/// The colour of a band's moving gain: orange for Dynamic, violet for Spectral.
-fn mode_color(mode: usize) -> Color32 {
-    if mode == 2 { Color32::from_rgb(0xE0, 0x7A, 0xFF) } else { Color32::from_rgb(0xF2, 0xA6, 0x5A) }
+/// A band's own colour: hues spread around the wheel slot by slot (a golden-ratio step, so
+/// neighboring slots differ), at one saturation and brightness. Its dot, its column and its
+/// dynamics (reach, live curve, handle) take it.
+fn band_color(slot: usize) -> Color32 {
+    let hue = (0.58 + slot as f32 * 0.618_034).fract();
+    let (s, v) = (0.62, 0.98);
+    let h = hue * 6.0;
+    let c = v * s;
+    let x = c * (1.0 - (h % 2.0 - 1.0).abs());
+    let (r, g, b) = match h as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = v - c;
+    let to = |u: f32| ((u + m) * 255.0).round() as u8;
+    Color32::from_rgb(to(r), to(g), to(b))
 }
 
 impl Band {
@@ -276,6 +293,8 @@ struct Panel<'a> {
     can_listen: bool,
     /// Each band's gain change now, from the device's readouts, while sound plays through it.
     live: Option<[f32; BANDS]>,
+    /// The first heard Spectral band's parts' gain changes now, from the readouts after the bands'.
+    live_parts: Option<[f32; suhina_device_eq::SPECTRAL_PARTS]>,
     bands: Vec<Band>,
     state: PanelState,
     address: Address,
@@ -408,8 +427,22 @@ pub(crate) fn show(
         .data(|d| d.get_temp::<Arc<MeterMonitor>>(egui::Id::unique("eq-spectrum")))
         .and_then(|monitor| monitor.readouts(track, &at.0))
         .map(|values| std::array::from_fn(|i| values.get(i).copied().unwrap_or(0.0)));
-    let mut panel =
-        Panel { parameters, listen: None, can_listen, live, bands: bands(parameters), state, address, actions };
+    let live_parts = ui
+        .ctx()
+        .data(|d| d.get_temp::<Arc<MeterMonitor>>(egui::Id::unique("eq-spectrum")))
+        .and_then(|monitor| monitor.readouts(track, &at.0))
+        .map(|values| std::array::from_fn(|i| values.get(BANDS + i).copied().unwrap_or(0.0)));
+    let mut panel = Panel {
+        parameters,
+        listen: None,
+        can_listen,
+        live,
+        live_parts,
+        bands: bands(parameters),
+        state,
+        address,
+        actions,
+    };
     if panel.selected().is_none() {
         panel.state.selected = None;
     }
@@ -815,6 +848,35 @@ fn analyser_bands(
     Some((shown, peak_db))
 }
 
+/// A Catmull-Rom curve through `points`, `steps` pieces between each two: the analyser's line
+/// drawn smooth.
+fn smooth(points: &[Pos2], steps: usize) -> Vec<Pos2> {
+    if points.len() < 3 || steps < 2 {
+        return points.to_vec();
+    }
+    let mut out = Vec::with_capacity(points.len() * steps);
+    for i in 0..points.len() - 1 {
+        let p0 = points[i.saturating_sub(1)];
+        let (p1, p2) = (points[i], points[i + 1]);
+        let p3 = points[(i + 2).min(points.len() - 1)];
+        for step in 0..steps {
+            let t = step as f32 / steps as f32;
+            let (t2, t3) = (t * t, t * t * t);
+            let along = |a: f32, b: f32, c: f32, d: f32| {
+                0.5 * (2.0 * b
+                    + (c - a) * t
+                    + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2
+                    + (3.0 * b - a - 3.0 * c + d) * t3)
+            };
+            out.push(Pos2::new(along(p0.x, p1.x, p2.x, p3.x), along(p0.y, p1.y, p2.y, p3.y)));
+        }
+    }
+    if let Some(last) = points.last() {
+        out.push(*last);
+    }
+    out
+}
+
 /// The analyser's Hann window over the ring's length.
 fn hann() -> [f32; RING] {
     let mut window = [0.0f32; RING];
@@ -884,7 +946,6 @@ fn small_button(
 /// The icons the panel's buttons draw.
 #[derive(Clone, Copy)]
 enum Icon {
-    Power,
     Delete,
     Previous,
     Next,
@@ -893,23 +954,14 @@ enum Icon {
     Pencil,
     Phones,
     Gear,
+    Down,
+    Sliders,
 }
 
 fn icon(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
     let c = rect.center();
     let stroke = Stroke::new(1.35, color);
     match icon {
-        Icon::Power => {
-            // An arc open at the top, with the stem through the gap.
-            let points: Vec<Pos2> = (0..=20)
-                .map(|i| {
-                    let a = (-0.32 + 1.64 * i as f32 / 20.0) * std::f32::consts::PI;
-                    c + Vec2::new(0.0, 0.5) + Vec2::new(a.cos(), a.sin()) * 4.1
-                })
-                .collect();
-            painter.add(egui::Shape::line(points, stroke));
-            painter.line_segment([c + Vec2::new(0.0, -4.8), c], stroke);
-        }
         Icon::Delete => {
             painter.line_segment([c + Vec2::splat(-3.2), c + Vec2::splat(3.2)], stroke);
             painter.line_segment([c + Vec2::new(3.2, -3.2), c + Vec2::new(-3.2, 3.2)], stroke);
@@ -962,6 +1014,24 @@ fn icon(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.add(egui::Shape::line(points, stroke));
             for x in [-5.2, 3.1] {
                 painter.rect_filled(Rect::from_min_size(c + Vec2::new(x, 0.5), Vec2::new(2.1, 3.8)), 0.0, color);
+            }
+        }
+        Icon::Down => {
+            painter.add(egui::Shape::convex_polygon(
+                vec![c + Vec2::new(-3.0, -1.5), c + Vec2::new(3.0, -1.5), c + Vec2::new(0.0, 2.0)],
+                color,
+                Stroke::NONE,
+            ));
+        }
+        Icon::Sliders => {
+            for (i, at) in [-0.4f32, 0.3, -0.1].into_iter().enumerate() {
+                let x = c.x - 4.0 + i as f32 * 4.0;
+                painter.line_segment([Pos2::new(x, c.y - 5.0), Pos2::new(x, c.y + 5.0)], Stroke::new(1.0, color));
+                painter.rect_filled(
+                    Rect::from_center_size(Pos2::new(x, c.y + at * 8.0), Vec2::new(3.0, 2.0)),
+                    0.0,
+                    color,
+                );
             }
         }
         Icon::Gear => {
@@ -1111,7 +1181,7 @@ fn band_menu(panel: &mut Panel<'_>, response: &Response) {
     let mut picked = None;
     let listed: Vec<(usize, Band)> = panel.used().into_iter().filter_map(|s| Some((s, *panel.bands.get(s)?))).collect();
     let selected = panel.state.selected;
-    egui::Popup::menu(response).frame(menu_frame(&colors)).show(|ui| {
+    egui::Popup::context_menu(response).frame(menu_frame(&colors)).show(|ui| {
         for (slot, band) in &listed {
             let text = format!(
                 "{}. {} · {} · {}{}",
@@ -1284,6 +1354,10 @@ fn value_dial(ui: &mut egui::Ui, panel: &mut Panel<'_>, cell: Rect, slot: usize,
     let at = normalized(parameter.value);
     crate::kit::widgets::dial(&painter, center, size, at as f32, Some(&response));
     let held = response.is_pointer_button_down_on();
+    // In listen mode, a band whose dial is held is heard alone.
+    if held && panel.state.audition {
+        panel.listen = Some(slot);
+    }
     let state_id = response.id.with("start");
     let start = ui.ctx().data_mut(|d| {
         if held && d.get_temp::<f64>(state_id).is_none() {
@@ -1330,7 +1404,7 @@ fn value_dial(ui: &mut egui::Ui, panel: &mut Panel<'_>, cell: Rect, slot: usize,
 /// The band's number in its placement's colour: filled while it is on, ringed while it is off.
 fn band_number(painter: &egui::Painter, center: Pos2, radius: f32, slot: usize, band: Band, filled: bool) {
     let colors = super::device_canvas::colors();
-    let color = place_color(band.place, &colors);
+    let color = band_color(slot);
     if band.on && filled {
         painter.circle_filled(center, radius, color);
     } else {
@@ -1345,6 +1419,30 @@ fn band_number(painter: &egui::Painter, center: Pos2, radius: f32, slot: usize, 
         theme::ui_font(if slot >= 9 { 8.0 } else { 9.5 }),
         ink,
     );
+}
+
+/// The band's number as a button: a click switches the band on or off, a right click lists the
+/// bands in use to pick another.
+#[allow(clippy::too_many_arguments)] // the panel, its painter, the place and the band
+fn number_button(
+    ui: &mut egui::Ui,
+    panel: &mut Panel<'_>,
+    painter: &egui::Painter,
+    rect: Rect,
+    id: egui::Id,
+    slot: usize,
+    band: Band,
+    filled: bool,
+) {
+    let response = ui
+        .interact(rect, id, Sense::click())
+        .on_hover_text("Click to switch the band on or off; right-click to pick another band");
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Band {}", slot + 1)));
+    band_number(painter, rect.center(), (rect.height() / 2.0 - 0.5).min(9.0), slot, band, filled);
+    if response.clicked() {
+        panel.edit(&[(slot, "On", if band.on { 0.0 } else { 1.0 })], "eq-curve-on");
+    }
+    band_menu(panel, &response);
 }
 
 /// The compact panel's selected band column (docs/spec/eq.md › The panel › The band column): the
@@ -1373,13 +1471,8 @@ fn draw_column(ui: &mut egui::Ui, panel: &mut Panel<'_>, column: Rect) {
     };
     let at = |x: f32, y: f32, w: f32, h: f32| Rect::from_min_size(column.min + Vec2::new(x, y), Vec2::new(w, h));
     let ids = panel.address.ids;
-    let color = place_color(band.place, &colors);
     // Row 1: the number (the band menu), previous and next.
-    let number = at(2.0, 2.0, 22.0, 18.0);
-    let response = ui.interact(number, ids.with("eq-number"), Sense::click()).on_hover_text("Pick a band");
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Band {}", slot + 1)));
-    band_number(&painter, number.center(), 8.5, slot, band, true);
-    band_menu(panel, &response);
+    number_button(ui, panel, &painter, at(2.0, 2.0, 22.0, 18.0), ids.with("eq-number"), slot, band, true);
     if small_button(ui, at(50.0, 2.0, 19.0, 18.0), ids.with("eq-prev"), "Previous band", None, |p, r, c| {
         icon(p, r, Icon::Previous, c)
     })
@@ -1394,23 +1487,10 @@ fn draw_column(ui: &mut egui::Ui, panel: &mut Panel<'_>, column: Rect) {
     {
         panel.step_selection(true);
     }
-    // Row 2: on/off and the shape menu.
-    let power_ink = if band.on { color } else { colors.text_secondary };
-    if small_button(
-        ui,
-        at(2.0, 22.0, 20.0, 18.0),
-        ids.with("eq-power"),
-        "Switch the band on or off",
-        None,
-        |p, r, _| icon(p, r, Icon::Power, power_ink),
-    )
-    .clicked()
-    {
-        panel.edit(&[(slot, "On", if band.on { 0.0 } else { 1.0 })], "eq-curve-on");
-    }
+    // Row 2: the shape menu.
     let shape = small_button(
         ui,
-        at(24.0, 22.0, 66.0, 18.0),
+        at(2.0, 22.0, 88.0, 18.0),
         ids.with("eq-shape"),
         &format!("Band {} type", slot + 1),
         None,
@@ -1424,7 +1504,7 @@ fn draw_column(ui: &mut egui::Ui, panel: &mut Panel<'_>, column: Rect) {
             p.text(
                 r.left_center() + Vec2::new(22.0, 0.0),
                 Align2::LEFT_CENTER,
-                SHORT_TYPES.get(band.kind).copied().unwrap_or_default(),
+                TYPE_NAMES.get(band.kind).copied().unwrap_or_default(),
                 theme::ui_font(9.5),
                 colors.text_primary,
             );
@@ -1434,27 +1514,33 @@ fn draw_column(ui: &mut egui::Ui, panel: &mut Panel<'_>, column: Rect) {
     // Row 3: placement, listen and delete.
     let place = small_button(
         ui,
-        at(2.0, 42.0, 28.0, 18.0),
+        at(2.0, 42.0, 44.0, 18.0),
         ids.with("eq-place"),
         &format!("Band {} placement", slot + 1),
         None,
         |p, r, _| {
-            p.text(r.center(), Align2::CENTER_CENTER, PLACE_LETTERS[band.place], theme::ui_font(10.0), color);
+            p.text(
+                r.center(),
+                Align2::CENTER_CENTER,
+                PLACE_NAMES[band.place],
+                theme::ui_font(9.5),
+                place_color(band.place, &colors),
+            );
         },
     );
     place_menu(panel, &place, slot, band);
-    listen_button(ui, panel, at(32.0, 42.0, 28.0, 18.0), ids.with("eq-listen"), slot);
+    listen_button(ui, panel, at(48.0, 42.0, 20.0, 18.0), ids.with("eq-listen"), slot);
     let delete =
-        small_button(ui, at(62.0, 42.0, 28.0, 18.0), ids.with("eq-delete"), "Delete the band", None, |p, r, _| {
+        small_button(ui, at(70.0, 42.0, 20.0, 18.0), ids.with("eq-delete"), "Delete the band", None, |p, r, _| {
             icon(p, r, Icon::Delete, Color32::from_rgb(0xFF, 0x6B, 0x6B))
         });
     if delete.clicked() {
         panel.delete(slot);
         return;
     }
-    // Row 4: the mode, Static, Dynamic or Spectral.
-    mode_row(ui, panel, at(2.0, 62.0, 64.0, 16.0), slot, band, false);
-    key_button(ui, panel, at(68.0, 62.0, 22.0, 16.0), slot, band);
+    // Row 4: the mode's menu, and the switch between the main dials and the dynamics' dials.
+    mode_menu(ui, panel, at(2.0, 62.0, 64.0, 16.0), slot, band);
+    dials_switch(ui, panel, at(68.0, 62.0, 22.0, 16.0), slot, band);
     // The dials: Frequency, Gain and Q, or the band's dynamics while they are open.
     let fields = if panel.state.dynamics && band.mode > 0 {
         [RANGE, THRESHOLD, if band.mode == 2 { DETAIL } else { ATTACK }]
@@ -1466,80 +1552,115 @@ fn draw_column(ui: &mut egui::Ui, panel: &mut Panel<'_>, column: Rect) {
     }
 }
 
-/// The type names as the column's shape button reads them; its glyph says which way a cut or a
-/// shelf goes.
-const SHORT_TYPES: [&str; 10] =
-    ["Cut 48", "Cut 12", "Shelf", "Bell", "Notch", "Shelf", "Cut 12", "Cut 48", "Tilt", "Flat tilt"];
-
-/// The mode's three buttons, Static, Dynamic and Spectral (`upright` stacks them): a click picks
-/// the mode and opens its dynamics (Static closes them); a click on the band's own Dynamic or
-/// Spectral opens or closes them. A mode the band's type cannot take is dimmed.
-fn mode_row(ui: &mut egui::Ui, panel: &mut Panel<'_>, row: Rect, slot: usize, band: Band, upright: bool) {
+/// The mode's menu button: the band's mode written out in its colour, and a menu of Static,
+/// Dynamic and Spectral (a mode the type cannot take is dimmed) and whether the detector hears the
+/// device's sidechain. Picking Dynamic or Spectral shows the band's dynamics.
+fn mode_menu(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, slot: usize, band: Band) {
     let colors = super::device_canvas::colors();
-    let names = ["St", "Dy", "Sp"];
-    for (mode, letters) in names.into_iter().enumerate() {
-        let rect = if upright {
-            let h = (row.height() - 4.0) / 3.0;
-            Rect::from_min_size(row.min + Vec2::new(0.0, mode as f32 * (h + 2.0)), Vec2::new(row.width(), h))
-        } else {
-            let w = (row.width() - 4.0) / 3.0;
-            Rect::from_min_size(row.min + Vec2::new(mode as f32 * (w + 2.0), 0.0), Vec2::new(w, row.height()))
-        };
-        let allowed = effective_mode(mode as f64, band.kind) == mode;
-        let tint = if mode == 0 { colors.accent } else { mode_color(mode) };
-        let lit = (band.mode == mode).then_some(tint);
-        let label = format!("Band {} {}", slot + 1, MODE_NAMES[mode]);
-        let ink = if allowed { colors.text_secondary } else { colors.text_secondary.gamma_multiply(0.35) };
-        let response =
-            small_button(ui, rect, panel.address.ids.with(("eq-mode", slot, mode, upright)), &label, lit, |p, r, c| {
+    let ink = if band.mode > 0 { band_color(slot) } else { colors.text_secondary };
+    let response = small_button(
+        ui,
+        rect,
+        panel.address.ids.with(("eq-mode", slot, rect.min.x as i32)),
+        &format!("Band {} mode", slot + 1),
+        None,
+        |p, r, _| {
+            p.text(
+                r.center() - Vec2::new(4.0, 0.0),
+                Align2::CENTER_CENTER,
+                MODE_NAMES[band.mode],
+                theme::ui_font(9.5),
+                ink,
+            );
+            icon(
+                p,
+                Rect::from_center_size(Pos2::new(r.right() - 7.0, r.center().y), Vec2::splat(8.0)),
+                Icon::Down,
+                colors.text_secondary,
+            );
+        },
+    );
+    let mut picked = None;
+    let mut keyed = None;
+    egui::Popup::menu(&response).frame(menu_frame(&colors)).show(|ui| {
+        ui.set_min_width(180.0);
+        for (mode, name) in MODE_NAMES.iter().enumerate() {
+            let allowed = effective_mode(mode as f64, band.kind) == mode;
+            if ui.add_enabled(allowed, egui::Button::selectable(band.mode == mode, *name)).clicked() {
+                picked = Some(mode);
+            }
+        }
+        ui.separator();
+        let can = band.mode > 0;
+        if ui
+            .add_enabled(can, egui::Button::selectable(band.keyed, "Detector hears the sidechain"))
+            .on_hover_text(
+                "The band's detector hears the device's sidechain key (set in the header) instead of the band",
+            )
+            .clicked()
+        {
+            keyed = Some(!band.keyed);
+        }
+    });
+    if let Some(mode) = picked {
+        if mode != band.mode {
+            panel.edit(&[(slot, "Mode", mode as f64)], "eq-curve-mode");
+        }
+        panel.state.dynamics = mode > 0;
+    }
+    if let Some(on) = keyed {
+        panel.edit(&[(slot, "Trigger", if on { 1.0 } else { 0.0 })], "eq-curve-trigger");
+    }
+}
+
+/// The switch between the band's main dials and its dynamics' dials, for a Dynamic or Spectral
+/// band (dimmed for a Static one); lit while the dynamics show.
+fn dials_switch(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, slot: usize, band: Band) {
+    let colors = super::device_canvas::colors();
+    let open = panel.state.dynamics && band.mode > 0;
+    let lit = open.then_some(band_color(slot));
+    let ink = if band.mode > 0 { colors.text_secondary } else { colors.text_secondary.gamma_multiply(0.35) };
+    let wide = rect.width() > 40.0;
+    let response = small_button(
+        ui,
+        rect,
+        panel.address.ids.with(("eq-dials", slot, rect.min.x as i32)),
+        &format!("Band {} dynamics", slot + 1),
+        lit,
+        |p, r, c| {
+            let ink = if lit.is_some() { c } else { ink };
+            if wide {
                 p.text(
                     r.center(),
                     Align2::CENTER_CENTER,
-                    letters,
-                    theme::ui_font(9.0),
-                    if lit.is_some() { c } else { ink },
+                    if band.keyed { "Dynamics · SC" } else { "Dynamics" },
+                    theme::ui_font(9.5),
+                    ink,
                 );
-            });
-        if response.clicked() && allowed {
-            if band.mode == mode && mode > 0 {
-                panel.state.dynamics = !panel.state.dynamics;
             } else {
-                panel.edit(&[(slot, "Mode", mode as f64)], "eq-curve-mode");
-                panel.state.dynamics = mode > 0;
+                icon(p, r, Icon::Sliders, ink);
             }
-        }
-    }
-}
-
-/// The key button: a Dynamic or Spectral band's detector hears the device's key (its sidechain,
-/// set in the device's header) instead of the band's own sound; dimmed for a Static band.
-fn key_button(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, slot: usize, band: Band) {
-    let colors = super::device_canvas::colors();
-    let lit = (band.keyed && band.mode > 0).then_some(mode_color(band.mode));
-    let label = format!("Band {} key", slot + 1);
-    let ink = if band.mode > 0 { colors.text_secondary } else { colors.text_secondary.gamma_multiply(0.35) };
-    let response =
-        small_button(ui, rect, panel.address.ids.with(("eq-key", slot, rect.min.x as i32)), &label, lit, |p, r, c| {
-            p.text(r.center(), Align2::CENTER_CENTER, "K", theme::ui_font(9.0), if lit.is_some() { c } else { ink });
-        })
-        .on_hover_text("The band's detector hears the device's sidechain key instead of the band");
+        },
+    )
+    .on_hover_text(if open { "Show the band's frequency, gain and Q" } else { "Show the band's dynamics" });
     if response.clicked() && band.mode > 0 {
-        panel.edit(&[(slot, "Trigger", if band.keyed { 0.0 } else { 1.0 })], "eq-curve-trigger");
+        panel.state.dynamics = !open;
     }
 }
 
-/// The listen button: held, the band is heard alone.
-fn listen_button(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, id: egui::Id, slot: usize) {
+/// The listen button: the listen mode's switch, the same as the display's headphones. While it is
+/// on, grabbing any band (its dot, or one of its dials) plays that band alone until it is let go.
+fn listen_button(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, id: egui::Id, _slot: usize) {
     let colors = super::device_canvas::colors();
-    let lit = (panel.state.listening == Some(slot)).then_some(colors.accent);
+    let on = panel.state.audition;
+    let lit = on.then_some(colors.accent);
     let label = if panel.can_listen {
-        "Hold to hear the band alone"
+        "Listen: while it is on, grabbing a band plays that band alone"
     } else {
         "A band of an EQ inside a group cannot be heard alone yet"
     };
-    let response = small_button(ui, rect, id, label, lit, |p, r, c| icon(p, r, Icon::Phones, c));
-    if response.is_pointer_button_down_on() {
-        panel.listen = Some(slot);
+    if small_button(ui, rect, id, label, lit, |p, r, c| icon(p, r, Icon::Phones, c)).clicked() {
+        panel.state.audition = !on;
     }
 }
 
@@ -1548,7 +1669,7 @@ fn listen_button(ui: &mut egui::Ui, panel: &mut Panel<'_>, rect: Rect, id: egui:
 fn draw_floating_panel(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect) {
     let Some((slot, band)) = panel.selected() else { return };
     let colors = super::device_canvas::colors();
-    let color = place_color(band.place, &colors);
+    let color = band_color(slot);
     let dynamics = panel.state.dynamics && band.mode > 0;
     let size = if dynamics { FLOATING + Vec2::new(FLOATING_DYNAMICS, 0.0) } else { FLOATING };
     let wanted = if panel.state.follow {
@@ -1566,26 +1687,9 @@ fn draw_floating_panel(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect) 
     ui.interact(rect, panel.address.ids.with("eq-floating"), Sense::click());
     let at = |dx: f32, dy: f32, w: f32, h: f32| Rect::from_min_size(rect.min + Vec2::new(dx, dy), Vec2::new(w, h));
     let ids = panel.address.ids;
-    // The band: on/off, its number, listen; its shape; its placement.
-    let power_ink = if band.on { color } else { colors.text_secondary };
-    if small_button(
-        ui,
-        at(8.0, 8.0, 24.0, 20.0),
-        ids.with("eq-f-power"),
-        "Switch the band on or off",
-        None,
-        |p, r, _| icon(p, r, Icon::Power, power_ink),
-    )
-    .clicked()
-    {
-        panel.edit(&[(slot, "On", if band.on { 0.0 } else { 1.0 })], "eq-curve-on");
-    }
-    let number = at(36.0, 8.0, 28.0, 20.0);
-    let response = ui.interact(number, ids.with("eq-f-number"), Sense::click()).on_hover_text("Pick a band");
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Band {}", slot + 1)));
-    band_number(&painter, number.center(), 9.0, slot, band, true);
-    band_menu(panel, &response);
-    listen_button(ui, panel, at(68.0, 8.0, 32.0, 20.0), ids.with("eq-f-listen"), slot);
+    // The band: its number (on/off), listen; its shape; its placement.
+    number_button(ui, panel, &painter, at(8.0, 8.0, 28.0, 20.0), ids.with("eq-f-number"), slot, band, true);
+    listen_button(ui, panel, at(40.0, 8.0, 60.0, 20.0), ids.with("eq-f-listen"), slot);
     let shape = small_button(
         ui,
         at(8.0, 33.0, 92.0, 20.0),
@@ -1630,8 +1734,9 @@ fn draw_floating_panel(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect) 
     for (field, (dx, w)) in [(108.0, 66.0), (176.0, 72.0), (250.0, 62.0)].into_iter().enumerate() {
         value_dial(ui, panel, at(dx, 4.0, w, FLOATING.y - 8.0), slot, field, DialLayout::Above);
     }
-    // The mode, stacked, then delete, previous and next.
-    mode_row(ui, panel, at(318.0, 8.0, 26.0, 69.0), slot, band, true);
+    // The mode's menu and the dynamics' switch, then delete, previous and next.
+    mode_menu(ui, panel, at(318.0, 8.0, 74.0, 21.0), slot, band);
+    dials_switch(ui, panel, at(318.0, 32.0, 74.0, 21.0), slot, band);
     let right = FLOATING.x - 30.0;
     if small_button(ui, at(right, 8.0, 22.0, 21.0), ids.with("eq-f-delete"), "Delete the band", None, |p, r, _| {
         icon(p, r, Icon::Delete, Color32::from_rgb(0xFF, 0x6B, 0x6B))
@@ -1661,7 +1766,6 @@ fn draw_floating_panel(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect) 
             [rect.min + Vec2::new(FLOATING.x + 2.0, 8.0), rect.min + Vec2::new(FLOATING.x + 2.0, FLOATING.y - 8.0)],
             Stroke::new(1.0, colors.border),
         );
-        key_button(ui, panel, at(FLOATING.x + 212.0, 8.0, 30.0, 20.0), slot, band);
         let fields =
             if band.mode == 2 { [RANGE, THRESHOLD, DETAIL, ATTACK] } else { [RANGE, THRESHOLD, ATTACK, RELEASE] };
         for (i, field) in fields.into_iter().enumerate() {
@@ -1779,6 +1883,8 @@ fn draw_display(
                 Pos2::new(frequency_x(center, display), analyser_y_in(db, display, panel.state.spectrum.range))
             })
             .collect();
+        // A smooth line through the bands' centers, not straight pieces between them.
+        let boundary = smooth(&boundary, 4);
         let gray = analyser_gray(&colors);
         let mut mesh = egui::Mesh::default();
         for point in boundary.iter() {
@@ -1838,7 +1944,7 @@ fn draw_display(
     }
 
     // While a band is heard alone, the range it works on is shaded.
-    if let Some(band) = panel.state.listening.and_then(|slot| panel.bands.get(slot)).copied() {
+    if let Some((heard_slot, band)) = panel.state.listening.and_then(|slot| panel.bands.get(slot).map(|b| (slot, *b))) {
         let (low, high) = match band.kind {
             0 | 1 => (FREQUENCY.0, band.frequency),
             6 | 7 => (band.frequency, FREQUENCY.1),
@@ -1849,7 +1955,7 @@ fn draw_display(
             }
         };
         let shade = Rect::from_x_y_ranges(frequency_x(low, display)..=frequency_x(high, display), display.y_range());
-        painter.rect_filled(shade, 0.0, place_color(band.place, &colors).gamma_multiply(0.14));
+        painter.rect_filled(shade, 0.0, band_color(heard_slot).gamma_multiply(0.14));
     }
     // The curves, from each heard band's response computed once this frame and summed, drawn
     // only inside the curve's area: a curve past the display's range leaves it, it is not
@@ -1862,16 +1968,11 @@ fn draw_display(
     let adaptive = value(panel.parameters, "adaptiveQ") >= 0.5;
     let to_points = |db: &[f64]| line_points(db, &frequencies, plot, range);
     // The selected band's own response, filled faintly from 0 dB.
-    if let Some((slot, band)) = panel.selected().filter(|(_, band)| band.on)
+    if let Some((slot, _)) = panel.selected().filter(|(_, band)| band.on)
         && let Some(Some(own)) = responses.get(slot)
     {
         let zero = vec![0.0; own.len()];
-        fill_between(
-            &curves,
-            &to_points(own),
-            &to_points(&zero),
-            place_color(band.place, &colors).gamma_multiply(0.13),
-        );
+        fill_between(&curves, &to_points(own), &to_points(&zero), band_color(slot).gamma_multiply(0.13));
     }
     // A Dynamic or Spectral band's reach: the curve its side would have with the whole range
     // applied, faint, the area between filled, so the band's dynamics show before anything plays.
@@ -1884,7 +1985,7 @@ fn draw_display(
         let reach = reached(band, &frequencies, scale, adaptive);
         let own = responses.get(slot).cloned().flatten().unwrap_or_else(|| vec![0.0; frequencies.len()]);
         let there: Vec<f64> = here.iter().zip(&own).zip(&reach).map(|((h, o), r)| h - o + r).collect();
-        let tint = mode_color(band.mode);
+        let tint = band_color(slot);
         let (a, b) = (to_points(&here), to_points(&there));
         fill_between(&curves, &a, &b, tint.gamma_multiply(0.07));
         curves.add(egui::Shape::line(b, Stroke::new(1.0, tint.gamma_multiply(0.4))));
@@ -1907,19 +2008,19 @@ fn draw_display(
     // The live curve: each side as it is now, with every Dynamic band's gain change and every
     // Spectral band's deepest part, while one moves (docs/spec/eq.md › Dynamic and Spectral bands).
     if let Some(live) = panel.live {
-        let moving: Vec<bool> = panel
-            .bands
-            .iter()
-            .zip(live)
-            .map(|(band, value)| band.heard() && band.mode > 0 && live_change(band, value).1.abs() > 0.05)
-            .collect();
+        let moving: Vec<bool> = panel.bands.iter().zip(live).map(|(band, _)| band.heard() && band.mode > 0).collect();
         if moving.iter().any(|m| *m) {
             let mut now = responses.clone();
+            // The first heard Spectral band shows every part's cut; another its deepest part's.
+            let first_spectral = panel.bands.iter().position(|b| b.heard() && b.mode == 2);
             for (slot, band) in panel.bands.iter().enumerate() {
                 if moving.get(slot).copied().unwrap_or(false)
                     && let (Some(value), Some(cell)) = (live.get(slot), now.get_mut(slot))
                 {
-                    *cell = Some(live_db(band, *value, &frequencies, scale, adaptive));
+                    *cell = Some(match (Some(slot) == first_spectral, panel.live_parts) {
+                        (true, Some(parts)) => all_parts_db(band, &parts, &frequencies),
+                        _ => live_db(band, *value, &frequencies, scale, adaptive),
+                    });
                 }
             }
             for place in 0..PLACE_NAMES.len() {
@@ -1927,11 +2028,12 @@ fn draw_display(
                     continue;
                 }
                 let side = |b: &Band| b.place == 0 || b.place == place;
-                let tint = if panel.bands.iter().zip(&moving).any(|(b, m)| *m && b.place == place && b.mode == 2) {
-                    mode_color(2)
-                } else {
-                    mode_color(1)
-                };
+                let tint = panel
+                    .bands
+                    .iter()
+                    .zip(&moving)
+                    .position(|(b, m)| *m && b.place == place)
+                    .map_or(colors.accent, band_color);
                 curves.add(egui::Shape::line(
                     to_points(&summed(&now, &panel.bands, side)),
                     Stroke::new(1.4, tint.gamma_multiply(0.9)),
@@ -2208,6 +2310,20 @@ fn with_parts(band: &Band, parts: &[SvfCoefficients], frequencies: &[f64]) -> Ve
             20.0 * (own * extra).max(1.0e-6).log10()
         })
         .collect()
+}
+
+/// A Spectral band's response with each of its parts' bells at its gain change now.
+fn all_parts_db(band: &Band, changes: &[f32], frequencies: &[f64]) -> Vec<f64> {
+    let (centers, used, q) =
+        suhina_device_eq::spectral_parts(band.kind, DRAWN_RATE, band.frequency, band.q, band.detail);
+    let parts: Vec<SvfCoefficients> = centers
+        .iter()
+        .zip(changes)
+        .take(used)
+        .filter(|(_, change)| change.abs() > 0.01)
+        .map(|(&f, &change)| SvfCoefficients::bell(DRAWN_RATE, f, q, f64::from(change)))
+        .collect();
+    with_parts(band, &parts, frequencies)
 }
 
 /// A band's readout read back: a Spectral band's deepest part (its index) and the gain change.
@@ -2560,7 +2676,7 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
             .on_hover_cursor(egui::CursorIcon::Move);
         response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &caption));
         let selected = panel.in_group(slot);
-        let color = place_color(band.place, &colors);
+        let color = band_color(slot);
         let (fill, ring, ink) = match (selected, band.on) {
             (true, true) => (color, color, colors.text_inverse),
             (true, false) => (colors.control_active, colors.text_secondary, colors.text_secondary),
@@ -2592,7 +2708,7 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
         // A Dynamic or Spectral band's range: a line from the dot to where its gain may go, with
         // an arrow there, and the gain change now as a thicker bar along it.
         if band.mode > 0 && band.on && band.range.abs() > 0.05 {
-            let tint = mode_color(band.mode);
+            let tint = band_color(slot);
             let scale = value(panel.parameters, "scale");
             let base = if band.gain_editable() { band.gain * scale } else { 0.0 };
             let end = Pos2::new(
@@ -2600,14 +2716,6 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
                 db_y(base + band.range * scale, plot, range).clamp(plot.top() - 4.0, plot.bottom() + 4.0),
             );
             let direction = if end.y >= at.y { 1.0 } else { -1.0 };
-            if (end.y - at.y).abs() > radius + 4.0 {
-                let from = at + Vec2::new(0.0, direction * (radius + 2.0));
-                painter.line_segment([from, end], Stroke::new(1.2, tint.gamma_multiply(0.45)));
-                if let Some(change) = panel.live.and_then(|live| live.get(slot).copied()).filter(|c| c.abs() > 0.05) {
-                    let now = Pos2::new(at.x, db_y(base + f64::from(change) * scale, plot, range));
-                    painter.line_segment([from, now], Stroke::new(2.4, tint.gamma_multiply(0.95)));
-                }
-            }
             painter.add(egui::Shape::convex_polygon(
                 vec![
                     end + Vec2::new(0.0, direction * 2.5),
@@ -2788,7 +2896,7 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
     if let Some((slot, at)) = hovered
         && let Some(band) = panel.bands.get(slot).copied()
     {
-        let color = place_color(band.place, &colors);
+        let color = band_color(slot);
         let gain = if band.gain_editable() { format!("{}  ", gain_text(band.gain)) } else { String::new() };
         let text = if big {
             format!(
@@ -2854,15 +2962,14 @@ fn draw_band_list(ui: &mut egui::Ui, panel: &mut Panel<'_>, list: Rect) {
     painter.rect_filled(list, 3.0, colors.window_background);
     painter.rect_stroke(list, 3.0, Stroke::new(1.0, colors.border), egui::StrokeKind::Inside);
     // The columns: [x, width] at the list's width of 480, scaled to the list.
-    let columns: [(&str, f32, f32, Align2); 8] = [
-        ("#", 0.0, 34.0, Align2::CENTER_CENTER),
-        ("On", 34.0, 28.0, Align2::CENTER_CENTER),
-        ("Shape", 62.0, 118.0, Align2::LEFT_CENTER),
-        ("Freq", 180.0, 84.0, Align2::RIGHT_CENTER),
-        ("Gain", 264.0, 72.0, Align2::RIGHT_CENTER),
-        ("Q", 336.0, 54.0, Align2::RIGHT_CENTER),
-        ("Stereo", 390.0, 46.0, Align2::CENTER_CENTER),
-        ("Mode", 436.0, 44.0, Align2::CENTER_CENTER),
+    let columns: [(&str, f32, f32, Align2); 7] = [
+        ("#", 0.0, 32.0, Align2::CENTER_CENTER),
+        ("Shape", 34.0, 132.0, Align2::LEFT_CENTER),
+        ("Freq", 166.0, 84.0, Align2::RIGHT_CENTER),
+        ("Gain", 250.0, 72.0, Align2::RIGHT_CENTER),
+        ("Q", 322.0, 54.0, Align2::RIGHT_CENTER),
+        ("Stereo", 376.0, 52.0, Align2::CENTER_CENTER),
+        ("Mode", 428.0, 52.0, Align2::CENTER_CENTER),
     ];
     let k = list.width() / 480.0;
     let cell = |column: usize, y: f32| {
@@ -2908,7 +3015,7 @@ fn draw_band_list(ui: &mut egui::Ui, panel: &mut Panel<'_>, list: Rect) {
         let Some(band) = panel.bands.get(slot).copied() else { continue };
         let y = list.top() + 20.0 + row as f32 * 20.0;
         let line = Rect::from_min_size(Pos2::new(list.left() + 1.0, y), Vec2::new(list.width() - 2.0, 19.0));
-        let color = place_color(band.place, &colors);
+        let color = band_color(slot);
         let row_response = ui.interact(line, ids.with(("eq-row", slot)), Sense::click());
         if panel.state.selected == Some(slot) {
             painter.rect_filled(line, 2.0, color.gamma_multiply(0.16));
@@ -2916,24 +3023,20 @@ fn draw_band_list(ui: &mut egui::Ui, panel: &mut Panel<'_>, list: Rect) {
         if row_response.clicked() {
             panel.select(slot);
         }
-        band_number(&painter, cell(0, y).center(), 6.5, slot, band, panel.state.selected == Some(slot));
-        let on_ink = if band.on { colors.accent } else { colors.text_secondary };
-        if small_button(
+        number_button(
             ui,
-            cell(1, y).shrink2(Vec2::new(4.0, 1.0)),
-            ids.with(("eq-row-on", slot)),
-            "Switch the band on or off",
-            None,
-            |p, r, _| icon(p, r, Icon::Power, on_ink),
-        )
-        .clicked()
-        {
-            panel.edit(&[(slot, "On", if band.on { 0.0 } else { 1.0 })], "eq-curve-on");
-        }
+            panel,
+            &painter,
+            cell(0, y).shrink2(Vec2::new(4.0, 2.0)),
+            ids.with(("eq-row-number", slot)),
+            slot,
+            band,
+            panel.state.selected == Some(slot),
+        );
         let ink = if band.on { colors.text_primary } else { colors.text_secondary };
         let shape = small_button(
             ui,
-            cell(2, y).shrink2(Vec2::new(2.0, 1.0)),
+            cell(1, y).shrink2(Vec2::new(2.0, 1.0)),
             ids.with(("eq-row-shape", slot)),
             &format!("Band {} type", slot + 1),
             None,
@@ -2954,29 +3057,35 @@ fn draw_band_list(ui: &mut egui::Ui, panel: &mut Panel<'_>, list: Rect) {
             },
         );
         shape_menu(panel, &shape, slot, band);
-        for (column, field) in [(3, 0usize), (4, 1), (5, 2)] {
+        for (column, field) in [(2, 0usize), (3, 1), (4, 2)] {
             list_value(ui, panel, cell(column, y), slot, band, field);
         }
         let place = small_button(
             ui,
-            cell(6, y).shrink2(Vec2::new(4.0, 1.0)),
+            cell(5, y).shrink2(Vec2::new(4.0, 1.0)),
             ids.with(("eq-row-place", slot)),
             &format!("Band {} placement", slot + 1),
             None,
             |p, r, _| {
-                p.text(r.center(), Align2::CENTER_CENTER, PLACE_NAMES[band.place], theme::ui_font(9.5), color);
+                p.text(
+                    r.center(),
+                    Align2::CENTER_CENTER,
+                    PLACE_NAMES[band.place],
+                    theme::ui_font(9.5),
+                    place_color(band.place, &colors),
+                );
             },
         );
         place_menu(panel, &place, slot, band);
         // The mode: a click steps to the next mode the band's type takes.
         let mode = small_button(
             ui,
-            cell(7, y).shrink2(Vec2::new(2.0, 1.0)),
+            cell(6, y).shrink2(Vec2::new(2.0, 1.0)),
             ids.with(("eq-row-mode", slot)),
             &format!("Band {} mode", slot + 1),
             None,
             |p, r, _| {
-                let ink = if band.mode > 0 { mode_color(band.mode) } else { colors.text_secondary };
+                let ink = if band.mode > 0 { band_color(slot) } else { colors.text_secondary };
                 p.text(r.center(), Align2::CENTER_CENTER, MODE_NAMES[band.mode], theme::ui_font(9.0), ink);
             },
         );

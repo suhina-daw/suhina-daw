@@ -72,8 +72,9 @@ pub const MODE_NAMES: [&str; 3] = ["Static", "Dynamic", "Spectral"];
 /// What a Dynamic or Spectral band's detector hears, in [`param::TRIGGER`] order: the sound coming
 /// into the band, or the device's key (its sidechain) through the band's own detector filter.
 pub const TRIGGER_NAMES: [&str; 2] = ["Band", "Key"];
-/// How many narrow parts a spectral band watches and moves on its own.
-pub const SPECTRAL_PARTS: usize = 5;
+/// How many narrow parts a spectral band watches and moves on its own. The first Spectral band's
+/// parts all fit in the readouts after the bands' (`MAX_READOUTS` is 35).
+pub const SPECTRAL_PARTS: usize = 11;
 /// The placements' short names, as the panel's placement button reads them.
 pub const PLACE_LETTERS: [&str; 5] = ["St", "L", "R", "M", "S"];
 
@@ -474,7 +475,7 @@ impl Part {
 
 /// The narrowest spacing between two Spectral parts, in octaves: a range narrower than five of
 /// these uses fewer parts, so no two parts watch and cut the same frequency.
-const PART_MIN_OCTAVES: f64 = 0.15;
+const PART_MIN_OCTAVES: f64 = 0.12;
 
 /// How many parts a Spectral band uses over a range from `low` to `high` Hz: as many as fit with
 /// at least [`PART_MIN_OCTAVES`] between their centers (each part has an equal share of the range),
@@ -526,7 +527,7 @@ pub fn spectral_readout(value: f32) -> (usize, f64) {
 
 /// A Spectral part's Q for the band's Detail (0 to 1): broad at 0, narrow and selective at 1.
 fn part_q(detail: f64) -> f64 {
-    1.5 + detail.clamp(0.0, 1.0) * 10.5
+    2.0 + detail.clamp(0.0, 1.0) * 14.0
 }
 
 /// One band: what it is now and its smoothed controls.
@@ -1049,7 +1050,17 @@ impl Device for Eq {
     /// Each band's gain change now, in band order, for the panel's live curve.
     fn readouts(&self) -> Option<[f32; suhina_device_api::MAX_READOUTS]> {
         let changes = self.gain_changes();
-        Some(std::array::from_fn(|i| changes.get(i).copied().unwrap_or(0.0)))
+        // After the 24 bands, every part of the first Spectral band that runs, so the panel can
+        // draw its live cut part by part (`SPECTRAL_READOUTS`).
+        let parts = self.bands.iter().find(|b| b.active && b.mode == Mode::Spectral).map(|b| {
+            std::array::from_fn::<f32, SPECTRAL_PARTS, _>(|i| {
+                if i < b.parts_in_use { b.parts.get(i).map_or(0.0, |p| p.tuned_db as f32) } else { 0.0 }
+            })
+        });
+        Some(std::array::from_fn(|i| match i.checked_sub(BANDS) {
+            None => changes.get(i).copied().unwrap_or(0.0),
+            Some(part) => parts.and_then(|p| p.get(part).copied()).unwrap_or(0.0),
+        }))
     }
 
     fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {

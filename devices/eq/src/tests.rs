@@ -570,3 +570,15 @@ fn a_keyed_band_moves_with_the_key_and_not_its_own_sound() {
     eq(&moving(3, 1.0, 1.0)).process_keyed(&ProcessContext::default(), &key, &mut own);
     assert!((20.0 * (level(&own, 1_000.0, 0) / 0.01).log10()).abs() < 0.2);
 }
+
+#[test]
+fn the_first_spectral_bands_parts_are_in_the_readouts() {
+    let mut e = eq(&moving(3, 2.0, 0.5));
+    let probe = e.bands[2].parts[5].frequency;
+    gain_at(&mut e, probe, 0.1);
+    let readouts = e.readouts().unwrap_or([0.0; suhina_device_api::MAX_READOUTS]);
+    let parts = &readouts[BANDS..BANDS + SPECTRAL_PARTS];
+    assert!(parts[5] < -2.0, "the part under the tone cuts: {parts:?}");
+    assert!(parts.iter().enumerate().all(|(i, &p)| i == 5 || p > parts[5]), "it cuts most: {parts:?}");
+    const { assert!(BANDS + SPECTRAL_PARTS <= suhina_device_api::MAX_READOUTS) };
+}

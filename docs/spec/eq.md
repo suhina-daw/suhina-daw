@@ -176,10 +176,10 @@ block of `crates/dsp` (`band_dynamics::BandDynamics`, AGENTS.md rule 8):
   every 16 frames while the change moves by more than 0.01 dB. A Dynamic band with no gain of its
   own still runs, since its gain can move.
 - **Spectral** (a decision of this device's own: minimum phase, no look-ahead, no latency): the
-  band's own filter runs as it is, and up to five narrow parts spread over its range — a bell's
+  band's own filter runs as it is, and up to eleven narrow parts spread over its range — a bell's
   width between its half-gain points, or the three octaves a shelf lifts, clamped to 10 Hz and
-  0.45 of the rate — as many as fit 0.15 octave apart, each with its own detector
-  (a band pass at the part, Q from Detail: `1.5 + 10.5 · Detail`) and their own gain change, which
+  0.45 of the rate — as many as fit 0.12 octave apart, each with its own detector
+  (a band pass at the part, Q from Detail: `2 + 14 · Detail`) and their own gain change, which
   tunes a bell of that Q at the part. So only the parts whose level passes the threshold move: a
   resonance is cut and the rest of the band is left alone. Detail sets how narrow and selective
   the parts are.
@@ -241,17 +241,17 @@ path too, so two devices never share either.
 Measurements in canvas px, `[x, y, w, h]`:
 
 - **The band column** `[2, 2, 92, 164]`, in rows (positions relative to it): the selected band's
-  number in its placement's colour `[2, 2, 22, 18]` (a click lists the bands in use to pick one),
-  previous and next `[50, 2, 19, 18]`, `[71, 2, 19, 18]`; on/off `[2, 22, 20, 18]` and the shape
-  menu `[24, 22, 66, 18]` (the type's glyph and a short name); the placement menu
-  `[2, 42, 28, 18]` (its letter in its colour), listen `[32, 42, 28, 18]` (held, the band is heard
-  alone) and delete `[62, 42, 28, 18]`; the key button K `[68, 62, 22, 16]` (a Dynamic or Spectral
-  band's detector hears the device's key; dimmed for a Static band); the mode, three buttons St,
-  Dy and Sp `[2, 62, 64, 16]`
-  (a click picks the mode and opens its dynamics, St closes them; a click on the band's own Dy or
-  Sp opens or closes them; a mode the type cannot take is dimmed); then three dials, cells
+  number in its colour `[2, 2, 22, 18]` (a click switches the band on or off — the number is its
+  power button —, a right click lists the bands in use to pick another), previous and next
+  `[50, 2, 19, 18]`, `[71, 2, 19, 18]`; the shape menu `[2, 22, 88, 18]` (the type's glyph and
+  name); the placement menu `[2, 42, 44, 18]` (its name in its colour), listen `[48, 42, 20, 18]`
+  (the listen mode's switch) and delete `[70, 42, 20, 18]`; the mode's menu `[2, 62, 64, 16]`
+  (the mode written out, Static, Dynamic or Spectral, in the band's colour; the menu lists the
+  three, a mode the type cannot take dimmed, then "Detector hears the sidechain"; picking Dynamic
+  or Spectral shows the dynamics' dials) and the dials' switch `[68, 62, 22, 16]` (between the main
+  dials and the dynamics' dials, for a Dynamic or Spectral band); then three dials, cells
   `[2, 80 + 28·i, 88, 27]`, each a dial at the left with its caption and value beside it (9.5 pt):
-  Frequency, Gain and Q, or with the dynamics open Range, Threshold and Attack (Detail for a
+  Frequency, Gain and Q, or with the dynamics shown Range, Threshold and Attack (Detail for a
   Spectral band). Every dial drags like every value in a panel (Shift for precision, double-click
   resets); a click makes it the active value (#707's `value_keys`): the arrows step it, and a
   typed value is set with Enter — a frequency also as a note ("A4", "D#5 +13", "Bb3") or in "k"
@@ -278,7 +278,8 @@ Measurements in canvas px, `[x, y, w, h]`:
   (violet for Spectral) shows the band's side with the whole range applied — a Dynamic band at its
   gain plus its range, a Spectral band with every part moved by its range — and the area between
   it and the curve is filled.
-- **Dots.** One numbered dot per band in use, in its placement's colour, at its frequency and gain
+- **Dots.** One numbered dot per band in use, in the band's own colour (hues spread around the wheel
+  slot by slot, `band_color`), at its frequency and gain
   (after Scale) — for the cuts and the notch on the 0 dB line; a band that is off has a dashed
   ring. Dragging moves the frequency, and the gain where the type has one (Shift for precision);
   dragging a band that is off turns it on. A click or a drag start selects the band; a
@@ -286,8 +287,7 @@ Measurements in canvas px, `[x, y, w, h]`:
   a right click opens its shape menu; Alt and the wheel set its dynamic range (0.5 dB a step),
   making a Static band Dynamic. Hovering or dragging a dot shows its values beside it: frequency,
   the nearest note, gain and Q (in the strip also the cents and the placement). A Dynamic or
-  Spectral band's dot carries its range: a line in orange (violet for Spectral) to where its gain
-  may go, an arrow there, and its gain change now as a thicker bar along the line.
+  Spectral band's reach, live curve and handle are drawn in the band's colour.
 - **Several bands.** A click on a dot selects that band alone; Ctrl (Cmd) or Shift with the click
   adds it to the selection or takes it out. A drag on the background draws a box, and the bands
   whose dots it holds become the selection (with Ctrl or Shift they join it). Dragging a selected
@@ -303,12 +303,14 @@ Measurements in canvas px, `[x, y, w, h]`:
   first 15 %) a low shelf at its half-gain point, or a 48 dB low cut once it falls past −18 dB; the
   same at the right edge a high shelf or cut. The whole stroke is one undo step, and the bands it
   made are selected. It is meant for a fast rough start, tuned afterwards.
-- **The live curve.** While a Dynamic or Spectral band's gain moves, a curve in its mode's colour
-  draws each side with the bands as they are at that moment, from the device's readouts: a
-  Dynamic band at its gain plus its change, a Spectral band with a bell of its change at its
-  deepest part (the readout carries that part's index in hundreds, `spectral_readout`).
-- **The range handle.** The arrow at the end of a Dynamic or Spectral band's range line is a
-  handle: dragged up or down it sets the range (at the display's dB per point when the drag
+- **The live curve.** While sound plays through a Dynamic or Spectral band, a curve in the band's
+  colour draws its side with the bands as they are at that moment, from the device's readouts —
+  drawn all the while, so it never blinks in and out: a Dynamic band at its gain plus its change;
+  the first Spectral band that runs with every part's bell at its change (the readouts after the
+  bands' carry its parts); another Spectral band with a bell at its deepest part (its readout
+  carries that part's index in hundreds, `spectral_readout`).
+- **The range handle.** A small arrow where a Dynamic or Spectral band's range ends (no line to
+  it) is a handle: dragged up or down it sets the range (at the display's dB per point when the drag
   began, divided by Scale), one undo step.
 - **Making and deleting bands.** A double-click on the display's background makes a band there,
   in the first slot not in use: at the far left (the first 6 %) a Low Cut 48, at the far right a
@@ -320,8 +322,9 @@ Measurements in canvas px, `[x, y, w, h]`:
   on the background clears the selection.
 - **Switches on the display.** At its bottom left (in the strip at its top left), every 20 px: the
   piano keys (the frequency axis drawn as a keyboard along the display's bottom), the analyser (on
-  at first; a right click opens its settings), draw mode, and Audition (while it is on, holding a
-  dot plays that band alone), then the settings (a gear). While a band is heard alone, the range it works on is shaded in its
+  at first; a right click opens its settings), draw mode, listen (while it is on, grabbing a band —
+  its dot or one of its dials — plays that band alone until it is let go; the column's and the
+  floating panel's listen buttons switch the same mode), then the settings (a gear). While a band is heard alone, the range it works on is shaded in its
   placement's colour.
 - **The settings page.** The gear covers the display with a page of settings, panel state like the
   switches: the strip's floating panel Centered (the default) or Follows band, and the analyser's
@@ -341,18 +344,19 @@ Measurements in canvas px, `[x, y, w, h]`:
   rectangle: the display over the whole strip (4 px in, with the output meter at its right edge),
   the frequency labels from 20 Hz to 20k, the dB labels at the right, and a readout of the
   frequency, note and gain under the pointer. From 340 pt tall the strip keeps a 100 px lane under
-  the curve for the selected band's **floating panel** (372 × 84, in the middle of the display; it
-  follows its band only when the settings say so): on/off, the number and listen over the shape
+  the curve for the selected band's **floating panel** (428 × 84, in the middle of the display; it
+  follows its band only when the settings say so): the number (on/off) and listen over the shape
   and placement menus `[8, 8 … 77]`, the Frequency, Gain and Q dials `[108, 176, 250]` (dial on
-  top, caption and value under it), the mode stacked `[318, 8, 26, 69]`, then delete, previous and
-  next. With the dynamics open it is 250 px wider: Range, Threshold, Attack and Release (Range,
-  Threshold, Detail and Attack for a Spectral band), 50 px apart, and the key button K. The widget tells the strip from the compact panel by the layer it is
+  top, caption and value under it), the mode's menu `[318, 8, 74, 21]` and the dynamics' switch
+  ("Dynamics", "Dynamics · SC" while the detector hears the sidechain) `[318, 32, 74, 21]`, then
+  delete, previous and next. With the dynamics shown it is 214 px wider: Range, Threshold, Attack
+  and Release (Range, Threshold, Detail and Attack for a Spectral band), 50 px apart. The widget tells the strip from the compact panel by the layer it is
   drawn in (the strip's is the foreground).
 - **The band list.** While the strip is open, the compact panel shows a list of the bands in use
   in place of the column and the display, `[2, 2, 480, 164]`, with a header row and rows of 20
-  (seven visible; the wheel scrolls). Columns, `[x, w]`: # `[0, 34]`, On `[34, 28]`, Shape
-  `[62, 118]`, Freq `[180, 84]`, Gain `[264, 72]`, Q `[336, 54]`, Stereo `[390, 46]`, Mode
-  `[436, 44]`. A click on a row selects its band; On switches it; Shape and Stereo open their menus;
+  (seven visible; the wheel scrolls). Columns, `[x, w]`: # `[0, 32]`, Shape `[34, 132]`, Freq
+  `[166, 84]`, Gain `[250, 72]`, Q `[322, 54]`, Stereo `[376, 52]`, Mode `[428, 52]`. A click on a
+  row selects its band; its number switches it on or off; Shape and Stereo open their menus;
   Mode steps to the next mode the type takes; Freq, Gain and Q drag vertically and reset with a
   double-click.
 - **Panel state.** The selected bands, the display's range, the switches, the analyser's settings,
@@ -372,7 +376,7 @@ curve tell one story: where the curve pulls the sound down, the area follows. Wi
 playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no area.
 
 - **The tap.** The chain pass on the audio thread mixes a watched device's output block to mono
-  (left and right halved) and appends it to a ring of 2048 samples in the meter monitor
+  (left and right halved) and appends it to a ring of 8192 samples in the meter monitor
   (`crates/engine/src/spectrum.rs`), after the device has run and before the next one — on every
   path that runs the chain's devices, a bus's or a return's included: their chains never run the
   stages plug-ins share, and their watched devices' output is captured all the same. The rings
@@ -389,8 +393,8 @@ playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no 
   device group's branches is not tapped yet, and its panel claims no watch — its branch-local
   index would name a top-level device's row — so it draws only the response curve (issue #1050
   keys watches by the device's path, which lifts this).
-- **The bands.** The UI reads the ring, applies a Hann window and a 2048-point FFT (rustfft,
-  already in the tree), and folds the spectrum into 128 bands spaced logarithmically over
+- **The bands.** The UI reads the ring, applies a Hann window and an 8192-point FFT (rustfft,
+  already in the tree), and folds the spectrum into 256 bands spaced logarithmically over
   10 Hz – 22 kHz, taking each band's loudest bin; a band narrower than a bin (the low end) takes
   the level between the two bins around its center, so the low end glides instead of repeating one
   bin as steps. The level is the sine's amplitude against full scale in dB. The
@@ -399,8 +403,8 @@ playing it holds the last spectrum; a bypassed EQ runs in no chain and draws no 
   the line falls below the display and never shows (live monitoring at a normal level drew no
   line at all before the scale had its own range). The spectrum is drawn as a filled grey area,
   the theme's grey at less than half strength, from its boundary down to the display's bottom,
-  behind the curve and the grid's labels. Each frame's fresh reading is the last 2048 samples
-  (about 43 ms); each band's shown level rises to it over about 20 ms and falls after it over
+  behind the curve and the grid's labels. Each frame's fresh reading is the last 8192 samples
+  (about 170 ms), drawn as a smooth curve through the bands' centers (Catmull-Rom); each band's shown level rises to it over about 20 ms and falls after it over
   about 1.2 s — the DSP crate's attack/release follower, the compressor's own block, driven
   once a frame — so the area flows with the music instead of flickering window to window. No
   peak hold. While the engine appends to the ring the panel asks for the next frame (the

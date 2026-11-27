@@ -140,7 +140,8 @@ fn the_analyser_folds_a_tone_onto_its_band() {
     let bands = fold(&bins, sum, 48_000.0);
     assert!((bands[band_of_1k] + 12.0).abs() < 1.0, "the 1 kHz band reads the tone's level, got {}", bands[band_of_1k]);
     for (band, level) in bands.iter().enumerate() {
-        if band.abs_diff(band_of_1k) > 2 {
+        // 256 bands are about 3 % wide: the window's main lobe spans a few on each side.
+        if band.abs_diff(band_of_1k) > 5 {
             assert!(*level < -30.0, "band {band} is {level} dB, far from a tone at 1 kHz");
         }
     }

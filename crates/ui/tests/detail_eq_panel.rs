@@ -233,7 +233,7 @@ fn a_grouped_eqs_panel_edits_the_grouped_device() {
     assert!(!grouped_parameter(&harness, "a5On").ge(&0.5), "the grouped EQ's band 5 is off at the defaults");
     harness.get_by_label_contains("Band 5: ").click();
     harness.run();
-    harness.get_by_label("Switch the band on or off").click();
+    harness.get_by_label("Band 5").click();
     harness.run();
     assert!(grouped_parameter(&harness, "a5On").ge(&0.5), "the click switched the grouped EQ's band 5 on");
     // One undo takes the switching back.
@@ -312,7 +312,7 @@ fn the_column_switches_its_band() {
     assert!(!parameter(&harness, "a5On").ge(&0.5), "band 5 is off at the defaults");
     harness.get_by_label_contains("Band 5: ").click();
     harness.run();
-    harness.get_by_label("Switch the band on or off").click();
+    harness.get_by_label("Band 5").click();
     harness.run();
     assert!(parameter(&harness, "a5On").ge(&0.5), "the click switched band 5 on");
     assert!(harness.query_by_label("Band 5 Frequency").is_some(), "it stays selected");
@@ -540,13 +540,17 @@ fn the_dynamics_button_makes_a_band_dynamic_and_shows_its_dials() {
     harness.get_by_label_contains("Band 3: ").click();
     harness.run();
     assert_eq!(parameter(&harness, "a3Mode"), 0.0, "Static at the defaults");
-    harness.get_by_label("Band 3 Dynamic").click();
+    harness.get_by_label("Band 3 mode").click();
+    harness.run();
+    harness.get_by_label("Dynamic").click();
     harness.run();
     assert_eq!(parameter(&harness, "a3Mode"), 1.0, "the click made band 3 Dynamic");
     for field in ["Range", "Threshold", "Attack"] {
         assert!(harness.query_by_label(&format!("Band 3 {field}")).is_some(), "the dynamics' {field}");
     }
-    harness.get_by_label("Band 3 Spectral").click();
+    harness.get_by_label("Band 3 mode").click();
+    harness.run();
+    harness.get_by_label("Spectral").click();
     harness.run();
     assert_eq!(parameter(&harness, "a3Mode"), 2.0, "the Spectral button");
     assert!(harness.query_by_label("Band 3 Detail").is_some(), "a spectral band shows its Detail");
