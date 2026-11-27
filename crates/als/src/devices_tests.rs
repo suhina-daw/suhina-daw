@@ -455,7 +455,9 @@ fn eq_eight_takes_both_parameter_sets_of_every_band() {
     let (id, params, warnings) = mapped("Eq8", &xml);
     assert_eq!(id, "eq");
     assert!(warnings.is_empty(), "{warnings:?}");
-    assert_eq!(params.len(), 84);
+    // Every band of both sets, the three globals, and the Mid/Side mode as 16 placements and
+    // bands 9–16 in use.
+    assert_eq!(params.len(), 80 + 3 + 24);
     let near = |id: &str, expected: f64| {
         let got = param(&params, id);
         assert!((got - expected).abs() < 1e-9, "{id}: {got} against {expected}");
@@ -463,15 +465,18 @@ fn eq_eight_takes_both_parameter_sets_of_every_band() {
     near("output", -3.5);
     near("scale", -0.5);
     near("adaptiveQ", 0.0);
-    near("mode", 2.0);
+    assert!(params.iter().all(|p| p.id != "mode"));
+    near("a1Place", 3.0);
+    near("a9Place", 4.0);
+    near("a16InUse", 1.0);
     near("a1On", 1.0);
     near("a1Type", 3.0);
     near("a8Frequency", 800.0);
     near("a3Gain", 4.5);
     near("a5Q", 2.0);
-    near("b2On", 0.0);
-    near("b7Type", 7.0);
-    near("b8Q", 0.7071067095);
+    near("a10On", 0.0);
+    near("a15Type", 7.0);
+    near("a16Q", 0.7071067095);
 }
 
 #[test]
@@ -484,8 +489,8 @@ fn eq_eight_odd_values_are_noted() {
     // Oversampling, the mode and band 1's type are noted; the type and the unreadable
     // frequency are left out.
     assert_eq!(warnings.len(), 3, "{warnings:?}");
-    assert!(params.iter().all(|p| p.id != "mode" && p.id != "a1Type" && p.id != "b1Frequency"), "{params:?}");
-    assert_eq!(param(&params, "b1Type"), 1.0);
+    assert!(params.iter().all(|p| p.id != "mode" && p.id != "a1Type" && p.id != "a9Frequency"), "{params:?}");
+    assert_eq!(param(&params, "a9Type"), 1.0);
 }
 
 #[test]

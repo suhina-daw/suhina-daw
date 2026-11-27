@@ -1207,6 +1207,17 @@ pub(crate) fn chooser_keys(ui: &Ui, response: &Response, open: bool) -> (i32, bo
 /// the number typed into it. Ctrl (Cmd) with a key leaves it to the window's shortcuts, as
 /// [`value_active`] says.
 pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<String>) {
+    value_keys_accepting(ui, response, |c| c.is_ascii_digit() || matches!(c, '-' | '.' | ','))
+}
+
+/// [`value_keys`] for a value that is typed with more than a number's characters: `accept` says
+/// which characters a typed text may hold (a frequency also takes a note name, "A4" or "D#5 +13",
+/// and "k" notation, "6k3").
+pub(crate) fn value_keys_accepting(
+    ui: &Ui,
+    response: &Response,
+    accept: fn(char) -> bool,
+) -> (i32, bool, Option<String>) {
     let ctx = ui.ctx();
     let key = egui::Id::unique(ACTIVE_VALUE);
     let typed_id = response.id.with("typed");
@@ -1259,7 +1270,7 @@ pub(crate) fn value_keys(ui: &Ui, response: &Response) -> (i32, bool, Option<Str
                 typed.pop();
                 false
             }
-            egui::Event::Text(text) if text.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | ',')) => {
+            egui::Event::Text(text) if text.chars().all(accept) => {
                 typed.push_str(text);
                 false
             }

@@ -26,18 +26,27 @@ struct Scenario {
     input: Input,
     /// Set before `prepare`.
     settings: &'static [(usize, f64)],
+    /// Bands 1 to 8 placed at the first placement and bands 9 to 16 in use at the second, as a
+    /// project saved with two curves loads (docs/spec/eq.md › Projects saved with two curves).
+    split: Option<(f64, f64)>,
     /// (seconds, parameter, value), set while playing, in time order.
     changes: &'static [(f64, usize, f64)],
 }
 
-/// Band `band` (from 1) of curve `curve` (0 for A): `field` set to `value`.
-const fn at(curve: usize, band: usize, field: usize, value: f64) -> (usize, f64) {
-    (param::band(curve, band - 1, field), value)
+/// Band `band` (from 1): `field` set to `value`.
+const fn at(band: usize, field: usize, value: f64) -> (usize, f64) {
+    (param::band(band - 1, field), value)
 }
 
-/// Curve A's default bands switched off, so a scenario hears only the bands it sets.
+/// The default bands switched off, so a scenario hears only the bands it sets.
 const QUIET: [(usize, f64); 4] =
-    [at(0, 1, param::ON, 0.0), at(0, 2, param::ON, 0.0), at(0, 3, param::ON, 0.0), at(0, 4, param::ON, 0.0)];
+    [at(1, param::ON, 0.0), at(2, param::ON, 0.0), at(3, param::ON, 0.0), at(4, param::ON, 0.0)];
+
+/// The placements of [`PLACE_NAMES`].
+const LEFT: f64 = 1.0;
+const RIGHT: f64 = 2.0;
+const MID: f64 = 3.0;
+const SIDE: f64 = 4.0;
 
 const SCENARIOS: &[Scenario] = &[
     // Every control at its default: four bands on, none with gain, so the noise passes.
@@ -48,6 +57,7 @@ const SCENARIOS: &[Scenario] = &[
         keep: 12,
         input: noise_bed,
         settings: &[],
+        split: None,
         changes: &[],
     },
     Scenario {
@@ -61,37 +71,38 @@ const SCENARIOS: &[Scenario] = &[
             QUIET[1],
             QUIET[2],
             QUIET[3],
-            at(0, 1, param::ON, 1.0),
-            at(0, 1, param::TYPE, 0.0),
-            at(0, 1, param::FREQUENCY, 60.0),
-            at(0, 2, param::ON, 1.0),
-            at(0, 2, param::TYPE, 1.0),
-            at(0, 2, param::FREQUENCY, 120.0),
-            at(0, 2, param::Q, 3.0),
-            at(0, 3, param::ON, 1.0),
-            at(0, 3, param::TYPE, 2.0),
-            at(0, 3, param::FREQUENCY, 250.0),
-            at(0, 3, param::GAIN, 6.0),
-            at(0, 4, param::ON, 1.0),
-            at(0, 4, param::TYPE, 3.0),
-            at(0, 4, param::FREQUENCY, 900.0),
-            at(0, 4, param::GAIN, -9.0),
-            at(0, 5, param::ON, 1.0),
-            at(0, 5, param::TYPE, 4.0),
-            at(0, 5, param::FREQUENCY, 2_500.0),
-            at(0, 5, param::Q, 4.0),
-            at(0, 6, param::ON, 1.0),
-            at(0, 6, param::TYPE, 5.0),
-            at(0, 6, param::FREQUENCY, 6_000.0),
-            at(0, 6, param::GAIN, 4.0),
-            at(0, 7, param::ON, 1.0),
-            at(0, 7, param::TYPE, 6.0),
-            at(0, 7, param::FREQUENCY, 14_000.0),
-            at(0, 7, param::Q, 2.0),
-            at(0, 8, param::ON, 1.0),
-            at(0, 8, param::TYPE, 7.0),
-            at(0, 8, param::FREQUENCY, 18_000.0),
+            at(1, param::ON, 1.0),
+            at(1, param::TYPE, 0.0),
+            at(1, param::FREQUENCY, 60.0),
+            at(2, param::ON, 1.0),
+            at(2, param::TYPE, 1.0),
+            at(2, param::FREQUENCY, 120.0),
+            at(2, param::Q, 3.0),
+            at(3, param::ON, 1.0),
+            at(3, param::TYPE, 2.0),
+            at(3, param::FREQUENCY, 250.0),
+            at(3, param::GAIN, 6.0),
+            at(4, param::ON, 1.0),
+            at(4, param::TYPE, 3.0),
+            at(4, param::FREQUENCY, 900.0),
+            at(4, param::GAIN, -9.0),
+            at(5, param::ON, 1.0),
+            at(5, param::TYPE, 4.0),
+            at(5, param::FREQUENCY, 2_500.0),
+            at(5, param::Q, 4.0),
+            at(6, param::ON, 1.0),
+            at(6, param::TYPE, 5.0),
+            at(6, param::FREQUENCY, 6_000.0),
+            at(6, param::GAIN, 4.0),
+            at(7, param::ON, 1.0),
+            at(7, param::TYPE, 6.0),
+            at(7, param::FREQUENCY, 14_000.0),
+            at(7, param::Q, 2.0),
+            at(8, param::ON, 1.0),
+            at(8, param::TYPE, 7.0),
+            at(8, param::FREQUENCY, 18_000.0),
         ],
+        split: None,
         changes: &[],
     },
     Scenario {
@@ -100,12 +111,8 @@ const SCENARIOS: &[Scenario] = &[
         seconds: 0.2,
         keep: 4,
         input: noise_bed,
-        settings: &[
-            at(0, 2, param::GAIN, 12.0),
-            at(0, 3, param::GAIN, -4.0),
-            at(0, 4, param::GAIN, 8.0),
-            (param::SCALE, -1.5),
-        ],
+        settings: &[at(2, param::GAIN, 12.0), at(3, param::GAIN, -4.0), at(4, param::GAIN, 8.0), (param::SCALE, -1.5)],
+        split: None,
         changes: &[],
     },
     Scenario {
@@ -114,12 +121,8 @@ const SCENARIOS: &[Scenario] = &[
         seconds: 0.2,
         keep: 4,
         input: noise_bed,
-        settings: &[
-            at(0, 3, param::GAIN, 9.0),
-            at(1, 3, param::GAIN, -9.0),
-            at(1, 6, param::GAIN, 6.0),
-            (param::MODE, 1.0),
-        ],
+        settings: &[at(3, param::GAIN, 9.0), at(11, param::GAIN, -9.0), at(14, param::GAIN, 6.0)],
+        split: Some((LEFT, RIGHT)),
         changes: &[],
     },
     Scenario {
@@ -128,23 +131,64 @@ const SCENARIOS: &[Scenario] = &[
         seconds: 0.2,
         keep: 4,
         input: noise_bed,
-        settings: &[at(0, 3, param::GAIN, 6.0), at(1, 4, param::GAIN, 12.0), (param::MODE, 2.0), (param::OUTPUT, -6.0)],
+        settings: &[at(3, param::GAIN, 6.0), at(12, param::GAIN, 12.0), (param::OUTPUT, -6.0)],
+        split: Some((MID, SIDE)),
         changes: &[],
     },
-    // Changes while playing: a frequency sweep, a type change, a band off, the mode.
+    // Changes while playing: a frequency sweep, a type change, a band off, the bands moved to the
+    // mid.
     Scenario {
         name: "changes",
         sample_rate: 16_000.0,
         seconds: 0.5,
         keep: 4,
         input: noise_bed,
-        settings: &[at(0, 3, param::GAIN, 10.0), at(0, 3, param::Q, 4.0)],
+        settings: &[at(3, param::GAIN, 10.0), at(3, param::Q, 4.0)],
+        split: None,
         changes: &[
-            (0.1, param::band(0, 2, param::FREQUENCY), 4_000.0),
-            (0.2, param::band(0, 2, param::TYPE), 7.0),
-            (0.3, param::band(0, 1, param::ON), 0.0),
-            (0.4, param::MODE, 2.0),
+            (0.1, param::band(2, param::FREQUENCY), 4_000.0),
+            (0.2, param::band(2, param::TYPE), 7.0),
+            (0.3, param::band(1, param::ON), 0.0),
+            (0.4, param::band(0, param::PLACE), MID),
+            (0.4, param::band(1, param::PLACE), MID),
+            (0.4, param::band(2, param::PLACE), MID),
+            (0.4, param::band(3, param::PLACE), MID),
         ],
+    },
+    // The bands the EQ did not always have: a tilt shelf and a flat tilt, a bell on the left and
+    // one on the side in slots past the eighth, and a slot not in use whose boost is not heard.
+    Scenario {
+        name: "tilts-and-placements",
+        sample_rate: 44_100.0,
+        seconds: 0.2,
+        keep: 9,
+        input: noise_bed,
+        settings: &[
+            QUIET[0],
+            QUIET[1],
+            QUIET[2],
+            QUIET[3],
+            at(5, param::ON, 1.0),
+            at(5, param::TYPE, 8.0),
+            at(5, param::FREQUENCY, 800.0),
+            at(5, param::GAIN, 9.0),
+            at(6, param::ON, 1.0),
+            at(6, param::TYPE, 9.0),
+            at(6, param::FREQUENCY, 2_000.0),
+            at(6, param::GAIN, -12.0),
+            at(17, param::IN_USE, 1.0),
+            at(17, param::FREQUENCY, 300.0),
+            at(17, param::GAIN, 10.0),
+            at(17, param::PLACE, LEFT),
+            at(20, param::IN_USE, 1.0),
+            at(20, param::FREQUENCY, 5_000.0),
+            at(20, param::Q, 3.0),
+            at(20, param::GAIN, 14.0),
+            at(20, param::PLACE, SIDE),
+            at(24, param::GAIN, 20.0),
+        ],
+        split: None,
+        changes: &[],
     },
 ];
 
@@ -166,6 +210,13 @@ fn noise_bed(_sample_rate: f64, frame: usize) -> [f32; 2] {
 /// The scenario rendered, interleaved, every `keep`-th frame.
 fn render(s: &Scenario) -> Vec<f32> {
     let mut d = Eq::new();
+    if let Some((first, second)) = s.split {
+        for band in 0..8 {
+            d.set_param(param::band(band, param::PLACE), first);
+            d.set_param(param::band(band + 8, param::PLACE), second);
+            d.set_param(param::band(band + 8, param::IN_USE), 1.0);
+        }
+    }
     for &(index, value) in s.settings {
         d.set_param(index, value);
     }

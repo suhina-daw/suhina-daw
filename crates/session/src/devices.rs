@@ -1565,6 +1565,10 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
             let index = info
                 .param_index(param)
                 .ok_or_else(|| format!("{} has no parameter {param:?}; device.list lists them", info.name))?;
+            // The EQ's audition is passing state, never stored: device.audition sets it.
+            if id == "eq" && param == "audition" {
+                return Err("the EQ's audition is not saved: device.audition sets it while a band is held".into());
+            }
             let spec = info.params.get(index).ok_or("the parameter is missing")?;
             (index, spec.clamp(value))
         }
@@ -1643,6 +1647,35 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
         session.sync.param_edits = messages;
     }
     Ok(with_override(json!({ "device": path_value(&path), "param": param, "value": value }), off))
+}
+
+/// `device.audition`: an EQ's band heard alone, or the whole EQ again with band 0. The value goes
+/// to the playing engine only, as the EQ's `audition` parameter: the project never holds it, so
+/// nothing is saved or undone, and a new graph plays the whole EQ (docs/spec/eq.md › Audition).
+pub(crate) fn audition(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let band = Args::new(params).f64("band")?;
+    if !(0.0..=24.0).contains(&band) || band.fract() != 0.0 {
+        return Err("band must be a whole number from 0 to 24".into());
+    }
+    let track = track_or_main_id(&session.project, params)?;
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at(&channel.devices, &path).ok_or("the device is missing")?;
+    if device.kind != DeviceKind::Builtin("eq".into()) {
+        return Err("only an EQ has bands to audition".into());
+    }
+    let [index] = path.as_slice() else {
+        return Err("an EQ inside a device group cannot be auditioned yet".into());
+    };
+    let index = *index;
+    let param = suhina_device_registry::info("eq")
+        .and_then(|info| info.param_index("audition"))
+        .ok_or("the EQ has no audition")?;
+    let heard =
+        session.sync.player.as_mut().is_some_and(|player| {
+            player.set_device_param(ParamEdit { track, device: index, param, value: band }).is_ok()
+        });
+    Ok(json!({ "device": path_value(&path), "band": band, "heard": heard }))
 }
 
 /// `device.randomize`: new values for a device with a randomizer, as one edit.

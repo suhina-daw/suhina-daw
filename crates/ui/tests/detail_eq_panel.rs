@@ -231,7 +231,9 @@ fn a_grouped_eqs_panel_edits_the_grouped_device() {
     let mut harness = window_with(grouped_eq_project());
     assert!(harness.query_by_label("EQ response display").is_some(), "the grouped EQ's panel is drawn");
     assert!(!grouped_parameter(&harness, "a5On").ge(&0.5), "the grouped EQ's band 5 is off at the defaults");
-    harness.get_by_label("Band 5").click();
+    harness.get_by_label_contains("Band 5: ").click();
+    harness.run();
+    harness.get_by_label("Switch the band on or off").click();
     harness.run();
     assert!(grouped_parameter(&harness, "a5On").ge(&0.5), "the click switched the grouped EQ's band 5 on");
     // One undo takes the switching back.
@@ -282,43 +284,93 @@ fn a_session_without_a_player_drops_the_previous_sessions_monitor() {
 
 #[test]
 fn the_panel_shows_the_display_the_bands_and_the_globals() {
-    let harness = window();
+    let mut harness = window();
     assert!(harness.query_by_label("EQ response display").is_some(), "the display is there");
     for band in 1..=8 {
-        assert!(harness.query_by_label(&format!("Band {band}")).is_some(), "the band's selector");
-        assert!(harness.query_by_label(&format!("Band {band} type")).is_some(), "the band's type menu");
-        assert!(harness.query_by_label_contains(&format!("Band {band}: ")).is_some(), "the band's dot");
+        assert!(harness.query_by_label_contains(&format!("Band {band}: ")).is_some(), "band {band}'s dot");
     }
-    // The defaults select band 1: its three strips are the left column.
+    assert!(harness.query_by_label_contains("Band 9: ").is_none(), "a slot not in use has no dot");
+    // No band is selected at first; a click on a dot selects it and its column shows.
+    assert!(harness.query_by_label("Band 3 Frequency").is_none());
+    harness.get_by_label_contains("Band 3: ").click();
+    harness.run();
     for field in ["Frequency", "Gain", "Q"] {
-        assert!(harness.query_by_label(&format!("Band 1 {field}")).is_some(), "the strip {field}");
-        assert!(
-            harness.query_by_label(&format!("Band 2 {field}")).is_none(),
-            "only the selected band's {field} strip is there"
-        );
+        assert!(harness.query_by_label(&format!("Band 3 {field}")).is_some(), "the dial {field}");
+        assert!(harness.query_by_label(&format!("Band 2 {field}")).is_none(), "only the selected band's {field}");
     }
-    for label in ["Mode", "Adaptive Q", "Scale", "Output"] {
+    assert!(harness.query_by_label("Band 3 type").is_some());
+    assert!(harness.query_by_label("Band 3 placement").is_some());
+    for label in ["Adaptive Q", "Scale", "Output"] {
         assert!(harness.query_by_label(label).is_some(), "the global {label}");
     }
-    assert!(harness.query_by_label("Edit curve A").is_none(), "Stereo runs curve A on both sides and has no switch");
+    assert!(harness.query_by_label("Mode").is_none(), "the placements replaced the mode");
 }
 
 #[test]
-fn a_number_button_selects_its_band_and_switches_it() {
+fn the_column_switches_its_band() {
     let mut harness = window();
     assert!(!parameter(&harness, "a5On").ge(&0.5), "band 5 is off at the defaults");
-    harness.get_by_label("Band 5").click();
+    harness.get_by_label_contains("Band 5: ").click();
+    harness.run();
+    harness.get_by_label("Switch the band on or off").click();
     harness.run();
     assert!(parameter(&harness, "a5On").ge(&0.5), "the click switched band 5 on");
-    assert!(harness.query_by_label("Band 5 Frequency").is_some(), "it is selected: its strips show");
-    harness.get_by_label("Band 5").click();
-    harness.run();
-    assert!(!parameter(&harness, "a5On").ge(&0.5), "the click on the selected band switched it off");
-    assert!(harness.query_by_label("Band 5 Frequency").is_some(), "it stays selected while off");
-    // One undo takes the switching back; the selection is panel state and stays.
+    assert!(harness.query_by_label("Band 5 Frequency").is_some(), "it stays selected");
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
     harness.run();
-    assert!(parameter(&harness, "a5On").ge(&0.5), "undo brings band 5 back on");
+    assert!(!parameter(&harness, "a5On").ge(&0.5), "undo takes it back");
+}
+
+#[test]
+fn a_double_click_on_the_display_makes_a_band_in_the_first_free_slot() {
+    let mut harness = window();
+    assert!(!parameter(&harness, "a9InUse").ge(&0.5));
+    let display = harness.get_by_label("EQ response display").rect();
+    let at = display.min + vec2(display.width() * 0.55, display.height() * 0.3);
+    harness.hover_at(at);
+    harness.run();
+    for _ in 0..2 {
+        harness.drag_at(at);
+        harness.run();
+        harness.drop_at(at);
+        harness.run();
+    }
+    assert!(parameter(&harness, "a9InUse").ge(&0.5), "band 9 is in use");
+    assert!(parameter(&harness, "a9On").ge(&0.5), "and on");
+    assert_eq!(parameter(&harness, "a9Type"), 3.0, "a bell, in the middle of the display");
+    assert!(parameter(&harness, "a9Gain") > 1.0, "at the pointer's gain, above 0 dB");
+    assert!(harness.query_by_label("Band 9 Frequency").is_some(), "the new band is selected");
+    // One undo takes the whole band back.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(!parameter(&harness, "a9InUse").ge(&0.5), "undo frees the slot again");
+}
+
+#[test]
+fn delete_frees_the_bands_slot() {
+    let mut harness = window();
+    harness.get_by_label_contains("Band 3: ").click();
+    harness.run();
+    harness.get_by_label("Delete the band").click();
+    harness.run();
+    assert!(!parameter(&harness, "a3InUse").ge(&0.5), "band 3's slot is free");
+    assert!(harness.query_by_label_contains("Band 3: ").is_none(), "its dot is gone");
+    assert!(harness.query_by_label_contains("Band 4: ").is_some(), "the others keep their numbers");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(parameter(&harness, "a3InUse").ge(&0.5), "undo brings it back");
+}
+
+#[test]
+fn the_placement_menu_places_the_band() {
+    let mut harness = window();
+    harness.get_by_label_contains("Band 3: ").click();
+    harness.run();
+    harness.get_by_label("Band 3 placement").click();
+    harness.run();
+    harness.get_by_label("Side").click();
+    harness.run();
+    assert_eq!(parameter(&harness, "a3Place"), 4.0, "the menu placed band 3 on the side");
 }
 
 #[test]
@@ -350,6 +402,8 @@ fn a_dots_drag_moves_its_bands_frequency_and_gain() {
 fn the_type_menu_sets_the_bands_type() {
     let mut harness = window();
     assert_eq!(parameter(&harness, "a1Type"), 2.0, "band 1 is a low shelf at the defaults");
+    harness.get_by_label_contains("Band 1: ").click();
+    harness.run();
     harness.get_by_label("Band 1 type").click();
     harness.run();
     harness.get_by_label("Low Cut 48").click();
@@ -360,41 +414,10 @@ fn the_type_menu_sets_the_bands_type() {
     assert_eq!(parameter(&harness, "a1Type"), 2.0, "undo takes the type back");
 }
 
-#[test]
-fn the_edit_switch_edits_curve_b_in_the_stereo_spread_modes() {
-    let mut harness = window();
-    harness.get_by_label("Mode").click();
-    harness.run();
-    harness.get_by_label("Left/Right").click();
-    harness.run();
-    assert_eq!(parameter(&harness, "mode"), 1.0, "the mode menu switched to Left/Right");
-    assert!(harness.query_by_label("Edit curve A").is_some(), "the switch appears in Left/Right");
-    // The strips still name curve A's parameters until B is edited.
-    assert!(harness.query_by_label("Band 1 Frequency").is_some());
-    harness.get_by_label("Edit curve B").click();
-    harness.run();
-    assert!(harness.query_by_label("Band 1 Frequency B").is_some(), "the strips follow the edited curve");
-    // Band 1 of curve B is off at the defaults, and its selector switches it.
-    assert!(!parameter(&harness, "b1On").ge(&0.5));
-    harness.get_by_label("Band 1").click();
-    harness.run();
-    assert!(parameter(&harness, "b1On").ge(&0.5), "the selector switched curve B's band 1 on");
-    assert!(parameter(&harness, "a1On").ge(&0.5), "curve A's band 1 is untouched: still on");
-    assert!(harness.query_by_label("Band 1 Frequency B").is_some(), "curve B's band 1 is the selected one");
-    // Back to Stereo: the switch goes, and the strips return to curve A.
-    harness.get_by_label("Mode").click();
-    harness.run();
-    harness.get_by_label("Stereo").click();
-    harness.run();
-    assert_eq!(parameter(&harness, "mode"), 0.0);
-    assert!(harness.query_by_label("Edit curve A").is_none(), "the switch goes in Stereo");
-    assert!(harness.query_by_label("Band 1 Frequency").is_some(), "the strips are curve A's again");
-}
-
 /// Renders the window with the EQ's panel showing to `target/ui-snapshots/eq-panel.png`,
-/// `eq-panel-b.png` (curve B edited in Left/Right) and `eq-panel-spectrum.png` (the transport
-/// playing through the EQ, so the analyser's gray line shows behind the curve), to look the
-/// display, the dots, the strips, the rows, the switch and the line over. Needs a GPU
+/// `eq-panel-selected.png` (band 3 selected, its shape menu open) and `eq-panel-spectrum.png`
+/// (the transport playing through the EQ, so the analyser's gray area shows behind the curve),
+/// to look the display, the dots, the column and the analyser over. Needs a GPU
 /// adapter, so it runs only when asked:
 /// `cargo test -p suhina-ui --test main detail_eq_panel -- --ignored render_the_panel`.
 #[test]
@@ -408,19 +431,11 @@ fn render_the_panel() {
         image.save(folder.join(name)).expect("save failed");
     };
     save(&mut harness, "eq-panel.png");
-    // The Mode menu open, to look the dropdown and its room below the control over.
-    harness.get_by_label("Mode").click();
+    harness.get_by_label_contains("Band 3: ").click();
     harness.run();
-    save(&mut harness, "eq-panel-mode-menu.png");
-    harness.get_by_label("Stereo").click();
+    harness.get_by_label("Band 3 type").click();
     harness.run();
-    harness.get_by_label("Mode").click();
-    harness.run();
-    harness.get_by_label("Left/Right").click();
-    harness.run();
-    harness.get_by_label("Edit curve B").click();
-    harness.run();
-    save(&mut harness, "eq-panel-b.png");
+    save(&mut harness, "eq-panel-selected.png");
 
     // With a real renderer playing through the EQ, the analyser's gray line behind the curve.
     let mut renderer = suhina_engine::Renderer::stopped(
@@ -456,4 +471,80 @@ fn render_the_panel() {
     }
     harness.run_steps(2);
     save(&mut harness, "eq-panel-spectrum.png");
+}
+
+#[test]
+fn ctrl_click_selects_several_bands_and_delete_removes_them_together() {
+    let mut harness = window();
+    harness.get_by_label_contains("Band 3: ").click();
+    harness.run();
+    harness.get_by_label_contains("Band 4: ").click_modifiers(Modifiers::COMMAND);
+    harness.run();
+    harness.get_by_label("Delete the band").click();
+    harness.run();
+    assert!(!parameter(&harness, "a3InUse").ge(&0.5), "band 3 is gone");
+    assert!(!parameter(&harness, "a4InUse").ge(&0.5), "band 4 went with it");
+    assert!(parameter(&harness, "a2InUse").ge(&0.5), "a band not selected stays");
+    // One undo brings both back.
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(parameter(&harness, "a3InUse").ge(&0.5) && parameter(&harness, "a4InUse").ge(&0.5));
+}
+
+#[test]
+fn a_typed_frequency_moves_the_band() {
+    let mut harness = window();
+    harness.get_by_label_contains("Band 3: ").click();
+    harness.run();
+    harness.get_by_label("Band 3 Frequency").click();
+    harness.run();
+    harness.event(egui::Event::Text("6k3".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!((parameter(&harness, "a3Frequency") - 6300.0).abs() < 0.5, "6k3 is 6.3 kHz");
+    harness.get_by_label("Band 3 Frequency").click();
+    harness.run();
+    harness.event(egui::Event::Text("A4".into()));
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!((parameter(&harness, "a3Frequency") - 440.0).abs() < 0.01, "A4 is 440 Hz");
+}
+
+#[test]
+fn a_split_makes_a_left_and_right_pair() {
+    let mut harness = window();
+    harness.get_by_label_contains("Band 3: ").click();
+    harness.run();
+    harness.get_by_label("Band 3 placement").click();
+    harness.run();
+    harness.get_by_label("Split into L/R").click();
+    harness.run();
+    assert_eq!(parameter(&harness, "a3Place"), 1.0, "band 3 is the left");
+    assert!(parameter(&harness, "a9InUse").ge(&0.5), "its copy took the first free slot");
+    assert_eq!(parameter(&harness, "a9Place"), 2.0, "and is the right");
+    assert_eq!(parameter(&harness, "a9Frequency"), parameter(&harness, "a3Frequency"));
+    assert_eq!(parameter(&harness, "a9Type"), parameter(&harness, "a3Type"));
+}
+
+#[test]
+fn the_dynamics_button_makes_a_band_dynamic_and_shows_its_dials() {
+    let mut harness = window();
+    harness.get_by_label_contains("Band 3: ").click();
+    harness.run();
+    assert_eq!(parameter(&harness, "a3Mode"), 0.0, "Static at the defaults");
+    harness.get_by_label("Band 3 dynamics: Static").click();
+    harness.run();
+    assert_eq!(parameter(&harness, "a3Mode"), 1.0, "the click made band 3 Dynamic");
+    for field in ["Range", "Threshold", "Attack"] {
+        assert!(harness.query_by_label(&format!("Band 3 {field}")).is_some(), "the dynamics' {field}");
+    }
+    harness.get_by_label("Band 3 Spectral").click();
+    harness.run();
+    assert_eq!(parameter(&harness, "a3Mode"), 2.0, "the Spectral button");
+    assert!(harness.query_by_label("Band 3 Detail").is_some(), "a spectral band shows its Detail");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(parameter(&harness, "a3Mode"), 1.0, "undo takes the mode back");
 }

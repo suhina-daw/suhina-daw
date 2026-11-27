@@ -24,6 +24,7 @@
 //! on any input.
 
 pub mod analyser;
+pub mod band_dynamics;
 pub mod biquad;
 pub mod convolver;
 pub mod crossover;
@@ -49,6 +50,7 @@ pub mod sync;
 pub mod trim_delay;
 
 pub use analyser::Analyser;
+pub use band_dynamics::BandDynamics;
 pub use biquad::{Biquad, Coefficients};
 pub use convolver::{Convolver, Ir, MAX_FRAMES as IR_MAX_FRAMES, PARTITION};
 pub use crossover::{LinkwitzRiley, Slope};

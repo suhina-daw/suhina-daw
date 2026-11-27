@@ -359,6 +359,18 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "device.audition",
+        label: "Listen to one band of an EQ on a track's own chain alone, the range it works on without its boost or cut, until device.audition with band 0; nothing is saved or undone, and without a player nothing is heard",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            param("band", ParamType::Number, "the band to hear, 1 to 24, or 0 to hear the whole EQ again"),
+        ],
+        kind: CommandKind::TRANSPORT,
+        run: devices::audition,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "device.randomize",
         label: "Give a device with a randomizer (the FM Synth) new values, moved from the current ones by each section's percentage, as one undo step; its sections are its random.* parameters",
         params: &[

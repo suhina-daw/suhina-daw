@@ -1531,3 +1531,23 @@ fn a_device_is_renamed_and_a_renamed_plug_in_is_still_found() {
     let saved = suhina_project_file::from_json(&suhina_project_file::to_json(session.project())).unwrap();
     assert_eq!(saved.channel(keys).unwrap().devices[0].plugin_name(), "Verb");
 }
+
+/// `device.audition` reaches only the engine: the project keeps no audition value, so nothing is
+/// saved or undone; `device.setParam` cannot store one either (docs/spec/eq.md › Audition).
+#[test]
+fn an_eqs_audition_is_never_stored() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "eq" })).unwrap();
+    let heard = run(&mut session, "device.audition", json!({ "track": "Keys", "device": 0, "band": 3 })).unwrap();
+    assert_eq!(heard["heard"], json!(false), "no player, nothing heard");
+    let devices = run(&mut session, "track.devices", json!({ "track": "Keys" })).unwrap();
+    assert!(!devices.to_string().contains("audition"), "the project holds no audition: {devices}");
+    assert!(
+        run(&mut session, "device.setParam", json!({ "track": "Keys", "device": 0, "param": "audition", "value": 3 }))
+            .is_err()
+    );
+    assert!(run(&mut session, "device.audition", json!({ "track": "Keys", "device": 0, "band": 25 })).is_err());
+    assert!(run(&mut session, "device.audition", json!({ "track": "Keys", "device": 0, "band": 1.5 })).is_err());
+    run(&mut session, "device.add", json!({ "track": "Keys", "id": "utility" })).unwrap();
+    assert!(run(&mut session, "device.audition", json!({ "track": "Keys", "device": 1, "band": 1 })).is_err());
+}
