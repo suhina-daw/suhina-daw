@@ -519,7 +519,7 @@ fn analyser_y(db: f64, display: Rect) -> f32 {
     analyser_y_in(db, display, -ANALYSER_DB.1)
 }
 
-/// [`analyser_y`] with the floor `range` dB below full scale.
+/// The y of the analyser's level in dB with the floor `range` dB below full scale, clamped to the display.
 fn analyser_y_in(db: f64, display: Rect, range: f64) -> f32 {
     let down = ((ANALYSER_DB.0 - db) / range.max(1.0)).clamp(0.0, 1.0);
     display.top() + down as f32 * display.height()
