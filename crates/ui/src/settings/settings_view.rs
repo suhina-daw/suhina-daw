@@ -115,6 +115,7 @@ pub struct MidiPort {
     pub open: bool,
     /// Why it could not be opened.
     pub error: Option<String>,
+    pub mpe: suhina_session::MpeConfig,
 }
 
 /// The plug-in library as the page and the plug-in manager show it, read through the
@@ -474,6 +475,7 @@ pub struct Outcome {
     pub audio_control_panel: bool,
     /// A MIDI input port was turned on or off: the app runs `midi.setInput`.
     pub midi_input: Option<(String, bool)>,
+    pub midi_mpe: Option<(String, suhina_session::MpeConfig)>,
     /// A field's Browse… was clicked: the app shows the system's dialog for it.
     pub pick: Option<PickField>,
     /// A folder that moves its files asked to go back to its default (Reset).
@@ -1520,6 +1522,84 @@ pub(crate) fn mouse_switches(cx: &mut Cx<'_>, y: &mut f32) {
 pub(crate) fn midi_inputs(cx: &mut Cx<'_>, y: &mut f32) {
     if let Some(port) = midi_section(cx.ui, cx.painter, cx.page, y, cx.about) {
         cx.outcome.midi_input = Some(port);
+    }
+}
+
+/// MIDI expression mode and manual zones share the session command with CLI/MCP clients.
+pub(crate) fn midi_mpe(cx: &mut Cx<'_>, y: &mut f32) {
+    use suhina_session::MpeMode;
+    let Ok(ports) = &cx.about.midi_inputs else {
+        return;
+    };
+    if ports.is_empty() {
+        let row = setting_row(cx.page, y);
+        label(cx.painter, row, "No MIDI input to configure", "Connect a controller to choose its expression mode");
+    }
+    for port in ports {
+        let mut config = port.mpe;
+        let row = setting_row(cx.page, y);
+        let name = format!("MPE mode {}", port.name);
+        label(cx.painter, row, &port.name, "Independent notes in FM Synth and Sampler; other chains use ordinary MIDI");
+        let options = [
+            ("Off".into(), MpeMode::Off),
+            ("Automatic".into(), MpeMode::Automatic),
+            ("Manual".into(), MpeMode::Manual),
+        ];
+        if let Some(mode) = choice_dropdown(cx.ui, cx.painter, row, &name, &options, &config.mode) {
+            config.mode = mode;
+        }
+        if config.mode == MpeMode::Manual {
+            for lower in [true, false] {
+                let row = setting_row(cx.page, y);
+                let zone = if lower { "Lower" } else { "Upper" };
+                let name = format!("{zone} MPE members {}", port.name);
+                label(
+                    cx.painter,
+                    row,
+                    &format!("{zone} zone members"),
+                    "Excludes the manager; changing one zone makes room in the other",
+                );
+                let options: Vec<_> = (0..=15u8).map(|n| (n.to_string(), n)).collect();
+                let current = if lower { config.lower_members } else { config.upper_members };
+                if let Some(count) = choice_dropdown(cx.ui, cx.painter, row, &name, &options, &current) {
+                    if lower {
+                        config.lower_members = count;
+                        if count > 0 {
+                            config.upper_members = config.upper_members.min(14u8.saturating_sub(count));
+                        }
+                    } else {
+                        config.upper_members = count;
+                        if count > 0 {
+                            config.lower_members = config.lower_members.min(14u8.saturating_sub(count));
+                        }
+                    }
+                }
+                for manager in [false, true] {
+                    let row = setting_row(cx.page, y);
+                    let role = if manager { "manager" } else { "member" };
+                    let name = format!("{zone} {role} bend {}", port.name);
+                    label(
+                        cx.painter,
+                        row,
+                        &format!("{zone} {role} bend"),
+                        "Semitones in either direction; match the controller's range",
+                    );
+                    let value = match (lower, manager) {
+                        (true, false) => &mut config.lower_member_bend,
+                        (true, true) => &mut config.lower_manager_bend,
+                        (false, false) => &mut config.upper_member_bend,
+                        (false, true) => &mut config.upper_manager_bend,
+                    };
+                    let options: Vec<_> = (0..=96u8).map(|n| (n.to_string(), n)).collect();
+                    if let Some(next) = choice_dropdown(cx.ui, cx.painter, row, &name, &options, value) {
+                        *value = next;
+                    }
+                }
+            }
+        }
+        if config != port.mpe {
+            cx.outcome.midi_mpe = Some((port.name.clone(), config));
+        }
     }
 }
 
@@ -3393,13 +3473,26 @@ fn choice_field<T: Clone + PartialEq>(
     widgets::form_dropdown(ui, painter, field, &response, shown);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
-        for (label, value) in options {
-            if crate::kit::menu::Entry::new(label).chosen(value == current).compact().show(ui).clicked() {
-                if value != current {
-                    picked = Some(value.clone());
+        let mut choices = |ui: &mut Ui| {
+            for (label, value) in options {
+                if crate::kit::menu::Entry::new(label).chosen(value == current).compact().show(ui).clicked() {
+                    if value != current {
+                        picked = Some(value.clone());
+                    }
+                    ui.close();
                 }
-                ui.close();
             }
+        };
+        if options.len() > 16 {
+            // Popup itself only clips to the viewport. Long ranges (for example all 97
+            // MPE bend values) need a scroll container so their final values are reachable.
+            // Numeric choices can otherwise shrink to 18px: a floating 10px scrollbar
+            // then intercepts clicks at their centers. Keep its hit area outside the items.
+            ui.set_min_width(field.width());
+            ui.spacing_mut().scroll.floating = false;
+            egui::ScrollArea::vertical().max_height(240.).show(ui, choices);
+        } else {
+            choices(ui);
         }
     });
     picked

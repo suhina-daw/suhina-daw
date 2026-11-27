@@ -20,8 +20,8 @@
 //! played key, the key it sent. Velocities, timing and every other event pass unchanged.
 
 use suhina_device_api::{
-    Device, DeviceError, DeviceInfo, MusicalScale, NoteEvent, ParamBank, ParamInfo, ProcessContext, Role, Unit,
-    check_sample_rate,
+    Device, DeviceError, DeviceInfo, MusicalScale, NoteEvent, NoteInstanceEvent, NoteInstanceId, ParamBank, ParamInfo,
+    ProcessContext, Role, Unit, check_sample_rate,
 };
 
 /// Parameter indices, in [`INFO`] order.
@@ -64,6 +64,7 @@ pub struct Pitch {
     scale: Option<MusicalScale>,
     /// Per played key, the key its note sounds at, or [`SILENT`].
     sounding: [u8; 128],
+    instances: [Option<(NoteInstanceId, u8)>; 256],
 }
 
 impl Default for Pitch {
@@ -76,7 +77,7 @@ impl Default for Pitch {
 impl Pitch {
     /// A pitch effect at its default settings: no transposition, the whole keyboard, no scale.
     pub fn new() -> Self {
-        Self { params: ParamBank::new(&PARAMS), scale: None, sounding: [SILENT; 128] }
+        Self { params: ParamBank::new(&PARAMS), scale: None, sounding: [SILENT; 128], instances: [None; 256] }
     }
 
     /// The same, made for `sample_rate`, which it does not depend on (ADR 0004 › Amendment: a
@@ -121,6 +122,9 @@ impl Pitch {
 }
 
 impl Device for Pitch {
+    fn preserves_note_instances(&self) -> bool {
+        true
+    }
     /// The pitch effect's description and parameters.
     fn info(&self) -> &DeviceInfo {
         &INFO
@@ -137,6 +141,7 @@ impl Device for Pitch {
     fn reset(&mut self) {
         self.scale = None;
         self.sounding = [SILENT; 128];
+        self.instances.fill(None);
     }
 
     /// Sets parameter `index` to `value`, limited to its range and steps.
@@ -180,6 +185,42 @@ impl Device for Pitch {
                 }
             };
             match event {
+                NoteEvent::Instance { id, event } => {
+                    let Some(event) = event.validated() else {
+                        continue;
+                    };
+                    let found = self.instances.iter().position(|n| n.is_some_and(|(existing, _)| existing == id));
+                    let mapped = match event {
+                        NoteInstanceEvent::On { key, velocity, expression } if spare >= 1 && found.is_none() => {
+                            let Some(key) = self.transform(key) else {
+                                continue;
+                            };
+                            let Some(slot) = self.instances.iter_mut().find(|n| n.is_none()) else {
+                                continue;
+                            };
+                            *slot = Some((id, key));
+                            NoteInstanceEvent::On { key, velocity, expression }
+                        }
+                        NoteInstanceEvent::Off { velocity, .. } => {
+                            let Some(key) = found.and_then(|i| self.instances[i]).map(|(_, key)| key) else {
+                                continue;
+                            };
+                            NoteInstanceEvent::Off { key, velocity }
+                        }
+                        NoteInstanceEvent::Choke { .. } => {
+                            let Some(index) = found else {
+                                continue;
+                            };
+                            let Some((_, key)) = self.instances[index].take() else {
+                                continue;
+                            };
+                            NoteInstanceEvent::Choke { key }
+                        }
+                        NoteInstanceEvent::Expression { .. } if spare >= 1 && found.is_some() => event,
+                        _ => continue,
+                    };
+                    send(NoteEvent::Instance { id, event: mapped });
+                }
                 NoteEvent::On { key, velocity } if key > 127 || !velocity.is_finite() => {}
                 NoteEvent::On { key, velocity } if velocity > 0.0 => {
                     let held = self.sounding.get(usize::from(key)).is_some_and(|&sent| sent != SILENT);
@@ -214,6 +255,7 @@ impl Device for Pitch {
                 }
                 NoteEvent::AllNotesOff => {
                     self.sounding = [SILENT; 128];
+                    self.instances.fill(None);
                     send(event);
                 }
                 NoteEvent::Scale(scale) => {
@@ -239,6 +281,7 @@ impl Device for Pitch {
 /// Whether `event` ends notes: a note-off, a note-on of velocity 0 or less, or all-notes-off.
 fn is_release(event: NoteEvent) -> bool {
     match event {
+        NoteEvent::Instance { event: NoteInstanceEvent::Off { .. } | NoteInstanceEvent::Choke { .. }, .. } => true,
         NoteEvent::Off { .. } | NoteEvent::AllNotesOff => true,
         NoteEvent::On { velocity, .. } => velocity.is_finite() && velocity <= 0.0,
         _ => false,

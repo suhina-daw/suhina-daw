@@ -151,6 +151,19 @@ The header's Close closes the larger view, and Undo is the app's own (Ctrl+Z).
 Importing the instrument from a Live Set waits for sets authored to observe it
 ([device-import.md](device-import.md)); until then it stays a placeholder.
 
+## Per-note expression
+
+Live per-note expression follows [MPE](mpe.md): separate runtime occurrences retain their
+own pitch, pressure and timbre, including equal-key notes and released tails. Neutral
+pressure preserves existing patch level; pressure adds up to 6 dB and feeds the pressure
+modulation source. Timbre moves an enabled per-voice filter by ±2 octaves; it has no effect
+when that filter is off. When every voice is busy, a new native occurrence takes a voice as an
+ordinary note does: a silent one, else the released voice that started first, else the voice
+that started first. The taken occurrence still reports its completion once its last computed
+quantum has played. Admission is rejected only when reserved retirement storage is full.
+Ordinary note allocation is unchanged.
+The existing fixed 64-frame synthesis/control quantum remains, independent of host block size.
+
 ## Randomizer
 
 `device.randomize` takes the device, a seed and an amount, and sets the new values as one undo step. Each

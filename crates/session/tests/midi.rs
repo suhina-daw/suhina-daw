@@ -29,6 +29,9 @@ struct Ports {
     opened: Mutex<Vec<String>>,
     closed: Arc<Mutex<Vec<String>>>,
     inputs: Mutex<Vec<Arc<LiveInput>>>,
+    configured: Mutex<Vec<(String, suhina_session::MpeConfig)>>,
+    /// How many more listings succeed; `None` for every one.
+    listings_left: Mutex<Option<usize>>,
 }
 
 struct Open(String, Arc<Mutex<Vec<String>>>);
@@ -40,7 +43,22 @@ impl Drop for Open {
 }
 
 impl MidiSystem for Ports {
+    fn open_configured(
+        &self,
+        name: &str,
+        input: Arc<LiveInput>,
+        config: suhina_session::MpeConfig,
+    ) -> Result<Box<dyn std::any::Any + Send>, String> {
+        self.configured.lock().unwrap().push((name.to_owned(), config));
+        self.open(name, input)
+    }
     fn ports(&self) -> Result<Vec<String>, String> {
+        let mut left = self.listings_left.lock().unwrap();
+        match left.as_mut() {
+            Some(0) => return Err("the MIDI system stopped answering".into()),
+            Some(n) => *n -= 1,
+            None => {}
+        }
         Ok(self.ports.lock().unwrap().clone())
     }
 
@@ -119,12 +137,69 @@ fn armed(projects: &mut Projects) -> Vec<bool> {
 #[test]
 fn midi_commands_are_listed_with_their_kind() {
     let ids: Vec<&str> = midi_commands().iter().map(|c| c.id).collect();
-    assert_eq!(ids, ["midi.inputs", "midi.setInput"]);
+    assert_eq!(ids, ["midi.setMpe", "midi.inputs", "midi.setInput"]);
     assert!(midi_commands().iter().all(|c| c.kind.target == suhina_session::Target::Audio));
     let listed = suhina_session::all_commands();
-    for id in ["midi.inputs", "midi.setInput", "track.setArm"] {
+    for id in ["midi.inputs", "midi.setInput", "midi.setMpe", "track.setArm"] {
         assert!(listed.as_array().unwrap().iter().any(|c| c["id"] == id), "{id}");
     }
+}
+
+#[test]
+fn mpe_settings_reopen_only_the_changed_port_and_reject_malformed_changes_atomically() {
+    let midi = ports(&["Keys", "Pads"], None);
+    let mut projects = Projects::new();
+    projects.set_midi_system(midi.clone());
+    let params =
+        json!({ "port": "Keys", "mode": "manual", "lowerMembers": 8, "upperMembers": 6, "lowerMemberBend": 24 });
+    let result = run(&mut projects, "midi.setMpe", params.clone()).unwrap();
+    assert_eq!(result["inputs"][0]["mpe"]["lowerMemberBend"], 24);
+    assert_eq!(*midi.closed.lock().unwrap(), ["Keys"]);
+    assert_eq!(midi.opened.lock().unwrap().len(), 3);
+    assert_eq!(midi.configured.lock().unwrap().last().unwrap().1.lower_members, 8);
+    run(&mut projects, "midi.setMpe", params).unwrap();
+    assert_eq!(midi.opened.lock().unwrap().len(), 3, "unchanged configuration does not interrupt notes");
+    let before = projects.midi_mpe();
+    for invalid in [
+        json!({ "port":"Keys", "mode":"unknown" }),
+        json!({ "port":"Keys", "mode":"manual", "lowerMembers":9, "upperMembers":6 }),
+        json!({ "port":"Keys", "mode":"manual", "lowerMemberBend":97 }),
+        json!({ "port":"Keys", "mode":"manual", "upperMembers":-1 }),
+        json!({ "port":"Keys", "mode":"manual", "upperMembers":2.5 }),
+        json!({ "port":"Missing", "mode":"manual" }),
+    ] {
+        assert!(run(&mut projects, "midi.setMpe", invalid).is_err());
+        assert_eq!(projects.midi_mpe(), before);
+    }
+    assert_eq!(*midi.closed.lock().unwrap(), ["Keys"]);
+}
+
+#[test]
+fn mpe_configuration_json_and_startup_settings_round_trip_with_validation() {
+    use suhina_session::{MpeConfig, MpeMode};
+    let config = MpeConfig {
+        mode: MpeMode::Manual,
+        lower_members: 5,
+        upper_members: 9,
+        upper_member_bend: 12,
+        ..MpeConfig::default()
+    };
+    assert_eq!(MpeConfig::from_json(&config.to_json()), Some(config));
+    for bad in [
+        json!(null),
+        json!({"mode":"invalid"}),
+        json!({"lowerMembers":256}),
+        json!({"lowerMembers":-1}),
+        json!({"pressure":1}),
+        json!({"lowerMembers":10,"upperMembers":10}),
+    ] {
+        assert!(MpeConfig::from_json(&bad).is_none());
+    }
+    let mut projects = Projects::new();
+    projects.set_midi_mpe([("Keys".to_owned(), config)].into());
+    let midi = ports(&["Keys"], None);
+    projects.set_midi_system(midi.clone());
+    assert_eq!(midi.configured.lock().unwrap()[0].1, config);
 }
 
 #[test]
@@ -143,7 +218,11 @@ fn every_port_opens_until_turned_off() {
     assert_eq!(*midi.opened.lock().unwrap(), ["Keys", "Pads"]);
 
     let listed = run(&mut projects, "midi.inputs", json!({})).unwrap();
-    assert_eq!(listed["inputs"][0], json!({ "name": "Keys", "enabled": true, "open": true, "error": null }));
+    assert_eq!(
+        listed["inputs"][0],
+        json!({ "name": "Keys", "enabled": true, "open": true, "error": null,
+        "mpe": suhina_session::MpeConfig::default().to_json() })
+    );
     assert_eq!(listed["connected"], json!(false), "no project plays");
 
     let off = run(&mut projects, "midi.setInput", json!({ "port": "Pads", "enabled": false })).unwrap();
@@ -402,4 +481,30 @@ fn two_controllers_play_two_armed_tracks_each_its_own() {
     // Changing an armed track's input reaches the engine without arming again.
     run(&mut projects, "track.setMidiInput", json!({ "track": ids[1], "port": "all", "channel": 0 })).unwrap();
     assert!(heard(&mut projects, ids[0], keys) > 0.0, "track 2 now hears the keyboard too");
+}
+
+#[test]
+fn set_mpe_finds_a_port_whose_name_has_spaces_at_its_ends() {
+    let midi = ports(&[" Keys "], None);
+    let mut projects = Projects::new();
+    projects.set_midi_system(midi.clone());
+    let result = run(&mut projects, "midi.setMpe", json!({ "port": " Keys ", "mode": "automatic" })).unwrap();
+    assert_eq!(result["inputs"][0]["name"], " Keys ");
+    assert_eq!(result["inputs"][0]["mpe"]["mode"], "automatic");
+    assert!(projects.midi_mpe().contains_key(" Keys "));
+    assert!(run(&mut projects, "midi.setMpe", json!({ "port": "   ", "mode": "automatic" })).is_err());
+}
+
+#[test]
+fn set_mpe_reports_success_when_only_the_listing_after_the_change_fails() {
+    let midi = ports(&["Keys"], None);
+    let mut projects = Projects::new();
+    projects.set_midi_system(midi.clone());
+    // The check before the change lists the ports; every listing after it fails.
+    *midi.listings_left.lock().unwrap() = Some(1);
+    let result = run(&mut projects, "midi.setMpe", json!({ "port": "Keys", "mode": "manual" })).unwrap();
+    println!("{result}");
+    assert_eq!(result["mpe"]["mode"], "manual");
+    assert!(result["notices"][0].as_str().unwrap().contains("could not be listed"));
+    assert_eq!(projects.midi_mpe()["Keys"].mode, suhina_session::MpeMode::Manual, "the change is kept");
 }
