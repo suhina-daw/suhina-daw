@@ -4,8 +4,11 @@
   reference renderer is C++; neither is built into the program.
 - **Licence:** Suhina is GPL-3.0-or-later (`LICENSE`, `NOTICE`), and contributions are
   licensed the same way. Dependencies and bundled libraries must be GPLv3-compatible (MIT,
-  Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0); GPL-2.0-only and proprietary or
-  non-commercial licences are not. CI checks every dependency's licence with `cargo-deny`
+  Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0, AGPL-3.0); GPL-2.0-only and proprietary or
+  non-commercial licences are not. AGPL-3.0 code combines with GPL-3.0 code by both licences'
+  § 13; the AGPL part keeps its own terms, which add one duty to the GPL's: a modified version
+  that users reach over a network offers them its source. Suhina publishes its source anyway, so
+  the duty costs nothing as long as a change to AGPL code is published with the rest. CI checks every dependency's licence with `cargo-deny`
   (see [Dependencies](#dependencies)).
 - **Never crash:** non-test code must not panic and must not use `unsafe` (the only exceptions
   are the plug-in hosting crates `ipc` and `plugin-host`, ADR 0006, and the MP3 encoder crate
@@ -260,8 +263,9 @@ Code, a value or a solution may be taken from an open-source project, another DA
 included, when three things hold.
 
 1. **The licence of what is taken is compatible with GPL-3.0-or-later**, as AGENTS.md rule 10
-   lists them: GPL-2.0-or-later and GPL-3.0 are, GPL-2.0-only is not, nor a non-commercial licence
-   or none. GPL-2.0-or-later code is used under GPL-3.0-or-later. Look where a licence actually
+   lists them: GPL-2.0-or-later, GPL-3.0 and AGPL-3.0 are, GPL-2.0-only is not, nor a
+   non-commercial licence or none. A ported AGPL-3.0 file keeps its AGPL notice and SPDX line;
+   a piece taken into a file of Suhina's own carries it in its snippet tags (item 3). GPL-2.0-or-later code is used under GPL-3.0-or-later. Look where a licence actually
    applies before ruling code in or out: the notice of the file taken from counts, not the
    project's README or its package metadata, and a project whose files carry different licences
    is checked file by file. A notice that names the GNU GPL without a version number lets any
