@@ -384,9 +384,24 @@ impl Renderer {
                 .map(|e| position + (e.end - time))
                 .max()
         };
+        let (curves, map) = (graph.curves.as_slice(), &*graph.tempo);
         for (index, chain) in graph.chains.iter_mut().enumerate() {
             let bus = u32::try_from(index + 1).unwrap_or(u32::MAX);
             chain.follow_arranged(0, |key| wanted(bus, key));
+            // A note sounding on an MPE member channel follows its curves in the new graph, from
+            // where they are now (an edit to the points is heard at once).
+            for key in 0..=127u8 {
+                if !chain.mpe.sounds(key) {
+                    continue;
+                }
+                let note = started
+                    .iter()
+                    .filter(|e| e.bus == bus && e.key == key && e.end > time && !launcher.overrides(e.column))
+                    .next_back();
+                if let Some(curve) = note.and_then(|e| e.curve_at(time, position)) {
+                    chain.rebind_curve(0, position, key, crate::chain::mpe::StartCurve { curve, list: curves, map });
+                }
+            }
         }
         for voice in voices.iter_mut().filter(|v| v.active && v.arranged) {
             match wanted(voice.bus, voice.key) {

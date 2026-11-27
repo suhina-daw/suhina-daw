@@ -3,12 +3,13 @@ description: Planned per-note expression behavior for live controllers, native i
 read_when: MPE, per-note expression, MIDI pressure, note curves, member channel, manager channel
 type: spec
 status: planned
-last_verified: 2026-11-20
+last_verified: 2026-11-27
 covers:
   - crates/device-api/src/lib.rs
   - crates/device-api/src/note_expression.rs
   - crates/device-api/src/note_expression/
   - crates/engine/src/live.rs
+  - crates/engine/src/chain/mpe.rs
   - crates/midi/src/lib.rs
 ---
 
@@ -24,7 +25,9 @@ atomic initial note state, explicit event-admission results, and an opt-in instr
 with bounded retirement feedback. These are contract primitives; no built-in opts in on this
 branch. The current live path has ordinary notes, channel bend, pressure and controllers.
 A note holds its curves in the model and the project file saves them (version 17).
-End-to-end identified events, live MPE, recording, editing curves and plug-in adapters are not yet built.
+Playback sends them to a plug-in instrument as channel MPE ([Channel-MPE output](#channel-mpe-output));
+built-in instruments do not play them yet. End-to-end identified events, live MPE, recording
+and native plug-in adapters (CLAP note expressions, VST3 note expression) are not yet built.
 The rules below are planned behavior, not a claim that a controller already exercises them.
 
 `Device::note_instances` returns `None` for an ordinary device. The validated
@@ -167,6 +170,58 @@ MIDI. Channel-MPE output emits configuration, initial controls and note-on in th
 reserves member channels for active keys; channel reuse cannot alter a captured old tail in a
 native core. If a legacy recipient cannot guarantee tail isolation, the compatibility mode
 states that limitation. Capacity exhaustion has an explicit voice/channel stealing policy.
+
+### Channel-MPE output
+
+This is what is built of the modes above: channel-MPE compatibility, chosen automatically
+(`crates/engine/src/chain/mpe.rs`).
+
+- **When.** A track's chain plays as MPE when its first device is a plug-in instrument and a
+  note it plays, in an arrangement clip or a launch clip, has a curve. There is no setting or
+  command yet; the per-plug-in mode above (native, channel-MPE, ordinary MIDI) will be a
+  command when native expression exists to choose from. A chain that plays as MPE sends every
+  note on a member channel, a note without curves with neutral controls. Every other chain
+  plays as before: every note on the first channel, no extra events. A MIDI effect before the
+  instrument, an instrument inside a device group and built-in instruments get no MPE.
+- **Setup.** Before the chain's first note, and again after a stop: the MPE Configuration
+  Message on channel 1 (RPN 6: CC101 0, CC100 6, CC6 15, then the null RPN CC101/CC100 127),
+  a Lower Zone of 15 member channels; then on each member channel 2 to 16 RPN 0 at 48
+  semitones (CC101 0, CC100 0, CC6 48, CC38 0, null RPN) and the neutral controls: pitch bend
+  8192, channel pressure 0, CC74 64. Loops and seeks do not send it again.
+- **Initial controls, then note-on.** A note takes a member channel; the channel gets the
+  curves' values where the note starts (where a seek or a start lands inside it, for a note
+  started part-way), each only when it differs from what the channel last had, then the
+  note-on on that channel. Its note-off goes on the same channel.
+- **Values.** Pitch is 14-bit bend at ±48 semitones: 8192 + semitones / 48 × 8191, rounded
+  and clamped to 0..16383 (a curve past ±48 stays at the end). Pressure is `round(p × 127)`.
+  Timbre is CC74 with 0.5 at 64, 0 and 1 at 0 and 127, linear on either side, the mapping MPE
+  input uses. The plug-in host turns the event values back into exactly these numbers.
+- **Rate.** The graph prepares each curve off the audio thread: its value at the note's start,
+  at every point, and every 1/256 beat between points, kept only where the MIDI value changes;
+  nothing after the last point, as the curve holds. The changes are kept in beats from the
+  note's start and turned into frames through the tempo map (an arrangement note, or a launch
+  clip on the map) or the launcher's tempo, so a value at a point lands on the point's frame.
+  A graph holds at most 1,048,576 changes; a note past that plays without its curves. The
+  audio thread only reads the prepared lists; a graph or plan frees them off the audio thread.
+- **Channels and stealing.** A note takes a free member channel, the one released longest ago
+  first, which gives a release tail the most time. With all 15 sounding, the oldest note is
+  released on its channel and the new note takes it (its controls reset to the new note's
+  first), so a stolen note's tail is cut on plug-ins that keep one voice state per channel.
+- **Edits, loops, seeks, stops.** A loop wrap, a seek and a launch release the sounding notes
+  and start fresh ones on free channels. A stop releases them, sends CC123 on each member
+  channel and sets the zone up again before the next note. After an edit while playing, an
+  arrangement note that still sounds follows its curve in the new graph from where it is; a
+  launched note holds its values until it ends.
+- **Formats.** A CLAP and a VST2 plug-in get every member channel's notes, bend, pressure and
+  CC74 as MIDI on that channel. A VST3 plug-in gets the notes on their channels, but the
+  member channels' controls move no parameter: VST3 takes controllers through `IMidiMapping`,
+  which Suhina asks for the first channel only (some plug-ins crash when asked about another,
+  [plug-in hosting](plugin-hosting.md)), and through it one note's bend would bend every
+  note. Per-note pitch for VST3 needs its note expression (above), a follow-up; until then a
+  plug-in's CLAP or VST2 build plays the curves.
+- **Follow-ups.** Built-in instruments (FM Synth, Sampler) play the curves once they take
+  identified notes (#1598); recording curves from an MPE controller; the per-plug-in mode
+  command; native CLAP and VST3 note expression.
 
 The stock instrument, VST3 export and CLAP export consume the same `device-api` event contract.
 Imported plug-ins remain sandboxed. Both IPC directions bound event counts and validate values.

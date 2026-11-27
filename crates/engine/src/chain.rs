@@ -41,6 +41,8 @@ use crate::sends::SendOut;
 use crate::sine::{self, SineTones};
 use crate::spectrum;
 
+pub(crate) mod mpe;
+
 /// The most frames one block of a chain holds; the renderer splits longer blocks.
 pub(crate) const MAX_BLOCK: usize = 1024;
 /// Events a chain keeps for one block before it runs up to the frame it has reached.
@@ -179,6 +181,8 @@ pub(crate) struct Chain {
     arranged: u128,
     /// The scale last sent to the devices ([`Chain::set_scale`]); `None` before the first.
     scale: Option<Option<MusicalScale>>,
+    /// Its notes as MPE on member channels, for a plug-in instrument ([`mpe`]).
+    pub(crate) mpe: mpe::MpeOut,
     /// The meter monitor's spectrum rings, given when the graph is installed on the renderer
     /// that owns the monitor: the chain captures its watched devices' output into them on
     /// every path that runs its devices (`advance`, the event overflow's flush and
@@ -472,6 +476,7 @@ impl Chain {
             next_off: NOT_HELD,
             arranged: 0,
             scale: None,
+            mpe: mpe::MpeOut::default(),
             spectrum: None,
             built_volume: None,
             built_pan: None,
@@ -535,6 +540,7 @@ impl Chain {
             next_off: NOT_HELD,
             arranged: 0,
             scale: None,
+            mpe: mpe::MpeOut::default(),
             spectrum: None,
             built_volume: None,
             built_pan: None,
@@ -1025,15 +1031,35 @@ impl Chain {
     /// Plays `key` from `frame` of the block (renderer frame `position`) until renderer frame
     /// `end`. A key that is already held is released first.
     pub(crate) fn note_on(&mut self, frame: usize, position: u64, key: u8, velocity: f32, end: u64) {
-        let Some(held) = self.held.get_mut(usize::from(key)) else { return };
-        if *held != NOT_HELD {
-            *held = NOT_HELD;
-            self.push(frame, NoteEvent::Off { key, velocity: 0.5 });
+        self.note_on_with(frame, position, key, velocity, end, None);
+    }
+
+    /// [`Chain::note_on`] for a note that may carry expression curves: a chain that plays MPE
+    /// starts it on a member channel with its curves ([`mpe`]); any other ignores them.
+    pub(crate) fn note_on_with(
+        &mut self,
+        frame: usize,
+        position: u64,
+        key: u8,
+        velocity: f32,
+        end: u64,
+        curve: Option<mpe::StartCurve<'_>>,
+    ) {
+        let Some(held) = self.held.get(usize::from(key)).copied() else { return };
+        if held != NOT_HELD {
+            if let Some(held) = self.held.get_mut(usize::from(key)) {
+                *held = NOT_HELD;
+            }
+            self.key_off(frame, key);
         }
         self.arranged &= !(1u128 << key.min(127));
         // A note of velocity 0 would be a release.
         let velocity = velocity.clamp(1.0 / 127.0, 1.0);
-        self.push(frame, NoteEvent::On { key, velocity });
+        if self.mpe.enabled {
+            self.mpe_note_on(frame, position, key, velocity, curve);
+        } else {
+            self.push(frame, NoteEvent::On { key, velocity });
+        }
         if let Some(held) = self.held.get_mut(usize::from(key)) {
             *held = end.max(position + 1);
         }
@@ -1066,7 +1092,7 @@ impl Chain {
                 if let Some(held) = self.held.get_mut(usize::from(key)) {
                     *held = NOT_HELD;
                 }
-                self.push(frame, NoteEvent::Off { key, velocity: 0.5 });
+                self.key_off(frame, key);
             } else {
                 next = next.min(end);
             }
@@ -1119,7 +1145,7 @@ impl Chain {
                 None => {
                     *held = NOT_HELD;
                     self.arranged &= !(1u128 << key);
-                    self.push(frame, NoteEvent::Off { key, velocity: 0.5 });
+                    self.key_off(frame, key);
                 }
             }
         }
@@ -1131,7 +1157,7 @@ impl Chain {
             && *held != NOT_HELD
         {
             *held = NOT_HELD;
-            self.push(frame, NoteEvent::Off { key, velocity: 0.5 });
+            self.key_off(frame, key);
         }
     }
 
@@ -1143,6 +1169,7 @@ impl Chain {
             return;
         }
         self.release_keys(frame);
+        self.mpe_all_off(frame);
         self.push(frame, NoteEvent::AllNotesOff);
     }
 
@@ -1163,7 +1190,7 @@ impl Chain {
     fn release_keys(&mut self, frame: usize) {
         for key in 0..=127u8 {
             if self.held.get(usize::from(key)).is_some_and(|&end| end != NOT_HELD) {
-                self.push(frame, NoteEvent::Off { key, velocity: 0.5 });
+                self.key_off(frame, key);
             }
         }
         self.held = [NOT_HELD; 128];
@@ -1180,6 +1207,7 @@ impl Chain {
         for key in 0..=127u8 {
             self.push(0, NoteEvent::Off { key, velocity: 0.5 });
         }
+        self.mpe_all_off(0);
         self.push(0, NoteEvent::AllNotesOff);
     }
 
@@ -1447,6 +1475,7 @@ impl Chain {
         self.next_off = old.next_off;
         self.arranged = old.arranged;
         self.scale = old.scale;
+        self.mpe.adopt(&old.mpe);
         self.delay.adopt(&mut old.delay);
         self.adopt_sends(old);
         true

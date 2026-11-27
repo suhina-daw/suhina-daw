@@ -1711,7 +1711,15 @@ fn swing_moves_the_second_sixteenth_of_every_pass() {
     let map = Transport::default().tempo_map(48_000.0);
     let events = |swing: f64| {
         let mut events = Vec::new();
-        collect_notes(&placed, &lane, &map, (TrackId(1), 1.0, 1.0, 0, 0, 0), None, swing, &mut events);
+        collect_notes(
+            &placed,
+            &lane,
+            &map,
+            (TrackId(1), 1.0, 1.0, 0, 0, 0),
+            None,
+            swing,
+            (&mut events, &mut crate::chain::mpe::Curves::default()),
+        );
         let mut spans: Vec<(u64, u64)> = events.iter().map(|e| (e.start, e.end)).collect();
         spans.sort_unstable();
         spans
@@ -1741,7 +1749,15 @@ fn swing_leaves_out_a_note_it_would_take_past_the_loop_end() {
     let map = Transport::default().tempo_map(48_000.0);
     let keys = |swing: f64| {
         let mut events = Vec::new();
-        collect_notes(&placed, &lane, &map, (TrackId(1), 1.0, 1.0, 0, 0, 0), None, swing, &mut events);
+        collect_notes(
+            &placed,
+            &lane,
+            &map,
+            (TrackId(1), 1.0, 1.0, 0, 0, 0),
+            None,
+            swing,
+            (&mut events, &mut crate::chain::mpe::Curves::default()),
+        );
         let mut keys: Vec<(u64, u8)> = events.iter().map(|e| (e.start, e.key)).collect();
         keys.sort_unstable();
         keys
@@ -2139,7 +2155,15 @@ fn a_velocity_range_rolls_on_each_pass_and_repeats() {
     let map = Transport::default().tempo_map(48_000.0);
     let velocities = || {
         let mut events = Vec::new();
-        collect_notes(&placed, &lane, &map, (TrackId(1), 1.0, 1.0, 0, 0, 0), None, 0.0, &mut events);
+        collect_notes(
+            &placed,
+            &lane,
+            &map,
+            (TrackId(1), 1.0, 1.0, 0, 0, 0),
+            None,
+            0.0,
+            (&mut events, &mut crate::chain::mpe::Curves::default()),
+        );
         events.sort_by_key(|e| e.start);
         events.iter().map(|e| (e.velocity * 127.0).round() as i32).collect::<Vec<_>>()
     };
@@ -2152,7 +2176,15 @@ fn a_velocity_range_rolls_on_each_pass_and_repeats() {
     let plain =
         ContentLane { target: None, data: LaneData::Notes(vec![Note::new(0.0, 0.25, 60, 100.0 / 127.0)].into()) };
     let mut events = Vec::new();
-    collect_notes(&placed, &plain, &map, (TrackId(1), 1.0, 1.0, 0, 0, 0), None, 0.0, &mut events);
+    collect_notes(
+        &placed,
+        &plain,
+        &map,
+        (TrackId(1), 1.0, 1.0, 0, 0, 0),
+        None,
+        0.0,
+        (&mut events, &mut crate::chain::mpe::Curves::default()),
+    );
     assert!(events.iter().all(|e| e.velocity == 100.0 / 127.0));
 }
 

@@ -438,6 +438,21 @@ struct ArrangedNote {
     meter: u32,
     /// The scale of the note's clip, for the MIDI effects that follow it.
     scale: Option<MusicalScale>,
+    /// Where it starts, in the arrangement's beats: its curves' beats are counted from here.
+    start_beat: f64,
+    /// Its expression curves in [`graph::Graph::curves`].
+    curve: chain::mpe::CurveRange,
+}
+
+impl ArrangedNote {
+    /// Its curves for a start at arrangement frame `time`, renderer frame `position`.
+    fn curve_at(&self, time: u64, position: u64) -> Option<chain::mpe::NoteCurve> {
+        (!self.curve.is_empty()).then_some(chain::mpe::NoteCurve {
+            source: chain::mpe::CurveSource::Arrangement,
+            range: self.curve,
+            timing: chain::mpe::Timing::Map { beat: self.start_beat, time, position },
+        })
+    }
 }
 
 /// A clip's scale as the devices get it.
@@ -1158,6 +1173,7 @@ impl Renderer {
                 meter: event.meter,
                 scale: event.scale,
                 arranged: true,
+                curve: event.curve_at(time, self.transport.position),
             };
             let Self {
                 voices,
@@ -1167,7 +1183,8 @@ impl Renderer {
                 implicit_tones,
                 ..
             } = self;
-            start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start, *implicit_tones);
+            let curves = (graph.curves.as_slice(), &*graph.tempo);
+            start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start, *implicit_tones, curves);
         }
     }
 
@@ -1450,8 +1467,13 @@ impl Renderer {
         }
         for (frame, [out_left, out_right]) in out.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             self.block_frame = frame;
-            for chain in self.graph.chains.iter_mut().filter(|c| c.instrument) {
-                chain.release_due(frame, self.transport.position);
+            {
+                let graph::Graph { chains, curves, launcher, tempo, .. } = &mut *self.graph;
+                let lists = chain::mpe::CurveLists { arrangement: curves, launcher, map: tempo };
+                for chain in chains.iter_mut().filter(|c| c.instrument) {
+                    chain.release_due(frame, self.transport.position);
+                    chain.express_due(frame, self.transport.position, &lists);
+                }
             }
             self.preview.frame(&mut self.graph.chains, frame, self.transport.position);
             self.live.frame(&mut self.graph.chains, &mut self.recorder, frame, self.transport.position);
@@ -1495,6 +1517,7 @@ impl Renderer {
                         meter: event.meter,
                         scale: event.scale,
                         arranged: true,
+                        curve: event.curve_at(time, self.transport.position),
                     };
                     let Self {
                         voices,
@@ -1504,7 +1527,18 @@ impl Renderer {
                         implicit_tones,
                         ..
                     } = self;
-                    start_note(voices, &mut graph.chains, frame, *position, *sample_rate, end, start, *implicit_tones);
+                    let curves = (graph.curves.as_slice(), &*graph.tempo);
+                    start_note(
+                        voices,
+                        &mut graph.chains,
+                        frame,
+                        *position,
+                        *sample_rate,
+                        end,
+                        start,
+                        *implicit_tones,
+                        curves,
+                    );
                 }
             }
 
@@ -1875,6 +1909,8 @@ pub(crate) struct NoteStart {
     pub(crate) scale: Option<MusicalScale>,
     /// Whether it is an arrangement note, which an edit can take away while it sounds.
     pub(crate) arranged: bool,
+    /// Its expression curves, which a chain that plays MPE sends ([`chain::mpe`]).
+    pub(crate) curve: Option<chain::mpe::NoteCurve>,
 }
 
 /// The chain behind `bus`, or `None` for the output.
@@ -1897,13 +1933,15 @@ pub(crate) fn start_note(
     end: u64,
     note: NoteStart,
     tones: bool,
+    (list, map): (&[chain::mpe::CurveChange], &TempoMap),
 ) {
     if let Some(chain) = bus_chain(chains, note.bus).filter(|c| c.instrument) {
         if chain.implicit_tones && !tones {
             return;
         }
         chain.set_scale(frame, note.scale);
-        chain.note_on(frame, position, note.key, note.velocity, end);
+        let curve = note.curve.map(|curve| chain::mpe::StartCurve { curve, list, map });
+        chain.note_on_with(frame, position, note.key, note.velocity, end, curve);
         if note.arranged {
             chain.mark_arranged(note.key);
         }
@@ -2174,7 +2212,7 @@ fn collect_notes(
     (track, gain_left, gain_right, column, bus, meter): (TrackId, f32, f32, u32, u32, u32),
     scale: Option<MusicalScale>,
     swing: f64,
-    events: &mut Vec<ArrangedNote>,
+    (events, curves): (&mut Vec<ArrangedNote>, &mut chain::mpe::Curves),
 ) {
     let LaneData::Notes(notes) = &lane.data else { return };
     if !(clip.length.is_finite() && clip.length > 0.0 && clip.start.is_finite() && clip.offset.is_finite()) {
@@ -2208,6 +2246,7 @@ fn collect_notes(
                 continue;
             }
             let end = (start + length).min(clip_end);
+            let curve = curves.add(note.expression.as_ref(), end - start);
             // A note's velocity range is rolled here, for each pass, in the one render path
             // (ADR 0037): offline and live lay out the same notes.
             let place = suhina_model::RollPlace { track: track.0, clip: clip.start.to_bits(), pass };
@@ -2225,6 +2264,8 @@ fn collect_notes(
                 bus,
                 meter,
                 scale,
+                start_beat: start,
+                curve,
             });
         }
     };

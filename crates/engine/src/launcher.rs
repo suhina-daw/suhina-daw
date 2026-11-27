@@ -640,6 +640,8 @@ struct PlanNote {
     meter: u32,
     /// The scale of the clip.
     scale: Option<suhina_device_api::MusicalScale>,
+    /// Its expression curves in the plan's [`ClipPlan::curves`], prepared with the plan.
+    curve: crate::chain::mpe::CurveRange,
 }
 
 struct PlanAudio {
@@ -671,6 +673,9 @@ struct ClipPlan {
     loop_range: Option<(f64, f64)>,
     /// Sorted by time.
     notes: Vec<PlanNote>,
+    /// The notes' expression curves ([`crate::chain::mpe`]): prepared here, read on the audio
+    /// thread, freed with the plan.
+    curves: Vec<crate::chain::mpe::CurveChange>,
     audio: Vec<PlanAudio>,
     follow: Option<FollowPlan>,
 }
@@ -908,6 +913,25 @@ impl ClipLauncher {
         self.publish();
     }
 
+    /// The prepared expression curves of the clip playing in `column`, while it plays from
+    /// `slot`. Never allocates.
+    pub(crate) fn curves(&self, column: u32, slot: u32) -> Option<&[crate::chain::mpe::CurveChange]> {
+        let column = self.columns.get(column as usize)?;
+        let playing = column.playing.as_ref().filter(|p| p.slot == slot as usize)?;
+        column.slots.get(playing.slot)?.clip.as_ref().map(|plan| plan.curves.as_slice())
+    }
+
+    /// The buses (1 + a chain's index) whose launch clips hold a note with expression curves.
+    pub(crate) fn curved_buses(&self) -> impl Iterator<Item = u32> + '_ {
+        self.columns
+            .iter()
+            .flat_map(|c| c.slots.iter())
+            .filter_map(|s| s.clip.as_ref())
+            .flat_map(|plan| plan.notes.iter())
+            .filter(|n| !n.curve.is_empty())
+            .map(|n| n.bus)
+    }
+
     /// Whether the track behind `column` plays launched clips instead of its arrangement.
     pub(crate) fn overrides(&self, column: u32) -> bool {
         self.columns.get(column as usize).is_some_and(|c| c.overrides_since.is_some())
@@ -1119,6 +1143,7 @@ fn plan_clip(
         .filter(|r| r.start.is_finite() && r.end.is_finite() && r.end > r.start)
         .map(|r| (r.start, r.end));
     let mut notes = Vec::new();
+    let mut curves = crate::chain::mpe::Curves::default();
     let mut audio_plans = Vec::new();
     for lane in &content.lanes {
         let lane_track = lane.target.unwrap_or(track);
@@ -1134,6 +1159,7 @@ fn plan_clip(
                     // The end swings as the start does, so notes that touch keep touching.
                     let time = suhina_model::swung(note.time, swing);
                     let end = suhina_model::swung(note.time + note.duration.max(0.0), swing);
+                    let curve = curves.add(note.expression.as_ref(), (end - time).max(0.0));
                     notes.push(PlanNote {
                         time,
                         duration: (end - time).max(0.0),
@@ -1146,6 +1172,7 @@ fn plan_clip(
                         bus,
                         meter,
                         scale: crate::musical_scale(content.scale),
+                        curve,
                     });
                 }
             }
@@ -1219,6 +1246,7 @@ fn plan_clip(
         length: clip.length,
         loop_range,
         notes,
+        curves: curves.changes,
         audio: audio_plans,
         follow: FollowPlan::new(clip),
     })
@@ -1731,6 +1759,7 @@ impl Renderer {
         let beat = plan.clip_beat(p.elapsed_beats);
         let song_beat = launcher.beat;
         let scene = p.slot as u64;
+        let source = crate::chain::mpe::CurveSource::Launched { column: column_id, slot: p.slot as u32 };
         // Rolled where it starts (ADR 0037): integer arithmetic, nothing allocated or locked.
         let mut start = |note: &PlanNote, pass: u64| {
             let place = suhina_model::RollPlace { track: note.track.0, clip: scene, pass };
@@ -1754,8 +1783,18 @@ impl Renderer {
                 meter: note.meter,
                 scale: note.scale,
                 arranged: false,
+                curve: (!note.curve.is_empty()).then(|| crate::chain::mpe::NoteCurve {
+                    source,
+                    range: note.curve,
+                    timing: if on_map {
+                        crate::chain::mpe::Timing::Map { beat: song_beat, time, position: *position }
+                    } else {
+                        crate::chain::mpe::Timing::Rate { frames_per_beat: 1.0 / beats_per_frame, position: *position }
+                    },
+                }),
             };
-            start_note(voices, chains, frame, *position, *sample_rate, end, start, *implicit_tones);
+            let curves = (plan.curves.as_slice(), &**map);
+            start_note(voices, chains, frame, *position, *sample_rate, end, start, *implicit_tones, curves);
         };
         if let Some((loop_start, loop_end)) = plan.loop_range
             && beat < p.last_clip_beat
