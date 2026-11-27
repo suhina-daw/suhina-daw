@@ -647,7 +647,7 @@ fn continuation_lifecycle() {
     let device = &session.project().channels[0].devices[0];
     let bytes = device.instrument_continuation().unwrap().to_vec();
     let continuation = suhina_dsp::continuation::Continuation::decode(&bytes).unwrap();
-    assert!(continuation.join > 1.0 && continuation.join <= 1.8, "{}", continuation.join);
+    assert!((1.0..=1.8).contains(&continuation.join), "{}", continuation.join);
     assert_eq!(device.params.iter().find(|p| p.id == "playback").map(|p| p.value), Some(4.0));
     // A second Instrument morphs toward the first one's continuation, wherever the chain put it.
     run(&mut session, "device.add", json!({"id":"instrument"}));

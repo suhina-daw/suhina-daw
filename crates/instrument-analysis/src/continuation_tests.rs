@@ -52,15 +52,15 @@ fn a_held_tone_with_vibrato_is_fitted() {
     // The carriers fall 4 dB per harmonic, as made (the first ten, well above the noise).
     let first = C::from_pair(continuation.partials[0].carrier).abs();
     assert!((first - 0.15).abs() < 0.03, "first carrier {first}");
-    for k in 1..10 {
-        let ratio = C::from_pair(continuation.partials[k].carrier).abs() / first;
+    for (k, partial) in continuation.partials.iter().enumerate().take(10).skip(1) {
+        let ratio = C::from_pair(partial.carrier).abs() / first;
         let db = 20.0 * ratio.log10();
         assert!((db + 4.0 * k as f64).abs() < 2.0, "harmonic {k}: {db} dB");
         // A tone whose every partial follows the pitch.
-        assert!(continuation.partials[k].gamma > 0.7, "harmonic {k}: gamma {}", continuation.partials[k].gamma);
+        assert!(partial.gamma > 0.7, "harmonic {k}: gamma {}", partial.gamma);
     }
     assert!(!continuation.stereo, "equal channels are mono");
-    assert!(continuation.join > 1.4 && continuation.join <= 2.2, "join {}", continuation.join);
+    assert!((1.4..=2.2).contains(&continuation.join), "join {}", continuation.join);
     assert_eq!(continuation.release_start, 0.0);
     assert_eq!(Continuation::decode(&continuation.encode()).unwrap(), continuation);
 }
@@ -81,13 +81,17 @@ fn the_fitted_model_plays_at_the_recordings_level() {
     let side: Vec<f64> = out.iter().skip(sr as usize).map(|p| f64::from(p[1])).collect();
     // The recording's mid over its held part.
     let recorded: Vec<f64> = samples
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .skip((0.5 * sr) as usize)
         .take((1.5 * sr) as usize)
         .map(|p| (f64::from(p[0]) + f64::from(p[1])) / 2.0)
         .collect();
     let recorded_side: Vec<f64> = samples
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .skip((0.5 * sr) as usize)
         .take((1.5 * sr) as usize)
         .map(|p| (f64::from(p[0]) - f64::from(p[1])) / 2.0)
@@ -104,7 +108,7 @@ fn a_release_after_the_held_part_is_found() {
     let samples = tone(2.5, 20.0, false, true);
     let continuation = fit(&samples, RATE, 2, held(0.3, 2.0), 440.0, |_, _| true).unwrap();
     let start = f64::from(continuation.release_start);
-    assert!(start > 2.1 && start < 2.3, "release at {start}");
+    assert!((2.1..2.3).contains(&start), "release at {start}");
 }
 
 #[test]

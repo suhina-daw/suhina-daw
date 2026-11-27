@@ -61,7 +61,7 @@ fn a_note_is_finite_bounded_and_near_its_expected_level() {
         assert!(ratio_db.abs() < 3.0, "stereo {stereo}: {level} against {expected} ({ratio_db} dB)");
         let side = rms(out[RATE as usize..].iter().map(|p| p[1]));
         if stereo {
-            assert!(side > 0.05 * level && side < level, "side {side}, mid {level}");
+            assert!((0.05 * level..level).contains(&side), "side {side}, mid {level}");
         } else {
             assert_eq!(side, 0.0);
         }
@@ -118,7 +118,7 @@ fn the_vibrato_depth_and_rate_controls_move_the_pitch() {
     let (none, _) = pitch_swing(0.0, 0.0);
     let (deep, _) = pitch_swing(3.0, 0.0);
     // A 20-cent vibrato swings about 40 cents.
-    assert!(recorded > 25.0 && recorded < 60.0, "{recorded}");
+    assert!((25.0..60.0).contains(&recorded), "{recorded}");
     assert!(none < 8.0, "{none}");
     assert!(deep > 2.5 * recorded, "{deep} against {recorded}");
     // Twice the recorded 5.5 Hz: about twice the cycles in the two seconds read.
