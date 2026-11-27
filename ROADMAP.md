@@ -484,6 +484,15 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   persistence. Its first modal revision is explicitly experimental; calibrated acoustic
   families and automatic sample fitting remain planned.
 
+- An experimental **Instrument** combines a struck-modal body with local single-sample
+  playback, with a compact native panel, a source blend, key/root mapping and project source
+  persistence. Its first modal revision is explicitly experimental; calibrated acoustic
+  families and automatic sample fitting remain planned.
+- MIDI inputs can use automatic or manual MPE zones for independent live pitch, pressure and
+  timbre in FM Synth and Sampler. Direct SDK voice groups expose those per-note signals.
+  Settings retain each input's zones and bend ranges. Expression recording and editable curves
+  remain separate work; unsupported instrument chains use ordinary-note compatibility.
+
 ### M3 Commands and agents (in progress)
 - Every edit is a command with an id, typed parameters and one undo step; failed or invalid edits
   leave the project unchanged ([ADR 0002](docs/decisions/0002-commands.md)).
