@@ -468,7 +468,8 @@ impl Sampler {
     /// Starts an ordinary note and returns the voice it plays on, or `None` when the key,
     /// velocity or slice map rejects it.
     fn start_note(&mut self, key: u8, velocity: f32) -> Option<usize> {
-        let p = self.values;
+        // Of a crossed pair of markers the one further right is the end (`docs/spec/sampler.md`).
+        let p = ordered(self.values);
         if f64::from(key) < p[31]
             || f64::from(key) > p[32]
             || f64::from(velocity) < p[33]
