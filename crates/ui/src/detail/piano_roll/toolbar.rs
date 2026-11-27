@@ -5,6 +5,7 @@
 //! workflow entries of the options menu above the keys.
 
 use super::*;
+use suhina_engine::model::ExpressionKind;
 
 /// What the toolbar's buttons draw from: the clip they act on, the keys they show, how many notes
 /// a paste would add, and the Toolbar size they are drawn at.
@@ -94,7 +95,7 @@ pub(super) fn toolbar(
     let Some((chosen, laid)) = row::fitting(&bar, &candidates) else { return };
     let (Some(step), Some(items)) = (Step::ALL.get(chosen).copied(), candidates.get(chosen)) else { return };
     let selected = !state.acting().is_empty();
-    let mut rows = [None; 3];
+    let mut rows = [None; 4];
     // What the controls take as input stops at the toolbar's edge, as what they paint does.
     let outer_clip = ui.clip_rect();
     ui.set_clip_rect(outer_clip.intersect(rect));
@@ -215,7 +216,7 @@ struct Widths {
     workflow: (f32, f32),
     ghosts: (f32, f32),
     grid: (f32, f32),
-    rows: [(f32, f32); 3],
+    rows: [(f32, f32); 4],
 }
 
 /// The toolbar's items at `step`, in order.
@@ -371,8 +372,12 @@ fn chevron(painter: &egui::Painter, at: Pos2, color: Color32) {
 }
 
 /// The words of the Rows toggles: Fold, Scale (the clip's scale switch) and Highlight.
-const ROWS: [(IconButton, &str); 3] =
-    [(IconButton::Fold, "Fold"), (IconButton::Scale, "Scale"), (IconButton::Highlight, "Highlight")];
+const ROWS: [(IconButton, &str); 4] = [
+    (IconButton::Fold, "Fold"),
+    (IconButton::Scale, "Scale"),
+    (IconButton::Highlight, "Highlight"),
+    (IconButton::Expression, "MPE"),
+];
 
 /// The width of one of the Rows group's toggles `height` tall: its icon, a square as tall as the
 /// toggle ([`row_toggle`] draws it so), and its word when `word`.
@@ -391,7 +396,7 @@ pub(super) fn row_toggle_width(ui: &Ui, height: f32, word: Option<&str>) -> f32 
 fn rows_toggles(
     ui: &Ui,
     painter: &egui::Painter,
-    toggles: &[Option<Rect>; 3],
+    toggles: &[Option<Rect>; 4],
     words: bool,
     cx: ToolbarCx<'_>,
     state: &mut PianoRollState,
@@ -405,8 +410,9 @@ fn rows_toggles(
         "Fold: shows only the rows that have notes",
         "Scale: shows only the rows of the clip's scale and those with notes, turning the clip's scale on when it has none; again, every row",
         "Highlight scale: tints the rows of the clip's scale and marks its keys",
+        "MPE: shows each note's pitch bend over it and its pressure or slide in the lane below; double-click in a selected note's time to add a point, drag a point to move it, double-click it to remove it",
     ];
-    let ons = [folded, scaled, state.highlight_scale];
+    let ons = [folded, scaled, state.highlight_scale, state.expression.is_some()];
     for (index, ((button, word), rect)) in ROWS.iter().zip(toggles).enumerate() {
         // A toggle the sheet hides is gone; the others keep their own places.
         let Some(rect) = rect else { continue };
@@ -436,6 +442,9 @@ fn rows_toggles(
                     }
                     actions.push(Action::new("clip.setScale", params));
                 }
+            }
+            IconButton::Expression => {
+                state.expression = if on { None } else { Some(ExpressionKind::Pitch) };
             }
             _ => {
                 state.highlight_scale = !on;

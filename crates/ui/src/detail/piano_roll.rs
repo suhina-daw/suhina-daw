@@ -40,6 +40,7 @@ mod clip_strip;
 mod context_menu;
 mod drawing;
 mod edits;
+mod expression;
 mod keys;
 mod layout;
 mod select_steps;
@@ -265,6 +266,7 @@ pub fn show(
         state.clear_span();
         state.menu = None;
         state.menu_waiting = None;
+        state.expression_drag = None;
         // The scroll reach a zoom gave the last clip is not this one's.
         state.zoom_reach = 0.0;
     }
@@ -443,10 +445,28 @@ pub fn show(
         );
     }
     let workflow = options.workflow;
+    // MPE: the selected notes' curve points are handles over the grid, and a click on the empty
+    // grid in a selected note's time is the curve's, a double-click adding a point (› MPE).
+    let mpe_busy =
+        state.expression.is_some() && expression::handle_points(ui, &layout, clip, grid, inputs.alt, state, actions);
+    let mpe_spot = state.expression.is_some()
+        && !mpe_busy
+        && pointer.is_some_and(|p| note_at(&layout, &clip.notes, p).is_none())
+        && pointer.and_then(|p| expression::note_for_point(&layout, clip, state, p)).is_some();
+    if mpe_spot
+        && response.double_clicked()
+        && let Some(pos) = pointer
+        && let Some(index) = expression::note_for_point(&layout, clip, state, pos)
+    {
+        let point = (index, suhina_engine::model::ExpressionKind::Pitch);
+        actions.extend(expression::add_point(&layout, clip, grid, inputs.alt, point, pos));
+    }
     // The click that lets go of a note the second press of a double-click is drawing adds nothing
     // more: the note is added when the button is let go (below).
     if response.clicked()
         && !state.press_draw
+        && !mpe_spot
+        && !mpe_busy
         && let Some(pos) = pointer
     {
         // The piano roll counts its own double-clicks: two clicks close in time and space, and a
@@ -689,7 +709,19 @@ pub fn show(
     // The velocity lane's gestures.
     let lane_response =
         (lane.height() > 4.0).then(|| ui.interact(lane, Id::unique("piano-roll-velocity"), Sense::click_and_drag()));
-    if let Some(lane_response) = &lane_response {
+    // MPE: while the lane shows pressure or slide, a double-click in a selected note's time adds
+    // a point there and the velocity gestures rest (› MPE).
+    let lane_kind = expression::lane_kind(state);
+    expression::lane_switch(ui, &layout, state);
+    if let (Some(kind), Some(lane_response)) = (lane_kind, &lane_response)
+        && !mpe_busy
+        && lane_response.double_clicked()
+        && let Some(pos) = lane_response.interact_pointer_pos()
+        && let Some(index) = expression::lane_note(&layout, clip, state, pos)
+    {
+        actions.extend(expression::add_point(&layout, clip, grid, inputs.alt, (index, kind), pos));
+    }
+    if let Some(lane_response) = lane_response.as_ref().filter(|_| lane_kind.is_none()) {
         let at = lane_response.interact_pointer_pos();
         if lane_response.clicked()
             && let Some(pos) = at
@@ -836,6 +868,9 @@ pub fn show(
 
     let shape = shape.unwrap_or(clip.shape);
     draw(ui, &el, &layout, clip, state, grid, preview, shape.played());
+    if state.expression.is_some() {
+        expression::draw(ui, &layout, clip, state);
+    }
     // A stroke let go this frame is drawn as it ends once more: its command runs after this frame,
     // so the notes it deletes, mutes or adds change from the next one, and no frame between shows
     // them as they were.

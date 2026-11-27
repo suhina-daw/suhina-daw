@@ -33,13 +33,15 @@ pub enum IconButton {
     Scale,
     /// Highlight scale: the scale's rows tinted and its keys marked.
     Highlight,
+    /// MPE: each note's own pitch, pressure and timbre curves shown and edited (#930).
+    Expression,
     /// Three dots above the keys: the piano roll's options (workflow, keys, stacked notes).
     More,
 }
 
 impl IconButton {
     /// Every button, in the order of the enum.
-    pub(crate) const ALL: [Self; 18] = [
+    pub(crate) const ALL: [Self; 19] = [
         Self::Select,
         Self::Draw,
         Self::Paint,
@@ -57,6 +59,7 @@ impl IconButton {
         Self::Fold,
         Self::Scale,
         Self::Highlight,
+        Self::Expression,
         Self::More,
     ];
 
@@ -80,6 +83,7 @@ impl IconButton {
             Self::Fold => "Fold",
             Self::Scale => "Scale",
             Self::Highlight => "Highlight scale",
+            Self::Expression => "MPE",
             Self::More => "Piano roll settings",
         }
     }
@@ -104,6 +108,7 @@ impl IconButton {
             Self::Fold => "piano-fold",
             Self::Scale => "piano-scale",
             Self::Highlight => "piano-highlight",
+            Self::Expression => "piano-mpe",
             Self::More => "piano-more",
         }
     }
@@ -128,6 +133,7 @@ impl IconButton {
             | Self::Fold
             | Self::Scale
             | Self::Highlight
+            | Self::Expression
             | Self::More => return None,
         })
     }
@@ -149,7 +155,9 @@ impl IconButton {
             Self::Quantise => include_str!("../../../../assets/icons/piano-roll/quantise.svg"),
             Self::MidiTools => include_str!("../../../../assets/icons/piano-roll/midi-tools.svg"),
             Self::Audition => include_str!("../../../../assets/icons/piano-roll/audition.svg"),
-            Self::Hide | Self::Fold | Self::Scale | Self::Highlight | Self::More => return None,
+            Self::Hide | Self::Fold | Self::Scale | Self::Highlight | Self::Expression | Self::More => {
+                return None;
+            }
         })
     }
 
@@ -328,6 +336,14 @@ impl IconButton {
                     color,
                     Stroke::NONE,
                 ));
+            }
+            // A note bending up: a flat line that curves to a higher one.
+            Self::Expression => {
+                line((-6.5, 3.5), (-2.5, 3.5));
+                line((-2.5, 3.5), (0.5, -3.5));
+                line((0.5, -3.5), (6.5, -3.5));
+                painter.circle_filled(at(-2.5, 3.5), 1.3 * scale, color);
+                painter.circle_filled(at(0.5, -3.5), 1.3 * scale, color);
             }
             // Three dots: more.
             Self::More => {

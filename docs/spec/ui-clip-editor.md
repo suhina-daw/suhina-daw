@@ -1,6 +1,6 @@
 ---
 description: Functional spec of the MIDI clip editor (piano roll): layout, toolbar size and icons, the six tools and the Mute tool, the clip panel's note tools (Notes and Transform tabs), grid and snapping, zoom, drawing, selecting, moving, resizing, velocity, quantise, scales, ghost notes, slicing, a playable key column, chords, shortcuts and keymap presets, and the note.* and preview.* commands
-read_when: piano roll, clip editor, velocity range, rolled velocity, note.setVelocityRange, select next note, step through notes, Ctrl+arrow selection, grow selection, keyboard selection, join notes, fit to time range, crop clip, split clip, set 1.1.1 here, clip.setOrigin, right-click menu, context menu, invert selection, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
+read_when: piano roll, clip editor, velocity range, rolled velocity, note.setVelocityRange, select next note, step through notes, Ctrl+arrow selection, grow selection, keyboard selection, join notes, fit to time range, crop clip, split clip, set 1.1.1 here, clip.setOrigin, right-click menu, context menu, invert selection, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows, MPE, pitch bend per note, note expression, note.setExpression, pitch curve, bend points
 type: spec
 status: draft
 last_verified: 2026-11-23
@@ -1489,6 +1489,32 @@ file.
   *Shift+right drag* and *Alt+right button*; a file without them takes Select-first's, and a
   value that is not a boolean is ignored with a warning.
 - The preset names describe the habit they suit; they are not the name of anything else.
+
+## MPE
+
+**Built ([#930](https://github.com/suhina-daw/suhina-daw/issues/930), first part):** the toolbar's
+Rows group has an **MPE** toggle (`piano-tool#piano-mpe`, `[checked]` while on). While it is on,
+each note's own pitch curve ([ADR 0039](../decisions/0039-per-note-expression.md) › 6,
+[MPE spec](mpe.md#note-curves-and-editing)) is drawn over the grid: from the note's start at its
+first value, through its points, held to the note's end, its height the key it bends to (between
+the rows either side of it while the rows are folded). The selected notes' curves are bright, with
+a handle on every point and the name of the key the bend ends on; the other notes' curves are faint.
+
+- A **double-click** on the empty grid within the time of a selected note adds a point to the
+  selected note whose row is nearest: at the grid line nearest the pointer, bending to the whole
+  semitone under it (Alt: exactly where the pointer is). A note's first point after its start also
+  gets one at its start at the note's own pitch, so the bend starts from the note. A click there
+  does not clear the selection while MPE is on.
+- **Dragging a handle** moves its point, on the grid and on whole semitones (Alt frees both), kept
+  between its neighbours and inside the note.
+- **Double-clicking a handle** removes the point; a curve left with only points at the note's own
+  pitch goes.
+
+Each edit is one `note.setExpression` that replaces the note's whole curve, one undo step.
+
+**Later ([#930](https://github.com/suhina-daw/suhina-daw/issues/930)):** pressure and slide in the
+lane below the notes; keyboard and accessibility paths to the points; playback of the curves
+through the instruments ([#928](https://github.com/suhina-daw/suhina-daw/issues/928)).
 
 ## Commands
 

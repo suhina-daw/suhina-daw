@@ -1594,3 +1594,13 @@ fn ctrl_e_splits_at_the_time_selection_or_the_mark_else_chops_on_the_grid() {
     let at_mark = state.key_action("pianoRoll.splitNotes", &piano, 0.0, None).expect("note.split");
     assert_eq!((at_mark.params["notes"].clone(), at_mark.params["ats"].clone()), (json!([0, 1]), json!([1.5])));
 }
+
+/// A clip with `notes`, for the MPE tests.
+pub(super) fn clip_with(notes: Vec<Note>) -> PianoClip {
+    clip(notes)
+}
+
+/// The whole keyboard laid out as [`folded_layout`] does, for the MPE tests.
+pub(super) fn layout_for(_clip: &PianoClip, _state: &PianoRollState) -> Layout {
+    folded_layout(KeyRows::default())
+}

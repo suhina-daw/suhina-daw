@@ -4,6 +4,7 @@
 //! The piano roll's state: its tool, zoom and scroll, the selection, the gesture under way, and what it was given.
 
 use super::*;
+use suhina_engine::model::ExpressionKind;
 
 /// The furthest the piano roll reaches, in beats: the engine's furthest start.
 pub(super) const BEAT_LIMIT: f32 = 120_000.0;
@@ -192,6 +193,11 @@ pub struct PianoRollState {
     pub key_height: f32,
     /// Indices of the selected notes.
     pub selected: BTreeSet<usize>,
+    /// MPE on: which of the notes' own curves the lane below shows and edits; the pitch curves
+    /// are drawn over the notes whichever it is (#930). `None` while off.
+    pub expression: Option<ExpressionKind>,
+    /// A curve point being dragged, and where it is now.
+    pub(crate) expression_drag: Option<super::expression::PointDrag>,
     /// The selected notes as the last frame left them, each index with its note's id, so the
     /// selection follows its notes when another writer (an agent, a script, undo) adds, deletes or
     /// moves notes between frames (#1182); `None` when the last frame's own edit set the selection
@@ -363,6 +369,8 @@ impl Default for PianoRollState {
             zoom_reach: 0.0,
             key_height: DEFAULT_KEY_HEIGHT,
             selected: BTreeSet::new(),
+            expression: None,
+            expression_drag: None,
             selected_ids: None,
             span: None,
             live_span: None,
