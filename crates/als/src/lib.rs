@@ -10,6 +10,7 @@
 //! [`Import::warnings`], so a project still opens with everything else intact.
 
 mod devices;
+mod expression;
 mod scale;
 
 use std::fmt;
@@ -952,8 +953,10 @@ impl Reader {
 
     fn notes(&mut self, clip: Node, clip_name: &str, track: &str) -> Vec<Note> {
         let mut notes = Vec::new();
+        let mut ids = Vec::new();
         let mut skipped = 0usize;
-        let Some(key_tracks) = path(clip, &["Notes", "KeyTracks"]) else { return notes };
+        let Some(notes_node) = child(clip, "Notes") else { return notes };
+        let Some(key_tracks) = child(notes_node, "KeyTracks") else { return notes };
         for key_track in key_tracks.children().filter(|n| n.has_tag_name("KeyTrack")) {
             let Some(key) = value(key_track, &["MidiKey"]).and_then(|k| k.parse::<u8>().ok()).filter(|k| *k <= 127)
             else {
@@ -984,10 +987,16 @@ impl Reader {
                     velocity_range: 0,
                     expression: None,
                 });
+                ids.push(event.attribute("NoteId").and_then(expression::note_id));
             }
         }
         if skipped > 0 {
             self.warn(format!("track {track}: clip {clip_name:?}: {skipped} malformed notes skipped"));
+        }
+        let mut report = expression::Report::default();
+        expression::read(notes_node, &mut notes, &ids, &mut report);
+        for message in report.messages() {
+            self.warn(format!("track {track}: clip {clip_name:?}: {message}"));
         }
         notes.sort_by(|a, b| a.time.total_cmp(&b.time).then(a.key.cmp(&b.key)));
         notes
