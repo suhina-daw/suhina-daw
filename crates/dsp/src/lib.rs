@@ -45,6 +45,7 @@ pub mod pan;
 pub mod resampler;
 pub mod shape;
 pub mod smooth;
+pub mod spectral_dynamics;
 pub mod svf;
 pub mod sync;
 pub mod trim_delay;
@@ -64,6 +65,7 @@ pub use multimode::{Circuit, Multimode, MultimodeSettings, Response};
 pub use oversample::Oversampler2x;
 pub use resampler::{HALF_TAPS as RESAMPLER_HALF_TAPS, Resampler};
 pub use smooth::{Glide, OnePole, Smoother, time_constant};
+pub use spectral_dynamics::SpectralDynamics;
 pub use svf::{Svf, SvfCoefficients};
 pub use trim_delay::TrimDelay;
 

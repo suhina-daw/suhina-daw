@@ -466,21 +466,6 @@ fn a_dynamic_band_turns_down_as_its_band_gets_loud() {
 }
 
 #[test]
-fn a_spectral_band_turns_down_only_what_stands_out_inside_it() {
-    // A wide band (Q 0.5) with narrow parts: a loud tone on one part is cut, a quiet one is not.
-    let mut e = eq(&moving(3, 2.0, 0.5));
-    let probe = e.bands[2].parts[2].frequency;
-    let loud = gain_at(&mut e, probe, 0.1);
-    assert!(loud < -4.0, "loud tone on a part: cut, got {loud}");
-    let quiet = gain_at(&mut eq(&moving(3, 2.0, 0.5)), probe, 0.001);
-    assert!(quiet.abs() < 0.1, "quiet: untouched, got {quiet}");
-    // Between two parts the cut is less than at the part itself.
-    let between = (probe * e.bands[2].parts[3].frequency).sqrt();
-    let off_part = gain_at(&mut eq(&moving(3, 2.0, 0.5)), between, 0.1);
-    assert!(off_part > loud, "{off_part} against {loud}");
-}
-
-#[test]
 fn a_cut_or_notch_stays_static_whatever_its_mode() {
     for kind in [0, 4, 7] {
         let still = gain_at(&mut eq(&single(kind, DEFAULT_Q, 0.0)), 2_000.0, 0.1);
@@ -498,55 +483,6 @@ fn deleting_the_auditioned_band_fades_back_to_the_whole_eq() {
     assert_eq!(e.param(param::AUDITION), Some(0.0), "the audition is let go");
     // The slot is gone and nothing else has gain: a 1 kHz tone passes unchanged.
     assert!(gain_db(&mut e, 1_000.0).abs() < 0.1);
-}
-
-#[test]
-fn a_spectral_band_at_the_top_uses_fewer_distinct_parts() {
-    let mut settings = moving(5, 2.0, DEFAULT_Q);
-    settings.push(a(3, param::FREQUENCY, 22_000.0));
-    let e = eq(&settings);
-    let used = e.bands[2].parts_in_use;
-    assert!(used < SPECTRAL_PARTS, "{used}");
-    let frequencies: Vec<f64> = e.bands[2].parts[..used].iter().map(|p| p.frequency).collect();
-    assert!(frequencies.windows(2).all(|w| w[1] > w[0]), "distinct parts: {frequencies:?}");
-    assert_eq!(parts_for(1_000.0, 8_000.0), SPECTRAL_PARTS);
-    assert_eq!(parts_for(1_000.0, 1_000.0), 1);
-    // Every count leaves at least the spacing between the parts' centers.
-    for octaves in [0.1, 0.3, 0.45, 0.6, 0.74, 1.0, 3.0] {
-        let used = parts_for(1_000.0, 1_000.0 * 2f64.powf(octaves));
-        assert!(used == 1 || octaves / used as f64 >= PART_MIN_OCTAVES, "{octaves} octaves, {used} parts");
-    }
-}
-
-#[test]
-fn a_spectral_band_at_the_bottom_uses_fewer_distinct_parts() {
-    // A low shelf at 10 Hz: its range below clamps to 10 Hz, so one part, not five on one spot.
-    let mut settings = moving(2, 2.0, DEFAULT_Q);
-    settings.push(a(3, param::FREQUENCY, 10.0));
-    let e = eq(&settings);
-    assert_eq!(e.bands[2].parts_in_use, 1);
-}
-
-#[test]
-fn scale_multiplies_a_spectral_bands_cuts() {
-    let mut zero = moving(3, 2.0, 0.5);
-    zero.push((param::SCALE, 0.0));
-    let mut e = eq(&zero);
-    let probe = e.bands[2].parts[2].frequency;
-    assert!(gain_at(&mut e, probe, 0.1).abs() < 0.1, "at Scale 0 % nothing moves");
-}
-
-#[test]
-fn a_spectral_readout_carries_its_deepest_part() {
-    for (index, change) in [(0usize, -12.0), (3, -0.5), (4, 9.0), (2, 0.0)] {
-        let packed = (index as f64 * 100.0 + change) as f32;
-        let (got, back) = spectral_readout(packed);
-        assert_eq!(got, index);
-        assert!((back - change).abs() < 1e-3, "{back} against {change}");
-    }
-    let (centers, used, q) = spectral_parts(3, 48_000.0, 1_000.0, 0.5, 1.0);
-    assert_eq!(used, SPECTRAL_PARTS);
-    assert!(centers.windows(2).all(|w| w[1] > w[0]) && q > 10.0);
 }
 
 #[test]
@@ -571,14 +507,60 @@ fn a_keyed_band_moves_with_the_key_and_not_its_own_sound() {
     assert!((20.0 * (level(&own, 1_000.0, 0) / 0.01).log10()).abs() < 0.2);
 }
 
+/// A quiet bed of many tones with one loud resonance at `hz`, through `e`; the resonance's and a
+/// quiet neighbour's change in dB.
+fn resonance_through(e: &mut Eq, hz: f64) -> (f64, f64) {
+    let frames = 96_000;
+    let mut signal: Vec<f32> = (0..frames)
+        .flat_map(|n| {
+            let t = n as f64 / SR;
+            let bed: f64 = (1..40).map(|i| 0.004 * (std::f64::consts::TAU * (200.0 * i as f64 + 37.0) * t).sin()).sum();
+            let v = (bed + 0.2 * (std::f64::consts::TAU * hz * t).sin()) as f32;
+            [v, v]
+        })
+        .collect();
+    e.process(&ProcessContext::default(), &mut signal);
+    let resonance = 20.0 * (level(&signal, hz, 0) / 0.2).log10();
+    let neighbour = 20.0 * (level(&signal, 1_637.0, 0) / 0.004).log10();
+    (resonance, neighbour)
+}
+
+/// Band 3 as a Spectral bell at 2 kHz, wide, range −12 dB.
+fn spectral() -> Vec<(usize, f64)> {
+    let mut s = moving(3, 2.0, 0.5);
+    s.extend([a(3, param::FREQUENCY, 2_000.0), a(3, param::THRESHOLD, -60.0), a(3, param::DETAIL, 0.9)]);
+    s
+}
+
 #[test]
-fn the_first_spectral_bands_parts_are_in_the_readouts() {
-    let mut e = eq(&moving(3, 2.0, 0.5));
-    let probe = e.bands[2].parts[5].frequency;
-    gain_at(&mut e, probe, 0.1);
+fn a_spectral_band_cuts_a_resonance_and_leaves_its_neighbours() {
+    let mut e = eq(&spectral());
+    assert_eq!(e.latency(), spectral_dynamics::FRAME as u32, "a Spectral band adds the transform's delay");
+    let (resonance, neighbour) = resonance_through(&mut e, 2_200.0);
+    assert!(resonance < -6.0, "the resonance is cut: {resonance} dB");
+    assert!(neighbour > -2.0, "a quiet neighbour in the band is left alone: {neighbour} dB");
+    // The live cut reaches the panel after the bands' readouts, and the band's own readout is its
+    // deepest cut.
     let readouts = e.readouts().unwrap_or([0.0; suhina_device_api::MAX_READOUTS]);
-    let parts = &readouts[BANDS..BANDS + SPECTRAL_PARTS];
-    assert!(parts[5] < -2.0, "the part under the tone cuts: {parts:?}");
-    assert!(parts.iter().enumerate().all(|(i, &p)| i == 5 || p > parts[5]), "it cuts most: {parts:?}");
-    const { assert!(BANDS + SPECTRAL_PARTS <= suhina_device_api::MAX_READOUTS) };
+    assert!(readouts[BANDS..BANDS + SPECTRAL_READOUTS].iter().any(|g| *g < -6.0));
+    assert!(readouts[2] < -6.0);
+    const { assert!(BANDS + SPECTRAL_READOUTS <= suhina_device_api::MAX_READOUTS) };
+}
+
+#[test]
+fn an_eq_without_a_spectral_band_adds_no_delay() {
+    assert_eq!(Eq::new().latency(), 0);
+    assert_eq!(eq(&moving(3, 1.0, 1.0)).latency(), 0, "a Dynamic band adds none");
+    // A Spectral band in a slot not in use does not count.
+    let mut unused = spectral();
+    unused.push(a(3, param::IN_USE, 0.0));
+    assert_eq!(eq(&unused).latency(), 0);
+}
+
+#[test]
+fn scale_multiplies_a_spectral_bands_range() {
+    let mut zero = spectral();
+    zero.push((param::SCALE, 0.0));
+    let (resonance, _) = resonance_through(&mut eq(&zero), 2_200.0);
+    assert!(resonance.abs() < 0.5, "at Scale 0 % nothing moves: {resonance}");
 }

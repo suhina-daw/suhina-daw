@@ -1643,7 +1643,11 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
     }
     // A playing engine takes this as messages, without a new graph; one that turned a lane
     // off needs the new graph, which holds the values too, and so does a device inside a group.
-    if !off && path.len() == 1 {
+    // An EQ band's mode, slot or type can make it Spectral or stop it being so, which changes the
+    // EQ's delay: the engine reads a delay when it builds, so these take a new graph.
+    let delay_may_change = matches!(&device.kind, DeviceKind::Builtin(id) if id == "eq")
+        && ["Mode", "InUse", "Type"].iter().any(|field| param.ends_with(field));
+    if !off && !delay_may_change && path.len() == 1 {
         session.sync.param_edits = messages;
     }
     Ok(with_override(json!({ "device": path_value(&path), "param": param, "value": value }), off))

@@ -17,6 +17,7 @@ use suhina_device_api::{
     check_sample_rate,
 };
 use suhina_dsp::gain::db_to_gain;
+use suhina_dsp::spectral_dynamics::{self, SpectralDynamics};
 use suhina_dsp::{BandDynamics, Smoother, Svf, SvfCoefficients};
 
 /// Ramp for frequency, gain, Q, Scale and Output changes.
@@ -72,9 +73,9 @@ pub const MODE_NAMES: [&str; 3] = ["Static", "Dynamic", "Spectral"];
 /// What a Dynamic or Spectral band's detector hears, in [`param::TRIGGER`] order: the sound coming
 /// into the band, or the device's key (its sidechain) through the band's own detector filter.
 pub const TRIGGER_NAMES: [&str; 2] = ["Band", "Key"];
-/// How many narrow parts a spectral band watches and moves on its own. The first Spectral band's
-/// parts all fit in the readouts after the bands' (`MAX_READOUTS` is 35).
-pub const SPECTRAL_PARTS: usize = 11;
+/// The readouts after the 24 bands' gain changes: the first Spectral band's live cut at
+/// [`spectral_dynamics::LIVE_POINTS`] frequencies (`spectral_dynamics::LIVE_RANGE`).
+pub const SPECTRAL_READOUTS: usize = spectral_dynamics::LIVE_POINTS;
 /// The placements' short names, as the panel's placement button reads them.
 pub const PLACE_LETTERS: [&str; 5] = ["St", "L", "R", "M", "S"];
 
@@ -457,79 +458,6 @@ impl Mode {
     }
 }
 
-/// One narrow part of a spectral band: its own detector and gain, and the bell that moves it.
-#[derive(Clone, Copy)]
-struct Part {
-    frequency: f64,
-    dynamics: BandDynamics,
-    filters: [Svf; 2],
-    /// The gain change the bell is tuned to now, in dB.
-    tuned_db: f64,
-}
-
-impl Part {
-    fn new() -> Self {
-        Self { frequency: 1000.0, dynamics: BandDynamics::new(), filters: [Svf::default(); 2], tuned_db: 0.0 }
-    }
-}
-
-/// The narrowest spacing between two Spectral parts, in octaves: a range narrower than five of
-/// these uses fewer parts, so no two parts watch and cut the same frequency.
-const PART_MIN_OCTAVES: f64 = 0.12;
-
-/// How many parts a Spectral band uses over a range from `low` to `high` Hz: as many as fit with
-/// at least [`PART_MIN_OCTAVES`] between their centers (each part has an equal share of the range),
-/// at least one and at most [`SPECTRAL_PARTS`].
-fn parts_for(low: f64, high: f64) -> usize {
-    let octaves = (high / low.max(1.0)).max(1.0).log2();
-    ((octaves / PART_MIN_OCTAVES).floor() as usize).clamp(1, SPECTRAL_PARTS)
-}
-
-/// Where a Spectral band's parts sit, for a band of type `type_index` at `frequency` and `q` at
-/// `sample_rate` with `detail` (0 to 1): the parts' center frequencies (the first `count` are
-/// used) and their Q. The device places its parts with this, and the panel draws them with it.
-pub fn spectral_parts(
-    type_index: usize,
-    sample_rate: f64,
-    frequency: f64,
-    q: f64,
-    detail: f64,
-) -> ([f64; SPECTRAL_PARTS], usize, f64) {
-    let top = sample_rate * 0.45;
-    let frequency = frequency.min(top);
-    let (low, high) = match Kind::from_index(type_index as f64) {
-        Kind::LowShelf => (frequency / 8.0, frequency),
-        Kind::HighShelf => (frequency, frequency * 8.0),
-        _ => {
-            let octaves = 2.0 * (1.0 / (2.0 * q.max(0.1))).asinh() / std::f64::consts::LN_2;
-            (frequency / 2f64.powf(octaves / 2.0), frequency * 2f64.powf(octaves / 2.0))
-        }
-    };
-    // The parts spread over the range that is usable at this rate, clamped first, so none is
-    // clamped onto another at either end.
-    let (low, high) = (low.clamp(FREQUENCY.0, top), high.clamp(FREQUENCY.0, top));
-    let used = parts_for(low, high);
-    let mut centers = [low; SPECTRAL_PARTS];
-    for (i, center) in centers.iter_mut().enumerate().take(used) {
-        let at = (i as f64 + 0.5) / used as f64;
-        *center = low * (high / low.max(1.0)).powf(at);
-    }
-    (centers, used, part_q(detail))
-}
-
-/// A Spectral band's readout read back: its deepest part's index and that part's gain change in
-/// dB.
-pub fn spectral_readout(value: f32) -> (usize, f64) {
-    let value = f64::from(value);
-    let index = ((value + 50.0) / 100.0).floor().clamp(0.0, (SPECTRAL_PARTS - 1) as f64);
-    (index as usize, value - index * 100.0)
-}
-
-/// A Spectral part's Q for the band's Detail (0 to 1): broad at 0, narrow and selective at 1.
-fn part_q(detail: f64) -> f64 {
-    2.0 + detail.clamp(0.0, 1.0) * 14.0
-}
-
 /// One band: what it is now and its smoothed controls.
 #[derive(Clone, Copy)]
 struct Band {
@@ -566,10 +494,6 @@ struct Band {
     keyed: bool,
     /// Frames to the next retune of a Dynamic or Spectral band's moving gain.
     dynamic_in: u32,
-    /// A Spectral band's narrow parts, and how many of them it uses: fewer when its range is
-    /// too narrow for five distinct parts (near the top of the spectrum).
-    parts: [Part; SPECTRAL_PARTS],
-    parts_in_use: usize,
 }
 
 impl Band {
@@ -595,8 +519,6 @@ impl Band {
             detail: 0.5,
             keyed: false,
             dynamic_in: 0,
-            parts: [Part::new(); SPECTRAL_PARTS],
-            parts_in_use: SPECTRAL_PARTS,
         }
     }
 
@@ -631,6 +553,11 @@ pub struct Eq {
     audition_mix: Smoother,
     /// A band to listen to next: the output fades back to the whole EQ first, then over to it.
     audition_next: Option<usize>,
+    /// The Spectral bands' short-time transform, run after the filters while a band in use is
+    /// Spectral (decided when the device is built, since it adds [`spectral_dynamics::FRAME`]
+    /// frames of delay the chain compensates).
+    spectral: Box<SpectralDynamics>,
+    spectral_on: bool,
 }
 
 impl Default for Eq {
@@ -663,6 +590,8 @@ impl Eq {
             audition_filters: [Svf::default(); 2],
             audition_mix: Smoother::new(0.0, 1),
             audition_next: None,
+            spectral: Box::new(SpectralDynamics::new(sample_rate)),
+            spectral_on: false,
         };
         eq.rebuild();
         eq
@@ -709,9 +638,6 @@ impl Eq {
             b.detail = detail;
             b.keyed = keyed;
             b.dynamics.set_times(attack, release, sr);
-            for part in &mut b.parts {
-                part.dynamics.set_times(attack, release, sr);
-            }
         }
     }
 
@@ -734,30 +660,40 @@ impl Eq {
             _ => SvfCoefficients::bandpass(sr, frequency, 0.3),
         };
         b.dynamics.set_detector(detector);
-        if b.mode != Mode::Spectral {
-            return;
-        }
-        let kind_index = match b.kind {
-            Kind::LowShelf => 2,
-            Kind::HighShelf => 5,
-            _ => 3,
+    }
+
+    /// Hands a Spectral band's settings to the transform (anything else is off there).
+    fn give_spectral(&mut self, band: usize, frequency: f64, q: f64) {
+        let scale = f64::from(self.scale.current());
+        let Some(b) = self.bands.get(band) else { return };
+        let shape = match b.kind {
+            Kind::LowShelf => spectral_dynamics::Shape::LowShelf,
+            Kind::HighShelf => spectral_dynamics::Shape::HighShelf,
+            _ => spectral_dynamics::Shape::Bell,
         };
-        let (centers, used, part_q) = spectral_parts(kind_index, sr, frequency, q, b.detail);
-        b.parts_in_use = used;
-        for (i, part) in b.parts.iter_mut().enumerate() {
-            if i >= used {
-                // Not used over so narrow a range: at rest, flat.
-                part.tuned_db = 0.0;
-                part.dynamics.reset();
-                continue;
-            }
-            part.frequency = centers.get(i).copied().unwrap_or(part.frequency);
-            part.dynamics.set_detector(SvfCoefficients::bandpass(sr, part.frequency, part_q));
-            let bell = SvfCoefficients::bell(sr, part.frequency, part_q, part.tuned_db);
-            for filter in &mut part.filters {
-                filter.set(bell);
-            }
-        }
+        let place = match b.place {
+            Place::Stereo => spectral_dynamics::Place::Stereo,
+            Place::Left => spectral_dynamics::Place::Left,
+            Place::Right => spectral_dynamics::Place::Right,
+            Place::Mid => spectral_dynamics::Place::Mid,
+            Place::Side => spectral_dynamics::Place::Side,
+        };
+        let settings = spectral_dynamics::Settings {
+            on: b.active && b.mode == Mode::Spectral,
+            shape,
+            frequency,
+            q,
+            // Scale multiplies the range as it does every gain.
+            range: b.range * scale,
+            threshold: b.threshold,
+            attack: self.band_value(band, param::ATTACK),
+            release: self.band_value(band, param::RELEASE),
+            density: b.detail,
+            tilt: true,
+            place,
+            keyed: b.keyed,
+        };
+        self.spectral.set(band, settings);
     }
 
     /// Recomputes a band's filters from its smoothed controls and gives them to its filters.
@@ -795,6 +731,9 @@ impl Eq {
             self.tune_audition();
         }
         self.aim_dynamics(band, frequency, q);
+        // Every band tells the transform whether it is Spectral now, so one that stopped being
+        // Spectral (or stopped) is off there too.
+        self.give_spectral(band, frequency, q);
     }
 
     /// The band [`param::AUDITION`] names, when it names one in use.
@@ -862,6 +801,12 @@ impl Eq {
         self.filters = [[[Svf::default(); 4]; 2]; BANDS];
         self.audition_band = self.auditioned();
         self.audition_next = None;
+        self.spectral_on = (0..BANDS).any(|band| {
+            self.band_value(band, param::IN_USE) >= 0.5
+                && Mode::of(self.band_value(band, param::MODE), Kind::from_index(self.band_value(band, param::TYPE)))
+                    == Mode::Spectral
+        });
+        self.spectral.reset();
         self.audition_filters = [Svf::default(); 2];
         self.audition_mix = Smoother::new(if self.audition_band.is_some() { 1.0 } else { 0.0 }, fade);
         for band in 0..BANDS {
@@ -934,11 +879,6 @@ impl Eq {
             b.mode = mode;
             b.dynamic_db = 0.0;
             b.dynamics.reset();
-            for part in &mut b.parts {
-                part.dynamics.reset();
-                part.filters.iter_mut().for_each(Svf::reset);
-                part.tuned_db = 0.0;
-            }
             b.active = on;
             if on {
                 b.amount.set_target(1.0);
@@ -950,11 +890,9 @@ impl Eq {
 
     /// Runs the bands of one signal (left and right, or mid and side when `mid_side`) on
     /// `sides`, in band order. A Dynamic band's detector hears the sound coming into it, and its
-    /// gain change retunes it every [`RETUNE_FRAMES`]; a Spectral band's parts each move a narrow
-    /// bell after the band's own filter.
+    /// gain change retunes it every [`RETUNE_FRAMES`]; a Spectral band's own filter runs here and
+    /// its dynamics in the transform after the filters.
     fn run_bands(&mut self, sides: &mut [f64; 2], key: Option<[f64; 2]>, mid_side: bool) {
-        let sr = self.sample_rate;
-        let scale = f64::from(self.scale.current());
         for band in 0..BANDS {
             let Some(b) = self.bands.get_mut(band) else { continue };
             if !b.active || b.flat || b.place.mid_side() != mid_side {
@@ -973,25 +911,6 @@ impl Eq {
                     if retune {
                         b.dynamic_db = change;
                     }
-                } else {
-                    let part_q = part_q(b.detail);
-                    let used = b.parts_in_use;
-                    for part in b.parts.iter_mut().take(used) {
-                        // Scale multiplies a part's gain change as it does every gain.
-                        let heard = if b.keyed { key.unwrap_or(*sides) } else { *sides };
-                        let change = part.dynamics.process(heard, listen, b.threshold, b.range) * scale;
-                        if due && (change - part.tuned_db).abs() > 0.01 {
-                            if part.tuned_db.abs() < 1e-9 {
-                                // Skipped while flat, its state is stale.
-                                part.filters.iter_mut().for_each(Svf::reset);
-                            }
-                            part.tuned_db = change;
-                            let bell = SvfCoefficients::bell(sr, part.frequency, part_q, change);
-                            for filter in &mut part.filters {
-                                filter.set(bell);
-                            }
-                        }
-                    }
                 }
             }
             if retune {
@@ -1004,38 +923,21 @@ impl Eq {
                 if !b.place.runs_on(side) {
                     continue;
                 }
-                let mut y = chain.iter_mut().take(b.count).fold(*x, |v, f| f.process(v));
-                if b.mode == Mode::Spectral {
-                    for part in &mut b.parts {
-                        if part.tuned_db.abs() > 1e-9
-                            && let Some(filter) = part.filters.get_mut(side)
-                        {
-                            y = filter.process(y);
-                        }
-                    }
-                }
+                let y = chain.iter_mut().take(b.count).fold(*x, |v, f| f.process(v));
                 *x += amount * (y - *x);
             }
         }
     }
 
-    /// Each band's gain change now, in dB: a Dynamic band's; for a Spectral band its deepest
-    /// part's, with the part's index added in hundreds ([`spectral_readout`] reads it back); 0 for
-    /// a Static band.
+    /// Each band's gain change now, in dB: a Dynamic band's; a Spectral band's deepest; 0 for a
+    /// Static band.
     fn gain_changes(&self) -> [f32; BANDS] {
         std::array::from_fn(|band| {
             self.bands.get(band).map_or(0.0, |b| match b.mode {
                 Mode::Static => 0.0,
                 Mode::Dynamic => b.dynamic_db as f32,
                 Mode::Spectral => {
-                    let (index, deepest) = b
-                        .parts
-                        .iter()
-                        .take(b.parts_in_use)
-                        .map(|p| p.tuned_db)
-                        .enumerate()
-                        .fold((0, 0.0f64), |m, (i, d)| if d.abs() > m.1.abs() { (i, d) } else { m });
-                    (index as f64 * 100.0 + deepest) as f32
+                    self.spectral.live(band).iter().copied().fold(0.0f32, |m, g| if g.abs() > m.abs() { g } else { m })
                 }
             })
         })
@@ -1050,17 +952,18 @@ impl Device for Eq {
     /// Each band's gain change now, in band order, for the panel's live curve.
     fn readouts(&self) -> Option<[f32; suhina_device_api::MAX_READOUTS]> {
         let changes = self.gain_changes();
-        // After the 24 bands, every part of the first Spectral band that runs, so the panel can
-        // draw its live cut part by part (`SPECTRAL_READOUTS`).
-        let parts = self.bands.iter().find(|b| b.active && b.mode == Mode::Spectral).map(|b| {
-            std::array::from_fn::<f32, SPECTRAL_PARTS, _>(|i| {
-                if i < b.parts_in_use { b.parts.get(i).map_or(0.0, |p| p.tuned_db as f32) } else { 0.0 }
-            })
-        });
+        // After the 24 bands, the first Spectral band's live cut (`SPECTRAL_READOUTS`).
+        let live =
+            self.bands.iter().position(|b| b.active && b.mode == Mode::Spectral).map(|band| self.spectral.live(band));
         Some(std::array::from_fn(|i| match i.checked_sub(BANDS) {
             None => changes.get(i).copied().unwrap_or(0.0),
-            Some(part) => parts.and_then(|p| p.get(part).copied()).unwrap_or(0.0),
+            Some(point) => live.and_then(|l| l.get(point).copied()).unwrap_or(0.0),
         }))
+    }
+
+    /// The transform's delay while a band in use is Spectral; none otherwise.
+    fn latency(&self) -> u32 {
+        if self.spectral_on { SpectralDynamics::latency() as u32 } else { 0 }
     }
 
     fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
@@ -1206,6 +1109,9 @@ impl Eq {
                 self.run_bands(&mut encoded, key_encoded, true);
                 let [m, s] = encoded;
                 sides = [m + s, m - s];
+            }
+            if self.spectral_on {
+                sides = self.spectral.process(sides, key_frame);
             }
             let mut out = [sides[0] * level, sides[1] * level];
             if mix > 0.0

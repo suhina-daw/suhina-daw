@@ -26,12 +26,13 @@ and a panel is drawn by the UI thread at its own pace.
 
 ## Decision
 
-1. **`Device::readouts() -> Option<[f32; MAX_READOUTS]>`** (35 values, default `None`), read after
+1. **`Device::readouts() -> Option<[f32; MAX_READOUTS]>`** (35 values, 128 since the amendment
+   below; default `None`), read after
    each block. The device keeps the values in its own fixed array, updated in `process`; their
    order is the device's and its panel's agreement, written down in the device's spec.
 2. **Every device that returns `Some` publishes, inside device groups too**, up to eight per
    track (`MAX_READOUT_DEVICES`): `Chain::readouts` walks the chain and its groups and
-   `Levels::finish` stores each device's values in the track's meter row (35 `AtomicU32`s and the
+   `Levels::finish` stores each device's values in the track's meter row (`MAX_READOUTS` `AtomicU32`s and the
    device's path as a number, `readout_step`). Storing is a handful of relaxed atomic writes per
    block; nothing allocates or waits. A graph swap clears the row.
 3. **The UI hands them to the canvas as values `#r0` … `#r34`** beside the parameters
@@ -49,3 +50,11 @@ and a panel is drawn by the UI thread at its own pace.
 - A meter row holds eight devices' values whether a track uses them or not, about 1.2 KB, so the
   table of 512 tracks takes about 600 KB. A ninth device on a track shows no live values.
 - Plug-ins have no readouts; their own editors show theirs.
+
+## Amendment: 128 readouts (2026-11-27)
+
+`MAX_READOUTS` is 128 (was 35). The EQ hands its panel each of its 24 bands' gain changes and,
+after them, its first Spectral band's live cut at 100 frequencies (`docs/spec/eq.md` › Dynamic
+and Spectral bands), which the panel draws as a curve. A track's meter row holds 128 atomics for
+each of its eight readout devices (4 KiB), and a device that hands fewer leaves the rest 0. A canvas still addresses the first 35
+(`#r0` … `#r34`, `READOUT_IDS`): the EQ's host-drawn panel reads the rest itself.

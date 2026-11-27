@@ -8,6 +8,8 @@ rust-version.workspace = true
 [dependencies]
 # The uniform partitioned FFT convolution (a port of HiFi-LoFi FFTConvolver).
 fft-convolver = "0.4"  # MIT
+# The spectral dynamics' short-time transform.
+rustfft = "6.4"  # MIT OR Apache-2.0, pure Rust
 
 [lints]
 workspace = true

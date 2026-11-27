@@ -119,7 +119,6 @@ struct Band {
     /// asks for runs Static, as the device does), and how far its gain may move, in dB.
     mode: usize,
     range: f64,
-    detail: f64,
     /// Whether its detector hears the device's key.
     keyed: bool,
     sections: [SvfCoefficients; 4],
@@ -305,7 +304,7 @@ struct Panel<'a> {
     /// Each band's gain change now, from the device's readouts, while sound plays through it.
     live: Option<[f32; BANDS]>,
     /// The first heard Spectral band's parts' gain changes now, from the readouts after the bands'.
-    live_parts: Option<[f32; suhina_device_eq::SPECTRAL_PARTS]>,
+    live_parts: Option<[f32; suhina_device_eq::SPECTRAL_READOUTS]>,
     bands: Vec<Band>,
     state: PanelState,
     address: Address,
@@ -577,7 +576,6 @@ fn bands(parameters: &[GraphParameter]) -> Vec<Band> {
                 place: named("Place").round().clamp(0.0, (PLACE_NAMES.len() - 1) as f64) as usize,
                 mode: effective_mode(named("Mode"), kind),
                 range: named("Range"),
-                detail: named("Detail"),
                 keyed: named("Trigger") >= 0.5,
                 sections,
                 count,
@@ -2092,10 +2090,8 @@ fn draw_display(
                 if moving.get(slot).copied().unwrap_or(false)
                     && let (Some(value), Some(cell)) = (live.get(slot), now.get_mut(slot))
                 {
-                    *cell = Some(match (Some(slot) == first_spectral, panel.live_parts) {
-                        (true, Some(parts)) => all_parts_db(band, &parts, &frequencies),
-                        _ => live_db(band, *value, &frequencies, scale, adaptive),
-                    });
+                    let points = (Some(slot) == first_spectral).then_some(panel.live_parts).flatten();
+                    *cell = Some(live_db(band, *value, points.as_ref().map(|p| &p[..]), &frequencies, scale, adaptive));
                 }
             }
             for place in 0..PLACE_NAMES.len() {
@@ -2396,16 +2392,27 @@ fn fill_between(painter: &egui::Painter, a: &[Pos2], b: &[Pos2], color: Color32)
     painter.add(egui::Shape::mesh(mesh));
 }
 
+/// How much of a frequency belongs to a Spectral band, 0 to 1, as the device weighs its bins.
+fn spectral_weight(band: &Band, frequency: f64) -> f64 {
+    use suhina_dsp::spectral_dynamics::{Shape, shape_weight};
+    let shape = match band.kind {
+        2 => Shape::LowShelf,
+        5 => Shape::HighShelf,
+        _ => Shape::Bell,
+    };
+    shape_weight(shape, frequency, band.frequency, band.q)
+}
+
 /// A Dynamic or Spectral band's response with its whole range applied: a Dynamic band at its gain
-/// plus its range; a Spectral band as it is, with every part moved by the range (Scale applied
-/// as the device applies it).
+/// plus its range; a Spectral band as it is, with its range across the frequencies it weighs
+/// (Scale applied as the device applies it).
 fn reached(band: &Band, frequencies: &[f64], scale: f64, adaptive: bool) -> Vec<f64> {
     if band.mode == 2 {
-        let (centers, used, q) =
-            suhina_device_eq::spectral_parts(band.kind, DRAWN_RATE, band.frequency, band.q, band.detail);
-        let parts: Vec<SvfCoefficients> =
-            centers.iter().take(used).map(|&f| SvfCoefficients::bell(DRAWN_RATE, f, q, band.range * scale)).collect();
-        return with_parts(band, &parts, frequencies);
+        return band_db(band, frequencies)
+            .into_iter()
+            .zip(frequencies)
+            .map(|(own, &f)| own + band.range * scale * spectral_weight(band, f))
+            .collect();
     }
     let mut moved = *band;
     (moved.sections, moved.count) =
@@ -2413,50 +2420,45 @@ fn reached(band: &Band, frequencies: &[f64], scale: f64, adaptive: bool) -> Vec<
     band_db(&moved, frequencies)
 }
 
-/// A band's response with extra bells after its own sections.
-fn with_parts(band: &Band, parts: &[SvfCoefficients], frequencies: &[f64]) -> Vec<f64> {
-    frequencies
-        .iter()
-        .map(|&frequency| {
-            let own: f64 = band.sections[..band.count].iter().map(|c| c.magnitude(DRAWN_RATE, frequency)).product();
-            let extra: f64 = parts.iter().map(|c| c.magnitude(DRAWN_RATE, frequency)).product();
-            20.0 * (own * extra).max(1.0e-6).log10()
-        })
-        .collect()
+/// The live cut read at `frequency` from the device's points over `LIVE_RANGE`, between the two
+/// points around it.
+fn live_at(points: &[f32], frequency: f64) -> f64 {
+    use suhina_dsp::spectral_dynamics::LIVE_RANGE;
+    if points.len() < 2 {
+        return 0.0;
+    }
+    let along = (frequency / LIVE_RANGE.0).ln() / (LIVE_RANGE.1 / LIVE_RANGE.0).ln() * (points.len() - 1) as f64;
+    let along = along.clamp(0.0, (points.len() - 1) as f64);
+    let below = along.floor() as usize;
+    let t = along - below as f64;
+    let at = |i: usize| f64::from(points.get(i.min(points.len() - 1)).copied().unwrap_or(0.0));
+    at(below) * (1.0 - t) + at(below + 1) * t
 }
 
-/// A Spectral band's response with each of its parts' bells at its gain change now.
-fn all_parts_db(band: &Band, changes: &[f32], frequencies: &[f64]) -> Vec<f64> {
-    let (centers, used, q) =
-        suhina_device_eq::spectral_parts(band.kind, DRAWN_RATE, band.frequency, band.q, band.detail);
-    let parts: Vec<SvfCoefficients> = centers
-        .iter()
-        .zip(changes)
-        .take(used)
-        .filter(|(_, change)| change.abs() > 0.01)
-        .map(|(&f, &change)| SvfCoefficients::bell(DRAWN_RATE, f, q, f64::from(change)))
-        .collect();
-    with_parts(band, &parts, frequencies)
-}
-
-/// A band's readout read back: a Spectral band's deepest part (its index) and the gain change.
-fn live_change(band: &Band, value: f32) -> (usize, f64) {
-    if band.mode == 2 { suhina_device_eq::spectral_readout(value) } else { (0, f64::from(value)) }
-}
-
-/// A Dynamic or Spectral band's response now, from its readout: a Dynamic band at its gain plus
-/// the change; a Spectral band with its deepest part's bell.
-fn live_db(band: &Band, value: f32, frequencies: &[f64], scale: f64, adaptive: bool) -> Vec<f64> {
-    let (part, change) = live_change(band, value);
+/// A Dynamic or Spectral band's response now, from the readouts: a Dynamic band at its gain plus
+/// its change; a Spectral band as it is with its live cut — every frequency's for the first one
+/// (`points`), its deepest across the band for another.
+fn live_db(
+    band: &Band,
+    value: f32,
+    points: Option<&[f32]>,
+    frequencies: &[f64],
+    scale: f64,
+    adaptive: bool,
+) -> Vec<f64> {
     if band.mode == 2 {
-        let (centers, _, q) =
-            suhina_device_eq::spectral_parts(band.kind, DRAWN_RATE, band.frequency, band.q, band.detail);
-        let center = centers.get(part).copied().unwrap_or(band.frequency);
-        return with_parts(band, &[SvfCoefficients::bell(DRAWN_RATE, center, q, change)], frequencies);
+        return band_db(band, frequencies)
+            .into_iter()
+            .zip(frequencies)
+            .map(|(own, &f)| match points {
+                Some(points) => own + live_at(points, f),
+                None => own + f64::from(value) * spectral_weight(band, f),
+            })
+            .collect();
     }
     let mut moved = *band;
     (moved.sections, moved.count) =
-        band_sections(moved.kind, DRAWN_RATE, moved.frequency, band.gain + change, moved.q, scale, adaptive);
+        band_sections(moved.kind, DRAWN_RATE, moved.frequency, band.gain + f64::from(value), moved.q, scale, adaptive);
     band_db(&moved, frequencies)
 }
 

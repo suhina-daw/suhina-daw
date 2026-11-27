@@ -10,6 +10,7 @@ covers:
   - crates/ui/src/detail/eq_curve.rs
   - crates/model/src/eq_slots.rs
   - crates/dsp/src/band_dynamics.rs
+  - crates/dsp/src/spectral_dynamics.rs
   - crates/engine/src/spectrum.rs
 ---
 
@@ -151,7 +152,7 @@ skipped too (a Dynamic or Spectral band runs, since its gain can move).
   Switching a band on or off, taking its slot into use or out of it, or changing its type or
   placement fades the band in or out over 10 ms (a type or placement change fades out, swaps,
   fades in). The filters' state carries through every retune, so a sweep does not click.
-- **Latency:** none, Spectral bands included (*Dynamic and Spectral bands*).
+- **Latency:** none, unless a band in use is Spectral (*Dynamic and Spectral bands* › Latency).
 
 ### Dynamic and Spectral bands
 
@@ -175,21 +176,33 @@ block of `crates/dsp` (`band_dynamics::BandDynamics`, AGENTS.md rule 8):
 - **Dynamic:** the band's gain is its set gain plus the gain change, and its filter is retuned
   every 16 frames while the change moves by more than 0.01 dB. A Dynamic band with no gain of its
   own still runs, since its gain can move.
-- **Spectral** (a decision of this device's own: minimum phase, no look-ahead, no latency): the
-  band's own filter runs as it is, and up to eleven narrow parts spread over its range — a bell's
-  width between its half-gain points, or the three octaves a shelf lifts, clamped to 10 Hz and
-  0.45 of the rate — as many as fit 0.12 octave apart, each with its own detector
-  (a band pass at the part, Q from Detail: `2 + 14 · Detail`) and their own gain change, which
-  tunes a bell of that Q at the part. So only the parts whose level passes the threshold move: a
-  resonance is cut and the rest of the band is left alone. Detail sets how narrow and selective
-  the parts are.
+- **Spectral** (`crates/dsp/src/spectral_dynamics.rs`): the band's own filter runs as it is, and
+  its dynamics act per frequency in a short-time Fourier transform run after the filters — a
+  2048-frame square-root Hann window, a quarter-frame hop, overlap-add — so only the frequencies
+  inside the band that stand out move: a resonance is turned down (or up, with a positive range)
+  and the rest of the band is left alone. For each bin: its level (of the band's placement, or of
+  the key), weighted 3 dB per octave around 1 kHz so the highs trigger a little more; its local
+  average over a width Detail sets (0.335 octave each side at Detail 0, a single bin at 100 % —
+  low Detail triggers on wide ranges, high on narrow, specific ones); the threshold it must pass,
+  the higher of the band's Threshold and 6 dB over the spectrum's one-octave average around it
+  (so it follows the material, as a relative threshold); the soft-knee gain change of the
+  Dynamic bands, times how much of the bin belongs to the band (a band pass's power for a bell, a
+  4th-order low or high pass's for a shelf); and the band's attack and release, per bin. Every
+  band decides from the input as it came in; the left/right bands are applied, then the mid/side
+  ones. Scale multiplies the range.
+- **Latency.** The transform delays the EQ's output by 2048 frames (about 43 ms at 48 kHz) while a
+  band in use is Spectral, and the EQ reports it (`Device::latency`) so the chain compensates it;
+  an EQ with no Spectral band adds none. The engine reads a delay when it builds, so a band's
+  Mode, In Use or Type change on an EQ takes a new graph (`crates/session`, `set_param`).
 - **Automation.** An EQ's lanes count toward the chain's 256 device lanes (`crates/engine`); a
   two-curve project's mode lane becomes 24 of them.
-- **The live gain change** of every band (a Dynamic band's, or a Spectral band's deepest part)
-  goes to the panel as the device's readouts (ADR 0032), one per band in band order.
-- **Not yet:** an automatic threshold, a free trigger with its own range, the
-  detector's tilt, a relative (soft) threshold for Spectral, and a linear-phase or look-ahead
-  Spectral (issue #1169 keeps them).
+- **The live gain change** of every band (a Dynamic band's, or a Spectral band's deepest cut) goes
+  to the panel as the device's readouts (ADR 0032, 128 readouts since its amendment), one per band
+  in band order; after them, the first Spectral band's live cut at 100 frequencies spread over
+  10 Hz – 22 kHz (`SPECTRAL_READOUTS`).
+- **Not yet:** an automatic threshold and attack/release for Dynamic, a free trigger with its own
+  range, a switch for the Spectral tilt (always on), and a choice of the transform's resolution
+  (issue #1169 keeps them).
 
 ### Audition
 
@@ -307,9 +320,8 @@ Measurements in canvas px, `[x, y, w, h]`:
 - **The live curve.** While sound plays through a Dynamic or Spectral band, a curve in the band's
   colour draws its side with the bands as they are at that moment, from the device's readouts —
   drawn all the while, so it never blinks in and out: a Dynamic band at its gain plus its change;
-  the first Spectral band that runs with every part's bell at its change (the readouts after the
-  bands' carry its parts); another Spectral band with a bell at its deepest part (its readout
-  carries that part's index in hundreds, `spectral_readout`).
+  the first Spectral band that runs with its live cut at every frequency (the readouts after the
+  bands'); another Spectral band with its deepest cut across the frequencies it weighs.
 - **The range handle.** A small arrow where a Dynamic or Spectral band's range ends (no line to
   it) is a handle: dragged up or down it sets the range (at the display's dB per point when the drag
   began, divided by Scale), one undo step.
