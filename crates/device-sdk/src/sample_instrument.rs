@@ -601,7 +601,7 @@ fn continue_voice(
         v.model.tick = v.model.tick.wrapping_add(1);
         return None;
     }
-    let [mid, side] = generator.next();
+    let [mid, side] = generator.next_sample();
     let (mid, side) = (f64::from(mid), f64::from(side) * width);
     let mut out = [mid + side, mid - side];
     if v.model.fade < crossfade {

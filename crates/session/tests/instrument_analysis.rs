@@ -649,24 +649,27 @@ fn continuation_lifecycle() {
     let continuation = suhina_dsp::continuation::Continuation::decode(&bytes).unwrap();
     assert!(continuation.join > 1.0 && continuation.join <= 1.8, "{}", continuation.join);
     assert_eq!(device.params.iter().find(|p| p.id == "playback").map(|p| p.value), Some(4.0));
-    // A second Instrument morphs toward the first one's continuation.
+    // A second Instrument morphs toward the first one's continuation, wherever the chain put it.
     run(&mut session, "device.add", json!({"id":"instrument"}));
-    run(&mut session, "instrument.setContinuationMorph", json!({"device":1,"fromTrack":1,"fromDevice":0}));
-    assert_eq!(session.project().channels[0].devices[1].instrument_continuation_morph(), Some(bytes.as_slice()));
-    run(&mut session, "instrument.setContinuationMorph", json!({"device":1,"clear":true}));
-    assert!(session.project().channels[0].devices[1].instrument_continuation_morph().is_none());
+    let devices = &session.project().channels[0].devices;
+    let fitted = devices.iter().position(|d| d.instrument_continuation().is_some()).unwrap();
+    let other = devices.iter().position(|d| d.instrument_continuation().is_none()).unwrap();
+    run(&mut session, "instrument.setContinuationMorph", json!({"device":other,"fromTrack":1,"fromDevice":fitted}));
+    let morph = session.project().channels[0].devices[other].instrument_continuation_morph();
+    assert_eq!(morph, Some(bytes.as_slice()));
+    run(&mut session, "instrument.setContinuationMorph", json!({"device":other,"clear":true}));
+    assert!(session.project().channels[0].devices[other].instrument_continuation_morph().is_none());
     // An Instrument without a continuation is no morph target.
-    assert!(
-        session
-            .execute("instrument.setContinuationMorph", &json!({"track":1,"device":0,"fromTrack":1,"fromDevice":1}))
-            .is_err()
+    let refused = session.execute(
+        "instrument.setContinuationMorph",
+        &json!({"track":1,"device":fitted,"fromTrack":1,"fromDevice":other}),
     );
+    assert!(refused.is_err());
     // Undo (the clear, the morph, the second Instrument, the accept) takes the continuation away.
     for _ in 0..4 {
         session.execute("edit.undo", &json!({})).unwrap();
     }
-    let device = &session.project().channels[0].devices[0];
-    assert!(device.instrument_continuation().is_none());
+    assert!(session.project().channels[0].devices.iter().all(|d| d.instrument_continuation().is_none()));
 }
 
 /// A held tone's fit chooses the recording engine: accepting it plays the Sample source with

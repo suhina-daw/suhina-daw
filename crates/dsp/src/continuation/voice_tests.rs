@@ -14,7 +14,7 @@ fn note(continuation: &Continuation, ratio: f64) -> NoteModel {
 }
 
 fn render(generator: &mut Generator, frames: usize) -> Vec<[f32; 2]> {
-    (0..frames).map(|_| generator.next()).collect()
+    (0..frames).map(|_| generator.next_sample()).collect()
 }
 
 fn rms(values: impl Iterator<Item = f32>) -> f64 {

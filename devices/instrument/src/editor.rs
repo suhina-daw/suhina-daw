@@ -219,7 +219,7 @@ pub(super) fn canvas() -> DeviceUi {
         ui.dial(id, name, [54.0 + i as f32 * 200.0, 192.0, 140.0, 124.0], hint);
     }
     ui.label(
-        "Set Sample playback to Continue and fit the continuation on the Sample page: the note plays its recording up to the loop region's end, then the model carries it on.",
+        "Sample playback Continue: the recording plays to the loop region's end, then the fitted continuation carries the note on.",
         [24.0, 352.0, 832.0, 40.0],
     );
     ui.finish()

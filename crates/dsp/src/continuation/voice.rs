@@ -9,7 +9,7 @@
 //! about 0.6 s ahead of what is heard and the gains see the whole window an offline render sees.
 //!
 //! [`Generator::new`] allocates (off the audio thread); [`Generator::start`],
-//! [`Generator::produce`] and [`Generator::next`] do not, and never panic.
+//! [`Generator::produce`] and [`Generator::next_sample`] do not, and never panic.
 
 use super::math::{Butter3, Butter3State, C, Rng, filtered_real_ar_power, ou_step};
 use super::{AR_ORDER, CONTROL_HZ, Continuation, JITTER_ORDER, MAX_PARTIALS, NOISE_POINTS, NoteModel, db, noise_at};
@@ -580,7 +580,7 @@ impl Generator {
     }
 
     /// The next output sample (mid, side) in the recording's units. Generates what it needs.
-    pub fn next(&mut self) -> [f32; 2] {
+    pub fn next_sample(&mut self) -> [f32; 2] {
         if !self.active {
             return [0.0; 2];
         }

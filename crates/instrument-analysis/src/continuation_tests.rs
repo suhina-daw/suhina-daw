@@ -76,7 +76,7 @@ fn the_fitted_model_plays_at_the_recordings_level() {
     let mut model = NoteModel::default();
     model.transposed(&continuation, 1.0, sr);
     generator.start(&model, 0.0, 1);
-    let out: Vec<[f32; 2]> = (0..(3.0 * sr) as usize).map(|_| generator.next()).collect();
+    let out: Vec<[f32; 2]> = (0..(3.0 * sr) as usize).map(|_| generator.next_sample()).collect();
     let mid: Vec<f64> = out.iter().skip(sr as usize).map(|p| f64::from(p[0])).collect();
     let side: Vec<f64> = out.iter().skip(sr as usize).map(|p| f64::from(p[1])).collect();
     // The recording's mid over its held part.

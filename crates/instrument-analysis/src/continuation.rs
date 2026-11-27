@@ -1075,7 +1075,7 @@ fn trial_renders(
     generator.start(&model, 0.0, 900);
     let length = (3.4 * sr) as usize;
     for _ in 0..length {
-        generator.next();
+        generator.next_sample();
     }
     for (k, partial) in continuation.partials.iter_mut().enumerate() {
         let rendered = generator.level_spread_db(k);
@@ -1090,7 +1090,7 @@ fn trial_renders(
         let mut out = Vec::with_capacity(total);
         let mut pitch = Vec::with_capacity(total);
         for m in 0..total {
-            out.push(f64::from(generator.next()[0]));
+            out.push(f64::from(generator.next_sample()[0]));
             pitch.push(generator.pitch_of(m as i64));
         }
         let start = (from * sr) as usize;

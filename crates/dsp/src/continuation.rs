@@ -393,11 +393,8 @@ impl Continuation {
         if bytes.len() != expected {
             return Err(malformed);
         }
-        let mut values = bytes
-            .get(16..)
-            .unwrap_or(&[])
-            .chunks_exact(4)
-            .map(|chunk| <[u8; 4]>::try_from(chunk).map_or(f32::NAN, f32::from_le_bytes));
+        let mut values =
+            bytes.get(16..).unwrap_or(&[]).as_chunks::<4>().0.iter().map(|chunk| f32::from_le_bytes(*chunk));
         let mut scalar = [0.0_f32; SCALAR_FIELDS];
         for slot in &mut scalar {
             *slot = values.next().unwrap_or(0.0);
