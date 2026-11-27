@@ -1329,10 +1329,15 @@ button opens its clip in the editor.
 ### MPE LFO
 
 **Built:** the clip panel's Transform tab lists **MPE LFO**. It writes a low-frequency oscillation
-into one curve of each selected note (every note when none is selected), replacing that curve, one
-`note.lfoExpression`, one undo step:
+into one curve of each selected note (every note when none is selected), one
+`note.lfoExpression`, one undo step. With a time selected it writes only over that stretch
+(`from`, `to`), the curve kept outside it and held up to its edges; Attack and Decay are then
+parts of the stretch. While it is chosen and MPE is on, what it would write is drawn dashed over
+those notes, and the panel shows the wave over one bar under Target and Mode.
 
 - **Target:** Pitch, Slide or Pressure.
+- **Mode:** **Replace** writes the wave around Base; **Add** swings it around the curve already
+  there, so a bend keeps its shape and the wave rides on it (`mode`).
 - **Wave:** Sine, Square, Triangle or Random; **Shape**, -1 to 1, skews the wave: the sine and
   triangle lean toward the start (negative) or the end (positive), the square's pulse narrows or
   widens, the random wave's steps glide (positive) or jump (negative). **Reseed** picks another
@@ -1542,8 +1547,10 @@ own curves ([ADR 0039](../decisions/0039-per-note-expression.md) › 6,
 ### Editing points
 
 Points are edited on the selected notes' curves; a press on another note selects it as usual.
-The grid does not hold points while MPE is on: a point goes exactly where the pointer is. **Alt**
-puts it on the nearest grid line and, for pitch, on the nearest whole semitone.
+Points follow the piano roll's grid (when it snaps) and, for pitch, whole semitones; a lane's
+values go in steps of 1 of 127. **Alt** frees both: a point goes exactly where the pointer is. A
+dense curve (an LFO's) shows its handles thinned out, at least 9 points apart, besides the first,
+the last, the one under the pointer and the selected ones.
 
 - A **click on a curve's line** adds a point there, on the line, at the value the line has there.
 - A **double-click** on the empty grid or on a selected note, within the time of a selected note,
@@ -1555,10 +1562,10 @@ puts it on the nearest grid line and, for pitch, on the nearest whole semitone.
 - **Dragging a point** moves it. Dragged past a neighbour, the neighbour goes. **Shift** keeps
   the drag to the axis it first moved along, and a vertical drag with Shift moves a tenth as far,
   for fine values.
+- **A drag on a line** curves the segment, as an automation segment's does: up bulges it toward
+  higher values, down toward lower ones. **Alt and a double-click on a line** makes it straight
+  again. A flat segment does not curve.
 - **Shift and a drag on a line** moves the segment up or down: both its points by the same amount.
-- **Alt and a drag on a line** curves the segment: up bulges it toward higher values, down toward
-  lower ones. **Alt and a double-click on a line** makes it straight again. A flat segment does not
-  curve.
 - **Shift and a click on a point** adds it to the selected points or takes it out; **Ctrl+A**
   (Cmd+A) while MPE is on and one note is selected selects every point of the curve last edited
   (pitch unless a lane was). Dragging a selected point moves every selected point by the same

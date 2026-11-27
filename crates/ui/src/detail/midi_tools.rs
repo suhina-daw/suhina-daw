@@ -195,6 +195,8 @@ pub struct ToolSettings {
     pub lfo_attack: f64,
     pub lfo_decay: f64,
     pub lfo_seed: u64,
+    /// Add swings the wave around the curve as it is; off (Replace) around the base.
+    pub lfo_add: bool,
 }
 
 /// The MPE LFO's rates: a cycle per part of a bar, each also dotted (`.`) and triplet (`T`), and
@@ -251,6 +253,42 @@ impl Default for ToolSettings {
             lfo_attack: 0.0,
             lfo_decay: 0.0,
             lfo_seed: 1,
+            lfo_add: false,
         }
+    }
+}
+
+impl ToolSettings {
+    /// The MPE LFO these settings make, the curve it writes and whether it adds to the curve, for
+    /// a bar `bar_beats` long: what `note.lfoExpression` is given and what the piano roll
+    /// previews.
+    pub fn lfo(&self, bar_beats: f64) -> (suhina_engine::model::ExpressionKind, suhina_session::Lfo, bool) {
+        use suhina_engine::model::ExpressionKind;
+        let kind = match self.lfo_target {
+            1 => ExpressionKind::Timbre,
+            2 => ExpressionKind::Pressure,
+            _ => ExpressionKind::Pitch,
+        };
+        let pitch = kind == ExpressionKind::Pitch;
+        let part = LFO_RATES.get(self.lfo_rate).map_or(0.25, |(_, part)| *part);
+        let bar = if bar_beats.is_finite() && bar_beats > 0.0 { bar_beats } else { 4.0 };
+        let scale = if pitch { 1.0 } else { 1.0 / 127.0 };
+        let wave = LFO_WAVES
+            .get(self.lfo_wave)
+            .and_then(|(name, _)| suhina_session::LfoWave::from_name(name))
+            .unwrap_or(suhina_session::LfoWave::Sine);
+        let attack = (self.lfo_attack / 100.0).clamp(0.0, 1.0);
+        let lfo = suhina_session::Lfo {
+            wave,
+            shape: (self.lfo_shape / 100.0).clamp(-1.0, 1.0),
+            period: (part * bar).clamp(1.0 / 32.0, 64.0),
+            shift: (self.lfo_shift / 100.0).clamp(-1.0, 1.0),
+            amount: if pitch { self.lfo_amount.clamp(-96.0, 96.0) } else { (self.lfo_amount * scale).clamp(-1.0, 1.0) },
+            base: if pitch { self.lfo_base.clamp(-96.0, 96.0) } else { (self.lfo_base * scale).clamp(0.0, 1.0) },
+            attack,
+            decay: (self.lfo_decay / 100.0).clamp(0.0, 1.0 - attack),
+            seed: self.lfo_seed,
+        };
+        (kind, lfo, self.lfo_add)
     }
 }

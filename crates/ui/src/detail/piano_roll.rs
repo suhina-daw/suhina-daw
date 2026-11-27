@@ -467,7 +467,7 @@ pub fn show(
     // grid in a selected note's time is the curve's, a double-click adding a point (› MPE). A
     // press on a handle is the handle's alone: it selects, draws and sounds no note under it.
     let mpe_busy =
-        state.expression.is_some() && expression::handle_points(ui, &layout, clip, grid, inputs.alt, state, actions);
+        state.expression.is_some() && expression::handle_points(ui, &layout, clip, grid, !inputs.alt, state, actions);
     let mpe_spot = state.expression.is_some()
         && !mpe_busy
         // The empty grid or a selected note itself: a double-click on the note adds a point at
@@ -480,7 +480,7 @@ pub fn show(
         && let Some(index) = expression::note_for_point(&layout, clip, state, pos)
     {
         let point = (index, suhina_engine::model::ExpressionKind::Pitch, layout.grid);
-        actions.extend(expression::add_point(&layout, clip, grid, inputs.alt, point, pos));
+        actions.extend(expression::add_point(&layout, clip, grid, !inputs.alt, point, pos));
     }
     // The click that lets go of a note the second press of a double-click is drawing adds nothing
     // more: the note is added when the button is let go (below).

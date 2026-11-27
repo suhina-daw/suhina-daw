@@ -238,6 +238,17 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the part of the note, 0 to 1, at its end over which the swing falls to nothing; attack and decay together at most 1",
             ),
             optional("seed", ParamType::Number, "the random wave's seed, a whole number"),
+            optional(
+                "from",
+                ParamType::Number,
+                "with to: only this stretch of the clip's beats is written, the curve kept outside it",
+            ),
+            optional("to", ParamType::Number, "with from: where the stretch written ends, in the clip's beats"),
+            optional(
+                "mode",
+                ParamType::Text,
+                "\"replace\" (the default) writes the wave around base; \"add\" swings it around the curve as it is",
+            ),
         ],
         kind: CommandKind::EDIT,
         run: note_expression::lfo_expression,

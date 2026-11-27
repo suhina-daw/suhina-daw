@@ -197,7 +197,7 @@ pub(crate) fn set_release_velocity(session: &mut Session, params: &Value) -> Res
 
 /// The waves `note.lfoExpression` draws.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Wave {
+pub enum Wave {
     Sine,
     Square,
     Triangle,
@@ -205,7 +205,7 @@ pub(crate) enum Wave {
 }
 
 impl Wave {
-    fn from_name(name: &str) -> Option<Self> {
+    pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "sine" => Some(Wave::Sine),
             "square" => Some(Wave::Square),
@@ -218,22 +218,22 @@ impl Wave {
 
 /// The settings of one `note.lfoExpression`, checked.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Lfo {
-    pub(crate) wave: Wave,
+pub struct Lfo {
+    pub wave: Wave,
     /// -1 to 1: the skew of sine and triangle, the pulse width of square, glide of random.
-    pub(crate) shape: f64,
+    pub shape: f64,
     /// Beats per cycle.
-    pub(crate) period: f64,
+    pub period: f64,
     /// -1 to 1 of a cycle: positive delays the start, negative moves the phase.
-    pub(crate) shift: f64,
+    pub shift: f64,
     /// How far the wave swings either way, in the kind's units (negative turns it over).
-    pub(crate) amount: f64,
-    /// The value it swings around.
-    pub(crate) base: f64,
-    /// Parts of the note, 0 to 1, together at most 1.
-    pub(crate) attack: f64,
-    pub(crate) decay: f64,
-    pub(crate) seed: u64,
+    pub amount: f64,
+    /// The value it swings around (Replace).
+    pub base: f64,
+    /// Parts of the range written, 0 to 1, together at most 1.
+    pub attack: f64,
+    pub decay: f64,
+    pub seed: u64,
 }
 
 /// The fewest beats between two points of an LFO curve.
@@ -297,29 +297,70 @@ impl Lfo {
 
     /// The curve for a note `duration` beats long, its values kept in `kind`'s range, at most
     /// [`MAX_CURVE_POINTS`] points; a point between two of the same value is left out.
-    pub(crate) fn curve(&self, kind: ExpressionKind, duration: f64) -> Vec<ExpressionPoint> {
+    pub fn curve(&self, kind: ExpressionKind, duration: f64) -> Vec<ExpressionPoint> {
+        self.written(kind, duration, &[], None, false)
+    }
+
+    /// `existing` (a note's `kind` curve, `duration` beats long) with the LFO written over
+    /// `range` (beats from the note's start; the whole note when `None`): replacing the curve
+    /// there around `base`, or with `add` swinging around the curve as it is. Outside the range
+    /// the curve stays, held up to the range's edges. The attack and decay are parts of the
+    /// range. At most [`MAX_CURVE_POINTS`] points.
+    pub fn written(
+        &self,
+        kind: ExpressionKind,
+        duration: f64,
+        existing: &[ExpressionPoint],
+        range: Option<(f64, f64)>,
+        add: bool,
+    ) -> Vec<ExpressionPoint> {
         if !(duration.is_finite() && duration > 0.0) {
-            return Vec::new();
+            return existing.to_vec();
         }
-        let step = (self.period / 32.0).max(LFO_STEP).max(duration / (MAX_CURVE_POINTS - 1) as f64);
-        let count = ((duration / step).ceil() as usize).min(MAX_CURVE_POINTS - 1);
+        let (from, to) = range.map_or((0.0, duration), |(a, b)| (a.max(0.0), b.min(duration)));
+        let span = to - from;
+        if !(span.is_finite() && span > 0.0) {
+            return existing.to_vec();
+        }
+        const EDGE: f64 = 2.0e-4;
+        let before: Vec<ExpressionPoint> = existing.iter().copied().filter(|p| p.offset < from - EDGE).collect();
+        let after: Vec<ExpressionPoint> = existing.iter().copied().filter(|p| p.offset > to + EDGE).collect();
+        let at = |offset: f64| suhina_model::expression::curve_value(existing, offset).unwrap_or(kind.neutral());
+        let mut out: Vec<ExpressionPoint> = Vec::new();
+        out.extend(before.iter().copied());
+        // The curve as it was, held to the range's start, so the part before keeps its shape.
+        if !before.is_empty() && from - EDGE > before.last().map_or(f64::NEG_INFINITY, |p| p.offset) {
+            out.push(ExpressionPoint::new(from - EDGE, at(from - EDGE)));
+        }
+        let room = MAX_CURVE_POINTS.saturating_sub(out.len() + after.len() + 2).max(2);
+        let step = (self.period / 32.0).max(LFO_STEP).max(span / (room - 1) as f64);
+        let count = ((span / step).ceil() as usize).min(room - 1);
         let (low, high) = kind.range();
-        let mut points: Vec<ExpressionPoint> = Vec::with_capacity(count + 1);
+        let start = out.len();
         for i in 0..=count {
-            let offset = (i as f64 * step).min(duration);
-            if points.last().is_some_and(|last| offset <= last.offset) {
+            let local = (i as f64 * step).min(span);
+            let offset = from + local;
+            if out.last().is_some_and(|last| offset <= last.offset) {
                 continue;
             }
             let delay = self.shift.max(0.0) * self.period;
-            let swing = if offset < delay {
+            let swing = if local < delay {
                 0.0
             } else {
-                let phase = (offset - delay) / self.period + (-self.shift).max(0.0);
+                let phase = (local - delay) / self.period + (-self.shift).max(0.0);
                 self.wave_at(phase)
             };
-            let value = (self.base + self.amount * self.envelope(offset, duration) * swing).clamp(low, high);
-            points.push(ExpressionPoint::new(offset, value));
+            let centre = if add { at(offset) } else { self.base };
+            let value = (centre + self.amount * self.envelope(local, span) * swing).clamp(low, high);
+            out.push(ExpressionPoint::new(offset, value));
         }
+        // The curve as it was again from the range's end.
+        if !after.is_empty() && to + EDGE < after.first().map_or(f64::INFINITY, |p| p.offset) && to + EDGE <= duration {
+            out.push(ExpressionPoint::new(to + EDGE, at(to + EDGE)));
+        }
+        out.extend(after.iter().copied());
+        let points = out;
+        let _ = start;
         // A point between two of the same value changes nothing.
         let mut kept: Vec<ExpressionPoint> = Vec::with_capacity(points.len());
         for (i, point) in points.iter().enumerate() {
@@ -360,6 +401,16 @@ pub(crate) fn lfo_expression(session: &mut Session, params: &Value) -> Result<Va
     };
     let (low, high) = kind.range();
     let reach = if kind == ExpressionKind::Pitch { 96.0 } else { 1.0 };
+    let range = match (args.opt_f64("from")?, args.opt_f64("to")?) {
+        (Some(from), Some(to)) if from.is_finite() && to.is_finite() && to > from => Some((from, to)),
+        (None, None) => None,
+        _ => return Err("from and to must both be given, to after from, in the clip's beats".into()),
+    };
+    let add = match args.raw_str("mode").unwrap_or("replace") {
+        "replace" => false,
+        "add" => true,
+        other => return Err(format!("mode must be \"replace\" or \"add\", not {other:?}").into()),
+    };
     let lfo = Lfo {
         wave,
         shape: number("shape", 0.0, (-1.0, 1.0))?,
@@ -376,8 +427,17 @@ pub(crate) fn lfo_expression(session: &mut Session, params: &Value) -> Result<Va
     }
     let notes = notes_of(&session.project, params)?;
     let chosen = notes_or_all(params, notes)?;
-    let curves: Vec<(usize, Vec<ExpressionPoint>)> =
-        chosen.iter().filter_map(|&i| notes.get(i).map(|n| (i, lfo.curve(kind, n.duration)))).collect();
+    let curves: Vec<(usize, Vec<ExpressionPoint>)> = chosen
+        .iter()
+        .filter_map(|&i| notes.get(i).map(|n| (i, n)))
+        // A range that misses a note leaves it as it is.
+        .filter(|(_, n)| range.is_none_or(|(from, to)| from < n.time + n.duration && to > n.time))
+        .map(|(i, n)| {
+            let existing = n.expression().map_or(&[][..], |e| e.curve(kind));
+            let local = range.map(|(from, to)| (from - n.time, to - n.time));
+            (i, lfo.written(kind, n.duration, existing, local, add))
+        })
+        .collect();
     let replaced: usize =
         chosen.iter().filter_map(|&i| notes.get(i)).filter_map(|n| n.expression()).map(|e| e.curve(kind).len()).sum();
     let added: usize = curves.iter().map(|(_, c)| c.len()).sum();
@@ -443,5 +503,47 @@ mod lfo_tests {
         let curve = late.curve(ExpressionKind::Pitch, 2.0);
         assert!(curve.iter().filter(|p| p.offset < 0.5).all(|p| p.value == 0.0));
         assert!(curve.iter().any(|p| p.offset > 0.5 && p.value != 0.0));
+    }
+}
+
+#[cfg(test)]
+mod lfo_range_tests {
+    use super::*;
+
+    fn vibrato() -> Lfo {
+        Lfo {
+            wave: Wave::Sine,
+            shape: 0.0,
+            period: 0.5,
+            shift: 0.0,
+            amount: 0.5,
+            base: 0.0,
+            attack: 0.0,
+            decay: 0.0,
+            seed: 1,
+        }
+    }
+
+    #[test]
+    fn added_in_a_range_it_rides_the_bend_and_keeps_the_curve_outside() {
+        // A bend up two semitones over the first beat, held after it.
+        let bend = vec![ExpressionPoint::new(0.0, 0.0), ExpressionPoint::new(1.0, 2.0)];
+        let curve = vibrato().written(ExpressionKind::Pitch, 4.0, &bend, Some((2.0, 4.0)), true);
+        assert_eq!(&curve[..2], &bend[..], "the bend before the range stays");
+        assert!(curve.windows(2).all(|w| w[1].offset > w[0].offset));
+        let inside: Vec<_> = curve.iter().filter(|p| p.offset >= 2.0).collect();
+        assert!(inside.iter().all(|p| (p.value - 2.0).abs() <= 0.5 + 1e-9), "it swings around the bend's 2");
+        assert!(inside.iter().any(|p| p.value > 2.4) && inside.iter().any(|p| p.value < 1.6));
+        assert!(validate_curve(ExpressionKind::Pitch, &curve, 4.0).is_ok());
+    }
+
+    #[test]
+    fn replaced_in_a_range_the_curve_after_it_comes_back() {
+        let ramp = vec![ExpressionPoint::new(0.0, 0.0), ExpressionPoint::new(4.0, 4.0)];
+        let curve = vibrato().written(ExpressionKind::Pitch, 4.0, &ramp, Some((1.0, 2.0)), false);
+        assert_eq!(curve.last(), ramp.last());
+        let at_three = suhina_model::expression::curve_value(&curve, 3.0).unwrap();
+        assert!((at_three - 3.0).abs() < 1e-3, "{at_three}");
+        assert!(validate_curve(ExpressionKind::Pitch, &curve, 4.0).is_ok());
     }
 }

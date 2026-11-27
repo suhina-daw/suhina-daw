@@ -422,6 +422,33 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
         }
     }
     draw_header(ui, layout, state, &inks);
+    draw_lfo_preview(ui, layout, clip, state, &inks);
+}
+
+/// While the clip panel's MPE LFO is chosen, what Apply would write, dashed over the notes it
+/// acts on (the selected ones, else every note), within the time selected when there is one.
+fn draw_lfo_preview(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState, inks: &Inks) {
+    use crate::detail::midi_tools::{ToolsTab, Transform};
+    if !(state.tools_open && state.tools_tab == ToolsTab::Transform && state.transform == Transform::MpeLfo) {
+        return;
+    }
+    let (kind, lfo, add) = state.tools.lfo(clip.bar_beats);
+    let Some(area) = area_of(state, layout, kind) else { return };
+    let painter = ui.painter_at(area);
+    let span = state.time_span().filter(|(from, to)| to > from);
+    for (index, note) in clip.notes.iter().enumerate() {
+        if !(state.selected.is_empty() || state.selected.contains(&index)) {
+            continue;
+        }
+        if span.is_some_and(|(from, to)| from >= note.time + note.duration || to <= note.time) {
+            continue;
+        }
+        let existing = own_curve(note, kind);
+        let local = span.map(|(from, to)| (from - note.time, to - note.time));
+        let written = lfo.written(kind, note.duration, existing, local, add);
+        let line = curve_line(layout, note, kind, area, &written);
+        painter.extend(Shape::dashed_line(&line, Stroke::new(1.25, inks.accent), 4.0, 3.0));
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -478,7 +505,9 @@ fn draw_curves(
                 && state.mpe.selection.kind == Some(kind)
                 && state.mpe.selection.points.contains(&point)
         };
-        for (point, at) in handles(layout, note, kind, area, &curve) {
+        let active_point = state.expression_drag.as_ref().filter(|d| d.of(id, kind)).map(|d| d.index);
+        let shown = sparse(handles(layout, note, kind, area, &curve), hover, |p| chosen(p) || active_point == Some(p));
+        for (point, at) in shown {
             painter.circle_filled(at, 4.5, inks.edge);
             painter.circle_stroke(at, 4.0, Stroke::new(1.5, inks.accent));
             painter.circle_filled(at, 3.0, if chosen(point) { inks.accent } else { color });
@@ -578,6 +607,30 @@ fn toggle_rects(layout: &Layout, header: Rect) -> Vec<Rect> {
             )
         })
         .collect()
+}
+
+/// The fewest points between two handles shown: a dense curve (an LFO's) shows its handles
+/// thinned out, so they do not pile into a coil.
+const HANDLE_SPACING: f32 = 9.0;
+
+/// The handles worth showing: the first and last, those at least [`HANDLE_SPACING`] from the
+/// last one kept, the one under the pointer, and those `keep` names (selected or dragged).
+fn sparse(all: Vec<(usize, Pos2)>, hover: Option<Pos2>, keep: impl Fn(usize) -> bool) -> Vec<(usize, Pos2)> {
+    let last = all.len().saturating_sub(1);
+    let under = hover.and_then(|h| {
+        all.iter()
+            .filter(|(_, at)| at.distance(h) <= HANDLE)
+            .min_by(|a, b| a.1.distance(h).total_cmp(&b.1.distance(h)))
+            .map(|(i, _)| *i)
+    });
+    let mut out: Vec<(usize, Pos2)> = Vec::with_capacity(all.len());
+    for (n, (i, at)) in all.iter().enumerate() {
+        let spaced = out.last().is_none_or(|(_, kept)| kept.distance(*at) >= HANDLE_SPACING);
+        if spaced || n == last || keep(*i) || under == Some(*i) {
+            out.push((*i, *at));
+        }
+    }
+    out
 }
 
 /// Whether `p` is over `note` or near its line.
@@ -902,17 +955,16 @@ fn handle_note(
         let rect = Rect::from_two_pos(*a, *b).expand(HANDLE);
         let response =
             cx.ui.interact(rect, Id::unique(("piano-mpe-line", kind.name(), id, segment)), Sense::click_and_drag());
-        cx.ui.ctx().set_cursor_icon(if cx.alt || cx.shift {
-            egui::CursorIcon::ResizeVertical
-        } else {
-            egui::CursorIcon::PointingHand
-        });
+        cx.ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
         *busy = true;
         if line_gestures(cx, (index, id, note, kind, area), segment, &curve, &response, state, actions) {
             return true;
         }
     }
-    for (point, pos) in at {
+    let active_point = state.expression_drag.as_ref().filter(|d| d.of(id, kind)).map(|d| d.index);
+    let selection = &state.mpe.selection;
+    let chosen = |p: usize| selection.note == id && selection.kind == Some(kind) && selection.points.contains(&p);
+    for (point, pos) in sparse(at, hover, |p| chosen(p) || active_point == Some(p)) {
         let dragged = state
             .expression_drag
             .as_ref()
@@ -977,13 +1029,13 @@ fn line_gestures(
     let pos = cx.ui.ctx().pointer_latest_pos();
     if response.drag_started()
         && let Some(id) = id
-        && (cx.alt || cx.shift)
     {
+        // A drag on a line bends it, as an automation segment's does; with Shift it moves.
         let press = cx.ui.input(|i| i.pointer.press_origin()).or(pos).unwrap_or_default();
-        let mode = if cx.alt {
-            DragMode::Curve { start_y: press.y, start: curve.get(segment).map_or(0.0, |p| p.curve) }
-        } else {
+        let mode = if cx.shift {
             DragMode::Segment { press }
+        } else {
+            DragMode::Curve { start_y: press.y, start: curve.get(segment).map_or(0.0, |p| p.curve) }
         };
         let from = own_curve(note, kind).to_vec();
         state.expression_drag = Some(PointDrag { note: id, kind, index: segment, curve: curve.to_vec(), from, mode });

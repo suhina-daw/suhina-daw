@@ -116,6 +116,7 @@ pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use metronome_sounds::{MetronomeState, library_folder as metronome_folder};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
 pub use mpe_config::{MpeConfig, MpeMode};
+pub use note_expression::{Lfo, Wave as LfoWave};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
 pub use player::{OutputHandle, Player};
 pub use plugins::{device_plugin, plugin_commands};

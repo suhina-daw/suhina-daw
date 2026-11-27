@@ -670,6 +670,8 @@ fn transform_tab(
         return;
     }
     let chosen = state.transform;
+    // The MPE LFO writes only over the time selected, when there is one (› MPE LFO).
+    let lfo_span = state.time_span();
     let list = Rect::from_min_size(body.min, Vec2::new(body.width(), s.field));
     let entries: Vec<Option<(&str, bool)>> = Transform::ALL
         .iter()
@@ -818,8 +820,8 @@ fn transform_tab(
             params["to"] = json!(settings.ramp_to.clamp(1, 127));
         }
         Transform::MpeLfo => {
-            y = lfo_settings(ui, painter, body, y, s, settings);
-            lfo_params(&mut params, settings, tools.bar_beats);
+            y = lfo_settings(ui, painter, body, y, s, (settings, tools.bar_beats));
+            lfo_params(&mut params, settings, tools.bar_beats, lfo_span);
         }
     }
     // Apply, at the bottom, says what it does and to what: "Humanise 3 notes", "Quantise clip".
@@ -847,29 +849,29 @@ fn transform_tab(
     }
 }
 
-/// The MPE LFO's settings, two to a row, as many rows as fit: Target and Wave, Rate and Shift,
-/// Amount and Base, Shape and Attack, Decay and Reseed. Returns the height below them.
+/// The MPE LFO's settings: Target and Mode; a picture of the wave over one note; Wave and Rate;
+/// Shape and Shift; Amount and Base (Base only for Replace); Attack and Decay; Reseed for the
+/// random wave. As many rows as fit. Returns the height below them.
 fn lfo_settings(
     ui: &mut Ui,
     painter: &egui::Painter,
     body: Rect,
     mut y: f32,
     s: ToolsSpacing,
-    settings: &mut crate::detail::midi_tools::ToolSettings,
+    (settings, bar_beats): (&mut crate::detail::midi_tools::ToolSettings, f64),
 ) -> f32 {
     use crate::detail::midi_tools::{LFO_RATES, LFO_TARGETS, LFO_WAVES};
-    let pitch = settings.lfo_target == 0;
     let row = |y: f32| y + NAME + s.field <= body.bottom() + 0.5;
     let percent = |v: f64| format!("{v} %");
     let steps = |v: f64| format!("{v}");
     let semitones = |v: f64| format!("{v} st");
-    // Target and wave.
+    // Target and mode.
     if !row(y) {
         return y;
     }
     let [(a_name, a_field), (b_name, b_field)] = pair(body, y, s.field);
     name_over(painter, a_name, "Target", Align2::LEFT_BOTTOM);
-    name_over(painter, b_name, "Wave", Align2::LEFT_BOTTOM);
+    name_over(painter, b_name, "Mode", Align2::LEFT_BOTTOM);
     let targets: Vec<Option<(&str, bool)>> =
         LFO_TARGETS.iter().enumerate().map(|(i, (_, name))| Some((*name, i == settings.lfo_target))).collect();
     let shown = LFO_TARGETS.get(settings.lfo_target).map_or("Pitch", |(_, n)| *n);
@@ -890,33 +892,64 @@ fn lfo_settings(
         (settings.lfo_amount, settings.lfo_base) =
             if i == 0 { (1.0, 0.0) } else { (32.0, if i == 1 { 64.0 } else { 0.0 }) };
     }
-    let waves: Vec<Option<(&str, bool)>> =
-        LFO_WAVES.iter().enumerate().map(|(i, (_, name))| Some((*name, i == settings.lfo_wave))).collect();
-    let shown = LFO_WAVES.get(settings.lfo_wave).map_or("Sine", |(_, n)| *n);
+    let modes = [Some(("Replace", !settings.lfo_add)), Some(("Add", settings.lfo_add))];
+    let shown = if settings.lfo_add { "Add" } else { "Replace" };
+    explain(
+        ui,
+        b_name,
+        "lfo-mode",
+        "Replace writes the wave around Base; Add swings it around the curve already there",
+    );
     if let Some(i) =
-        drop_down(ui, painter, b_field, Id::unique("midi-tools-lfo-wave"), "LFO wave", shown, &waves, b_field.width())
-        && i < LFO_WAVES.len()
+        drop_down(ui, painter, b_field, Id::unique("midi-tools-lfo-mode"), "LFO mode", shown, &modes, b_field.width())
     {
-        settings.lfo_wave = i;
+        settings.lfo_add = i == 1;
     }
     y += NAME + s.field + s.gap;
-    // Rate and shift.
+    // The wave over a bar, its envelope included, as it will be written.
+    let graph = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), (s.field * 2.0).max(28.0)));
+    if graph.bottom() <= body.bottom() + 0.5 {
+        lfo_picture(painter, graph, settings, bar_beats);
+        y = graph.bottom() + s.gap;
+    }
+    // Wave and rate.
     if !row(y) {
         return y;
     }
     let [(a_name, a_field), (b_name, b_field)] = pair(body, y, s.field);
-    name_over(painter, a_name, "Rate", Align2::LEFT_BOTTOM);
-    name_over(painter, b_name, "Shift", Align2::LEFT_BOTTOM);
+    name_over(painter, a_name, "Wave", Align2::LEFT_BOTTOM);
+    name_over(painter, b_name, "Rate", Align2::LEFT_BOTTOM);
+    let waves: Vec<Option<(&str, bool)>> =
+        LFO_WAVES.iter().enumerate().map(|(i, (_, name))| Some((*name, i == settings.lfo_wave))).collect();
+    let shown = LFO_WAVES.get(settings.lfo_wave).map_or("Sine", |(_, n)| *n);
+    if let Some(i) =
+        drop_down(ui, painter, a_field, Id::unique("midi-tools-lfo-wave"), "LFO wave", shown, &waves, a_field.width())
+        && i < LFO_WAVES.len()
+    {
+        settings.lfo_wave = i;
+    }
     let rates: Vec<Option<(&str, bool)>> =
         LFO_RATES.iter().enumerate().map(|(i, (name, _))| Some((*name, i == settings.lfo_rate))).collect();
     let shown = LFO_RATES.get(settings.lfo_rate).map_or("1/4", |(n, _)| *n);
     if let Some(i) =
-        drop_down(ui, painter, a_field, Id::unique("midi-tools-lfo-rate"), "LFO rate", shown, &rates, a_field.width())
+        drop_down(ui, painter, b_field, Id::unique("midi-tools-lfo-rate"), "LFO rate", shown, &rates, b_field.width())
         && i < LFO_RATES.len()
     {
         settings.lfo_rate = i;
     }
+    y += NAME + s.field + s.gap;
+    // Shape and shift.
+    if !row(y) {
+        return y;
+    }
+    let [(a_name, a_field), (b_name, b_field)] = pair(body, y, s.field);
+    name_over(painter, a_name, "Shape", Align2::LEFT_BOTTOM);
+    name_over(painter, b_name, "Shift", Align2::LEFT_BOTTOM);
+    explain(ui, a_name, "lfo-shape", "Leans sine and triangle, narrows or widens square, makes random glide");
     explain(ui, b_name, "lfo-shift", "Positive waits before the wave starts, negative moves its phase");
+    if let Some(v) = setting_field(ui, painter, a_field, "LFO shape", settings.lfo_shape, (-100.0, 100.0), &percent) {
+        settings.lfo_shape = v;
+    }
     if let Some(v) = setting_field(ui, painter, b_field, "LFO shift", settings.lfo_shift, (-100.0, 100.0), &percent) {
         settings.lfo_shift = v;
     }
@@ -925,79 +958,107 @@ fn lfo_settings(
     if !row(y) {
         return y;
     }
+    let pitch = settings.lfo_target == 0;
     let [(a_name, a_field), (b_name, b_field)] = pair(body, y, s.field);
     name_over(painter, a_name, "Amount", Align2::LEFT_BOTTOM);
-    name_over(painter, b_name, "Base", Align2::LEFT_BOTTOM);
     let (reach, base_range, unit): (f64, (f64, f64), &dyn Fn(f64) -> String) =
         if pitch { (96.0, (-96.0, 96.0), &semitones) } else { (127.0, (0.0, 127.0), &steps) };
     if let Some(v) = setting_field(ui, painter, a_field, "LFO amount", settings.lfo_amount, (-reach, reach), unit) {
         settings.lfo_amount = v;
     }
-    if let Some(v) = setting_field(ui, painter, b_field, "LFO base", settings.lfo_base, base_range, unit) {
-        settings.lfo_base = v;
+    if !settings.lfo_add {
+        name_over(painter, b_name, "Base", Align2::LEFT_BOTTOM);
+        if let Some(v) = setting_field(ui, painter, b_field, "LFO base", settings.lfo_base, base_range, unit) {
+            settings.lfo_base = v;
+        }
     }
     y += NAME + s.field + s.gap;
-    // Shape and attack.
+    // Attack and decay.
     if !row(y) {
         return y;
     }
     let [(a_name, a_field), (b_name, b_field)] = pair(body, y, s.field);
-    name_over(painter, a_name, "Shape", Align2::LEFT_BOTTOM);
-    name_over(painter, b_name, "Attack", Align2::LEFT_BOTTOM);
-    explain(ui, a_name, "lfo-shape", "Leans sine and triangle, narrows or widens square, makes random glide");
-    if let Some(v) = setting_field(ui, painter, a_field, "LFO shape", settings.lfo_shape, (-100.0, 100.0), &percent) {
-        settings.lfo_shape = v;
-    }
-    if let Some(v) = setting_field(ui, painter, b_field, "LFO attack", settings.lfo_attack, (0.0, 100.0), &percent) {
+    name_over(painter, a_name, "Attack", Align2::LEFT_BOTTOM);
+    name_over(painter, b_name, "Decay", Align2::LEFT_BOTTOM);
+    if let Some(v) = setting_field(ui, painter, a_field, "LFO attack", settings.lfo_attack, (0.0, 100.0), &percent) {
         settings.lfo_attack = v;
         settings.lfo_decay = settings.lfo_decay.min(100.0 - v);
     }
-    y += NAME + s.field + s.gap;
-    // Decay and reseed.
-    if !row(y) {
-        return y;
-    }
-    let [(a_name, a_field), (_, b_field)] = pair(body, y, s.field);
-    name_over(painter, a_name, "Decay", Align2::LEFT_BOTTOM);
-    if let Some(v) = setting_field(ui, painter, a_field, "LFO decay", settings.lfo_decay, (0.0, 100.0), &percent) {
+    if let Some(v) = setting_field(ui, painter, b_field, "LFO decay", settings.lfo_decay, (0.0, 100.0), &percent) {
         settings.lfo_decay = v;
         settings.lfo_attack = settings.lfo_attack.min(100.0 - v);
     }
-    let random = settings.lfo_wave == 3;
-    let id = Id::unique("midi-tools-lfo-reseed");
-    if push_button(ui, painter, b_field, id, ("Reseed", "Reseed"), random, theme::TEXT_SMALL)
-        .on_hover_text("Another random wave")
-        .clicked()
-        && random
-    {
-        settings.lfo_seed = settings.lfo_seed.wrapping_add(1);
+    y += NAME + s.field + s.gap;
+    // Reseed, for the random wave only.
+    if settings.lfo_wave == 3 && y + s.toggle <= body.bottom() + 0.5 {
+        let button = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
+        let id = Id::unique("midi-tools-lfo-reseed");
+        if push_button(ui, painter, button, id, ("Reseed", "Reseed"), true, theme::TEXT_SMALL)
+            .on_hover_text("Another random wave")
+            .clicked()
+        {
+            settings.lfo_seed = settings.lfo_seed.wrapping_add(1);
+        }
+        y += s.toggle + s.gap;
     }
-    y + NAME + s.field + s.gap
+    y
 }
 
-/// The `note.lfoExpression` params from the MPE LFO's settings, a bar `bar_beats` long.
-fn lfo_params(params: &mut serde_json::Value, settings: &crate::detail::midi_tools::ToolSettings, bar_beats: f64) {
-    use crate::detail::midi_tools::{LFO_RATES, LFO_TARGETS, LFO_WAVES};
-    let pitch = settings.lfo_target == 0;
-    let part = LFO_RATES.get(settings.lfo_rate).map_or(0.25, |(_, part)| *part);
+/// The wave the settings make over one bar, its envelope included, in `rect`: a middle line,
+/// and the wave scaled to the rect's height by its largest swing.
+fn lfo_picture(
+    painter: &egui::Painter,
+    rect: Rect,
+    settings: &crate::detail::midi_tools::ToolSettings,
+    bar_beats: f64,
+) {
+    let (kind, lfo, _) = settings.lfo(bar_beats);
     let bar = if bar_beats.is_finite() && bar_beats > 0.0 { bar_beats } else { 4.0 };
-    let scale = if pitch { 1.0 } else { 1.0 / 127.0 };
+    let curve = suhina_session::Lfo { base: 0.0, ..lfo }.written(kind, bar, &[], None, false);
+    let ink = super::hint_ink();
+    painter.rect_stroke(rect, 2.0, egui::Stroke::new(1.0, ink.gamma_multiply(0.4)), egui::StrokeKind::Inside);
+    painter.hline(rect.x_range(), rect.center().y, egui::Stroke::new(1.0, ink.gamma_multiply(0.25)));
+    let reach = curve.iter().map(|p| p.value.abs()).fold(1e-9, f64::max);
+    let line: Vec<Pos2> = curve
+        .iter()
+        .map(|p| {
+            let x = rect.left() + 2.0 + (rect.width() - 4.0) * (p.offset / bar) as f32;
+            let y = rect.center().y - (rect.height() * 0.5 - 3.0) * (p.value / reach) as f32;
+            Pos2::new(x, y)
+        })
+        .collect();
+    let accent = crate::kit::element::PIANO_NOTE.attr(crate::kit::element::Attr::Selected, true).look().accent();
+    painter.add(egui::Shape::line(
+        line,
+        egui::Stroke::new(1.5, if accent == egui::Color32::TRANSPARENT { ink } else { accent }),
+    ));
+}
+
+/// The `note.lfoExpression` params from the MPE LFO's settings, a bar `bar_beats` long, over the
+/// time selected (`span`, the clip's beats) when there is one.
+fn lfo_params(
+    params: &mut serde_json::Value,
+    settings: &crate::detail::midi_tools::ToolSettings,
+    bar_beats: f64,
+    span: Option<(f64, f64)>,
+) {
+    use crate::detail::midi_tools::{LFO_TARGETS, LFO_WAVES};
+    let (_, lfo, add) = settings.lfo(bar_beats);
     params["kind"] = json!(LFO_TARGETS.get(settings.lfo_target).map_or("pitch", |(name, _)| *name));
     params["wave"] = json!(LFO_WAVES.get(settings.lfo_wave).map_or("sine", |(name, _)| *name));
-    params["period"] = json!((part * bar).clamp(1.0 / 32.0, 64.0));
-    params["shape"] = json!((settings.lfo_shape / 100.0).clamp(-1.0, 1.0));
-    params["shift"] = json!((settings.lfo_shift / 100.0).clamp(-1.0, 1.0));
-    params["amount"] = json!(if pitch {
-        settings.lfo_amount.clamp(-96.0, 96.0)
-    } else {
-        (settings.lfo_amount * scale).clamp(-1.0, 1.0)
-    });
-    params["base"] =
-        json!(if pitch { settings.lfo_base.clamp(-96.0, 96.0) } else { (settings.lfo_base * scale).clamp(0.0, 1.0) });
-    let attack = (settings.lfo_attack / 100.0).clamp(0.0, 1.0);
-    params["attack"] = json!(attack);
-    params["decay"] = json!((settings.lfo_decay / 100.0).clamp(0.0, 1.0 - attack));
-    params["seed"] = json!(settings.lfo_seed);
+    params["period"] = json!(lfo.period);
+    params["shape"] = json!(lfo.shape);
+    params["shift"] = json!(lfo.shift);
+    params["amount"] = json!(lfo.amount);
+    params["base"] = json!(lfo.base);
+    params["attack"] = json!(lfo.attack);
+    params["decay"] = json!(lfo.decay);
+    params["seed"] = json!(lfo.seed);
+    params["mode"] = json!(if add { "add" } else { "replace" });
+    if let Some((from, to)) = span.filter(|(from, to)| to > from) {
+        params["from"] = json!(from);
+        params["to"] = json!(to);
+    }
 }
 
 /// The quantise amount as a knob, where the theme draws it as one (`midi-tools slider
