@@ -186,7 +186,10 @@ fn only_the_curved_notes_channel_is_bent_and_the_setup_comes_first() {
     let seen = events(&seen);
     // The configuration first, then the bend range and neutral controls on every member.
     assert_eq!(configurations(&seen), 1);
-    assert!(seen.iter().take(MCM.len()).zip(MCM).all(|((_, e), (n, v))| *e == cc(0, n, v)), "{seen:?}");
+    // A chain's scale goes to its devices before anything else; the zone's setup is the first
+    // MIDI it sends.
+    let midi = seen.iter().filter(|(_, e)| matches!(e, NoteEvent::Channel { .. }));
+    assert!(midi.take(MCM.len()).zip(MCM).all(|((_, e), (n, v))| *e == cc(0, n, v)), "{seen:?}");
     for channel in 1..=15 {
         let rpn = [(101, 0), (100, 0), (6, 48), (38, 0)].map(|(n, v)| cc(channel, n, v));
         let at = seen.iter().position(|(_, e)| *e == rpn[0]).unwrap();
