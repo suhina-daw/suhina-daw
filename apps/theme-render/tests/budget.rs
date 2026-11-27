@@ -109,11 +109,16 @@ use suhina_theme_render::{Subject, scenes};
 /// #1678 (the crossfader) raised the Launcher by 11 nodes and 4 identities, and the expanded FM
 /// scene by 11 nodes and 11 identities, and the styles worked out after a theme or color change
 /// by the same: the Main strip's crossfader and each track strip's A/B/off button, each a styled
-/// level bar or button (485 and 463, 747 and 726; 497 and 476, 759 and 739 on Windows).
+/// level bar or button (485 and 463, 747 and 726; 497 and 475, 759 and 739 on Windows).
 ///
 /// On Windows the window's three controls are `window-button` elements a sheet styles (they were
-/// egui buttons with no frame and are deliberately not `button`s), 3 more nodes in the Launcher
-/// and 1 in the FM synth on top of #1678's counts (500 and 760); the recorded identities stay.
+/// egui buttons with no frame and are deliberately not `button`s): 3 more nodes in the Launcher
+/// and 1 in the FM synth on top of #1678's counts (500 and 760), and 3 more identities in the
+/// Launcher, where the egui buttons entered none. All 15 of the Windows Launcher's identities
+/// over the other systems' are in the application bar: 12 of its own (the bar, its fill, groups,
+/// items and the looks read under it) and the window's 3 controls. The earlier 476 was the other
+/// systems' 463 plus a 13-identity Windows difference and nothing for the window's egui controls;
+/// a Windows run now measures 478, and the see-through theme's color change 479.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
@@ -162,18 +167,18 @@ const RECORDED: [(&str, Counts); 2] = [
         "launcher",
         Counts {
             nodes: 500,
-            identities: 476,
+            identities: 478,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 476,
-            hover_frames: 4,
+            theme_change_fresh: 478,
+            hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 477,
+            color_change_fresh: 479,
         },
     ),
     (
