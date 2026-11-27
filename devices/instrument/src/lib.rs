@@ -11,7 +11,9 @@ use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ParamInfo, ProcessContext, Role,
     SampleSource, Scale, Unit, check_sample_rate,
 };
+use suhina_device_sdk::sample_continuation::ContinuationControls;
 use suhina_device_sdk::sample_instrument::{self, Sampler};
+use suhina_dsp::continuation::Continuation;
 use suhina_dsp::{
     Smoother,
     envelope::{LinearEnvelope, LinearEnvelopeSettings},
@@ -68,7 +70,13 @@ pub mod param {
     /// Legato notes glide from the held note's pitch, over Glide time.
     pub const GLIDE: usize = 29;
     pub const GLIDE_TIME: usize = 30;
-    pub const COUNT: usize = 31;
+    /// Continue playback: the side's scale, the vibrato's depth (a factor) and rate (Hz, 0 for
+    /// the recorded), and the morph toward the second continuation.
+    pub const WIDTH: usize = 31;
+    pub const VIBRATO_DEPTH: usize = 32;
+    pub const VIBRATO_RATE: usize = 33;
+    pub const CONTINUATION_MORPH: usize = 34;
+    pub const COUNT: usize = 35;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -93,7 +101,7 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("end", "Sample end", (0.0, 1.0), 1.0, Unit::Percent),
     control("loop_start", "Loop start", (0.0, 1.0), 0.0, Unit::Percent),
     control("loop_end", "Loop end", (0.0, 1.0), 1.0, Unit::Percent),
-    ParamInfo::choice("playback", "Sample playback", &["Gate", "One shot", "Loop", "Sustain"], 0),
+    ParamInfo::choice("playback", "Sample playback", &["Gate", "One shot", "Loop", "Sustain", "Continue"], 0),
     control("attack", "Attack", (0.0, 10.0), 0.005, Unit::Seconds),
     control("sustain", "Sustain", (0.0, 1.0), 1.0, Unit::Percent),
     control("velocity_low", "Lowest velocity", (0.0, 1.0), 0.0, Unit::Percent),
@@ -107,6 +115,10 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("model_tune", "Model tune", (-24.0, 24.0), 0.0, Unit::Semitones),
     ParamInfo::toggle("glide", "Legato glide", false),
     control("glide_time", "Glide time", (0.01, 2.0), 0.15, Unit::Seconds),
+    control("width", "Width", (0.0, 2.0), 1.0, Unit::Percent),
+    control("vibrato_depth", "Vibrato depth", (0.0, 4.0), 1.0, Unit::None),
+    control("vibrato_rate", "Vibrato rate", (0.0, 10.0), 0.0, Unit::Hertz),
+    control("continuation_morph", "Hold morph", (0.0, 1.0), 0.0, Unit::Percent),
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
@@ -330,6 +342,17 @@ impl Instrument {
         }
         core.reset();
         core
+    }
+
+    /// What a continuing note follows: Continue playback on, and its controls.
+    fn continuation_controls(&self) -> ContinuationControls {
+        ContinuationControls {
+            enabled: self.params.get(param::PLAYBACK) == 4.0,
+            width: self.params.get(param::WIDTH),
+            depth: self.params.get(param::VIBRATO_DEPTH),
+            rate: self.params.get(param::VIBRATO_RATE),
+            morph: self.params.get(param::CONTINUATION_MORPH),
+        }
     }
 
     fn set_sample_parameter(&mut self, id: &str, value: f64) {
@@ -595,6 +618,21 @@ impl Device for Instrument {
             DeviceError::InvalidModelState(error)
         })
     }
+    fn load_continuation_state(&mut self, state: &[u8], morph: Option<&[u8]>) -> Result<(), DeviceError> {
+        match Continuation::decode(state) {
+            Ok(own) => {
+                // A morph target that does not decode is left out; the note plays its own.
+                let other = morph.and_then(|bytes| Continuation::decode(bytes).ok()).map(Arc::new);
+                self.sampler.set_continuation(Some(Arc::new(own)), other);
+                self.sampler.set_continuation_controls(self.continuation_controls());
+                Ok(())
+            }
+            Err(error) => {
+                self.sampler.set_continuation(None, None);
+                Err(DeviceError::InvalidModelState(error.0))
+            }
+        }
+    }
     fn samples(&mut self) -> Option<&mut dyn SampleSource> {
         Some(&mut self.sampler)
     }
@@ -645,9 +683,13 @@ impl Device for Instrument {
         if matches!(index, param::RELEASE | param::ROOT..=param::VELOCITY_HIGH | param::ENVELOPE_DECAY)
             && let Some(info) = PARAMS.get(index)
         {
-            // The Sample layer's Sustain is the sampler's fifth playback (after its Slices).
-            let value = if index == param::PLAYBACK && value == 3.0 { 4.0 } else { value };
+            // The Sample layer's Sustain is the sampler's fifth playback (after its Slices);
+            // Continue is Sustain with the continuation taking over.
+            let value = if index == param::PLAYBACK && value >= 3.0 { 4.0 } else { value };
             self.set_sample_parameter(&info.id, value);
+        }
+        if matches!(index, param::PLAYBACK | param::WIDTH..=param::CONTINUATION_MORPH) {
+            self.sampler.set_continuation_controls(self.continuation_controls());
         }
         if index == param::REVISION && !self.model_supported() {
             self.voices.fill(Voice::default());

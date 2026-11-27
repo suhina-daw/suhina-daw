@@ -11,6 +11,8 @@ use std::f64::consts::{PI, TAU};
 use std::ops::Range;
 
 use rustfft::{FftPlanner, num_complex::Complex64};
+
+use crate::Error;
 use suhina_dsp::continuation::math::{Butter3, Butter3State, C};
 use suhina_dsp::continuation::voice::{Generator, Prepared};
 use suhina_dsp::continuation::{
@@ -38,31 +40,6 @@ const NOISE_FFT: usize = 4096;
 const LEVEL_RENDERS: u64 = 6;
 const COUPLING_RENDERS: u64 = 10;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FitError {
-    InvalidFormat,
-    /// The held region is outside the recording or shorter than 0.4 s.
-    InvalidRange,
-    NonFinite,
-    /// No harmonic pitch near the root was found in the held region.
-    NoPitch,
-    Cancelled,
-}
-
-impl std::fmt::Display for FitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::InvalidFormat => "a continuation needs mono or stereo PCM at 8000..384000 Hz",
-            Self::InvalidRange => "a continuation needs a held region of at least 0.4 s inside the recording",
-            Self::NonFinite => "the recording contains a nonfinite sample",
-            Self::NoPitch => "no steady pitch near the root key was found in the held region",
-            Self::Cancelled => "fitting was cancelled",
-        })
-    }
-}
-
-impl std::error::Error for FitError {}
-
 /// Work units the progress callback counts to.
 pub const FIT_STEPS: usize = 8;
 
@@ -75,26 +52,26 @@ pub fn fit(
     held: Range<usize>,
     root_hz: f64,
     mut progress: impl FnMut(usize, usize) -> bool,
-) -> Result<Continuation, FitError> {
-    let mut step = |done: usize| if progress(done, FIT_STEPS) { Ok(()) } else { Err(FitError::Cancelled) };
+) -> Result<Continuation, Error> {
+    let mut step = |done: usize| if progress(done, FIT_STEPS) { Ok(()) } else { Err(Error::Cancelled) };
     if !(1..=2).contains(&channels) || !(8000..=384_000).contains(&sample_rate) {
-        return Err(FitError::InvalidFormat);
+        return Err(Error::InvalidFormat);
     }
     let channels = usize::from(channels);
     if !samples.len().is_multiple_of(channels) {
-        return Err(FitError::InvalidFormat);
+        return Err(Error::InvalidFormat);
     }
     if !root_hz.is_finite() || !(20.0..=5000.0).contains(&root_hz) {
-        return Err(FitError::NoPitch);
+        return Err(Error::NoPitch);
     }
     let sr = f64::from(sample_rate);
     let frames = samples.len() / channels;
     let min_held = (MIN_HELD_SECONDS * sr) as usize;
     if held.start >= held.end || held.end > frames || held.end - held.start < min_held {
-        return Err(FitError::InvalidRange);
+        return Err(Error::InvalidRange);
     }
     if !samples.iter().all(|v| v.is_finite()) {
-        return Err(FitError::NonFinite);
+        return Err(Error::NonFinite);
     }
     // The analyzed held part: at most its last four seconds.
     let t1 = held.end;
@@ -112,7 +89,7 @@ pub fn fit(
 
     // 1. Pitch track, refined on the harmonics' phases.
     let (fmin, fmax) = (root_hz / 1.3, root_hz * 1.3);
-    let mut f0 = pitch_track(&mono, sr, fmin, fmax).ok_or(FitError::NoPitch)?;
+    let mut f0 = pitch_track(&mono, sr, fmin, fmax).ok_or(Error::NoPitch)?;
     for _ in 0..3 {
         refine(&mono, sr, &mut f0);
     }
@@ -121,7 +98,7 @@ pub fn fit(
     let held_f0 = f0.get(pad..pad + (t1 - t0)).unwrap_or(&[]);
     let median_f0 = median(held_f0);
     if median_f0.is_nan() || median_f0 <= 0.0 {
-        return Err(FitError::NoPitch);
+        return Err(Error::NoPitch);
     }
     let harmonics = ((0.45 * sr / median_f0).floor() as usize).clamp(1, MAX_PARTIALS);
 
@@ -158,7 +135,7 @@ pub fn fit(
     let f0_held = f0.get(audio_segment.clone()).unwrap_or(&[]);
     let f0m = geometric_mean(f0_held);
     if !(20.0..=5000.0).contains(&f0m) {
-        return Err(FitError::NoPitch);
+        return Err(Error::NoPitch);
     }
     let cents: Vec<f64> = f0_held.iter().map(|f| 1200.0 * (f / f0m).log2()).collect();
     let smooth_cents = zero_phase(&cents, 12.0, sr);
@@ -316,7 +293,7 @@ pub fn fit(
     let target = coupling_target(&mono, audio_segment.clone(), &cents, sr, vibrato_hz);
     trial_renders(&mut continuation, sr, target, &mono, audio_segment)?;
     step(7)?;
-    continuation.validate().map_err(|_| FitError::NoPitch)?;
+    continuation.validate().map_err(|_| Error::NoPitch)?;
     step(8)?;
     Ok(continuation)
 }
@@ -1088,7 +1065,7 @@ fn trial_renders(
     target: [f64; 3],
     mono: &[f64],
     segment: Range<usize>,
-) -> Result<(), FitError> {
+) -> Result<(), Error> {
     let prepared = Prepared::new(continuation, sr);
     let mut generator = Generator::new(&prepared, None);
     generator.set_raw(true);

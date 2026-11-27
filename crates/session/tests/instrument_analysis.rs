@@ -241,6 +241,7 @@ fn sample_proposals_are_explicit_atomic_cancellable_and_tied_to_the_current_sour
     chord_notes_lifecycle();
     phrase_notes_lifecycle();
     recording_engine_lifecycle();
+    continuation_lifecycle();
 }
 
 fn strike(scale: f64) -> Vec<f32> {
@@ -605,6 +606,67 @@ fn phrase_notes_lifecycle() {
     // A Sampler has no fitted model to fit a phrase into.
     run(&mut session, "device.add", json!({"id":"sampler"}));
     assert!(session.execute("instrument.fitPhrase", &json!({"track":1,"device":1})).is_err());
+}
+
+/// A held tone's continuation: fitted on the loop region without changing the project, accepted
+/// in one undo step with Sample playback set to Continue, and taken as another Instrument's
+/// morph target.
+fn continuation_lifecycle() {
+    let folder = super::temp_dir::TempDir::new("instrument-continuation");
+    let path = folder.join("authored-held-vibrato-tone.wav");
+    let rate = 16_000.0;
+    let mut phase = 0.0_f64;
+    let tone: Vec<f32> = (0..32_000)
+        .map(|i| {
+            let t = i as f64 / rate;
+            phase += std::f64::consts::TAU * 220.0 * 2f64.powf(20.0 * (std::f64::consts::TAU * 5.5 * t).sin() / 1200.0)
+                / rate;
+            ((1..=8).map(|k| (phase * k as f64).sin() / k as f64).sum::<f64>() * 0.2) as f32
+        })
+        .collect();
+    suhina_test_support::write_wav(&path, 16_000, 1, suhina_test_support::WavFormat::Float32, &tone);
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({"id":"instrument"}));
+    run(&mut session, "device.loadSample", json!({"path":path}));
+    for (param, value) in [("root", 57.0), ("loop_start", 0.25), ("loop_end", 0.9)] {
+        run(&mut session, "device.setParam", json!({"param":param,"value":value}));
+    }
+    let before = session.project().clone();
+    let job = run(&mut session, "instrument.fitContinuation", json!({}));
+    assert_eq!(job["kind"], "continuation");
+    session.sync_instrument_analysis();
+    let status = run(&mut session, "instrument.analysis", json!({}));
+    assert_eq!(status["status"], "ready", "{status}");
+    let f0 = status["continuation"]["f0"].as_f64().unwrap();
+    assert!((f0 - 220.0).abs() < 3.0, "{status}");
+    assert_eq!(session.project(), &before, "a continuation fit changes nothing until accepted");
+    let depth = session.undo_steps();
+    let accepted = run(&mut session, "instrument.acceptContinuation", json!({"job":job["job"]}));
+    assert_eq!(accepted["playback"], "continue", "{accepted}");
+    assert_eq!(session.undo_steps().0, depth.0 + 1);
+    let device = &session.project().channels[0].devices[0];
+    let bytes = device.instrument_continuation().unwrap().to_vec();
+    let continuation = suhina_dsp::continuation::Continuation::decode(&bytes).unwrap();
+    assert!(continuation.join > 1.0 && continuation.join <= 1.8, "{}", continuation.join);
+    assert_eq!(device.params.iter().find(|p| p.id == "playback").map(|p| p.value), Some(4.0));
+    // A second Instrument morphs toward the first one's continuation.
+    run(&mut session, "device.add", json!({"id":"instrument"}));
+    run(&mut session, "instrument.setContinuationMorph", json!({"device":1,"fromTrack":1,"fromDevice":0}));
+    assert_eq!(session.project().channels[0].devices[1].instrument_continuation_morph(), Some(bytes.as_slice()));
+    run(&mut session, "instrument.setContinuationMorph", json!({"device":1,"clear":true}));
+    assert!(session.project().channels[0].devices[1].instrument_continuation_morph().is_none());
+    // An Instrument without a continuation is no morph target.
+    assert!(
+        session
+            .execute("instrument.setContinuationMorph", &json!({"track":1,"device":0,"fromTrack":1,"fromDevice":1}))
+            .is_err()
+    );
+    // Undo (the clear, the morph, the second Instrument, the accept) takes the continuation away.
+    for _ in 0..4 {
+        session.execute("edit.undo", &json!({})).unwrap();
+    }
+    let device = &session.project().channels[0].devices[0];
+    assert!(device.instrument_continuation().is_none());
 }
 
 /// A held tone's fit chooses the recording engine: accepting it plays the Sample source with

@@ -24,7 +24,7 @@ pub(super) fn canvas() -> DeviceUi {
         [632.0, 40.0, 220.0, 30.0],
         "Choose the modal body, local sample, or their Hybrid mix",
     );
-    for (i, name) in ["Play", "Model", "Sample"].into_iter().enumerate() {
+    for (i, name) in ["Play", "Model", "Sample", "Hold"].into_iter().enumerate() {
         ui.navigate(name, [24.0 + i as f32 * 144.0, 92.0, 132.0, 32.0], i as u16, false);
     }
 
@@ -175,7 +175,7 @@ pub(super) fn canvas() -> DeviceUi {
         "playback",
         "Sample playback",
         [182.0, 326.0, 148.0, 28.0],
-        "Gate follows the key, One shot runs to the end, Loop repeats the loop region",
+        "Gate follows the key, One shot runs to the end, Loop repeats the loop region, Sustain holds in segments of the loop region, Continue holds with the fitted continuation",
     );
     for (i, (id, label)) in
         [("start", "Source start"), ("end", "Source end"), ("loop_start", "Loop start"), ("loop_end", "Loop end")]
@@ -194,6 +194,33 @@ pub(super) fn canvas() -> DeviceUi {
         None,
         UiGesture::Drag,
         "Analyze the loaded sample locally, check its root proposal, then accept one undoable change",
+    );
+
+    // Continue playback: the held note carried on by the fitted continuation.
+    ui.page(3);
+    ui.group("HELD NOTE CONTINUATION", [24.0, 144.0, 832.0, 192.0]);
+    for (i, (id, name, hint)) in [
+        ("width", "Width", "Stereo width of the continuation and the recording around it; 0 is mono"),
+        (
+            "vibrato_depth",
+            "Vibrato depth",
+            "The vibrato's depth as a factor of the recorded; beyond 1 every partial follows it fully",
+        ),
+        ("vibrato_rate", "Vibrato rate", "The vibrato's rate in Hz; 0 keeps the recorded rate"),
+        (
+            "continuation_morph",
+            "Hold morph",
+            "Morph toward the second continuation set with instrument.setContinuationMorph; next note",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ui.dial(id, name, [54.0 + i as f32 * 200.0, 192.0, 140.0, 124.0], hint);
+    }
+    ui.label(
+        "Set Sample playback to Continue and fit the continuation on the Sample page: the note plays its recording up to the loop region's end, then the model carries it on.",
+        [24.0, 352.0, 832.0, 40.0],
     );
     ui.finish()
 }

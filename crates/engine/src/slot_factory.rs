@@ -164,6 +164,10 @@ impl SlotFactory<'_> {
             // the persisted bytes remain available; never substitute another modal revision.
             let _ = device.load_model_state(model);
         }
+        if let Some(continuation) = stored.instrument_continuation() {
+            // A continuation that fails to load leaves held notes holding as before.
+            let _ = device.load_continuation_state(continuation, stored.instrument_continuation_morph());
+        }
         // What a chain gives a device that plays samples: the decoded sample, the manual slices
         // and the source corrections.
         let slices: Option<std::sync::Arc<[f64]>> = stored.sample_slices().map(std::sync::Arc::from);

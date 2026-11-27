@@ -304,11 +304,20 @@ pub(crate) fn device_identity(
                 format!("{id}:{file}:{source:?}")
             },
         );
-        if let Some(profile) = stored.instrument_modal_profile() {
+        let source = if let Some(profile) = stored.instrument_modal_profile() {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             profile.hash(&mut hasher);
             format!("{source}:model:{:016x}", hasher.finish())
+        } else {
+            source
+        };
+        if let Some(continuation) = stored.instrument_continuation() {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            continuation.hash(&mut hasher);
+            stored.instrument_continuation_morph().hash(&mut hasher);
+            format!("{source}:continuation:{:016x}", hasher.finish())
         } else {
             source
         }

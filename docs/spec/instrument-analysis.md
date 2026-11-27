@@ -165,6 +165,10 @@ The command path is shared by desktop, CLI and MCP:
 - `instrument.analyzeSample` starts a bounded job for a named device and returns its job id.
 - `instrument.analysis` reads that device's latest job/proposal and progress.
 - `instrument.cancelAnalysis` cooperatively cancels a named job without waiting on the UI thread.
+- `instrument.fitContinuation`, `instrument.acceptContinuation` and
+  `instrument.setContinuationMorph` fit, adopt and morph a held note's continuation on the same
+  job path ([a held note continued past its recording](instrument-held-continuation.md) ›
+  Commands).
 - `instrument.acceptAnalysis` accepts a completed, current proposal and optionally a corrected
   MIDI root. It changes the existing root parameter and overrides its enabled automation lane
   through the normal manual-edit contract, preserving lane points, in one undo/redo step.

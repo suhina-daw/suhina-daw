@@ -14,6 +14,8 @@ use suhina_dsp::{
 };
 
 use crate::nodes::stretch as warp;
+use crate::sample_continuation::{ContinuationControls, ContinuationPlayer, ModelHold, fade_in, widen};
+use suhina_dsp::continuation::Continuation;
 
 #[cfg(test)]
 #[path = "sample_envelope_tests.rs"]
@@ -357,6 +359,8 @@ struct Voice {
     active: bool,
     /// Sustain playback: the segments holding the note once it reaches the loop region.
     hold: Hold,
+    /// Continue playback: the model taking over from the recording.
+    model: ModelHold,
     deferred_release: bool,
     age: f64,
     key: u8,
@@ -383,6 +387,7 @@ impl Default for Voice {
         Self {
             active: false,
             hold: Hold::default(),
+            model: ModelHold::default(),
             deferred_release: false,
             age: 0.,
             key: 60,
@@ -438,6 +443,9 @@ pub struct Sampler {
     block_grain_gain: f64,
     block_gain: f64,
     pan: f64,
+    /// Continue playback (the Instrument's): the continuation and its controls.
+    continuation: Option<Box<ContinuationPlayer>>,
+    continuation_controls: ContinuationControls,
 }
 impl Default for Sampler {
     fn default() -> Self {
@@ -483,6 +491,8 @@ impl Sampler {
             block_grain_gain: 1.,
             block_gain: 1.,
             pan: 0.,
+            continuation: None,
+            continuation_controls: ContinuationControls::default(),
         }
     }
     fn frames(&self) -> usize {
@@ -493,6 +503,59 @@ impl Sampler {
     fn build_warp(&mut self) {
         self.warp = vec![warp::Voice::new(self.rate); VOICES];
     }
+
+    /// Sets the held-note continuation and the one it morphs toward (Continue playback), or
+    /// none; builds its generators for the current rate. Off the audio thread: allocates.
+    pub fn set_continuation(&mut self, own: Option<Arc<Continuation>>, other: Option<Arc<Continuation>>) {
+        for voice in &mut self.voices {
+            voice.model.generator = None;
+        }
+        self.continuation = own.map(|own| Box::new(ContinuationPlayer::new(own, other, self.rate)));
+    }
+
+    /// Whether a continuation is set.
+    pub fn has_continuation(&self) -> bool {
+        self.continuation.is_some()
+    }
+
+    /// Continue playback on or off, and the controls a continuing note follows. Real-time safe;
+    /// the morph applies to the next note.
+    pub fn set_continuation_controls(&mut self, controls: ContinuationControls) {
+        self.continuation_controls = controls;
+    }
+
+    /// Frees generators whose voice no longer plays them, and passes the vibrato controls on.
+    fn tend_continuation(&mut self) {
+        let Some(player) = self.continuation.as_deref_mut() else { return };
+        let controls = self.continuation_controls;
+        for slot in 0..crate::sample_continuation::POOL {
+            let owner = player.owners.get(slot).copied().flatten();
+            let playing = owner
+                .and_then(|voice| self.voices.get(voice))
+                .is_some_and(|voice| voice.active && voice.model.generator == Some(slot));
+            if owner.is_some() && !playing {
+                player.free(slot);
+            } else if playing && let Some(generator) = player.generators.get_mut(slot) {
+                generator.set_vibrato(controls.depth, controls.rate);
+            }
+        }
+    }
+
+    /// Plans the release splice of voice `index`, when it plays its model and the recording has
+    /// a release of its own.
+    fn plan_splice(&mut self, index: usize) {
+        let Some(player) = self.continuation.as_deref_mut() else { return };
+        let Some(v) = self.voices.get_mut(index) else { return };
+        let Some(slot) = v.model.generator.filter(|_| v.model.joined && v.model.splice.is_none()) else { return };
+        let source = self.source.as_ref().as_ref();
+        if let Some(splice) = player.splice(slot, source, self.channels, self.source_rate, v.step) {
+            v.model.splice = Some(splice);
+        }
+    }
+}
+/// The frame at `position` (source frames) of an interleaved source, linearly interpolated.
+pub(crate) fn read_frame(source: &[f32], channels: usize, position: f64) -> [f64; 2] {
+    read(source, channels, position)
 }
 fn read(source: &[f32], channels: usize, position: f64) -> [f64; 2] {
     let frames = source.len() / channels.max(1);
@@ -509,6 +572,71 @@ fn read(source: &[f32], channels: usize, position: f64) -> [f64; 2] {
         let value = a + (b - a) * fraction;
         if value.is_finite() { value } else { 0. }
     })
+}
+/// One sample of a continuing voice once its model has taken over: the model, crossfaded in
+/// from the recording over the join and out into the recording's release at a splice. None
+/// before the join, after a splice and without a generator: the recording plays as before.
+/// Before the join, generates the model ahead.
+fn continue_voice(
+    v: &mut Voice,
+    player: Option<&mut ContinuationPlayer>,
+    source: &[f32],
+    channels: usize,
+    width: f64,
+) -> Option<[f64; 2]> {
+    let slot = v.model.generator?;
+    let player = player?;
+    let crossfade = player.crossfade();
+    let generator = player.generators.get_mut(slot)?;
+    generator.set_pitch_ratio(v.step / v.model.step.max(1e-12));
+    if !v.model.joined && v.position >= v.model.join {
+        v.model.joined = true;
+        v.model.fade = 0;
+    }
+    if !v.model.joined {
+        // Two control frames per control frame's time: the lookahead fills before the join.
+        if v.model.tick.is_multiple_of((generator.control_samples() / 2).max(1)) {
+            generator.produce(1);
+        }
+        v.model.tick = v.model.tick.wrapping_add(1);
+        return None;
+    }
+    let [mid, side] = generator.next();
+    let (mid, side) = (f64::from(mid), f64::from(side) * width);
+    let mut out = [mid + side, mid - side];
+    if v.model.fade < crossfade {
+        let recording = widen(read(source, channels, v.position), width);
+        v.position += v.step;
+        let w = fade_in(v.model.fade, crossfade);
+        out = [recording[0] * (1.0 - w) + out[0] * w, recording[1] * (1.0 - w) + out[1] * w];
+        v.model.fade += 1;
+    }
+    if let Some((countdown, gain, start)) = v.model.splice {
+        if countdown == 0 {
+            v.model.splice = None;
+            v.model.splicing = Some(0);
+            v.model.gain = gain;
+            v.position = start;
+        } else {
+            v.model.splice = Some((countdown - 1, gain, start));
+        }
+    }
+    if let Some(k) = v.model.splicing {
+        let recording = widen(read(source, channels, v.position), width).map(|s| s * v.model.gain);
+        v.position += v.step;
+        let w = fade_in(k, crossfade);
+        out = [out[0] * (1.0 - w) + recording[0] * w, out[1] * (1.0 - w) + recording[1] * w];
+        if k + 1 >= crossfade {
+            // The recording carries on from here; the generator is free for another note.
+            v.model.splicing = None;
+            v.model.generator = None;
+            v.model.joined = false;
+            player.free(slot);
+        } else {
+            v.model.splicing = Some(k + 1);
+        }
+    }
+    Some(out)
 }
 fn source_fade(position: f64, start: f64, end: f64, fade_in: f64, fade_out: f64, rate: f64) -> f64 {
     let fade = |distance: f64, ms: f64| if ms > 0. { (distance / (ms * rate / 1000.)).clamp(0., 1.) } else { 1. };
@@ -606,6 +734,14 @@ impl Device for Sampler {
         if moved && self.frames() > 0 {
             self.build_warp();
         }
+        if let Some(player) = self.continuation.take() {
+            // Generators are built for one rate.
+            self.continuation = Some(if player.rate == rate {
+                player
+            } else {
+                Box::new(ContinuationPlayer::new(player.own.clone(), player.other.clone(), rate))
+            });
+        }
         self.reset();
         Ok(())
     }
@@ -613,6 +749,11 @@ impl Device for Sampler {
         self.voices.fill(Voice::default());
         for voice in &mut self.warp {
             voice.restart();
+        }
+        if let Some(player) = self.continuation.as_deref_mut() {
+            for slot in 0..crate::sample_continuation::POOL {
+                player.free(slot);
+            }
         }
         self.next_voice = 0;
         self.seed = 1;
@@ -726,12 +867,18 @@ impl Device for Sampler {
                 let slot = self.voices.iter().take(count).position(|v| !v.active).unwrap_or(self.next_voice % count);
                 self.next_voice = (slot + 1) % count;
                 let frames = self.frames() as f64;
+                // Continue playback: forward Sustain with a continuation set.
+                let controls = self.continuation_controls;
+                let continuing = controls.enabled && p[0] == 0. && p[8] == 4. && p[10] == 0.;
                 if let Some(v) = self.voices.get_mut(slot) {
                     if v.active && p[47] == 0. && !slices {
                         v.key = key;
                         v.velocity = f64::from(velocity.clamp(0., 1.));
                         v.deferred_release = false;
                         return;
+                    }
+                    if let (Some(generator), Some(player)) = (v.model.generator, self.continuation.as_deref_mut()) {
+                        player.free(generator);
                     }
                     let fade_from = v.last;
                     if let Some(warp) = self.warp.get_mut(slot) {
@@ -753,12 +900,25 @@ impl Device for Sampler {
                         ..Voice::default()
                     };
                     v.envelope.start();
+                    if continuing && let Some(player) = self.continuation.as_deref_mut() {
+                        let ratio = target_step * self.rate / self.source_rate;
+                        let seed = (u64::from(self.seed) << 8) | u64::from(key);
+                        self.seed = self.seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        v.model = ModelHold {
+                            on: true,
+                            generator: player.claim(slot, ratio, &controls, seed),
+                            join: player.join_frame(self.source_rate),
+                            step: target_step,
+                            ..ModelHold::default()
+                        };
+                    }
                 }
             }
             NoteEvent::Off { key, .. } | NoteEvent::On { key, velocity: 0. } => {
                 let slicing = self.values[0] == 2. || self.values[0] == 0. && self.values[8] == 3.;
                 if slicing && self.values[84] > 0. || !slicing && self.values[8] != 1. && self.values[8] != 3. {
-                    for v in &mut self.voices {
+                    for index in 0..self.voices.len() {
+                        let Some(v) = self.voices.get_mut(index) else { continue };
                         if v.key == key && v.active {
                             if self.pedal {
                                 // A released tail keeps advancing; pedal-up must not recapture it.
@@ -767,6 +927,7 @@ impl Device for Sampler {
                                 }
                             } else {
                                 v.release();
+                                self.plan_splice(index);
                             }
                         }
                     }
@@ -774,17 +935,22 @@ impl Device for Sampler {
             }
             NoteEvent::AllNotesOff => {
                 self.pedal = false;
-                for v in &mut self.voices {
-                    v.release();
+                for index in 0..self.voices.len() {
+                    if let Some(v) = self.voices.get_mut(index) {
+                        v.release();
+                        self.plan_splice(index);
+                    }
                 }
             }
             NoteEvent::Controller { number: 64, value } if value.is_finite() => {
                 let was_down = self.pedal;
                 self.pedal = value >= 0.5;
                 if was_down && !self.pedal {
-                    for voice in &mut self.voices {
+                    for index in 0..self.voices.len() {
+                        let Some(voice) = self.voices.get_mut(index) else { continue };
                         if voice.deferred_release {
                             voice.release();
+                            self.plan_splice(index);
                         }
                     }
                 }
@@ -1036,6 +1202,7 @@ impl Sampler {
         self.block_grain_limit = grain_limit;
         self.block_grain_gain = target_grain_gain;
         self.block_gain = target_gain;
+        self.tend_continuation();
     }
 
     pub(crate) fn process_prepared(&mut self, buffer: &mut [f32]) {
@@ -1049,6 +1216,7 @@ impl Sampler {
         // Sustain: the note plays from its start, then holds in segments of the loop region.
         let sustaining = p[0] == 0. && p[8] == 4. && p[10] == 0.;
         let period = hold_period(self.source_rate, p[30]);
+        let width = self.continuation_controls.width;
         let grain_limit = self.block_grain_limit;
         let target_grain_gain = self.block_grain_gain;
         let target_gain = self.block_gain;
@@ -1129,11 +1297,23 @@ impl Sampler {
                     seam,
                     shortest,
                 };
-                if sustaining && !v.hold.active && hold_high > lo && v.position >= lo {
+                let continued = continue_voice(
+                    v,
+                    self.continuation.as_deref_mut(),
+                    self.source.as_ref().as_ref(),
+                    self.channels,
+                    width,
+                );
+                if sustaining && !v.hold.active && v.model.generator.is_none() && hold_high > lo && v.position >= lo {
                     v.hold.enter(&from, v.position, self.rate, &mut self.seed);
                 }
-                if v.hold.active {
+                if let Some(model) = continued {
+                    signal = model;
+                } else if v.hold.active {
                     signal = v.hold.next(&from, &mut self.seed, self.source_rate);
+                    if v.model.on {
+                        signal = widen(signal, width);
+                    }
                 } else if p[0] != 1. {
                     if v.position < start || v.position >= end {
                         v.active = false;
@@ -1179,6 +1359,11 @@ impl Sampler {
                         if looping && v.position >= lo && v.position < hi { (lo, hi) } else { (start, end) };
                     let fade = source_fade(v.position, fade_start, fade_end, p[57], p[58], self.source_rate);
                     signal.iter_mut().for_each(|sample| *sample *= fade);
+                    if v.model.on {
+                        // A continuing note's recording, widened as its model is, and after a
+                        // release splice at the splice's gain.
+                        signal = widen(signal, width).map(|sample| sample * v.model.gain);
+                    }
                     v.position +=
                         if warped { speed * self.source_rate / self.rate * v.direction } else { v.step * v.direction };
                     let boundary = if p[9] > 0. { hi - 1. } else { hi };

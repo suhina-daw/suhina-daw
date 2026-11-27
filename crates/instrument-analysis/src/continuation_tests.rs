@@ -110,14 +110,14 @@ fn a_release_after_the_held_part_is_found() {
 #[test]
 fn bad_input_is_refused() {
     let samples = tone(1.5, 20.0, false, false);
-    assert_eq!(fit(&samples, RATE, 3, held(0.2, 1.2), 440.0, |_, _| true), Err(FitError::InvalidFormat));
-    assert_eq!(fit(&samples, 4000, 2, held(0.2, 1.2), 440.0, |_, _| true), Err(FitError::InvalidFormat));
-    assert_eq!(fit(&samples, RATE, 2, held(0.2, 0.4), 440.0, |_, _| true), Err(FitError::InvalidRange));
-    assert_eq!(fit(&samples, RATE, 2, held(0.2, 9.0), 440.0, |_, _| true), Err(FitError::InvalidRange));
-    assert_eq!(fit(&samples, RATE, 2, held(0.2, 1.2), f64::NAN, |_, _| true), Err(FitError::NoPitch));
+    assert_eq!(fit(&samples, RATE, 3, held(0.2, 1.2), 440.0, |_, _| true), Err(Error::InvalidFormat));
+    assert_eq!(fit(&samples, 4000, 2, held(0.2, 1.2), 440.0, |_, _| true), Err(Error::InvalidFormat));
+    assert_eq!(fit(&samples, RATE, 2, held(0.2, 0.4), 440.0, |_, _| true), Err(Error::InvalidRange));
+    assert_eq!(fit(&samples, RATE, 2, held(0.2, 9.0), 440.0, |_, _| true), Err(Error::InvalidRange));
+    assert_eq!(fit(&samples, RATE, 2, held(0.2, 1.2), f64::NAN, |_, _| true), Err(Error::NoPitch));
     let mut broken = samples.clone();
     broken[100] = f32::NAN;
-    assert_eq!(fit(&broken, RATE, 2, held(0.2, 1.2), 440.0, |_, _| true), Err(FitError::NonFinite));
+    assert_eq!(fit(&broken, RATE, 2, held(0.2, 1.2), 440.0, |_, _| true), Err(Error::NonFinite));
     let silent = vec![0.0_f32; samples.len()];
     assert!(fit(&silent, RATE, 2, held(0.2, 1.2), 440.0, |_, _| true).is_err());
 }
@@ -130,5 +130,5 @@ fn fitting_can_be_cancelled() {
         calls += 1;
         calls < 3
     });
-    assert_eq!(result, Err(FitError::Cancelled));
+    assert_eq!(result, Err(Error::Cancelled));
 }

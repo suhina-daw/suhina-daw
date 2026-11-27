@@ -29,6 +29,7 @@ fn admission_and_late_completion_have_no_timing_dependency() {
             end: 1.0,
             root: 60.0,
             profile: None,
+            held: None,
         },
         cancel: flag.clone(),
         progress: Arc::new([AtomicUsize::new(0), AtomicUsize::new(0)]),
@@ -41,6 +42,7 @@ fn admission_and_late_completion_have_no_timing_dependency() {
         pending_state: None,
         comparison: None,
         folder: None,
+        continuation: None,
     };
     job.receive(false);
     assert_eq!(job.phase, AnalysisPhase::Running);

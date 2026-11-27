@@ -809,6 +809,14 @@ pub trait Device: Send {
         Err(DeviceError::InvalidModelState("this device has no native model loader"))
     }
 
+    /// Prepare a held note's continuation (`docs/spec/instrument-held-continuation.md`) off the
+    /// audio thread, as [`load_model_state`](Self::load_model_state) does for the model: `state`
+    /// is the continuation's encoding, and `morph` the encoding of the one it morphs toward. A
+    /// rejected continuation leaves held notes holding as before.
+    fn load_continuation_state(&mut self, _state: &[u8], _morph: Option<&[u8]>) -> Result<(), DeviceError> {
+        Err(DeviceError::InvalidModelState("this device has no continuation"))
+    }
+
     /// Live values for the device's panel (a band's level, its gain change), read after each
     /// block: up to [`MAX_READOUTS`], in an order the device's panel knows. `None` for a device
     /// that shows none. Runs on the audio thread: no allocation.

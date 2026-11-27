@@ -41,6 +41,8 @@ pub enum Error {
     NonFinite,
     Cancelled,
     InvalidSettings,
+    /// No steady harmonic pitch near the root was found (a continuation's held region).
+    NoPitch,
 }
 
 impl std::fmt::Display for Error {
@@ -51,6 +53,7 @@ impl std::fmt::Display for Error {
             Self::NonFinite => "the analyzed audio contains a nonfinite sample",
             Self::Cancelled => "analysis was cancelled",
             Self::InvalidSettings => "analysis settings are outside the supported bounds",
+            Self::NoPitch => "no steady pitch near the root key was found in the held region",
         })
     }
 }

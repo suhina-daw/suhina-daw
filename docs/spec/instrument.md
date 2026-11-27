@@ -53,7 +53,10 @@ while the newest held note continues. Retiring an inaudible sample source preser
 pedal and pitch-wheel state for the next note.
 
 Sample uses the SDK's existing sample runtime. Root, key range, source trim, loop bounds and
-Gate / One shot / Loop playback describe a single-source key map. Hybrid mixes this source
+Gate / One shot / Loop / Sustain / Continue playback describe a single-source key map; Continue
+holds a note past its recording with the fitted continuation and its Width, Vibrato depth,
+Vibrato rate and Hold morph controls on the editor's Hold page
+([a held note continued past its recording](instrument-held-continuation.md)). Hybrid mixes this source
 with the modal body; it does not infer a physical model from the source. Missing sample files
 produce silence in Sample mode, and leave the modal body audible in Hybrid mode.
 

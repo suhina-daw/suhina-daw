@@ -96,6 +96,12 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
             if folder.clicked() {
                 actions.push(Action::new("ui.instrumentFitFolder",json!({"track":track_value,"device":device_value})));
             }
+            // A held note carried on past its recording, fitted on the loop region.
+            let hold = flow_button(ui, "Fit hold", !running);
+            remember_keyboard_owner(&hold);
+            if hold.clicked() {
+                actions.push(Action::new("instrument.fitContinuation",json!({"track":track_value,"device":device_value})));
+            }
             if let Some(view) = view.filter(|v| running || v.phase == AnalysisPhase::Ready) {
                 let cancel = flow_button(ui, if running { "Cancel analysis" } else { "Discard proposal" }, true);
                 remember_keyboard_owner(&cancel);
@@ -116,6 +122,7 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
                     AnalysisKind::Modal => "Fitting resonances locally…".to_owned(),
                     AnalysisKind::Folder => format!("Fitting {} of {} locally…", (view.completed + 1).min(view.total.max(1)), view.total.max(1)),
                     AnalysisKind::Root => "Analyzing locally…".to_owned(),
+                    AnalysisKind::Continuation => "Fitting the held note's continuation locally…".to_owned(),
                 };
                 progress_bar(ui, fraction, &text);
                 ui.ctx().request_repaint();
@@ -123,6 +130,24 @@ pub(crate) fn show(ui: &mut Ui, bounds: Rect, track: TrackId, at: &DeviceAt, act
             AnalysisPhase::Ready => {
                 if let Some(folder) = &view.folder {
                     folder_ready(ui, view, folder, &track_value, &device_value, actions);
+                    return;
+                }
+                if let Some(fitted) = view.continuation {
+                    let mut summary = format!("Continuation: {} partials of {:.1} Hz", fitted.partials, fitted.f0);
+                    if fitted.vibrato_hz > 0.0 {
+                        summary.push_str(&format!(" · vibrato {:.1} Hz ±{:.0} cents", fitted.vibrato_hz, fitted.vibrato_cents));
+                    }
+                    summary.push_str(if fitted.stereo { " · stereo" } else { " · mono" });
+                    summary.push_str(&format!(" · takes over at {:.2} s", fitted.join));
+                    if fitted.release > 0.0 {
+                        summary.push_str(&format!(" · own release at {:.2} s", fitted.release));
+                    }
+                    ui.label(summary);
+                    let accept = flow_button(ui, "Accept continuation", true);
+                    remember_keyboard_owner(&accept);
+                    if accept.clicked() {
+                        actions.push(Action::new("instrument.acceptContinuation",json!({"track":track_value,"device":device_value,"job":view.job})));
+                    }
                     return;
                 }
                 if let Some(report) = &view.modal {

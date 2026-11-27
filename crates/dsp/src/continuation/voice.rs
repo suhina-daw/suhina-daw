@@ -256,6 +256,8 @@ struct Pitch {
     /// Expected mean square of the deviation, for the level shaping.
     mean_square: f64,
     level: f64,
+    /// The pitch the deviation is counted from: the model's, moved by the voice's pitch ratio.
+    base: f64,
 }
 
 /// Plays one note's continuation. See the module documentation.
@@ -325,6 +327,8 @@ pub struct Generator {
     jitter_filter: Butter3,
     jitter_state: Butter3State,
     jitter_variance: f64,
+    /// What the voice's pitch wheel, LFO or glide moves the note by, as a frequency ratio.
+    pitch_ratio: f64,
     phase: f64,
     deviation: f64,
     active: bool,
@@ -417,6 +421,7 @@ impl Generator {
             jitter_filter: Butter3::new(JITTER_HZ, CONTROL_HZ),
             jitter_state: Butter3State::default(),
             jitter_variance: 0.0,
+            pitch_ratio: 1.0,
             phase: 0.0,
             deviation: 0.0,
             active: false,
@@ -499,6 +504,7 @@ impl Generator {
         self.jitter_state = Butter3State::default();
         self.phase = model.phase;
         self.deviation = model.deviation_phase;
+        self.pitch_ratio = 1.0;
         self.active = count > 0 && model.f0 > 0.0;
     }
 
@@ -516,6 +522,17 @@ impl Generator {
 
     pub fn is_active(&self) -> bool {
         self.active
+    }
+
+    /// Samples per control frame.
+    pub fn control_samples(&self) -> usize {
+        self.control
+    }
+
+    /// Moves the whole note by `ratio` (the pitch wheel, an LFO, a glide), from the next control
+    /// frame: every partial moves with it, whatever share of the vibrato it follows.
+    pub fn set_pitch_ratio(&mut self, ratio: f64) {
+        self.pitch_ratio = if ratio.is_finite() { ratio.clamp(0.0625, 16.0) } else { 1.0 };
     }
 
     /// Renders without the level shaping, level gain and event limit (the fit's trial renders).
@@ -701,11 +718,12 @@ impl Generator {
         let cents = vibrato + jitter;
         // Vibrato beyond the recorded depth moves every partial fully.
         let extra = if self.depth > 1.0 { vibrato * (1.0 - 1.0 / self.depth) } else { 0.0 };
-        let f0 = model.f0 * 2.0_f64.powf(cents / 1200.0);
-        let f0_main = model.f0 * 2.0_f64.powf((cents - extra) / 1200.0);
+        let base = model.f0 * self.pitch_ratio;
+        let f0 = base * 2.0_f64.powf(cents / 1200.0);
+        let f0_main = base * 2.0_f64.powf((cents - extra) / 1200.0);
         let nominal = model.vibrato_cents * self.depth;
         let mean_square = nominal * nominal * (2.0 * DEPTH_SD * DEPTH_SD).exp() / 2.0 + self.jitter_variance;
-        Pitch { cents, velocity, f0, f0_main, mean_square, level: self.level_wander.exp() }
+        Pitch { cents, velocity, f0, f0_main, mean_square, level: self.level_wander.exp(), base }
     }
 
     /// The samples of frame interval `j` (`j * control` to `(j + 1) * control`).
@@ -717,9 +735,10 @@ impl Generator {
         let end = self.pitches.get((j + 1) as usize % PITCH_FRAMES).copied().unwrap_or_default();
         let dt = self.control as f64 / self.sample_rate;
         let f0 = self.model.f0;
-        // Phases at the interval's start and end; the frequency is linear across it.
+        // Phases at the interval's start and end; the frequency is linear across it. The
+        // deviation counts from each frame's base, so a bend moves every partial alike.
         let phase_end = self.phase + PI * dt * (start.f0 + end.f0);
-        let deviation_end = self.deviation + PI * dt * ((start.f0_main - f0) + (end.f0_main - f0));
+        let deviation_end = self.deviation + PI * dt * ((start.f0_main - start.base) + (end.f0_main - end.base));
         let count = self.model.count.min(MAX_PARTIALS);
         let limit = super::PARTIAL_LIMIT * self.sample_rate;
         let match_frames = MATCH_TAU * CONTROL_HZ;
@@ -728,8 +747,8 @@ impl Generator {
             let h = (k + 1) as f64;
             let gamma = f64::from(partial.gamma);
             let theta = h * (self.phase - (1.0 - gamma) * self.deviation);
-            let omega0 = TAU * h * (start.f0 - (1.0 - gamma) * (start.f0_main - f0)) / self.sample_rate;
-            let omega1 = TAU * h * (end.f0 - (1.0 - gamma) * (end.f0_main - f0)) / self.sample_rate;
+            let omega0 = TAU * h * (start.f0 - (1.0 - gamma) * (start.f0_main - start.base)) / self.sample_rate;
+            let omega1 = TAU * h * (end.f0 - (1.0 - gamma) * (end.f0_main - end.base)) / self.sample_rate;
             voice.rotor = if h * f0.max(start.f0).max(end.f0) > limit { C::ZERO } else { C::cis(theta) };
             voice.step = C::cis(omega0 + (omega1 - omega0) / (2.0 * n as f64));
             voice.turn = C::cis((omega1 - omega0) / n as f64);

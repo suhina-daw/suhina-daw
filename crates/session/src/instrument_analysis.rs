@@ -10,6 +10,7 @@ use std::sync::{
 };
 
 use serde_json::{Value, json};
+use suhina_dsp::continuation::Continuation;
 use suhina_dsp::modal::model::{MODEL_MAGIC, MODEL_REVISION, ModelSet};
 use suhina_instrument_analysis::{Outcome, Report, modal};
 use suhina_model::{AudioData, ChannelId, Device, DeviceId, DeviceKind};
@@ -62,6 +63,8 @@ pub enum AnalysisKind {
     Modal,
     /// A folder of one-note files fitted into one model; see instrument-modal-fitting.md.
     Folder,
+    /// A held note's continuation, fitted on the loop region; see instrument-held-continuation.md.
+    Continuation,
 }
 
 impl AnalysisKind {
@@ -70,6 +73,7 @@ impl AnalysisKind {
             Self::Root => "root",
             Self::Modal => "modal",
             Self::Folder => "folder",
+            Self::Continuation => "continuation",
         }
     }
 }
@@ -78,6 +82,7 @@ enum Prepared {
     Root(Report),
     Modal(Box<modal::Report>),
     Folder(Box<FolderReport>),
+    Continuation(Box<Continuation>),
 }
 
 impl AnalysisPhase {
@@ -112,6 +117,35 @@ pub struct AnalysisView {
     pub comparison: Option<suhina_instrument_analysis::compare::Comparison>,
     /// A folder fit's files and recordings.
     pub folder: Option<FolderReport>,
+    /// A fitted continuation, ready to accept.
+    pub continuation: Option<ContinuationSummary>,
+}
+
+/// What a fitted continuation measured, for the panel and the CLI.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ContinuationSummary {
+    pub f0: f32,
+    pub vibrato_hz: f32,
+    pub vibrato_cents: f32,
+    /// Where the model takes over and the recording's own release starts (0: none), seconds.
+    pub join: f32,
+    pub release: f32,
+    pub partials: usize,
+    pub stereo: bool,
+}
+
+impl ContinuationSummary {
+    fn of(continuation: &Continuation) -> Self {
+        Self {
+            f0: continuation.f0,
+            vibrato_hz: continuation.vibrato_hz,
+            vibrato_cents: continuation.vibrato_cents,
+            join: continuation.join,
+            release: continuation.release_start,
+            partials: continuation.partials.len(),
+            stereo: continuation.stereo,
+        }
+    }
 }
 
 struct Source {
@@ -123,6 +157,8 @@ struct Source {
     end: f64,
     root: f64,
     profile: Option<Vec<u8>>,
+    /// A continuation's held region: the loop region it was fitted on.
+    held: Option<(f64, f64)>,
 }
 
 #[derive(Default)]
@@ -147,6 +183,7 @@ struct Job {
     /// The last audition's level-matched comparison of the fit with its source.
     comparison: Option<suhina_instrument_analysis::compare::Comparison>,
     folder: Option<FolderReport>,
+    continuation: Option<Continuation>,
 }
 
 impl Drop for Job {
@@ -186,6 +223,7 @@ impl Job {
                             Prepared::Root(report) => self.report = Some(report),
                             Prepared::Modal(report) => self.modal = Some(*report),
                             Prepared::Folder(report) => self.folder = Some(*report),
+                            Prepared::Continuation(fitted) => self.continuation = Some(*fitted),
                         }
                         self.phase = AnalysisPhase::Ready;
                     }
@@ -225,6 +263,7 @@ impl Job {
             model_recordings: None,
             comparison: self.comparison.clone(),
             folder: self.folder.clone(),
+            continuation: self.continuation.as_ref().map(ContinuationSummary::of),
         }
     }
 }
@@ -287,8 +326,11 @@ impl Session {
                 );
             } else if !folder && let Some(device) = device {
                 let root = parameter(device, "root", 60.0);
+                let held = (parameter(device, "loop_start", 0.0), parameter(device, "loop_end", 1.0));
                 if root != job.source.root {
                     job.stop(AnalysisPhase::Stale, "the sample root changed; analyze again before accepting");
+                } else if job.source.held.is_some_and(|fitted| fitted != held) {
+                    job.stop(AnalysisPhase::Stale, "the loop region changed; fit the continuation again");
                 }
             }
         }
@@ -394,7 +436,7 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
         return Err("the sample trim contains no audio frames".into());
     }
     let profile = if kind == AnalysisKind::Root { None } else { device.instrument_modal_profile().map(<[u8]>::to_vec) };
-    let source = Source { channel, device: device.id, file, pcm: pcm.clone(), start, end, root, profile };
+    let source = Source { channel, device: device.id, file, pcm: pcm.clone(), start, end, root, profile, held: None };
     spawn(session, kind, source, move |progress| match kind {
         AnalysisKind::Root => {
             suhina_instrument_analysis::analyze(&pcm.samples, pcm.sample_rate, pcm.channels, range, progress)
@@ -407,7 +449,121 @@ fn start_kind(session: &mut Session, params: &Value, kind: AnalysisKind) -> Resu
         AnalysisKind::Folder => {
             crate::instrument_folder::fit_phrase(&pcm, range, progress).map(|r| Prepared::Folder(Box::new(r)))
         }
+        AnalysisKind::Continuation => Err(suhina_instrument_analysis::Error::InvalidSettings),
     })
+}
+
+/// `instrument.fitContinuation`: fit the held note's continuation on the Instrument's loop region
+/// (its held part), on the worker; `instrument.acceptContinuation` adopts it.
+pub(crate) fn start_continuation(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    session.refresh_instrument_analysis();
+    if session.analysis.current.as_ref().is_some_and(|j| j.receiver.is_some()) {
+        return Err("the previous analysis is still running or cancelling".into());
+    }
+    let (channel, device) = selected(session, params)?;
+    if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "instrument") {
+        return Err("a continuation needs an Instrument".into());
+    }
+    let file = device.sample_file().ok_or("load a sample before fitting its continuation")?.to_owned();
+    let pcm = session.audio().files.get(&file).cloned().ok_or("the sample audio is missing or not prepared")?;
+    let (start, end) = (parameter(device, "start", 0.0), parameter(device, "end", 1.0));
+    let (loop_start, loop_end) = (parameter(device, "loop_start", 0.0), parameter(device, "loop_end", 1.0));
+    let root = parameter(device, "root", 60.0);
+    // The marker further right is the end, as playback reads it.
+    let (low, high) = (loop_start.min(loop_end), loop_start.max(loop_end));
+    if ![start, end, low, high, root].iter().all(|v| v.is_finite())
+        || !(0.0..=1.0).contains(&low)
+        || !(0.0..=1.0).contains(&high)
+        || low >= high
+        || !(0.0..=127.0).contains(&root)
+    {
+        return Err("set the loop region on the held part of the note, and its root key, before fitting".into());
+    }
+    if !(1..=2).contains(&pcm.channels) || !(8000..=384000).contains(&pcm.sample_rate) {
+        return Err("a continuation needs prepared mono or stereo audio at 8000..384000 Hz".into());
+    }
+    let frames = pcm.frames() as f64;
+    let held = (low * frames).floor() as usize..(high * frames).ceil() as usize;
+    let root_hz = 440.0 * 2f64.powf((root - 69.0) / 12.0);
+    let source = Source {
+        channel,
+        device: device.id,
+        file,
+        pcm: pcm.clone(),
+        start,
+        end,
+        root,
+        profile: None,
+        held: Some((loop_start, loop_end)),
+    };
+    spawn(session, AnalysisKind::Continuation, source, move |progress| {
+        suhina_instrument_analysis::continuation::fit(
+            &pcm.samples,
+            pcm.sample_rate,
+            pcm.channels,
+            held,
+            root_hz,
+            progress,
+        )
+        .map(|fitted| Prepared::Continuation(Box::new(fitted)))
+    })
+}
+
+/// `instrument.acceptContinuation`: store the fitted continuation on the Instrument and set its
+/// Sample playback to Continue, in one undo step.
+pub(crate) fn accept_continuation(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let job = matching_job(session, params)?;
+    if job.kind != AnalysisKind::Continuation || job.phase != AnalysisPhase::Ready {
+        return Err("only a completed, current continuation fit can be accepted".into());
+    }
+    let fitted = job.continuation.as_ref().ok_or("the fit found no continuation")?;
+    let bytes = fitted.encode();
+    let summary = ContinuationSummary::of(fitted);
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = suhina_model::device_at_mut(&mut channel.devices, &path).ok_or("the instrument is missing")?;
+    device.set_instrument_continuation(&bytes)?;
+    let overridden = crate::instrument_profile::set_values(device, &[("source", 1.0), ("playback", 4.0)]);
+    if let Some(job) = &mut session.analysis.current {
+        job.pending_state = Some(bytes);
+    }
+    let result = json!({"accepted":true,"partials":summary.partials,"stereo":summary.stereo,
+        "joinSeconds":summary.join,"releaseSeconds":summary.release,"playback":"continue"});
+    Ok(with_override(result, overridden))
+}
+
+/// `instrument.setContinuationMorph`: the continuation of another Instrument (`fromTrack`,
+/// `fromDevice`) becomes the one this Instrument morphs toward; `clear` removes it.
+pub(crate) fn set_continuation_morph(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let args = Args::new(params);
+    let bytes = if args.opt_bool("clear")?.unwrap_or(false) {
+        None
+    } else {
+        let mut from = json!({});
+        for (key, target) in [("fromTrack", "track"), ("fromDevice", "device")] {
+            if let Some(value) = params.get(key) {
+                from[target] = value.clone();
+            }
+        }
+        if from.get("track").is_none() || from.get("device").is_none() {
+            return Err("fromTrack and fromDevice name the Instrument whose continuation to morph toward".into());
+        }
+        let (_, other) = selected(session, &from)?;
+        let other = other.instrument_continuation().ok_or("that Instrument has no continuation; fit one first")?;
+        Continuation::decode(other).map_err(|error| error.0)?;
+        Some(other.to_vec())
+    };
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = suhina_model::device_at_mut(&mut channel.devices, &path).ok_or("the instrument is missing")?;
+    if !matches!(&device.kind, DeviceKind::Builtin(id) if id == "instrument") {
+        return Err("a continuation morph needs an Instrument".into());
+    }
+    match &bytes {
+        Some(bytes) => device.set_instrument_continuation_morph(bytes)?,
+        None => device.clear_instrument_continuation_morph(),
+    }
+    Ok(json!({"morph":bytes.is_some()}))
 }
 
 /// `instrument.fitFolder`: fit a folder's one-note files into one model, on the worker.
@@ -453,7 +609,8 @@ fn start_listed(
     }
     let (device_id, profile) = (device.id, device.instrument_modal_profile().map(<[u8]>::to_vec));
     let pcm = Arc::new(AudioData { sample_rate: 48000, channels: 1, samples: Vec::new() });
-    let source = Source { channel, device: device_id, file: label, pcm, start: 0.0, end: 1.0, root: 60.0, profile };
+    let source =
+        Source { channel, device: device_id, file: label, pcm, start: 0.0, end: 1.0, root: 60.0, profile, held: None };
     let count = files.len();
     let mut result = spawn(session, AnalysisKind::Folder, source, move |progress| {
         crate::instrument_folder::fit_folder(&files, progress).map(|r| Prepared::Folder(Box::new(r)))
@@ -512,6 +669,7 @@ fn spawn(
         pending_state: None,
         comparison: None,
         folder: None,
+        continuation: None,
     });
     Ok(json!({"job":id.to_string(),"kind":kind.as_str(),"status":"running"}))
 }
@@ -588,7 +746,11 @@ fn view_json(view: &AnalysisView) -> Value {
                 "outcome":file.outcome.as_str(),"reason":file.outcome.reason()})).collect::<Vec<_>>()
         })
     });
-    json!({"job":view.job,"kind":view.kind.as_str(),"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"modelRecordings":view.model_recordings,"report":report,"modal":modal,"folder":folder,"acceptedRoot":view.accepted_root,"message":view.message})
+    let continuation = view.continuation.map(|c| {
+        json!({"f0":c.f0,"vibratoHz":c.vibrato_hz,"vibratoCents":c.vibrato_cents,"joinSeconds":c.join,
+            "releaseSeconds":c.release,"partials":c.partials,"stereo":c.stereo})
+    });
+    json!({"job":view.job,"kind":view.kind.as_str(),"deviceId":view.device.0,"status":view.phase.as_str(),"completed":view.completed,"total":view.total,"modelRecordings":view.model_recordings,"report":report,"modal":modal,"folder":folder,"continuation":continuation,"acceptedRoot":view.accepted_root,"message":view.message})
 }
 
 /// A key by its tonic's name (sharps) and mode; the correlation is a profile fit, not a probability.
