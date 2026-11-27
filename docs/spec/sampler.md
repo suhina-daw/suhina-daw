@@ -272,8 +272,9 @@ trombone convincingly. Other holds were heard on the same four sounds and set as
 No hold made a cello's C convincing whose held part is the 0.4..0.6 s end of a slide: segments
 there play its distinct moments (a bow's rough spot) again at uneven intervals, heard as stutter.
 A short held part is the material's limit, not the hold's: a note recorded long enough holds, and
-a held tone beyond its recording is the work of a modelled excitation (a bow driving the fitted
-resonances), not of a hold.
+a held tone beyond its recording is the work of a model (a bow driving the fitted resonances, or
+the held part's own statistics: [a held note continued past its
+recording](instrument-held-continuation.md)), not of a hold.
 
 - The first segment is the direct playback itself: the note plays on from Loop start, nothing is
   cut or faded.
