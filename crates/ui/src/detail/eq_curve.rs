@@ -237,6 +237,16 @@ fn tilted(db: f64, frequency: f64, tilt: f64) -> f64 {
     db + tilt * (frequency / 1000.0).log2()
 }
 
+/// The panel's state as kept between frames: as it is now, and as the frame `frame` began, last
+/// written in pass `pass` (see `show`).
+#[derive(Clone, Copy)]
+struct KeptState {
+    frame: u64,
+    pass: u64,
+    began: PanelState,
+    state: PanelState,
+}
+
 /// How the panel addresses its device: `target` is the `device` parameter of every
 /// `device.setParam` command it writes — the index of the device on the track, or its path
 /// through device groups (`DeviceAt::value`), so a grouped EQ's panel edits the grouped EQ
@@ -379,7 +389,19 @@ pub(crate) fn show(
 ) {
     let address = Address::new(track, at);
     let state_id = address.ids.with("state");
-    let state = ui.ctx().data(|d| d.get_temp::<PanelState>(state_id)).unwrap_or_default();
+    // egui may run a frame's pass again with the same input (a discarded pass). The state is kept
+    // with the one the frame began with, so a pass run again starts from it, and a toggle (a
+    // Ctrl-click, a switch) happens once per frame, not once per pass. Two widgets of the same pass
+    // (the compact panel and the strip) share the state as it goes.
+    let frame = ui.ctx().cumulative_frame_nr();
+    let pass = ui.ctx().cumulative_pass_nr();
+    let kept = ui.ctx().data(|d| d.get_temp::<KeptState>(state_id));
+    let (state, began) = match kept {
+        Some(kept) if kept.frame == frame && kept.pass == pass => (kept.state, kept.began),
+        Some(kept) if kept.frame == frame => (kept.began, kept.began),
+        Some(kept) => (kept.state, kept.state),
+        None => (PanelState::default(), PanelState::default()),
+    };
     let can_listen = watch_key(at).is_some();
     let live = ui
         .ctx()
@@ -450,7 +472,7 @@ pub(crate) fn show(
         panel.state.listening = wanted;
     }
     let state = panel.state;
-    ui.ctx().data_mut(|d| d.insert_temp(state_id, state));
+    ui.ctx().data_mut(|d| d.insert_temp(state_id, KeptState { frame, pass, began, state }));
 }
 
 /// The parameter's value, or 0 when the panel has no such id.
