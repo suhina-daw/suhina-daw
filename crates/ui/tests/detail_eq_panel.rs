@@ -478,8 +478,14 @@ fn ctrl_click_selects_several_bands_and_delete_removes_them_together() {
     let mut harness = window();
     harness.get_by_label_contains("Band 3: ").click();
     harness.run();
+    // Ctrl (Cmd) held over the click, as a hand holds it: down a frame before, up a frame after.
+    harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
+    harness.run();
     harness.get_by_label_contains("Band 4: ").click_modifiers(Modifiers::COMMAND);
     harness.run();
+    harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
+    harness.run();
+    assert!(harness.query_by_label("Band 4 Frequency").is_some(), "the column follows the band clicked last");
     harness.get_by_label("Delete the band").click();
     harness.run();
     assert!(!parameter(&harness, "a3InUse").ge(&0.5), "band 3 is gone");
