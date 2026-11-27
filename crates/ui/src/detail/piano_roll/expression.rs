@@ -163,6 +163,14 @@ impl Default for MpeState {
     }
 }
 
+/// The height a lane starts at while MPE is on.
+const LANE_START: f32 = 40.0;
+
+/// The room below the notes MPE starts with: the header and [`LANE_START`] for each lane shown.
+pub(super) fn lanes_height(state: &PianoRollState) -> f32 {
+    HEADER + LANE_START * state.mpe.lanes.iter().filter(|on| **on).count().max(1) as f32
+}
+
 /// Splits `room`, the space below the notes, into the lanes shown while MPE is on, and returns
 /// the velocity lane's part (empty at the room's foot when it is hidden). With MPE off the room
 /// is the velocity lane's.

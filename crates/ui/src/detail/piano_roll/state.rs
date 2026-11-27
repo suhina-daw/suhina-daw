@@ -362,6 +362,14 @@ pub struct PianoRollState {
     pub(super) menu_waiting: Option<(f64, MenuAt)>,
 }
 
+impl PianoRollState {
+    /// Which MPE lanes show below the notes: Slide, Pressure, Velocity and Release, in that
+    /// order (› MPE).
+    pub fn show_mpe_lanes(&mut self, lanes: [bool; 4]) {
+        self.mpe.lanes = lanes;
+    }
+}
+
 impl Default for PianoRollState {
     fn default() -> Self {
         Self {

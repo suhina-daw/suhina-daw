@@ -303,9 +303,10 @@ pub fn show(
     });
     let area = clip_row.map_or(area, |row| Rect::from_min_max(Pos2::new(area.left(), row.bottom()), area.max));
     // MPE shares the room below the notes among its lanes: it starts taller (› MPE).
-    let room_below = area.height() - RULER;
+    // MPE starts its room tall enough for each lane shown to be worked in (› MPE).
     let wanted = if state.expression.is_some() {
-        state.lane_wanted.or(Some((room_below * 0.4).clamp(48.0, MPE_LANES)))
+        let share = ((area.height() - RULER) * 0.4).max(48.0);
+        state.lane_wanted.or(Some(expression::lanes_height(state).min(share).min(MPE_LANES)))
     } else {
         state.lane_wanted
     };
