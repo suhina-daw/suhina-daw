@@ -25,6 +25,7 @@
 
 pub mod analyser;
 pub mod biquad;
+pub mod continuation;
 pub mod convolver;
 pub mod crossover;
 pub mod dc;
