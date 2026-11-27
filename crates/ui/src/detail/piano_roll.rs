@@ -459,7 +459,9 @@ pub fn show(
         state.expression.is_some() && expression::handle_points(ui, &layout, clip, grid, inputs.alt, state, actions);
     let mpe_spot = state.expression.is_some()
         && !mpe_busy
-        && pointer.is_some_and(|p| note_at(&layout, &clip.notes, p).is_none())
+        // The empty grid or a selected note itself: a double-click on the note adds a point at
+        // its own pitch, not the note's double-click (which deletes it).
+        && pointer.is_some_and(|p| note_at(&layout, &clip.notes, p).is_none_or(|(i, _)| state.selected.contains(&i)))
         && pointer.and_then(|p| expression::note_for_point(&layout, clip, state, p)).is_some();
     if mpe_spot
         && response.double_clicked()

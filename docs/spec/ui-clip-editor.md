@@ -1498,11 +1498,12 @@ each note's own pitch curve ([ADR 0039](../decisions/0039-per-note-expression.md
 [MPE spec](mpe.md#note-curves-and-editing)) is drawn over the grid: from the note's start at its
 first value, through its points, held to the note's end, its height the key it bends to (between
 the rows either side of it while the rows are folded). The selected notes' curves are bright, with
-a handle on every point and the name of the key the bend ends on; another note's curve shows only
-while the pointer is over the note or its curve, so the grid stays clear. The lane shows pressure or
+a handle on every point and the name of the key the bend ends on; every other note's curve shows
+faintly, brighter while the pointer is over the note or its curve. The lane shows pressure or
 slide the same way, and a note without a curve draws nothing there.
 
-- A **double-click** on the empty grid within the time of a selected note adds a point to the
+- A **double-click** on the empty grid, or on a selected note itself, within the time of a
+  selected note adds a point to the
   selected note whose row is nearest: at the grid line nearest the pointer, bending to the whole
   semitone under it (Alt: exactly where the pointer is). A note's first point after its start also
   gets one at its start at the note's own pitch, so the bend starts from the note. A click there

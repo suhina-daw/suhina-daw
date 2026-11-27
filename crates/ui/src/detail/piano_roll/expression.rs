@@ -228,12 +228,15 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
         }
         let selected = state.selected.contains(&index);
         let line = pitch_line(layout, note, curve);
-        // A curve shows while the pointer is over its note or the curve, while the note is
-        // selected and while one of its points is dragged; the others stay out of the way.
-        if !(selected || dragged(state, clip, index) || hovered(layout, note, &line, hover)) {
-            continue;
-        }
-        let color = if selected { bright } else { ink.gamma_multiply(0.7) };
+        // Every note with a curve shows it; the pointer over a note or its curve brings it up.
+        let near = selected || dragged(state, clip, index) || hovered(layout, note, &line, hover);
+        let color = if selected {
+            bright
+        } else if near {
+            ink.gamma_multiply(0.8)
+        } else {
+            ink.gamma_multiply(0.45)
+        };
         if selected {
             painter.add(Shape::line(line.clone(), Stroke::new(4.0, edge.gamma_multiply(0.8))));
         }
@@ -260,7 +263,6 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
 /// The lane while it shows pressure or slide: the velocity stems veiled, every note's curve over
 /// its time, the selected notes' bright with handles; and the lane's name at its left.
 fn draw_lane(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState, (ink, accent): (Color32, Color32)) {
-    let hover = ui.ctx().pointer_hover_pos();
     let kind = lane_kind(state);
     if let Some(name) = lane_name_rect(layout) {
         let hint = crate::kit::element::LABEL.attribute("kind", "hint").look().color();
@@ -282,13 +284,8 @@ fn draw_lane(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState,
         let selected = state.selected.contains(&index);
         let color = if selected { accent } else { ink.gamma_multiply(0.45) };
         let (start, end) = (layout.x_of(note.time), layout.x_of(note.time + note.duration));
-        // A note without a curve draws nothing; one with a curve shows while the pointer is in
-        // its time or over the note, or while it is selected or dragged.
-        let over = hover.is_some_and(|p| {
-            (layout.lane.contains(p) && p.x >= start - HANDLE && p.x <= end + HANDLE)
-                || layout.note_rect(note).expand(HANDLE).contains(p)
-        });
-        if curve.is_empty() || !(selected || over || dragged(state, clip, index)) {
+        // A note without a curve draws nothing; every note with one shows it.
+        if curve.is_empty() {
             continue;
         }
         let mut line = Vec::with_capacity(curve.len() + 2);
