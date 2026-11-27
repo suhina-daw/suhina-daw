@@ -120,6 +120,10 @@ rejected. Interpolation is linear; before the first point and after the last, ho
 An absent curve means the neutral value. Constant curves may have one point. Limits are 4,096
 points per curve and 262,144 expression points per clip content, enforced before allocation.
 Curve values and note data participate in the same command validation and undo operation.
+`note.setExpression {clip, note, kind, points}` replaces one curve of one note, one undo step:
+`kind` is `pitch`, `pressure` or `timbre`, `points` is `[[offset, value], ...]` given strictly
+increasing and within the note and the range (nothing is sorted or clamped), and `[]` removes the
+curve; the result is `{note, kind, points}`, the last the number of points.
 
 | Operation | Curve behavior |
 |---|---|

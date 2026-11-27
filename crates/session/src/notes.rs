@@ -325,7 +325,7 @@ pub(crate) fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mu
 }
 
 /// What a note that was not found says.
-fn note_miss(miss: Miss) -> CommandError {
+pub(crate) fn note_miss(miss: Miss) -> CommandError {
     match miss {
         Miss::Id(id) => format!("the clip has no note with id {id}; note.list gives the ids").into(),
         Miss::NotANumber => {
@@ -599,8 +599,14 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
                 if (note.time - time).abs() >= EPSILON || (note.duration - new).abs() >= EPSILON {
                     changed.push(index);
                 }
+                // The left edge rebases the curves; the right edge crops them (spec mpe.md › Note
+                // curves and editing).
+                if time != note.time && note.expression().is_some() {
+                    let delta = time - note.time;
+                    note.expression_mut().move_start(delta);
+                }
                 note.time = time;
-                note.duration = new;
+                set_duration_cropping(note, new);
             }
         }
         let replaced = if replaces(params) && !changed.is_empty() {
@@ -854,6 +860,11 @@ pub(crate) fn quantize(session: &mut Session, params: &Value) -> Result<Value, C
         let moved = changed.len();
         for (index, time, duration) in changed {
             if let Some(note) = notes.get_mut(index) {
+                // A start moves the curves with the note; a quantised end stretches them.
+                if duration != note.duration && note.expression().is_some() {
+                    let factor = duration / note.duration;
+                    note.expression_mut().stretch(factor);
+                }
                 note.time = time;
                 note.duration = duration;
             }
@@ -1149,7 +1160,7 @@ fn split_at_many(session: &mut Session, params: &Value, mut ats: Vec<f64>) -> Re
         }
         for (index, duration) in firsts {
             if let Some(note) = notes.get_mut(index) {
-                note.duration = duration;
+                set_duration_cropping(note, duration);
             }
         }
         let first_new = notes.len();
@@ -1157,21 +1168,6 @@ fn split_at_many(session: &mut Session, params: &Value, mut ats: Vec<f64>) -> Re
         let made: Vec<usize> = (first_new..notes.len()).collect();
         Ok(json!({ "notes": made, "ids": ids_at(notes, &made), "count": made.len() }))
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn velocities_round_trip_through_midi_values() {
-        for midi in 1..=127u8 {
-            assert_eq!(midi_velocity(velocity_of(f64::from(midi))), midi);
-        }
-        assert_eq!(midi_velocity(f32::NAN), 1);
-        assert_eq!(midi_velocity(0.0), 1);
-        assert_eq!(midi_velocity(2.0), 127);
-    }
 }
 
 /// The part of `note` from `from` to `to` (beats in the clip), its curves cut to that part with
@@ -1208,4 +1204,19 @@ struct Placed {
     key: u8,
     time: f64,
     duration: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn velocities_round_trip_through_midi_values() {
+        for midi in 1..=127u8 {
+            assert_eq!(midi_velocity(velocity_of(f64::from(midi))), midi);
+        }
+        assert_eq!(midi_velocity(f32::NAN), 1);
+        assert_eq!(midi_velocity(0.0), 1);
+        assert_eq!(midi_velocity(2.0), 127);
+    }
 }

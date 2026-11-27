@@ -132,6 +132,30 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "note.setExpression",
+        label: "Set one of a note's own expression curves (pitch, pressure or timbre), the whole curve; an empty list removes it. Offsets are beats from the note's start, strictly increasing, within the note; nothing is clamped or sorted",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("note", ParamType::Item, "the note: its index, from 0, or {\"id\": n} with its id, as in note.list"),
+            param(
+                "kind",
+                ParamType::Text,
+                "the curve: \"pitch\" (semitones, -256 to 256), \"pressure\" (0 to 1) or \"timbre\" (0 to 1, neutral 0.5)",
+            ),
+            param(
+                "points",
+                ParamType::Points,
+                "the curve's points, each [offset, value]: offset in beats from the note's start, 0 to its length, strictly increasing; at most 4096 per curve and 262144 in the clip's content; [] removes the curve",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: note_expression::set_expression,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "note.quantize",
         label: "Quantise notes of a MIDI clip: move their starts, and with ends their ends, towards the nearest grid line",
         params: &[
