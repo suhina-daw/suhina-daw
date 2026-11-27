@@ -474,6 +474,46 @@ fn parts_for(low: f64, high: f64) -> usize {
     ((octaves / PART_MIN_OCTAVES).floor() as usize).clamp(1, SPECTRAL_PARTS)
 }
 
+/// Where a Spectral band's parts sit, for a band of type `type_index` at `frequency` and `q` at
+/// `sample_rate` with `detail` (0 to 1): the parts' center frequencies (the first `count` are
+/// used) and their Q. The device places its parts with this, and the panel draws them with it.
+pub fn spectral_parts(
+    type_index: usize,
+    sample_rate: f64,
+    frequency: f64,
+    q: f64,
+    detail: f64,
+) -> ([f64; SPECTRAL_PARTS], usize, f64) {
+    let top = sample_rate * 0.45;
+    let frequency = frequency.min(top);
+    let (low, high) = match Kind::from_index(type_index as f64) {
+        Kind::LowShelf => (frequency / 8.0, frequency),
+        Kind::HighShelf => (frequency, frequency * 8.0),
+        _ => {
+            let octaves = 2.0 * (1.0 / (2.0 * q.max(0.1))).asinh() / std::f64::consts::LN_2;
+            (frequency / 2f64.powf(octaves / 2.0), frequency * 2f64.powf(octaves / 2.0))
+        }
+    };
+    // The parts spread over the range that is usable at this rate, clamped first, so none is
+    // clamped onto another at either end.
+    let (low, high) = (low.clamp(FREQUENCY.0, top), high.clamp(FREQUENCY.0, top));
+    let used = parts_for(low, high);
+    let mut centers = [low; SPECTRAL_PARTS];
+    for (i, center) in centers.iter_mut().enumerate().take(used) {
+        let at = (i as f64 + 0.5) / used as f64;
+        *center = low * (high / low.max(1.0)).powf(at);
+    }
+    (centers, used, part_q(detail))
+}
+
+/// A Spectral band's readout read back: its deepest part's index and that part's gain change in
+/// dB.
+pub fn spectral_readout(value: f32) -> (usize, f64) {
+    let value = f64::from(value);
+    let index = ((value + 50.0) / 100.0).floor().clamp(0.0, (SPECTRAL_PARTS - 1) as f64);
+    (index as usize, value - index * 100.0)
+}
+
 /// A Spectral part's Q for the band's Detail (0 to 1): broad at 0, narrow and selective at 1.
 fn part_q(detail: f64) -> f64 {
     1.5 + detail.clamp(0.0, 1.0) * 10.5
@@ -681,19 +721,12 @@ impl Eq {
         if b.mode != Mode::Spectral {
             return;
         }
-        let (low, high) = match b.kind {
-            Kind::LowShelf => (frequency / 8.0, frequency),
-            Kind::HighShelf => (frequency, (frequency * 8.0).min(top)),
-            _ => {
-                let octaves = 2.0 * (1.0 / (2.0 * q.max(0.1))).asinh() / std::f64::consts::LN_2;
-                (frequency / 2f64.powf(octaves / 2.0), (frequency * 2f64.powf(octaves / 2.0)).min(top))
-            }
+        let kind_index = match b.kind {
+            Kind::LowShelf => 2,
+            Kind::HighShelf => 5,
+            _ => 3,
         };
-        let part_q = part_q(b.detail);
-        // The parts spread over the range that is usable at this rate, clamped first, so none
-        // is clamped onto another at either end.
-        let (low, high) = (low.clamp(FREQUENCY.0, top), high.clamp(FREQUENCY.0, top));
-        let used = parts_for(low, high);
+        let (centers, used, part_q) = spectral_parts(kind_index, sr, frequency, q, b.detail);
         b.parts_in_use = used;
         for (i, part) in b.parts.iter_mut().enumerate() {
             if i >= used {
@@ -702,8 +735,7 @@ impl Eq {
                 part.dynamics.reset();
                 continue;
             }
-            let at = (i as f64 + 0.5) / used as f64;
-            part.frequency = low * (high / low.max(1.0)).powf(at);
+            part.frequency = centers.get(i).copied().unwrap_or(part.frequency);
             part.dynamics.set_detector(SvfCoefficients::bandpass(sr, part.frequency, part_q));
             let bell = SvfCoefficients::bell(sr, part.frequency, part_q, part.tuned_db);
             for filter in &mut part.filters {
@@ -968,16 +1000,23 @@ impl Eq {
         }
     }
 
-    /// Each band's gain change now, in dB: a Dynamic band's, or the deepest of a Spectral band's
-    /// parts (0 for a Static band).
+    /// Each band's gain change now, in dB: a Dynamic band's; for a Spectral band its deepest
+    /// part's, with the part's index added in hundreds ([`spectral_readout`] reads it back); 0 for
+    /// a Static band.
     fn gain_changes(&self) -> [f32; BANDS] {
         std::array::from_fn(|band| {
             self.bands.get(band).map_or(0.0, |b| match b.mode {
                 Mode::Static => 0.0,
                 Mode::Dynamic => b.dynamic_db as f32,
                 Mode::Spectral => {
-                    b.parts.iter().map(|p| p.tuned_db).fold(0.0, |m: f64, d| if d.abs() > m.abs() { d } else { m })
-                        as f32
+                    let (index, deepest) = b
+                        .parts
+                        .iter()
+                        .take(b.parts_in_use)
+                        .map(|p| p.tuned_db)
+                        .enumerate()
+                        .fold((0, 0.0f64), |m, (i, d)| if d.abs() > m.1.abs() { (i, d) } else { m });
+                    (index as f64 * 100.0 + deepest) as f32
                 }
             })
         })

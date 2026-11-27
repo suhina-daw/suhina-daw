@@ -535,3 +535,16 @@ fn scale_multiplies_a_spectral_bands_cuts() {
     let probe = e.bands[2].parts[2].frequency;
     assert!(gain_at(&mut e, probe, 0.1).abs() < 0.1, "at Scale 0 % nothing moves");
 }
+
+#[test]
+fn a_spectral_readout_carries_its_deepest_part() {
+    for (index, change) in [(0usize, -12.0), (3, -0.5), (4, 9.0), (2, 0.0)] {
+        let packed = (index as f64 * 100.0 + change) as f32;
+        let (got, back) = spectral_readout(packed);
+        assert_eq!(got, index);
+        assert!((back - change).abs() < 1e-3, "{back} against {change}");
+    }
+    let (centers, used, q) = spectral_parts(3, 48_000.0, 1_000.0, 0.5, 1.0);
+    assert_eq!(used, SPECTRAL_PARTS);
+    assert!(centers.windows(2).all(|w| w[1] > w[0]) && q > 10.0);
+}

@@ -540,7 +540,7 @@ fn the_dynamics_button_makes_a_band_dynamic_and_shows_its_dials() {
     harness.get_by_label_contains("Band 3: ").click();
     harness.run();
     assert_eq!(parameter(&harness, "a3Mode"), 0.0, "Static at the defaults");
-    harness.get_by_label("Band 3 dynamics: Static").click();
+    harness.get_by_label("Band 3 Dynamic").click();
     harness.run();
     assert_eq!(parameter(&harness, "a3Mode"), 1.0, "the click made band 3 Dynamic");
     for field in ["Range", "Threshold", "Attack"] {
