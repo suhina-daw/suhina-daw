@@ -3,11 +3,13 @@
 
 //! Spectral dynamics: an equaliser band that moves only the frequencies inside it that stand out
 //! (docs/spec/eq.md › Dynamic and Spectral bands › Spectral). The stereo signal runs through a
-//! short-time Fourier transform (a square-root Hann window, a quarter-frame hop, overlap-add); for
-//! each band, every bin's level is compared with the band's threshold and with the spectrum's own
-//! local average, so a resonance that rises above its neighbours is turned down (or, with a
-//! positive range, up) and the rest of the band is left alone. The output is the input delayed by
-//! [`FRAME`] frames where nothing moves.
+//! short-time Fourier transform (a square-root Hann window, an eighth-frame hop, overlap-add). For
+//! each band, every bin's level is compared with a reference made of the spectrum around it (the
+//! mean level of a neighbourhood on each side, the bin itself left out), so a resonance that rises
+//! above its neighbours is turned down (or, with a positive range, up) and the rest of the band is
+//! left alone; each cut is spread over the bins next to it and follows the band's attack and
+//! release, faster in the highs than in the lows. The output is the input delayed by [`FRAME`]
+//! frames where nothing moves.
 //!
 //! `new` allocates (the plans, the buffers); everything else runs on the audio thread without
 //! allocating, locking or panicking.
@@ -21,8 +23,8 @@ use crate::band_dynamics::gain_change;
 
 /// The transform's length in frames: the delay it adds (about 43 ms at 48 kHz).
 pub const FRAME: usize = 2048;
-/// The hop between two transforms: a quarter of the frame.
-pub const HOP: usize = FRAME / 4;
+/// The hop between two transforms: an eighth of the frame.
+pub const HOP: usize = FRAME / 8;
 /// The bins of one transform, up to and with Nyquist.
 pub const BINS: usize = FRAME / 2 + 1;
 /// How many bands the block holds.
@@ -31,10 +33,21 @@ pub const BANDS: usize = 24;
 pub const LIVE_POINTS: usize = 100;
 /// The live points' frequency range.
 pub const LIVE_RANGE: (f64, f64) = (10.0, 22_000.0);
-/// How far above its local average a bin must rise, in dB, before it counts as standing out.
-const STANDS_OUT_DB: f64 = 6.0;
-/// The width of the local average a bin is compared with, in octaves each side.
-const BASELINE_OCTAVES: f64 = 1.0;
+/// How far above its reference a bin must rise, in dB, before it counts as standing out.
+const STANDS_OUT_DB: f64 = 12.0;
+/// Where the two sides of a bin's neighbourhood differ by more than this, in dB (a cliff in the
+/// spectrum), the reference is the louder side less this, so a slope never reads as a peak.
+const CLIFF_DB: f64 = 12.0;
+/// Bins more than this far below the frame's loudest bin, in dB, count as being at that floor:
+/// silence between tones never makes a quiet tone stand out.
+const FLOOR_DB: f64 = 40.0;
+/// The bins next to a bin that its reference leaves out, each side (a tone's main lobe).
+const GAP_BINS: usize = 2;
+/// The power mean that spreads a cut over its neighbours: high, so the deepest cut nearby decides.
+const SPREAD_POWER: i32 = 8;
+/// How the attack and release scale with frequency: `(1 kHz / f)^this`, so a bin at 10 kHz moves
+/// about three times as fast as one at 1 kHz.
+const TIME_EXPONENT: f64 = 0.5;
 
 /// A band's shape, which sets how much of each bin belongs to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,10 +78,11 @@ pub struct Settings {
     pub range: f64,
     /// The level a bin must pass, in dB below full scale.
     pub threshold: f64,
-    /// Seconds.
+    /// Seconds, at 1 kHz (a bin's own times scale with its frequency).
     pub attack: f64,
     pub release: f64,
-    /// 0 to 1: how selective the detector is; low triggers on wide ranges, high on narrow ones.
+    /// 0 to 1: how selective the detector is; low compares each bin with a wide neighbourhood and
+    /// spreads its cut wide (broad humps move), high with a narrower one and cuts narrow notches.
     pub density: f64,
     /// Weights the detector by 3 dB per octave around 1 kHz, so the highs trigger a little more.
     pub tilt: bool,
@@ -122,6 +136,9 @@ pub struct SpectralDynamics {
     key_spectra: [Vec<Complex<f32>>; 2],
     levels: Vec<f64>,
     sums: Vec<f64>,
+    /// Each bin's cut before spreading, and the running sums of its power mean.
+    cuts: Vec<f64>,
+    cut_sums: Vec<f64>,
     bands: Vec<Band>,
     /// Each bin's frequency.
     frequencies: Vec<f64>,
@@ -156,6 +173,8 @@ impl SpectralDynamics {
             key_spectra: [spectrum(), spectrum()],
             levels: vec![0.0; BINS],
             sums: vec![0.0; BINS + 1],
+            cuts: vec![0.0; BINS],
+            cut_sums: vec![0.0; BINS + 1],
             bands: (0..BANDS).map(|_| Band { settings: Settings::default(), gains: vec![0.0; BINS] }).collect(),
             frequencies: (0..BINS).map(|k| k as f64 * sample_rate / FRAME as f64).collect(),
         }
@@ -256,8 +275,8 @@ impl SpectralDynamics {
         }
         self.apply();
         // The inverse transform, windowed again and overlap-added (the square-root Hann windows'
-        // product, at a quarter-frame hop, sums to 2; the transform is unnormalised).
-        let scale = 0.5 / FRAME as f32;
+        // product, at an eighth-frame hop, sums to 4; the transform is unnormalised).
+        let scale = 0.25 / FRAME as f32;
         for side in 0..2 {
             self.inverse.process_with_scratch(&mut self.spectra[side], &mut self.scratch);
             for n in 0..FRAME {
@@ -270,11 +289,14 @@ impl SpectralDynamics {
         }
     }
 
-    /// One band's gains: each bin's level (of the band's part of the signal, or of the key), its
-    /// local averages, how far it stands out and passes the threshold, smoothed in time.
+    /// One band's gains: each bin's level (of the band's part of the signal, or of the key), held
+    /// at the frame's floor; its reference from the neighbourhood on each side; the soft-knee cut
+    /// of what passes both the reference and the band's threshold; spread over its neighbours,
+    /// weighted by the band's shape and smoothed in time and across bins.
     fn detect(&mut self, index: usize, settings: Settings, keyed: bool, hop_seconds: f64) {
         let sources = if settings.keyed && keyed { &self.key_spectra } else { &self.spectra };
         let window_sum = self.window_sum;
+        let mut loudest = f64::MIN;
         for k in 0..BINS {
             let (l, r) =
                 (sources[0].get(k).copied().unwrap_or_default(), sources[1].get(k).copied().unwrap_or_default());
@@ -287,53 +309,87 @@ impl SpectralDynamics {
             };
             let f = self.frequencies.get(k).copied().unwrap_or(1.0).max(1.0);
             let tilt = if settings.tilt { 3.0 * (f / 1000.0).log2() } else { 0.0 };
-            if let Some(level) = self.levels.get_mut(k) {
-                *level = 20.0 * (2.0 * f64::from(magnitude) / window_sum).max(1e-9).log10() + tilt;
+            let level = 20.0 * (2.0 * f64::from(magnitude) / window_sum).max(1e-9).log10() + tilt;
+            if k > 0 {
+                loudest = loudest.max(level);
+            }
+            if let Some(cell) = self.levels.get_mut(k) {
+                *cell = level;
             }
         }
-        // Running sums, so a local average over any range of bins is one subtraction.
+        let floor = loudest - FLOOR_DB;
+        // Running sums of the floored levels, so a neighbourhood's mean is one subtraction.
         let mut total = 0.0;
         if let Some(first) = self.sums.get_mut(0) {
             *first = 0.0;
         }
         for k in 0..BINS {
-            total += self.levels.get(k).copied().unwrap_or(0.0);
+            if let Some(level) = self.levels.get_mut(k) {
+                *level = level.max(floor);
+                total += *level;
+            }
             if let Some(cell) = self.sums.get_mut(k + 1) {
                 *cell = total;
             }
         }
-        let average = |sums: &[f64], k: usize, octaves: f64| -> f64 {
-            let spread = 2f64.powf(octaves);
-            let lo = ((k as f64 / spread).floor() as usize).min(BINS - 1);
-            let hi = ((k as f64 * spread).ceil() as usize).clamp(lo + 1, BINS);
-            let sum = sums.get(hi).copied().unwrap_or(0.0) - sums.get(lo).copied().unwrap_or(0.0);
-            sum / (hi - lo) as f64
-        };
-        // Density: low reads a wide neighbourhood (whole regions trigger), high a single bin.
-        let detail_octaves = 0.33 * (1.0 - settings.density.clamp(0.0, 1.0)) + 0.005;
-        let attack = (-hop_seconds / settings.attack.max(1e-4)).exp();
-        let release = (-hop_seconds / settings.release.max(1e-3)).exp();
-        let sums = std::mem::take(&mut self.sums);
-        if let Some(band) = self.bands.get_mut(index) {
-            for k in 1..BINS {
-                let f = self.frequencies.get(k).copied().unwrap_or(0.0);
-                let weight = shape_weight(settings.shape, f, settings.frequency, settings.q);
-                let target = if weight < 0.01 {
-                    0.0
-                } else {
-                    let level = average(&sums, k, detail_octaves);
-                    let baseline = average(&sums, k, BASELINE_OCTAVES);
-                    let threshold = settings.threshold.max(baseline + STANDS_OUT_DB);
-                    gain_change(level, threshold, settings.range) * weight
-                } as f32;
-                if let Some(gain) = band.gains.get_mut(k) {
-                    let moving_away = target.abs() > gain.abs();
-                    let keep = if moving_away { attack } else { release } as f32;
-                    *gain = target + (*gain - target) * keep;
-                }
+        // Density 0 – 1: the neighbourhood is 4.5 octaves wide in all at 0 and 2.6 at 1; the cut
+        // spreads over an octave at 0 and a twentieth of one at 1.
+        let density = settings.density.clamp(0.0, 1.0);
+        let reach = 2f64.powf(4.5 * 2f64.powf(-density * 10.0 / 12.3) / 2.0);
+        let spread = 2f64.powf(2f64.powf(-density * 10.0 / 2.3) / 2.0);
+        // The cut each bin asks for now, before spreading.
+        for k in 0..BINS {
+            let f = self.frequencies.get(k).copied().unwrap_or(0.0);
+            let level = self.levels.get(k).copied().unwrap_or(floor);
+            let cut = if k == 0 || shape_weight(settings.shape, f, settings.frequency, settings.q) < 0.01 {
+                0.0
+            } else {
+                let below_lo = ((k as f64 / reach).floor() as usize).min(k);
+                let below = mean(&self.sums, below_lo, k.saturating_sub(GAP_BINS));
+                let above_hi = ((k as f64 * reach).ceil() as usize).min(BINS);
+                let above = mean(&self.sums, (k + GAP_BINS + 1).min(BINS), above_hi);
+                let reference = match (below, above) {
+                    (Some(b), Some(a)) => (0.5 * (a + b)).max(a.max(b) - CLIFF_DB),
+                    (Some(one), None) | (None, Some(one)) => one,
+                    (None, None) => level,
+                };
+                let threshold = settings.threshold.max(reference + STANDS_OUT_DB);
+                gain_change(level, threshold, settings.range).abs()
+            };
+            if let Some(cell) = self.cuts.get_mut(k) {
+                *cell = cut;
             }
         }
-        self.sums = sums;
+        // Running sums of the cuts' powers, for the power mean that spreads them.
+        let mut total = 0.0;
+        if let Some(first) = self.cut_sums.get_mut(0) {
+            *first = 0.0;
+        }
+        for k in 0..BINS {
+            total += self.cuts.get(k).copied().unwrap_or(0.0).powi(SPREAD_POWER);
+            if let Some(cell) = self.cut_sums.get_mut(k + 1) {
+                *cell = total;
+            }
+        }
+        let sign = settings.range.signum();
+        let most = settings.range.abs();
+        let Some(band) = self.bands.get_mut(index) else { return };
+        for k in 1..BINS {
+            let f = self.frequencies.get(k).copied().unwrap_or(0.0);
+            let weight = shape_weight(settings.shape, f, settings.frequency, settings.q);
+            let lo = ((k as f64 / spread).floor() as usize).min(k - 1);
+            let hi = ((k as f64 * spread).ceil() as usize + 1).clamp(k + 1, BINS);
+            let spread_cut =
+                mean(&self.cut_sums, lo, hi).map_or(0.0, |m| m.max(0.0).powf(1.0 / f64::from(SPREAD_POWER)));
+            let target = (sign * spread_cut.min(most) * weight) as f32;
+            let attack = (-hop_seconds / bin_time(settings.attack, f).max(1e-4)).exp() as f32;
+            let release = (-hop_seconds / bin_time(settings.release, f).max(1e-3)).exp() as f32;
+            if let Some(gain) = band.gains.get_mut(k) {
+                let keep = if target.abs() > gain.abs() { attack } else { release };
+                *gain = target + (*gain - target) * keep;
+            }
+        }
+        smooth_across(&mut band.gains);
     }
 
     /// Every band's gains on the spectra: the left/right bands first, then the mid/side ones.
@@ -392,6 +448,29 @@ impl SpectralDynamics {
                 }
             }
         }
+    }
+}
+
+/// A bin's attack or release at `f`, from the band's time at 1 kHz: faster in the highs, slower in
+/// the lows (below 40 Hz it stays at 40 Hz's).
+fn bin_time(seconds: f64, f: f64) -> f64 {
+    seconds * (1000.0 / f.max(40.0)).powf(TIME_EXPONENT)
+}
+
+/// The mean of the values whose running sums are `sums`, over `lo..hi`; none for an empty range.
+fn mean(sums: &[f64], lo: usize, hi: usize) -> Option<f64> {
+    (hi > lo).then(|| (sums.get(hi).copied().unwrap_or(0.0) - sums.get(lo).copied().unwrap_or(0.0)) / (hi - lo) as f64)
+}
+
+/// A light (1, 2, 1) / 4 smoothing across bins, so a notch has no hard edges.
+fn smooth_across(gains: &mut [f32]) {
+    let mut previous = gains.first().copied().unwrap_or(0.0);
+    for k in 1..gains.len().saturating_sub(1) {
+        let (Some(here), Some(next)) = (gains.get(k).copied(), gains.get(k + 1).copied()) else { continue };
+        if let Some(cell) = gains.get_mut(k) {
+            *cell = 0.25 * previous + 0.5 * here + 0.25 * next;
+        }
+        previous = here;
     }
 }
 
@@ -482,6 +561,50 @@ mod tests {
         let out = run(&mut block, 48_000, |n| tone(1_000.0, 0.5, n));
         assert!((level(&out, 1_000.0) / 0.5 - 1.0).abs() < 0.01);
         assert!(block.live(0).iter().all(|g| *g == 0.0));
+    }
+
+    #[test]
+    fn low_density_spreads_a_cut_wider_than_high_density() {
+        let width = |density: f64| {
+            let mut block = SpectralDynamics::new(RATE);
+            block.set(
+                0,
+                Settings {
+                    on: true,
+                    frequency: 2_000.0,
+                    q: 0.3,
+                    range: -12.0,
+                    threshold: -60.0,
+                    density,
+                    tilt: false,
+                    ..Settings::default()
+                },
+            );
+            let bed = |n: usize| (1..40).map(|i| tone(200.0 * i as f64 + 37.0, 0.004, n)).sum::<f64>();
+            run(&mut block, 48_000, |n| bed(n) + tone(2_200.0, 0.2, n));
+            block.live(0).iter().filter(|g| **g < -1.0).count()
+        };
+        let (wide, narrow) = (width(0.1), width(0.9));
+        assert!(narrow >= 1, "a narrow cut still shows");
+        assert!(wide > narrow, "low density spreads the cut: {wide} points against {narrow}");
+    }
+
+    #[test]
+    fn a_bins_times_are_faster_in_the_highs() {
+        assert!((bin_time(0.01, 1_000.0) - 0.01).abs() < 1e-12, "the band's time is its time at 1 kHz");
+        assert!(bin_time(0.01, 10_000.0) < 0.004, "about three times as fast at 10 kHz");
+        assert!(bin_time(0.01, 100.0) > 0.03, "about three times as slow at 100 Hz");
+        assert_eq!(bin_time(0.01, 10.0), bin_time(0.01, 40.0), "held below 40 Hz");
+    }
+
+    #[test]
+    fn a_smoothed_notch_keeps_its_depth_in_the_middle_and_softens_its_edges() {
+        let mut gains = [0.0f32, 0.0, -12.0, -12.0, -12.0, 0.0, 0.0];
+        smooth_across(&mut gains);
+        assert_eq!(gains[3], -12.0);
+        assert_eq!(gains[2], -9.0);
+        assert_eq!(gains[1], -3.0);
+        assert_eq!(gains[0], 0.0, "the ends are left as they are");
     }
 
     #[test]

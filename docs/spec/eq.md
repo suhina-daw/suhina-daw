@@ -178,18 +178,46 @@ block of `crates/dsp` (`band_dynamics::BandDynamics`, AGENTS.md rule 8):
   own still runs, since its gain can move.
 - **Spectral** (`crates/dsp/src/spectral_dynamics.rs`): the band's own filter runs as it is, and
   its dynamics act per frequency in a short-time Fourier transform run after the filters — a
-  2048-frame square-root Hann window, a quarter-frame hop, overlap-add — so only the frequencies
-  inside the band that stand out move: a resonance is turned down (or up, with a positive range)
-  and the rest of the band is left alone. For each bin: its level (of the band's placement, or of
-  the key), weighted 3 dB per octave around 1 kHz so the highs trigger a little more; its local
-  average over a width Detail sets (0.335 octave each side at Detail 0, a single bin at 100 % —
-  low Detail triggers on wide ranges, high on narrow, specific ones); the threshold it must pass,
-  the higher of the band's Threshold and 6 dB over the spectrum's one-octave average around it
-  (so it follows the material, as a relative threshold); the soft-knee gain change of the
-  Dynamic bands, times how much of the bin belongs to the band (a band pass's power for a bell, a
-  4th-order low or high pass's for a shelf); and the band's attack and release, per bin. Every
-  band decides from the input as it came in; the left/right bands are applied, then the mid/side
-  ones. Scale multiplies the range.
+  2048-frame square-root Hann window, an eighth-frame hop (256 frames), overlap-add — so only the
+  frequencies inside the band that stand out move: a resonance is turned down (or up, with a
+  positive range) and the rest of the band is left alone. What stands out is decided against the
+  material around it, not a fixed level, so the threshold follows the sound. For each transform:
+  - *Level.* Each bin's level, of the band's placement or of the key, weighted 3 dB per octave
+    around 1 kHz so the highs trigger a little more. Bins more than 40 dB below the frame's
+    loudest count as being at that floor, so silence between tones never makes a quiet tone stand
+    out.
+  - *Reference.* The mean level, in dB, of a neighbourhood on each side of the bin, the bin and
+    the two next to it on each side (a tone's main lobe) left out. The reference is the mean of
+    the two sides, or where they differ by more than 12 dB (a cliff in the spectrum) the louder
+    side less 12 dB, so a steep slope never reads as a peak. At a spectrum's edge the one side
+    there is decides.
+  - *Threshold.* A bin moves once it is 12 dB over its reference and over the band's Threshold
+    (a level in dBFS: quieter bins never move, so at −60 dB the reference alone decides). The
+    gain change is the Dynamic bands' soft knee, the whole Range 12 dB over.
+  - *Detail* sets the selectivity. The neighbourhood is 4.5 · 2^(−d / 12.3) octaves wide in all
+    and a cut spreads over 2^(−d / 2.3) octaves, d being Detail on a 0 – 10 scale: 4.5 and one
+    octave at 0 % (broad humps move, wide cuts), 2.6 and a twentieth of one at 100 % (narrow
+    resonances, narrow notches).
+  - *Spread.* A bin's cut is the power mean (power 8, near the deepest) of the cuts the bins
+    within that spread ask for, at most the Range, times how much of the bin belongs to the band
+    (a band pass's power for a bell, a 4th-order low or high pass's for a shelf).
+  - *Time.* Each bin follows its cut with the band's Attack and Release, set at 1 kHz and scaled
+    by (1 kHz / f)^0.5 (held below 40 Hz): about three times as fast at 10 kHz, three times as
+    slow at 100 Hz, so the highs follow quickly and the lows do not pump.
+  - *Smoothing.* The gains are smoothed (1, 2, 1) / 4 across bins, so a notch has no hard edges.
+
+  Every band decides from the input as it came in; the left/right bands are applied, then the
+  mid/side ones. Scale multiplies the range. The method is the common one of spectral dynamics
+  and resonance suppression (an STFT, a reference from the neighbouring spectrum, a relative
+  threshold, cuts spread across frequency, frequency-dependent timing); the values above are this
+  block's own, chosen near those of the open-source resonance-suppressor
+  (`src/dsp/Suppressor.cpp` at `db2fc4ac0de1e363938c1317f57282760985800d`,
+  https://github.com/Locbac/resonance-suppressor), whose reference, cliff, spread, power mean
+  and frequency scaling this block follows in idea. A spectral compressor's per-bin follower is
+  described in van der Helm's Spectral Compressor (`src/processor.cpp` at
+  `6ea9563de6bbc4477ef166c30b9b8de1ac40072b`,
+  https://github.com/robbert-vdh/spectral-compressor) and a threshold curve with the peaks left
+  out of its baseline in Applied Sciences 15 (6), 3038 (2025).
 - **Latency.** The transform delays the EQ's output by 2048 frames (about 43 ms at 48 kHz) while a
   band in use is Spectral, and the EQ reports it (`Device::latency`) so the chain compensates it;
   an EQ with no Spectral band adds none. The engine reads a delay when it builds, so a band's
