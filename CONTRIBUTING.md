@@ -4,9 +4,14 @@
   reference renderer is C++; neither is built into the program.
 - **Licence:** Suhina is GPL-3.0-or-later (`LICENSE`, `NOTICE`), and contributions are
   licensed the same way. Dependencies and bundled libraries must be GPLv3-compatible (MIT,
-  Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0); GPL-2.0-only and proprietary or
-  non-commercial licences are not. CI checks every dependency's licence with `cargo-deny`
-  (see [Dependencies](#dependencies)).
+  Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0, AGPL-3.0); GPL-2.0-only and proprietary or
+  non-commercial licences are not. AGPL-3.0 code combines with GPL-3.0 code by both licences'
+  § 13; the AGPL part keeps its own terms, which add one duty to the GPL's (AGPL-3.0 § 13): when
+  a version with modified AGPL code lets users interact with it remotely over a network (the MCP
+  server reached from another machine, for example), the program itself must prominently offer
+  those users its Corresponding Source, such as a link to it in the interface. Publishing the
+  source in the repository does not by itself meet that duty. CI checks every dependency's
+  licence with `cargo-deny` (see [Dependencies](#dependencies)).
 - **Never crash:** non-test code must not panic and must not use `unsafe` (the only exceptions
   are the plug-in hosting crates `ipc` and `plugin-host`, ADR 0006, and the MP3 encoder crate
   `mp3`, ADR 0029). Errors go through `Result`
@@ -260,9 +265,11 @@ Code, a value or a solution may be taken from an open-source project, another DA
 included, when three things hold.
 
 1. **The licence of what is taken is compatible with GPL-3.0-or-later**, as AGENTS.md rule 10
-   lists them: GPL-2.0-or-later and GPL-3.0 are, GPL-2.0-only is not, nor a non-commercial licence
-   or none. GPL-2.0-or-later code is used under GPL-3.0-or-later. Look where a licence actually
-   applies before ruling code in or out: the notice of the file taken from counts, not the
+   lists them: GPL-2.0-or-later, GPL-3.0 and AGPL-3.0 are, GPL-2.0-only is not, nor a
+   non-commercial licence or none. A ported AGPL-3.0 file keeps its AGPL notice and SPDX line;
+   a piece taken into a file of Suhina's own carries it in its snippet tags (item 3).
+   GPL-2.0-or-later code is used under GPL-3.0-or-later. Look where a licence actually applies
+   before ruling code in or out: the notice of the file taken from counts, not the
    project's README or its package metadata, and a project whose files carry different licences
    is checked file by file. A notice that names the GNU GPL without a version number lets any
    version be chosen (GPL-2.0 § 9); "version 2" without "or any later version" is GPL-2.0-only. A
@@ -285,15 +292,18 @@ included, when three things hold.
      `scripts/license_header.py`'s `PORTED`, in [`ATTRIBUTION.md`](ATTRIBUTION.md) › Ported code
      and in [`NOTICE`](NOTICE). The licence's full text sits next to the port
      (`crates/stretch/LICENSE-signalsmith.txt`, `devices/fm-synth/LICENSE-APACHE`), since an SPDX
-     line only names it; the GPL-3.0's text in [`LICENSE`](LICENSE) already serves GPL code. What
+     line only names it; the GPL-3.0's text in [`LICENSE`](LICENSE) already serves GPL code, and
+     AGPL-3.0 code brings the AGPL's text as `LICENSE-AGPL-3.0.txt` in its crate's folder. What
      an upstream `NOTICE` file says (Apache-2.0 § 4) goes into ours.
      `crates/plugin-host/src/vst2/vestige.rs` is an example.
    - *A smaller piece taken over as it is* (a function, a table of values, a few lines) into a file
      of Suhina's own: the file keeps Suhina's header, and the piece is wrapped in
      [REUSE](https://reuse.software/spec-3.3/) snippet tags that carry its copyright holders and
      licence, with a plain `//` comment under them naming the project, the path, the commit and
-     what was changed. The notice then stays with the piece when it moves to another file. The
-     tags are `//` comments, not `///` doc comments: a doc comment says what the function does for
+     what was changed. A piece under a licence whose text [`LICENSE`](LICENSE) does not carry
+     brings that text as a port does: an AGPL-3.0 piece puts `LICENSE-AGPL-3.0.txt` in the folder
+     of the crate that holds it (AGPL-3.0 § 4 asks that recipients get the licence with the
+     code). The notice then stays with the piece when it moves to another file. The tags are `//` comments, not `///` doc comments: a doc comment says what the function does for
      its callers, not where it came from. `ATTRIBUTION.md` › Ported code gets a row. MIT, BSD and
      Apache-2.0 code keeps the notice text its licence asks to keep.
 
