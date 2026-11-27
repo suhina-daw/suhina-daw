@@ -193,6 +193,16 @@ fn settings_survive_a_round_trip() {
         ]
         .into(),
         midi_inputs_off: vec!["Keys, port 1".into(), "Pads:Pads MIDI 1 20:0".into()],
+        midi_mpe: [(
+            "Keys, port 1 = notes".into(),
+            suhina_session::MpeConfig {
+                mode: suhina_session::MpeMode::Manual,
+                lower_members: 8,
+                upper_members: 6,
+                ..Default::default()
+            },
+        )]
+        .into(),
         zoom: 130,
         map_window: true,
         map_window_rect: Some([-1600, 40, 900, 700]),
@@ -498,4 +508,23 @@ fn the_plug_in_managers_saved_table_reads_only_what_it_can_use() {
     assert!(Settings::from_text("plugin_manager_columns = 1, x\n").0.plugin_manager_columns.is_empty());
     let kept = Settings { plugin_manager_columns: vec![28, 0, 140], ..Settings::default() };
     assert_eq!(Settings::from_text(&kept.to_text()).0.plugin_manager_columns, [28, 0, 140], "a 0 round-trips");
+}
+
+#[test]
+fn a_rejected_midi_mpe_line_is_warned_about_and_the_rest_still_loads() {
+    let text = concat!(
+        "midi_mpe = {\"port\":\"Keys\",\"config\":{\"mode\":\"manul\"}}\n",
+        "midi_mpe = not json\n",
+        "midi_mpe = {\"config\":{\"mode\":\"manual\"}}\n",
+        "midi_mpe = {\"port\":\"Pads\",\"config\":{\"mode\":\"automatic\"}}\n",
+        "midi_input_off = Drums\n",
+    );
+    let (settings, warnings) = Settings::from_text(text);
+    println!("{warnings:#?}");
+    assert_eq!(warnings.len(), 3, "{warnings:?}");
+    assert!(warnings[0].starts_with("settings line 1: midi_mpe has a config that is not a valid MPE configuration"));
+    assert!(warnings[1].starts_with("settings line 2: midi_mpe is not JSON"));
+    assert!(warnings[2].starts_with("settings line 3: midi_mpe needs a port name"));
+    assert_eq!(settings.midi_mpe.keys().collect::<Vec<_>>(), ["Pads"]);
+    assert_eq!(settings.midi_inputs_off, ["Drums"]);
 }

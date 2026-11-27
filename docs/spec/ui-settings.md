@@ -3,7 +3,7 @@ description: The Settings window's pages and their headed sections, which settin
 read_when: Settings window, settings page, where a setting goes, adding a setting, settings scroll, settings search, settings table, settings_rows, page order, General page, Appearance page
 type: spec
 status: current
-last_verified: 2026-11-23
+last_verified: 2026-11-27
 covers:
   - crates/ui/src/settings/settings_view.rs
   - crates/ui/src/settings/settings_rows.rs
@@ -36,6 +36,9 @@ navigation drags must not toggle the dimmer.
 Text inputs and dropdowns use transparent fills and only a
 theme-colored underline, stronger on hover and accented on focus. Navigation rows
 have no opaque background: only selected/hovered rows add a translucent tint.
+Long settings dropdowns scroll within a bounded popup at least as wide as their field, with a
+separate scrollbar gutter that cannot cover choice centers, so all MIDI bend-range values remain
+reachable in a short window.
 
 ### Choosing an audio driver and device
 
@@ -76,6 +79,7 @@ what is inside it).
 | Audio | Cue | Headphone output: Cue output, Cue volume |
 | Audio | Advanced | Render threads (Off, Automatic, 2, 4, 8; [render threads](render-threads.md)) |
 | MIDI | MIDI inputs | Each MIDI input port, on or off |
+| MIDI | Expression | MPE mode per input (Off, Automatic, Manual); manual lower/upper member counts and member/manager bend ranges. Independent expression works in FM Synth, Sampler and direct SDK voice groups; other chains use ordinary-note compatibility. |
 | MIDI | Arming | Arm selected track |
 | Plug-ins | Actions | Scan, Rescan all, Manage plug-ins (commands, set off above the folders) |
 | Plug-ins | Folders | Folders (each on or off, with its format; add with a format, or by the system's picker with nothing typed, remove) |

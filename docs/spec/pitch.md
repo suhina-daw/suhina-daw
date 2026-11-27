@@ -3,7 +3,7 @@ description: The built-in pitch MIDI effect - its parameters, how a note is tran
 read_when: pitch, MIDI effect, transpose notes, scale degrees, follow scale, clip scale in devices, block fold limit, key window, lowest and range, importing Live's Pitch, MidiPitcher elements, built-in MIDI effects
 type: spec
 status: current
-last_verified: 2026-10-19
+last_verified: 2026-11-27
 covers:
   - devices/pitch/**
 ---
@@ -46,6 +46,12 @@ step buttons (Decisions, 2): `stepWidth` (1 – 48 semitones, default 12) and `s
 
 ## Behaviour
 
+For identified live input, Pitch preserves `NoteInstanceId`, velocity, initial expression and
+subsequent expression values. Its bounded occurrence table keeps the transposed key for each
+ID until choke/reclamation, so equal-key notes release independently and a parameter change
+does not retarget an earlier note's release. Native velocity-zero note-on remains a note-on.
+Expression pitch remains a continuous semitone offset; Follow Scale changes the base key only.
+
 A note-on of key `p` goes through three steps; the window is the `range + 1` keys from `lowest`
 to `lowest + range`, both ends included.
 
@@ -69,13 +75,13 @@ to `lowest + range`, both ends included.
 The result is then limited to 0 – 127: nothing is lost at the ends of the keyboard, and several
 keys can land on one (Pitch +12 plays 116 – 127 all as 127).
 
-- **Note-offs.** The device keeps, per key played, the key its note-on sent; the note-off ends
+- **Ordinary note-offs.** The device keeps, per key played, the key its note-on sent; the note-off ends
   that key, whatever the settings are by then. So a change of Pitch, the window or the scale
   under a held note never leaves it hanging; the note keeps its key and its length. When two keys
   sound the same key, each note-off ends one of them. A key played again while its note sounds
   ends that note first.
 - **Everything else passes unchanged:** velocities, release velocities, the frame of every event,
-  controllers, pitch bend, pressure and all-notes-off. A note-on of velocity 0 is a note-off. The
+  controllers, pitch bend, pressure and all-notes-off. An ordinary note-on of velocity 0 is a note-off. The
   device adds no latency and does nothing to the sound.
 - **The scale.** A clip's scale ([ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment:
   clip scales) reaches the devices of its track as an event before the first of its notes whose
@@ -155,7 +161,8 @@ unchanged, no latency.
   In Suhina a device switched off leaves the track's chain, which is built again (ADR 0004 › 9),
   so the instrument starts afresh and the notes that sounded end.
 - **Per-note pitch bend** (MPE) with Follow Scale on is re-mapped in Live so a bent note stays in
-  the scale. Suhina's notes carry no per-note expression yet (ADR 0004, Not decided yet).
+  the scale. Suhina preserves the continuous expression offset unchanged while transposing
+  the base note ([MPE](mpe.md)); it does not remap the bend through scale degrees.
 - Not observed, so not matched on purpose: the LED that flashes when Block drops a note, the step
   buttons, a note started while the device is off, and Lowest + Range above 127.
 

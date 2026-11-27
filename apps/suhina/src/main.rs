@@ -254,6 +254,7 @@ fn main() -> ExitCode {
     window.app.projects_mut().set_device_inputs(settings.device_inputs());
     // The MIDI controllers, every port on but the ones the settings turn off (Settings › MIDI,
     // `midi.*`, ADR 0017).
+    window.app.projects_mut().set_midi_mpe(settings.midi_mpe.clone());
     window.app.projects_mut().set_midi_inputs_off(settings.midi_inputs_off.clone());
     let midi_warnings = window.app.projects_mut().set_midi_system(std::sync::Arc::new(suhina_midi::Midi::new()));
     if let Some(start_up) = window.start_up.as_mut() {

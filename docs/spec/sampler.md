@@ -3,7 +3,7 @@ description: Suhina's sample and granular instrument, sample loading and SDK pan
 read_when: sampler, granular instrument, sample recording, sample drop
 type: spec
 status: draft
-last_verified: 2026-11-23
+last_verified: 2026-11-27
 covers:
   - devices/sampler/**
   - crates/device-sdk/src/sample_instrument.rs
@@ -540,6 +540,17 @@ preallocated voices, and passes the advancing transport beat to each source.
 The stock Sampler definition retains its implementation. Prepared SampleAsset resources,
 private voice graphs and smaller playback/envelope/granular nodes are specified in the
 [SDK node reference](sdk-nodes.md); they do not imply an equivalent expansion of the stock device.
+
+## Per-note expression
+
+The shared runtime accepts identified native notes as described in [MPE](mpe.md). Each
+occurrence owns its pitch, pressure and timbre; repeated pitches do not release one another.
+Pressure adds up to 6 dB without muting a neutral note, and timbre shifts the enabled voice
+filter by ±2 octaves. Pitch is applied at the next processing sample. When every voice is busy,
+a new occurrence takes the next voice in turn, as an ordinary note does; the taken occurrence
+reports its completion after its crossfade. Admission is rejected only when retirement storage
+is full, and completion is retained until the host drains it.
+Ordinary MIDI retains its existing key/sustain and voice-stealing behavior.
 
 ## SDK graphs in projects
 

@@ -64,6 +64,7 @@ mod mapping;
 mod meters;
 mod metronome_sounds;
 mod midi;
+mod mpe_config;
 mod named;
 mod note_tools;
 mod notes;
@@ -118,6 +119,7 @@ pub use library::{
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use metronome_sounds::{MetronomeState, library_folder as metronome_folder};
 pub use midi::{LiveInput, MidiSystem, midi_commands};
+pub use mpe_config::{MpeConfig, MpeMode};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
 pub use player::{OutputHandle, Player};
 pub use plugins::{device_plugin, plugin_commands};

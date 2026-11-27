@@ -24,7 +24,7 @@ pub mod sample_edits;
 
 pub use note_expression::{
     NoteExpressionKind, NoteExpressionState, NoteIdAllocator, NoteInstanceDevice, NoteInstanceDispatchError,
-    NoteInstanceEvent, NoteInstanceId, dispatch_note_instance,
+    NoteInstanceEvent, NoteInstanceId, NoteLifetimes, dispatch_note_instance,
 };
 
 use std::borrow::Cow;
@@ -556,6 +556,9 @@ pub const DEFAULT_TEMPO: f64 = 120.0;
 /// range.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NoteEvent {
+    /// One runtime occurrence, using the shared native expression contract. MIDI effects
+    /// preserve the full identity and instruments dispatch through `note_instances`.
+    Instance { id: NoteInstanceId, event: NoteInstanceEvent },
     /// A key goes down. `key` is a MIDI key (60 is middle C); `velocity` runs from 0.0 to 1.0,
     /// and 0.0 counts as a release.
     On { key: u8, velocity: f32 },
@@ -800,6 +803,11 @@ pub trait SampleSource {
 /// [`param`](Self::param) and [`process`](Self::process) run on the audio thread: they never
 /// allocate, free, lock, block, log or do I/O, and never panic, whatever values they get.
 pub trait Device: Send {
+    /// Whether this MIDI effect preserves identified occurrences for every transformation.
+    /// False selects ordinary-note compatibility for its entire input chain.
+    fn preserves_note_instances(&self) -> bool {
+        false
+    }
     fn info(&self) -> &DeviceInfo;
 
     /// Prepare a device's data-only native model off the audio thread, before parameter
