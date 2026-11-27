@@ -115,7 +115,9 @@ moved.
 A VST3 host hands notes to `process` as an `IEventList` on event bus 0, and controllers,
 pitch bend and channel pressure (aftertouch, #812) as parameter changes at their frame
 through the plug-in's `IMidiMapping` (asked for the first MIDI channel only: some plug-ins
-crash when asked about the second), and gives the latest value of each to the edit
+crash when asked about the second; controls on the other channels, an MPE member channel's
+bend, pressure and CC74, move no parameter, as one note's bend would otherwise bend every
+note: [MPE › Plug-in boundaries](mpe.md#plug-in-boundaries)), and gives the latest value of each to the edit
 controller as well (`setParamNormalized`, on the main thread between messages), so the
 plug-in's editor shows a wheel moved on the hardware; a CLAP host sends note events to note port 0 and
 controllers, bend and channel pressure as MIDI messages, and gives a plug-in without audio

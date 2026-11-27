@@ -23,7 +23,9 @@ const CONTROLLERS: usize = 130;
 /// Which parameter MIDI controllers and pitch bend move, from the plug-in's `IMidiMapping`
 /// (event bus 0). Only the first MIDI channel is asked, and its mapping serves every channel:
 /// some plug-ins fail when asked about another channel, and the
-/// notes a project plays come on the first.
+/// notes a project plays come on the first. Controllers on the other channels (an MPE member
+/// channel's bend, pressure and CC74, `docs/spec/mpe.md` › Plug-in boundaries) move nothing:
+/// through the first channel's mapping one note's bend would bend every note.
 pub(crate) struct MidiMapping {
     table: Arc<[Option<ParamID>; CONTROLLERS]>,
     shown: Shown,
@@ -143,6 +145,9 @@ impl MidiMapping {
     /// controller nothing is mapped to.
     pub(crate) fn controller(&self, event: &LinkEvent) -> Option<(usize, ParamID, ParamValue)> {
         let (number, value) = match event.kind {
+            EventKind::Controller { channel: 1.., .. }
+            | EventKind::PitchBend { channel: 1.., .. }
+            | EventKind::Pressure { channel: 1.., .. } => return None,
             EventKind::Controller { number, value, .. } => (usize::from(number), f64::from(value)),
             // -1 to 1 becomes 0 to 1, the center at one half.
             EventKind::PitchBend { value, .. } => (129, (f64::from(value) + 1.0) / 2.0),
@@ -303,6 +308,19 @@ mod tests {
         assert!(taken.contains(&(9, 0.5)), "{taken:?}");
         // Taken once: nothing is left for the next look.
         assert_eq!(shown.take().count(), 0);
+    }
+
+    #[test]
+    fn a_member_channels_controls_move_no_parameter() {
+        // Pitch bend and CC74 move parameters 3 and 4 on the first channel.
+        let mut table = Box::new([None; CONTROLLERS]);
+        table[129] = Some(3);
+        table[74] = Some(4);
+        let mapping = MidiMapping::with(table);
+        assert!(mapping.change(&event(EventKind::PitchBend { channel: 0, value: 0.0 })).is_some());
+        assert!(mapping.change(&event(EventKind::PitchBend { channel: 2, value: 0.5 })).is_none());
+        assert!(mapping.change(&event(EventKind::Controller { channel: 15, number: 74, value: 1.0 })).is_none());
+        assert!(mapping.change(&event(EventKind::Pressure { channel: 1, value: 1.0 })).is_none());
     }
 
     #[test]

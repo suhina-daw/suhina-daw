@@ -1393,7 +1393,9 @@ impl crate::audio::Block for Vst2Block {
                     self.midis.push((event.frame, [0xb0 | channel, number, to_byte(value), 0]));
                 }
                 EventKind::PitchBend { channel, value } => {
-                    let bend = (8192.0 + value.clamp(-1.0, 1.0) * 8191.0).round() as i32;
+                    // As the CLAP host turns it into 14 bits, so a member channel's bend
+                    // (`docs/spec/mpe.md` › Plug-in boundaries) reaches every format exactly.
+                    let bend = ((value.clamp(-1.0, 1.0) + 1.0) / 2.0 * 16_383.0).round() as i32;
                     self.midis.push((event.frame, [0xe0 | channel, (bend & 0x7f) as u8, (bend >> 7) as u8, 0]));
                 }
                 EventKind::Pressure { channel, value } => {

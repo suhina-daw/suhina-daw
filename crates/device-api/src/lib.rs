@@ -574,6 +574,29 @@ pub enum NoteEvent {
     /// whose scale differs from the last one sent, `None` for a clip without a scale. MIDI
     /// effects that follow the scale keep it and pass it on; everything else ignores it.
     Scale(Option<MusicalScale>),
+    /// A message on one MIDI channel, `channel` 0 to 15, for a plug-in instrument the host plays
+    /// as an MPE instrument (channel-MPE compatibility, `docs/spec/mpe.md` › Plug-in boundaries):
+    /// each note on a member channel of its own, with its pitch bend, pressure and timbre there.
+    /// The plug-in host gives it to the plug-in on that channel; built-in devices ignore it.
+    Channel { channel: u8, message: ChannelMessage },
+}
+
+/// What a [`NoteEvent::Channel`] carries: a note or a control on its channel, with the values of
+/// the matching [`NoteEvent`] variants.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ChannelMessage {
+    On { key: u8, velocity: f32 },
+    Off { key: u8, velocity: f32 },
+    Controller { number: u8, value: f32 },
+    PitchBend(f32),
+    Pressure(f32),
+}
+
+impl NoteEvent {
+    /// Whether it starts a note, on any channel.
+    pub fn is_note_on(&self) -> bool {
+        matches!(self, NoteEvent::On { .. } | NoteEvent::Channel { message: ChannelMessage::On { .. }, .. })
+    }
 }
 
 /// The scale the notes a track plays are written in: a root and the pitch classes it holds.

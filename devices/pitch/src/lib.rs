@@ -222,7 +222,10 @@ impl Device for Pitch {
                         send(event);
                     }
                 }
-                NoteEvent::Controller { .. } | NoteEvent::PitchBend(_) | NoteEvent::Pressure(_) => {
+                NoteEvent::Controller { .. }
+                | NoteEvent::PitchBend(_)
+                | NoteEvent::Pressure(_)
+                | NoteEvent::Channel { .. } => {
                     if spare >= 1 {
                         send(event);
                     }
