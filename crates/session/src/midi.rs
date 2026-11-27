@@ -8,14 +8,14 @@
 //! through [`LiveInput`], whichever player that is now. Like the `audio.*` commands, the
 //! `midi.*` commands belong to Suhina, not to one project.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde_json::{Value, json};
 use suhina_engine::{LiveEvent, LiveSender, LiveSource};
 
 use crate::commands::Args;
-use crate::commands::{CommandKind, CommandSpec, ParamType, param};
+use crate::commands::{CommandKind, CommandSpec, ParamType, optional, param};
 use crate::{Agents, CommandError, Policy, Projects};
 
 /// The MIDI input ports of the system, and opening one of them; made by the MIDI layer, which
@@ -27,6 +27,16 @@ pub trait MidiSystem: Send + Sync {
     /// Opens the input port `name`; what it plays goes to `input` until the returned value is
     /// dropped, which closes the port.
     fn open(&self, name: &str, input: Arc<LiveInput>) -> Result<Box<dyn std::any::Any + Send>, String>;
+
+    /// Opens with the port's saved expression mode. Backends without MPE keep ordinary MIDI.
+    fn open_configured(
+        &self,
+        name: &str,
+        input: Arc<LiveInput>,
+        _config: crate::MpeConfig,
+    ) -> Result<Box<dyn std::any::Any + Send>, String> {
+        self.open(name, input)
+    }
 }
 
 /// Where the open MIDI ports send what they play: the live-note queue of the active project's
@@ -86,6 +96,7 @@ pub(crate) struct MidiInputs {
     pub(crate) input: Arc<LiveInput>,
     /// Ports turned off by name (`midi.setInput`, the window's settings).
     pub(crate) off: BTreeSet<String>,
+    pub(crate) mpe: BTreeMap<String, crate::MpeConfig>,
     /// Open ports and what keeps each open.
     open: Vec<(String, Box<dyn std::any::Any + Send>)>,
     /// Ports that could not be opened, with why, so the same failure is said once.
@@ -125,7 +136,8 @@ impl MidiInputs {
             if self.off.contains(name) || self.open.iter().any(|(open, _)| open == name) {
                 continue;
             }
-            match system.open(name, Arc::clone(&self.input)) {
+            match system.open_configured(name, Arc::clone(&self.input), self.mpe.get(name).copied().unwrap_or_default())
+            {
                 Ok(keep) => {
                     self.failed.retain(|(failed, _)| failed != name);
                     self.open.push((name.clone(), keep));
@@ -163,6 +175,7 @@ impl MidiInputs {
                         "enabled": !self.off.contains(name),
                         "open": self.open.iter().any(|(open, _)| open == name),
                         "error": self.failed.iter().find(|(n, _)| n == name).map(|(_, e)| e),
+                        "mpe": self.mpe.get(name).copied().unwrap_or_default().to_json(),
                     })
                 })
                 .collect(),
@@ -175,6 +188,23 @@ fn no_midi() -> CommandError {
 }
 
 static MIDI_COMMANDS: &[CommandSpec<Projects>] = &[
+    CommandSpec {
+        id: "midi.setMpe",
+        label: "Configure per-note expression for one MIDI input; changes choke its old notes before reopening it",
+        params: &[
+            param("port", ParamType::Text, "physical input name from midi.inputs"),
+            param("mode", ParamType::Text, "off, automatic, or manual"),
+            optional("lowerMembers", ParamType::Integer, "lower-zone members, 0 to 15, excluding channel 1"),
+            optional("upperMembers", ParamType::Integer, "upper-zone members, 0 to 15, excluding channel 16"),
+            optional("lowerMemberBend", ParamType::Integer, "member pitch range, 0 to 96 semitones"),
+            optional("lowerManagerBend", ParamType::Integer, "manager pitch range, 0 to 96 semitones"),
+            optional("upperMemberBend", ParamType::Integer, "member pitch range, 0 to 96 semitones"),
+            optional("upperManagerBend", ParamType::Integer, "manager pitch range, 0 to 96 semitones"),
+        ],
+        kind: CommandKind::on(crate::commands::Target::Audio, crate::commands::Effect::Change),
+        run: set_mpe,
+        policy: Policy { agents: Agents::NotWhenAttached(Agents::SETTINGS), ..Policy::DEFAULT },
+    },
     CommandSpec {
         id: "midi.inputs",
         label: "List the MIDI input ports with whether each is on and open; what the open ones play goes to the armed tracks of the project that plays (track.setArm)",
@@ -227,4 +257,60 @@ fn set_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandEr
         midi.off.insert(port.to_string());
     }
     inputs(projects, &Value::Null)
+}
+
+fn set_mpe(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
+    let args = Args::new(params);
+    // The name exactly as `midi.inputs` lists it: a system's port name may begin or end with
+    // spaces, and a trimmed name would not find that port.
+    let port = args.raw_str("port").ok_or("port must be a text")?;
+    if port.trim().is_empty() || port.len() > 1024 {
+        return Err("port must contain 1 to 1024 bytes".into());
+    }
+    let midi = projects.midi_mut();
+    let mut config = midi.mpe.get(port).copied().unwrap_or_default();
+    config.mode = match args.text("mode")? {
+        "off" => crate::MpeMode::Off,
+        "automatic" => crate::MpeMode::Automatic,
+        "manual" => crate::MpeMode::Manual,
+        _ => return Err("mode must be off, automatic, or manual".into()),
+    };
+    for (name, field) in [
+        ("lowerMembers", &mut config.lower_members),
+        ("upperMembers", &mut config.upper_members),
+        ("lowerMemberBend", &mut config.lower_member_bend),
+        ("lowerManagerBend", &mut config.lower_manager_bend),
+        ("upperMemberBend", &mut config.upper_member_bend),
+        ("upperManagerBend", &mut config.upper_manager_bend),
+    ] {
+        if args.has(name) {
+            *field = u8::try_from(args.index(name, "from zero")?)
+                .map_err(|_| CommandError::from("zone values must fit 0 to 96"))?;
+        }
+    }
+    if !config.is_valid() {
+        return Err("MPE zones must not overlap: each count is 0 to 15, two active zones have at most 14 members total; bend ranges are 0 to 96 semitones".into());
+    }
+    let system = midi.system.clone().ok_or_else(no_midi)?;
+    if !system.ports().map_err(CommandError::from)?.iter().any(|name| name == port) && !midi.mpe.contains_key(port) {
+        return Err(format!("no MIDI input is called {port:?}; midi.inputs lists them").into());
+    }
+    if !midi.mpe.contains_key(port) && midi.mpe.len() >= 256 {
+        return Err("at most 256 MIDI input configurations are retained".into());
+    }
+    if midi.mpe.get(port).copied().unwrap_or_default() != config {
+        midi.mpe.insert(port.to_owned(), config);
+        midi.open.retain(|(name, _)| name != port);
+        midi.failed.retain(|(name, _)| name != port);
+    }
+    // The configuration is in place from here on: a listing that fails now is a notice, not
+    // a failure, so the caller keeps (and saves) what the command did.
+    let port = port.to_owned();
+    inputs(projects, &Value::Null).or_else(|error| {
+        Ok(json!({
+            "port": port,
+            "mpe": config.to_json(),
+            "notices": [format!("the MIDI inputs could not be listed: {}", error.message())],
+        }))
+    })
 }

@@ -10,6 +10,11 @@ covers:
   - crates/device-api/src/note_expression/
   - crates/engine/src/live.rs
   - crates/midi/src/lib.rs
+  - crates/midi/src/mpe.rs
+  - crates/midi/src/mpe/
+  - crates/session/src/mpe_config.rs
+  - crates/session/src/midi.rs
+  - crates/engine/src/live_mpe_tests.rs
 ---
 
 # Per-note expression and MPE
@@ -21,17 +26,18 @@ and the shared instrument in [#1579](https://github.com/suhina-daw/suhina-daw/is
 [ADR 0039](../decisions/0039-per-note-expression.md) records the decisions.
 The shared API provides runtime identity allocation, validated musical expression values,
 atomic initial note state, explicit event-admission results, and an opt-in instrument capability
-with bounded retirement feedback. These are contract primitives; no built-in opts in on this
-branch. The current live path has ordinary notes, channel bend, pressure and controllers.
-End-to-end identified events, live MPE, recording, editable curves and plug-in adapters are not yet built.
-The rules below are planned behavior, not a claim that a controller already exercises them.
+with bounded retirement feedback. The live implementation carries identified notes through the
+engine to FM Synth and Sampler; a direct SDK voice-group instrument also exposes per-voice
+pitch (semitones), pressure and timbre signals. The native MIDI settings select off, automatic
+or manual expression mode per input. Recording expression, editable curves and plug-in-host
+adapters remain separate work; ordinary note recording does not capture these gestures yet.
 
 `Device::note_instances` returns `None` for an ordinary device. The validated
 `dispatch_note_instance` helper returns `Unsupported` instead of dropping a note. Accepted
 identified notes use `NoteInstanceDevice::event`; its result distinguishes capacity rejection,
 duplicate IDs and unknown occurrences. Hosts commit new mappings only after successful
 admission and drain final IDs into caller-owned storage. This endpoint will receive the same
-payload from the planned `NoteEvent::Instance` queue wrapper after the chain migrates; no
+payload from the `NoteEvent::Instance` queue wrapper; no
 second identity or expression representation is introduced for exported instruments.
 
 ## Runtime notes
@@ -62,14 +68,19 @@ chains use a visible ordinary-note compatibility path; they do not claim indepen
 ## Input and zones
 
 Input mode is per physical port: ordinary MIDI, automatic MPE, or manual MPE configuration.
-Ordinary mode does not activate a zone implicitly; automatic mode consumes valid RPN 6
+Off preserves the existing ordinary channel/key path, including mono, legato and retrigger
+allocation. Automatic and Manual enable identified occurrences and poly key pressure on
+channels outside an MPE zone (and on its manager). Off does not consume poly key pressure
+or activate a zone implicitly; automatic mode consumes valid RPN 6
 configuration. Manual mode shows both zone sizes and bend ranges and ignores automatic zone
 reconfiguration until the user selects automatic mode. Settings and changes are commands.
 Protocol channel numbers in code are 0..15; the UI displays 1..16.
 
 MPE 1.1 defines a lower zone managed by channel 1 and an upper zone managed by channel 16.
 RPN 6 chooses member counts; the latest configuration takes precedence over overlapping
-membership. Its defaults are manager bend ±2 and member bend ±48 semitones. RPN 0 on one
+membership. Its defaults are manager bend ±2 and member bend ±48 semitones: each RPN 6 restores
+them for the zone it addresses and retunes that zone's held notes, and Automatic mode starts from
+them whatever ranges are saved for Manual mode. RPN 0 on one
 member changes the whole zone's member sensitivity. Suhina accepts whole-semitone ranges
 0..96. RPN selection is tracked per port/channel, either selector order is accepted, null
 selection ends it, and an NRPN selection prevents a stale RPN from consuming data entry.
@@ -90,11 +101,15 @@ Suhina's routing policies are:
   member bend, pressure and timbre are captured; subsequent member changes cannot move the
   sustained/releasing old note. Manager bend still changes sounding tails. Manager pressure
   and timbre are captured for released notes; active keys continue following them.
+  Releasing a key detaches its occurrence but does not erase the channel latch. Fresh neutral
+  messages before channel reuse initialize the new note neutrally without changing the old
+  tail. With no fresh controls, MPE 1.1 requires the last received values to initialize it.
 - More than one active key on a member channel is supported: member expression affects each
   active occurrence there. Repeated note-ons for the same port/channel/key are paired with
   note-offs oldest-first. A bounded per-source occurrence table, not a boolean key array,
   preserves the other occurrences and their tails.
-- Polyphonic key pressure in ordinary mode affects active occurrences of that channel/key.
+- Polyphonic key pressure on ordinary channels in Automatic/Manual mode affects active
+  occurrences of that channel/key.
   In MPE mode it is supported on the manager channel for that manager's own keys, and ignored
   on member channels as required by MPE 1.1. It never becomes channel pressure for other keys.
 - Manager sustain applies to its zone; member sustain is ignored in MPE mode. Physical key-up
@@ -107,9 +122,63 @@ Suhina's routing policies are:
 - Reset-all-controllers resets controls and lifts sustain for the scope without fabricating
   new key presses. The MIDI mode controls are distinct from ordinary controller reset.
 
-The router retains source provenance and timestamp for recording. It emits resolved musical
-events without allocating in the callback. It rejects an entire new note when there is no
-bounded lifetime slot. Overflow recovery must still terminate already accepted notes.
+The router retains source provenance and timestamp for recording. Translation itself emits
+resolved musical events without allocating. The existing opt-in MIDI trace runs only on the
+driver thread, outside the audio render callback. The router rejects an entire new note when there is no
+bounded lifetime slot. Its release is still owed: until every refused press on that channel/key
+has been released, later presses there are refused too, so releases keep pairing oldest first and
+a refused press's release never ends a newer note. CC120, CC123, a zone change and port panic clear
+what is owed. Overflow recovery must still terminate already accepted notes.
+
+The input worker conservatively retains up to 256 protocol occurrences per physical port;
+it has no per-track completion feedback. At capacity it chokes the oldest released occurrence
+before accepting a new one, never a held or pedal-held occurrence. Thus very long release
+tails can be cut when the protocol budget fills. Runtime IDs never wrap or get reused.
+The engine also bounds input occurrence and per-chain recipient tables; released entries
+are reclaimed with an explicit choke, and all-held exhaustion rejects a new occurrence.
+Device admission reserves final completion storage; the engine drains device completions at
+render-span boundaries. Those completions free device capacity, not the input worker's
+conservative protocol history. A live queue overflow sets an out-of-band atomic panic flag, one per queue, so a replaced queue
+does not inherit it: the renderer discards the incomplete queue batch and terminates its existing
+notes, closing in a running take the ones whose release was not recorded.
+Per-chain recipient entries record delivery intent, not a promise of device admission. A
+device-capacity rejection starts no voice and owes no completion; the bounded recipient
+entry remains until the matching release/reclamation. On an ordinary-compatibility chain only
+an occurrence's first termination becomes a key-wide off: reclaiming an already released entry
+sends nothing there, so it cannot end a newer note on the same key. Recording likewise writes
+one release per occurrence. There is no reverse admission channel
+to the physical input in this slice. Timestamped expression floods coalesce only the same
+ID/dimension; a new expression with no reserved control slot, or with no place left on the note timeline, is
+dropped rather than being played before its note-on. Exhausting the note timeline with a note
+lifecycle event invokes the same panic recovery.
+
+FM Synth retains its existing 64-frame internal control quantum and fixed-point numerical
+behavior. Event dispatch is sample-offset accurate, but audible FM changes take effect at
+the next internal quantum (at most 63 frames later). Sampler applies pitch at the exact next
+processing sample. Both keep the same result when the host changes its block partition.
+Neutral pressure preserves the old patch level; per-note pressure adds up to 6 dB and also
+feeds the FM pressure routing. Timbre shifts each enabled voice filter by up to two octaves
+in either direction; with the patch filter off that mapping has no effect.
+
+Pitch preserves runtime identity and the transposed key through release/choke, including
+equal-pitch occurrences and later parameter changes. An edit that changes the MIDI effects in
+front of the instrument ends each held identified note at the instrument, by its id, since its
+later off would pass effects that never saw its on; an edit that keeps that route keeps the note
+playing. Unmigrated MIDI effects, hosted plug-ins,
+layered SDK graphs and instruments without the capability use ordinary-note compatibility
+for the entire chain. Direct SDK voice-group graphs expose `VoiceInput.pitch` in semitones
+and `VoiceInput.timbre` in 0..1 without changing the legacy normalized `bend` output. Graphs
+with additional native consumers or transformed event routing do not advertise independent
+expression until their admission and final retirement can be aggregated safely.
+
+`midi.setMpe` takes a port name, `mode` (`off`, `automatic`, `manual`) and optional lower/upper
+member counts (`lowerMembers`, `upperMembers`) and bend ranges (`lowerMemberBend`,
+`lowerManagerBend`, `upperMemberBend`, `upperManagerBend`). It validates the whole configuration before
+closing/reopening only that port, so old occurrences are choked first. Unchanged values do
+not interrupt notes. `midi.inputs` reports saved configuration; automatic runtime zone changes
+follow the controller and are not persisted as manual choices. At most 256 saved inputs are
+retained. The MIDI settings' manual zone control shortens the other zone when required to
+make room; command clients must supply a nonoverlapping configuration explicitly.
 
 ## Note curves and editing
 
@@ -170,6 +239,35 @@ lossless archival representation of arbitrary controllers. The MIDI-CI MPE Profi
 separate configuration protocol; it is not a synonym for native per-note MIDI 2.0 messages.
 
 ## Acceptance and implementation order
+
+### Live implementation boundary (#926)
+
+The MIDI input worker owns protocol state for each physical port: selected RPN/NRPN,
+lower/upper zones, controller latches and physical key/pedal state. It resolves these into
+the shared identified events before the engine's live queue. The queue retains the original
+source channel and timestamp. The engine carries `NoteEvent::Instance` through its existing
+sample-accurate split spans; it does not quantize expression to an audio block or reinterpret
+native zero-velocity note-ons as MIDI bytes.
+
+The first live implementation supports independent pitch, pressure and timbre in the FM
+instrument and the shared sample runtime. Each owns bounded occurrence admission and final
+retirement, including stolen voices and layered tails. A note-off never frees an identity
+while it can still sound. Ordinary MIDI and unsupported-chain compatibility remain playable;
+the MIDI settings describe which instruments support independent expression. An unsupported
+device does not advertise the opt-in capability. MIDI effects must preserve identity for
+one-to-one transformations; an effect without that contract selects the documented ordinary
+compatibility path for the whole chain.
+
+Input configuration is a session command and a persistent setting per port. Changing mode
+or manual zones terminates the affected input's old occurrences before accepting new notes.
+Automatic mode follows valid RPN 6 messages; manual mode retains the user's zone sizes and
+bend ranges. No input configuration, expression state or runtime note identity is written
+into saved project notes by this work; recording and curve editing remain #928 and #930.
+
+Implementation is checked in this order: bounded protocol fixtures, identified FM/sample
+voice fixtures, live routing/golden renders, then command/settings round trips and UI flows.
+The draft remains incomplete until all #926 rows below pass, including recycled-channel
+tails, per-zone sustain and queue/capacity recovery.
 
 | Work | Required deterministic evidence |
 |---|---|
