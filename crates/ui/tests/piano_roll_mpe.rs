@@ -55,10 +55,11 @@ fn mpe_app() -> Harness<'static, App> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
+    // MPE on before the clip opens, so the notes are fitted to the room its lanes leave.
+    harness.state_mut().piano_roll_mut().expression = Some(ExpressionKind::Pitch);
     crate::window::open_clip(&mut harness, CLIP);
     let roll = harness.state_mut().piano_roll_mut();
     roll.selected = [0].into();
-    roll.expression = Some(ExpressionKind::Pitch);
     harness.run();
     harness
 }

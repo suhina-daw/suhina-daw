@@ -303,7 +303,12 @@ pub fn show(
     });
     let area = clip_row.map_or(area, |row| Rect::from_min_max(Pos2::new(area.left(), row.bottom()), area.max));
     // MPE shares the room below the notes among its lanes: it starts taller (› MPE).
-    let wanted = if state.expression.is_some() { state.lane_wanted.or(Some(MPE_LANES)) } else { state.lane_wanted };
+    let room_below = area.height() - RULER;
+    let wanted = if state.expression.is_some() {
+        state.lane_wanted.or(Some((room_below * 0.4).clamp(48.0, MPE_LANES)))
+    } else {
+        state.lane_wanted
+    };
     let lane_height = velocity_lane_height(area.height() - RULER, state.key_height, wanted);
     let strip = Rect::from_min_max(
         Pos2::new(area.left(), area.top() + RULER),

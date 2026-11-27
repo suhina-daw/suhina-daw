@@ -2063,10 +2063,12 @@ fn a_notes_expression_curves_round_trip() {
         note.expression_mut().pitch = vec![ExpressionPoint::curved(0.0, 0.0, 0.5), ExpressionPoint::new(0.25, 2.0)];
     }
     let written = to_json(&project);
-    assert!(written.contains("0.5]"), "{written}");
-    assert_eq!(from_json(&written), Ok(project));
-    let bad = written.replacen("0.5]", "1.5]", 1);
-    assert!(from_json(&bad).is_err());
+    let read = from_json(&written).unwrap();
+    assert_eq!(read, project);
+    let mut read = read;
+    let pitch =
+        notes_of(&mut read).and_then(|notes| notes.first().cloned()).unwrap().expression().unwrap().pitch.clone();
+    assert_eq!(pitch[0].curve, 0.5);
 }
 
 /// A project without curves writes byte for byte what version 16 wrote, apart from the version,
@@ -2101,10 +2103,11 @@ fn malformed_expression_curves_are_refused() {
     for (expression, path, why) in [
         (r#"[]"#, at.to_string(), "an object"),
         (r#"{ "pitch": 1 }"#, format!("{at}.pitch"), "a list"),
-        (r#"{ "pitch": [[0, "x"]] }"#, format!("{at}.pitch[0]"), "two numbers"),
-        (r#"{ "pitch": [[0, null]] }"#, format!("{at}.pitch[0]"), "two numbers"),
-        (r#"{ "pitch": [[0]] }"#, format!("{at}.pitch[0]"), "two numbers"),
-        (r#"{ "pitch": [[0, 1, 2]] }"#, format!("{at}.pitch[0]"), "two numbers"),
+        (r#"{ "pitch": [[0, "x"]] }"#, format!("{at}.pitch[0]"), "numbers"),
+        (r#"{ "pitch": [[0, null]] }"#, format!("{at}.pitch[0]"), "numbers"),
+        (r#"{ "pitch": [[0]] }"#, format!("{at}.pitch[0]"), "numbers"),
+        (r#"{ "pitch": [[0, 1, 2]] }"#, format!("{at}.pitch[0]"), "curvature 2 is outside -1 to 1"),
+        (r#"{ "pitch": [[0, 1, 0, 0]] }"#, format!("{at}.pitch[0]"), "numbers"),
         (r#"{ "pressure": [[0, 1.5]] }"#, format!("{at}.pressure[0]"), "outside 0 to 1"),
         (r#"{ "timbre": [[0, -0.1]] }"#, format!("{at}.timbre[0]"), "outside 0 to 1"),
         (r#"{ "pitch": [[0, 300]] }"#, format!("{at}.pitch[0]"), "outside -256 to 256"),
