@@ -475,10 +475,10 @@ fn draw_curves(
             painter.circle_stroke(at, 4.0, Stroke::new(1.5, inks.accent));
             painter.circle_filled(at, 3.0, if chosen(point) { inks.accent } else { color });
             let active = dragged && state.expression_drag.as_ref().is_some_and(|d| d.index == point);
-            if active || hover.is_some_and(|p| p.distance(at) <= HANDLE) {
-                if let Some(value) = curve.get(point).map(|p| p.value) {
-                    label(&painter, at, &value_text(kind, value), inks);
-                }
+            if (active || hover.is_some_and(|p| p.distance(at) <= HANDLE))
+                && let Some(value) = curve.get(point).map(|p| p.value)
+            {
+                label(&painter, at, &value_text(kind, value), inks);
             }
         }
     }
@@ -1204,7 +1204,8 @@ fn point_menu(cx: &Cx<'_>, state: &mut PianoRollState, actions: &mut Vec<Action>
     let mut close = false;
     let mut picked: Option<&'static str> = None;
     let mut typed = menu.text.clone();
-    let area = egui::Area::new(Id::unique("piano-mpe-point-menu"))
+    let id = Id::unique("piano-mpe-point-menu");
+    let area = crate::kit::floating::area(cx.ui.ctx(), id, crate::kit::floating::Kind::Popup)
         .order(egui::Order::Foreground)
         .fixed_pos(menu.pos + Vec2::new(4.0, 4.0))
         .show(cx.ui.ctx(), |ui| {
