@@ -86,7 +86,8 @@ Commands, the same from the UI, the CLI and MCP ([ADR 0002](../decisions/0002-co
 | `extensions.restart` | stops its program and starts it again (a crashed or wedged one) on what the folder holds now — the manifest is read again, so the restart runs a script whose checksum was checked this run |
 
 - Adding never copies a program into a project and never writes outside
-  `<settings>/extensions/<id>/`.
+  `<settings>/extensions/<id>/`. The copy is bounded before it can enter the store: at most
+  1,024 files, 256 MiB, and 8 folder levels, with a failure naming the cap reached.
 - `extensions.remove` refuses while a job of that extension runs, and names the job. A surface
   program is not a job: remove stops the program (the supervisor's bounded stop) and forgets the
   extension.
