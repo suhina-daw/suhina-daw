@@ -384,7 +384,7 @@ fn a_silent_value_steps_up_from_the_scale_end_and_stays_when_stepped_down() {
     assert_eq!(stepped(5.5, range, 3.0), 6.0);
 }
 
-/// A lit toggle's colours, as the view takes them with a sheet that has no rule, are the palette's
+/// A lit toggle's colors, as the view takes them with a sheet that has no rule, are the palette's
 /// (`toggle_colors`): moving a switch onto its element changes nothing where no theme says so
 /// (#1440).
 #[test]
@@ -426,28 +426,34 @@ fn a_flow_button_fits_its_words_and_a_disabled_one_takes_no_click() {
     assert_eq!(bar, 0.0);
 }
 
-/// A flat button paints its fill and its words in the palette's colours where no rule reaches it,
-/// and the colours of a rule for `button` where one does.
+/// A push face paints its fill, its words and its edge in the base sheet's colors where no theme's
+/// rule reaches it, and the colors of a rule for `button` where one does. Drawn as its CSS shape
+/// (`image: none`), so its fill is a rectangle's color, its corners rounded 4px by the base sheet's
+/// `button[kind="push"]`, with no edge unless a rule gives it a border.
 #[test]
-fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
+fn a_push_face_takes_the_buttons_rule_and_else_the_base_sheet() {
     let rgb = egui::Color32::from_rgb;
-    let colours = |css: &str| {
+    let colors = |css: &str| {
         crate::kit::skin::configure(&crate::kit::skin::Skin {
             css: Some(std::sync::Arc::from(css)),
             ..Default::default()
         });
         let ctx = egui::Context::default();
-        let mut found = (Color32::TRANSPARENT, Color32::TRANSPARENT);
+        let mut found = (Color32::TRANSPARENT, Color32::TRANSPARENT, None, 0.0);
         for _ in 0..3 {
             let mut output = ctx.run_ui(Default::default(), |ui| {
                 let _frame = crate::kit::native_css::frame_with_motion(ui, false);
                 let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(60.0, 20.0));
-                let response = button_area(ui, rect, Id::unique("flat"), "Flat");
-                flat_button(ui, ui.painter(), rect, &response, "Flat", (theme::TEXT_SMALL, None));
+                let response = button_area(ui, rect, Id::unique("push"), "Push");
+                push_face(ui, ui.painter(), rect, &response, ("Push", Push::Plain), None);
             });
             for shape in &output.shapes {
                 match &shape.shape {
-                    egui::Shape::Rect(rect) if rect.fill.a() > 0 => found.0 = rect.fill,
+                    egui::Shape::Rect(rect) if rect.fill.a() > 0 => {
+                        found.0 = rect.fill;
+                        found.3 = f32::from(rect.corner_radius.nw);
+                    }
+                    egui::Shape::Rect(rect) if rect.stroke.width > 0.0 => found.2 = Some(rect.stroke),
                     egui::Shape::Text(text) => found.1 = text.fallback_color,
                     _ => {}
                 }
@@ -457,20 +463,51 @@ fn a_flat_button_takes_the_buttons_rule_and_else_the_palette() {
         crate::kit::skin::configure(&crate::kit::skin::Skin::default());
         found
     };
+    let studio = crate::kit::theme::studio;
+    assert_eq!(colors("button { image: none; }"), (studio("control-background"), studio("text-primary"), None, 4.0));
     assert_eq!(
-        colours(""),
-        (crate::kit::theme::studio("control-background"), crate::kit::theme::studio("text-primary"))
-    );
-    assert_eq!(
-        colours("button { background-color: #102030; color: #405060; }"),
-        (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60))
+        colors(
+            "button { image: none; background-color: #102030; color: #405060; border-color: #708090; border-width: 1px; }"
+        ),
+        (rgb(0x10, 0x20, 0x30), rgb(0x40, 0x50, 0x60), Some(egui::Stroke::new(1.0, rgb(0x70, 0x80, 0x90))), 4.0)
     );
 }
 
-/// A drop-down draws its arrow in `dropdown-arrow { color }` as its scope sees it, as the painted
-/// drop-downs do, not in the theme's widget colour.
+/// A button drawn with artwork keeps the outline the sheet gives it, as one drawn as its CSS shape
+/// does.
 #[test]
-fn a_drop_downs_arrow_takes_the_sheets_dropdown_arrow_colour() {
+fn a_button_with_artwork_still_has_its_outline() {
+    let magenta = Color32::from_rgb(0xFF, 0x00, 0xFF);
+    let has_outline = |css: &str| {
+        crate::kit::skin::configure(&crate::kit::skin::Skin {
+            css: Some(std::sync::Arc::from(css)),
+            ..Default::default()
+        });
+        let ctx = egui::Context::default();
+        let mut found = false;
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                let _frame = crate::kit::native_css::frame_with_motion(ui, false);
+                let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(60.0, 20.0));
+                let response = button_area(ui, rect, Id::unique("push"), "Push");
+                push_face(ui, ui.painter(), rect, &response, ("Push", Push::Plain), None);
+            });
+            found = output.shapes.iter().any(|shape| {
+                matches!(&shape.shape, egui::Shape::Rect(rect) if rect.stroke.width > 0.0 && rect.stroke.color == magenta)
+            });
+            output.textures_delta.clear();
+        }
+        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
+        found
+    };
+    assert!(has_outline("button { outline: 2px solid #FF00FF; }"), "with the artwork");
+    assert!(has_outline("button { image: none; outline: 2px solid #FF00FF; }"), "and without it");
+}
+
+/// A drop-down draws its arrow in `dropdown-arrow { color }` as its scope sees it, as the painted
+/// drop-downs do, not in the theme's widget color.
+#[test]
+fn a_drop_downs_arrow_takes_the_sheets_dropdown_arrow_color() {
     let magenta = Color32::from_rgb(0xFF, 0x00, 0xFF);
     let painted = |css: &str| {
         crate::kit::skin::configure(&crate::kit::skin::Skin { css: Some(css.into()), ..Default::default() });
@@ -493,6 +530,23 @@ fn a_drop_downs_arrow_takes_the_sheets_dropdown_arrow_colour() {
             _ => false,
         })
     };
-    assert!(painted("dropdown-arrow { color: #FF00FF; }"), "the arrow takes the sheet's colour");
+    assert!(painted("dropdown-arrow { color: #FF00FF; }"), "the arrow takes the sheet's color");
     assert!(!painted("dropdown-arrow { color: #00FF00; }"), "and only that");
+}
+
+/// A control drawn in a [`cell`] takes no room: what its parent lays out next starts where it
+/// would without it, and the cell grays the control when it is off.
+#[test]
+fn a_cell_takes_no_room_and_grays_its_control() {
+    let ctx = egui::Context::default();
+    let (after, enabled) = theme::in_style_frame(&ctx, |ui| {
+        let (row, _) = ui.allocate_exact_size(Vec2::new(100.0, 22.0), Sense::hover());
+        let check = Rect::from_center_size(row.center(), Vec2::splat(16.0));
+        let cell = cell(ui, check, false);
+        check_box_named(&cell, ui.painter(), check, Id::unique("cell-check"), ("", "Cell"), true);
+        let (next, _) = ui.allocate_exact_size(Vec2::new(100.0, 22.0), Sense::hover());
+        (next.top() - row.bottom() - ui.spacing().item_spacing.y, cell.is_enabled())
+    });
+    assert_eq!(after, 0.0);
+    assert!(!enabled);
 }

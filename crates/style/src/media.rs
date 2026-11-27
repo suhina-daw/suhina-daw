@@ -160,7 +160,7 @@ impl Media {
                     "prefers-color-scheme" => Feature::Light(match value {
                         "light" => true,
                         "dark" => false,
-                        _ => return Err("Unknown colour scheme".into()),
+                        _ => return Err("Unknown color scheme".into()),
                     }),
                     "prefers-reduced-motion" => Feature::Motion(match value {
                         "reduce" => true,
@@ -256,7 +256,7 @@ mod tests {
 
     /// `prefers-color-scheme` asks for the scheme the theme variant in use declares.
     #[test]
-    fn the_colour_scheme_is_the_viewports() {
+    fn the_color_scheme_is_the_viewports() {
         let light = Viewport { light: true, ..at(800.0, 600.0) };
         let query = Media::parse("(prefers-color-scheme: light)").unwrap();
         assert!(query.matches(light) && !query.matches(at(800.0, 600.0)));

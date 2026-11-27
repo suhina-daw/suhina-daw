@@ -122,6 +122,17 @@ impl<'a> Args<'a> {
         Ok(self.opt_text(name)?.map(str::to_string))
     }
 
+    /// A list of finite numbers, at most `most` of them.
+    pub(crate) fn numbers(self, name: &str, most: usize) -> Result<Vec<f64>, CommandError> {
+        let bad = || CommandError::from(format!("{name} must be a list of numbers"));
+        let list = self.value(name).ok_or_else(|| CommandError::from(format!("{name} is missing")))?;
+        let list = list.as_array().ok_or_else(bad)?;
+        if list.len() > most {
+            return Err(format!("{name} holds {} numbers, more than {most}", list.len()).into());
+        }
+        list.iter().map(|v| v.as_f64().filter(|n| n.is_finite()).ok_or_else(bad)).collect()
+    }
+
     /// A list of ids (whole numbers, such as clip ids from `project.clips`), or `None` when it is
     /// left out.
     pub(crate) fn opt_ids(self, name: &str) -> Result<Option<Vec<u32>>, CommandError> {

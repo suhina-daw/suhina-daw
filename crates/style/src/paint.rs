@@ -98,7 +98,7 @@ pub fn shadows(source: &str, text: bool) -> Result<Vec<Shadow>, String> {
                 lengths.push(length);
             } else {
                 if color.is_some() {
-                    return Err("More than one shadow colour".into());
+                    return Err("More than one shadow color".into());
                 }
                 color = Some(Color::parse(value)?);
                 lengths_finished |= !lengths.is_empty();

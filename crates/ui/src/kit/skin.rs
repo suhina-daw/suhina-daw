@@ -27,7 +27,7 @@ pub fn roles() -> impl Iterator<Item = &'static str> {
 
 /// The default artwork, as the user-agent sheet gives it (`knob-body { image:
 /// url("suhina:knob.body.svg"); }`): the very same SVG sources are embedded and distributed as
-/// editable files. Each takes its colour only from `currentColor`, its element's `color`.
+/// editable files. Each takes its color only from `currentColor`, its element's `color`.
 pub fn default_svgs() -> impl Iterator<Item = (&'static str, &'static str)> {
     static ARTWORK: std::sync::OnceLock<Vec<(&'static str, &'static str)>> = std::sync::OnceLock::new();
     ARTWORK.get_or_init(suhina_theme_package::user_agent_artwork).iter().copied()
@@ -763,8 +763,8 @@ pub fn meter_frame(painter: &Painter, rect: Rect, state: State, level: f32) -> b
     paint_variant(painter, rect, "meter", state, Color32::WHITE, 0.0, 0.0, Some(level), None)
 }
 
-/// `var(--name)` and `var(--name, fallback)` in artwork take the theme's resolved values, colours
-/// as computed colours; an unknown name without a fallback stays as written.
+/// `var(--name)` and `var(--name, fallback)` in artwork take the theme's resolved values, colors
+/// as computed colors; an unknown name without a fallback stays as written.
 pub fn substitute_variables<'a>(source: &'a str, variables: &BTreeMap<String, String>) -> std::borrow::Cow<'a, str> {
     suhina_style::artwork::substitute(source, variables)
 }
@@ -818,15 +818,15 @@ fn paint_variant(
     let Some(source) = own.or_else(|| defaults.get(&key)).or_else(|| defaults.get(role)) else {
         return false;
     };
-    // The theme's resolved `:root` variables; a track's colour reaches artwork as `currentColor`.
+    // The theme's resolved `:root` variables; a track's color reaches artwork as `currentColor`.
     let substituted = substitute_variables(source, &skin.variables);
     let source = substituted.as_ref();
     // Plain inherited track surfaces use the native fill and avoid filling the SVG
-    // texture cache with a separate rectangle for every colour and strip height.
+    // texture cache with a separate rectangle for every color and strip height.
     if matches!(role, "track.name" | "track.body") && defaults.get(role).map(String::as_str) == Some(source) {
         return false;
     }
-    // `currentColor` is the element's colour, which its caller gives as `ink`; a PNG has none.
+    // `currentColor` is the element's color, which its caller gives as `ink`; a PNG has none.
     let png = png_artwork(source);
     let ink = if png { Color32::WHITE } else { ink };
     let scale = painter.ctx().pixels_per_point();
@@ -966,7 +966,7 @@ pub fn paint_svg(painter: &Painter, rect: Rect, source: &str, radius: f32) -> bo
 }
 
 /// Draws an icon's SVG (its shapes in `currentColor`) into `rect`, kept in proportion, in `ink`:
-/// rastered once per size in white and tinted, so every colour shares the one picture. Returns
+/// rastered once per size in white and tinted, so every color shares the one picture. Returns
 /// whether it drew.
 pub fn paint_icon(painter: &Painter, rect: Rect, source: &str, ink: Color32) -> bool {
     if !rect.is_positive() || !rect.is_finite() {

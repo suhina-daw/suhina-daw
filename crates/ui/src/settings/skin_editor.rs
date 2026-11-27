@@ -12,7 +12,7 @@ pub struct State {
 }
 
 /// The settings the theme declares itself (`@property` with a label), each with a control for its
-/// type: a colour, a number in its range, a choice of keywords, or text checked against its type.
+/// type: a color, a number in its range, a choice of keywords, or text checked against its type.
 /// `held` is set while the pointer is held on one of them, so the window behind stays clear for
 /// as long as the setting is being changed.
 pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held: &mut bool) -> Option<ThemeRequest> {
@@ -52,7 +52,7 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
                     };
                     let mut hsva = hsva_of(rgba);
                     let popup = ui.auto_id_with("popup");
-                    // Normal blending only: a CSS colour has no additive form, and egui keeps an
+                    // Normal blending only: a CSS color has no additive form, and egui keeps an
                     // additive one with an alpha of 0, which would save it as transparent black.
                     let response =
                         egui::color_picker::color_edit_button_hsva(ui, &mut hsva, egui::color_picker::Alpha::OnlyBlend);
@@ -79,15 +79,18 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
                     }
                 }
                 (_, Some(keywords), _) => {
-                    egui::ComboBox::from_id_salt(("theme-setting", &property.name))
-                        .selected_text(value.as_str())
-                        .show_ui(ui, |ui| {
+                    crate::kit::widgets::combo_box(
+                        ui,
+                        egui::ComboBox::from_id_salt(("theme-setting", &property.name)).selected_text(value.as_str()),
+                        |ui| {
                             for keyword in keywords {
-                                if ui.selectable_label(value == keyword, keyword).clicked() {
+                                if crate::kit::menu::item(ui, keyword, value == keyword).clicked() {
                                     next = Some(keyword.to_string());
+                                    ui.close();
                                 }
                             }
-                        });
+                        },
+                    );
                 }
                 _ => {
                     let draft = state.drafts.entry(property.name.clone()).or_insert_with(|| value.clone());
@@ -117,8 +120,8 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
     request
 }
 
-/// A CSS colour (unmultiplied sRGB) for egui's picker, its colour kept apart from its alpha so a
-/// fully transparent colour keeps its hue: egui's other colour types are premultiplied and lose it.
+/// A CSS color (unmultiplied sRGB) for egui's picker, its color kept apart from its alpha so a
+/// fully transparent color keeps its hue: egui's other color types are premultiplied and lose it.
 fn hsva_of([r, g, b, a]: [u8; 4]) -> egui::ecolor::Hsva {
     let mut hsva = egui::ecolor::Hsva::from_srgba_unmultiplied([r, g, b, 255]);
     hsva.a = f32::from(a) / 255.0;
@@ -134,9 +137,9 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    /// A colour keeps its hue through the picker at any alpha, 0 included, as CSS keeps it.
+    /// A color keeps its hue through the picker at any alpha, 0 included, as CSS keeps it.
     #[test]
-    fn a_colour_keeps_its_hue_at_every_alpha() {
+    fn a_color_keeps_its_hue_at_every_alpha() {
         for rgba in [[0xFF, 0x30, 0x00, 0x00], [0xFF, 0x30, 0x00, 0x80], [0x12, 0x34, 0x56, 0xFF]] {
             assert_eq!(super::hsva_of(rgba).to_srgba_unmultiplied(), rgba);
         }

@@ -4,7 +4,7 @@ read_when: MIDI controller, MIDI learn, MIDI mapping, remote mapping, map a knob
 type: decision
 status: proposed
 built: partly
-last_verified: 2026-11-06
+last_verified: 2026-11-23
 ---
 
 # 0019: MIDI controllers and mapping
@@ -132,7 +132,7 @@ have.
 
 9. **Feedback is MIDI output, and comes after input works.** `crates/midi` grows output ports.
    A profile says which controls take feedback and how (a CC value, a note velocity for a
-   coloured pad). The session sends a mapped value back when it changes from any front end, so a
+   colored pad). The session sends a mapped value back when it changes from any front end, so a
    motor fader follows an undo and a pad lights when a clip is launched from the window. Values a
    gesture is moving are not echoed to the control that moves them.
 

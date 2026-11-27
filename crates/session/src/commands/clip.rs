@@ -5,6 +5,14 @@
 
 use super::*;
 
+/// The note starts of a warped clip's file, found already (the window finds them on a thread of
+/// its own), so a warp marker command places markers on them without analysing the file again.
+const TRANSIENTS: Param = optional(
+    "transients",
+    ParamType::Numbers,
+    "the seconds in the clip's audio file where notes start, as found before (at most 100000, each 0 or more); given, the file is not analysed again",
+);
+
 pub(super) static COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         id: "arrangement.audioOverlaps",
@@ -63,8 +71,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setColorMany",
-        label: "Give several arrangement clips a colour of their own, or their tracks' colour again, as one undo step",
-        params: &[CLIPS, param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for each track's colour")],
+        label: "Give several clips, in the arrangement or in clip slots, a color of their own, or their tracks' color again, as one undo step",
+        params: &[CLIPS, param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for each track's color"), GESTURE],
         kind: CommandKind::EDIT,
         run: set_clips_color,
         policy: Policy::UNHEARD,
@@ -261,16 +269,17 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setColor",
-        label: "Give a clip a colour of its own (by index), or every clip of a track one when no index is given; \"none\" makes them show the track's colour again",
+        label: "Give a clip a color of its own (by id, an arrangement clip or a slot's, or by index), or every clip of a track one when neither is given; \"none\" makes them show the track's color again",
         params: &[
             CLIP_TRACK,
-            param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for the track's colour"),
+            param("color", ParamType::Text, "\"#rrggbb\", or \"none\" for the track's color"),
             CLIP,
             optional(
                 "index",
                 ParamType::Integer,
                 "clip index on the track, from project.clips (deprecated, use clip); every clip of the track when neither is given",
             ),
+            GESTURE,
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_color::set_clip_color,
@@ -336,7 +345,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "color",
                 ParamType::Text,
-                "\"#rrggbb\": the colour they show now, kept on the other track by those with none of their own",
+                "\"#rrggbb\": the color they show now, kept on the other track by those with none of their own",
             ),
             optional(
                 "copy",
@@ -421,7 +430,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
             optional(
                 "color",
                 ParamType::Text,
-                "\"#rrggbb\": the colour the clip shows now, which it keeps on another track when it has none of its own",
+                "\"#rrggbb\": the color the clip shows now, which it keeps on another track when it has none of its own",
             ),
         ],
         kind: CommandKind::EDIT,
@@ -488,7 +497,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "clip.setAudio",
-        label: "Set an audio clip's warp switch, warp mode or transpose (an arrangement clip, or the clip in a track's slot by scene); only that clip changes, another clip of the same audio keeps its own",
+        label: "Set an audio clip's warp switch, warp mode, transpose or warp mode settings (an arrangement clip, or the clip in a track's slot by scene); only that clip changes, another clip of the same audio keeps its own",
         params: &[
             CLIP_TRACK,
             CLIP,
@@ -501,6 +510,23 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 "the warp mode: repitch, rhythmic, tonal, texture, smooth or high-quality",
             ),
             optional("transpose", ParamType::Number, "pitch shift in semitones, -48 to 48 (fractions are cents)"),
+            optional(
+                "slice",
+                ParamType::Text,
+                "rhythmic mode: where the audio is cut into slices, transients, 1/4, 1/8, 1/16 or 1/32",
+            ),
+            optional(
+                "tail",
+                ParamType::Text,
+                "rhythmic mode: what fills the gap after a slice played slower than its audio, off, loop or back-and-forth",
+            ),
+            optional(
+                "envelope",
+                ParamType::Number,
+                "rhythmic mode: how level a slice stays over its length, 0 to 100 percent (100 does not fade it)",
+            ),
+            optional("grain", ParamType::Number, "tonal and texture modes: a grain's length, 10 to 400 milliseconds"),
+            optional("scatter", ParamType::Number, "texture mode: how far grains move at random, 0 to 100 percent"),
             GESTURE,
         ],
         kind: CommandKind::EDIT,
@@ -549,6 +575,144 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         ],
         kind: CommandKind::EDIT,
         run: crate::clip_audio::set_tempo,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.addWarpMarker",
+        label: "Add a warp marker to a warped audio clip (an arrangement clip, or the clip in a track's slot by scene) at a beat of its content: it pins the sound playing there to that beat, so nothing moves until the marker is moved. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param(
+                "beat",
+                ParamType::Number,
+                "the content beat to pin the sound at (a beat that has a marker changes nothing)",
+            ),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::add_warp_marker,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.addWarpMarkersAtTransients",
+        label: "Add a warp marker at every note start of a warped audio clip's file (where its spectrum rises as the pitches sounding change or the level jumps, each moved onto a sharp level attack close by), each pinning the sound playing there to its beat, so nothing moves until a marker is moved. A transient near a marker the clip has keeps that marker. One undo step; only that clip changes",
+        params: &[CLIP_TRACK, CLIP, CLIP_INDEX, CLIP_SCENE, TRANSIENTS],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::add_warp_markers_at_transients,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.moveWarpMarker",
+        label: "Move a warp marker of a warped audio clip from one content beat to another: the sound it is pinned to goes with it, so what plays between it and its neighbours stretches or squeezes. It stays between its neighbours. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("from", ParamType::Number, "the content beat the marker is at now"),
+            param("beat", ParamType::Number, "the content beat to move it to"),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::move_warp_marker,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.removeWarpMarker",
+        label: "Remove the warp marker of a warped audio clip at a content beat; the audio between its neighbours then runs evenly. A warped clip keeps at least two markers. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("beat", ParamType::Number, "the content beat of the marker"),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::remove_warp_marker,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.moveWarpMarkers",
+        label: "Move several warp markers of a warped audio clip by the same number of beats at once, each with the sound it is pinned to. The markers not moved stay; a moved one stays between them. One undo step; only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("beats", ParamType::Numbers, "the content beats the markers are at now"),
+            param("by", ParamType::Number, "how many beats to move them, later (positive) or earlier (negative)"),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::move_warp_markers,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.quantizeWarpMarkers",
+        label: "Quantize a warped audio clip's timing: each transient (where its sound starts) in the range gets a warp marker where it plays now, then every marker there moves towards the nearest grid line, its sound with it. One undo step; only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("grid", ParamType::Text, "the grid, as note.quantize takes it: 1/16, 1/8T, 1 bar, ..."),
+            optional("amount", ParamType::Number, "how far towards the line, 0 to 100 percent (default 100: onto it)"),
+            optional(
+                "start",
+                ParamType::Number,
+                "the content beat the range starts at (default: where the clip starts playing its content, its offset or its loop's start when earlier)",
+            ),
+            optional(
+                "end",
+                ParamType::Number,
+                "the content beat the range ends at (default: where the clip stops playing its content, its offset plus length or, looping, its loop's end)",
+            ),
+            TRANSIENTS,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::quantize_warp_markers,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.removeWarpMarkers",
+        label: "Remove several warp markers of a warped audio clip at once; the audio between the markers left then runs evenly. A warped clip keeps at least two markers. One undo step; only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            param("beats", ParamType::Numbers, "the content beats of the markers"),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::remove_warp_markers,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
+        id: "clip.resetWarp",
+        label: "Reset an audio clip's warp to two markers, one at each end of its audio, so it runs evenly: at the tempo the clip has, or with detect at the tempo found in the file's metadata, name or sound. Warp turns on; the clip's start, length and loop stay. Only that clip changes",
+        params: &[
+            CLIP_TRACK,
+            CLIP,
+            CLIP_INDEX,
+            CLIP_SCENE,
+            optional(
+                "detect",
+                ParamType::Bool,
+                "true reads the tempo again from the file (metadata, name, then detection) instead of keeping the clip's",
+            ),
+            optional(
+                "transients",
+                ParamType::Numbers,
+                "the note starts of the clip's audio file, in seconds, as the other warp marker commands take them: checked, but not needed, as the tempo is detected from the sound's beat rather than from its note starts",
+            ),
+        ],
+        kind: CommandKind::EDIT,
+        run: crate::clip_audio::reset_warp,
         policy: Policy::DEFAULT,
     },
     CommandSpec {
@@ -1336,17 +1500,43 @@ fn shift_fades(session: &mut Session, params: &Value) -> Result<Value, CommandEr
 }
 
 /// `clip.setColorMany`: the clips `clips` names take `color` (or their tracks' again), every one
-/// checked before any changes.
+/// checked before any changes. A clip named by id may be in a clip slot; the deprecated
+/// `{track, index}` form names arrangement clips.
 fn set_clips_color(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let color = crate::clip_color::parse_color(params, "color")?;
     let p = &mut session.project;
-    let clips = clip_list(p, params)?;
-    for (track, index) in &clips {
-        let lane = p.arrangement.lanes.iter_mut().find(|l| l.track == Some(*track));
-        let clip = lane.and_then(|l| l.clips.get_mut(*index)).ok_or("the clip is missing")?;
-        clip.color = color;
+    let places = color_clip_places(p, params)?;
+    for at in &places {
+        crate::notes::clip_mut(p, *at).ok_or("the clip is missing")?.color = color;
     }
-    Ok(json!({ "clips": clips.len(), "color": Args::new(params).value("color") }))
+    Ok(json!({ "clips": places.len(), "color": Args::new(params).value("color") }))
+}
+
+/// Where each clip `params.clips` names is, arrangement clips and slots' clips alike, each once.
+fn color_clip_places(p: &Project, params: &Value) -> Result<Vec<crate::notes::ClipAt>, CommandError> {
+    let list =
+        Args::new(params).value("clips").and_then(Value::as_array).ok_or("clips must be a list of { \"clip\": id }")?;
+    let mut out: Vec<crate::notes::ClipAt> = Vec::new();
+    for entry in list {
+        let at = if entry.get("clip").is_some() {
+            match named_clip(p, entry)? {
+                Some(named) => named.at,
+                None => return Err("each clip in clips is { \"clip\": id }".into()),
+            }
+        } else {
+            let one = json!({ "clips": [entry] });
+            let (track, index) = clip_list(p, &one)?.first().copied().ok_or("each clip in clips names a clip")?;
+            let lane = p.arrangement.lanes.iter().position(|l| l.track == Some(track)).ok_or("the clip is missing")?;
+            crate::notes::ClipAt::Arrangement(lane, index)
+        };
+        if !out.contains(&at) {
+            out.push(at);
+        }
+    }
+    if out.is_empty() {
+        return Err("clips must name at least one clip".into());
+    }
+    Ok(out)
 }
 
 /// Removes the clips named by `clips`, which must exist; returns how many went. Indices are read
@@ -1610,7 +1800,7 @@ fn move_clip(session: &mut Session, params: &Value) -> Result<Value, CommandErro
         Some(_) => track_at(&session.project, params, "toTrack")?,
         None => track,
     };
-    // The colour the clip shows on its track, kept when it goes to another (`color`).
+    // The color the clip shows on its track, kept when it goes to another (`color`).
     let keep = match Args::new(params).value("color") {
         None => None,
         Some(_) => crate::clip_color::parse_color(params, "color")?,

@@ -3,7 +3,7 @@ description: Key inputs - a device whose detector reads another channel's signal
 read_when: sidechain, key input, key source, tap point, pre FX, post FX, post fader, routing, aux input, aux output, multi-out, multiple outputs, bus, audio port, region version, protocol version, VST2 bus, device input
 type: spec
 status: draft
-last_verified: 2026-11-19
+last_verified: 2026-11-23
 covers:
   - crates/model/src/lib.rs
   - crates/engine/src/chain.rs
@@ -63,9 +63,11 @@ refine.
 - **Engine.** A source's taps are kept per block (`Chain::keep_pre_fx`, `keep_post`) and copied into each
   reader's `KeyRead`, delayed so it lines up with the reader's input (`crates/engine/src/buses.rs`); a reader
   waits for its sources in the block's turn plan as for a feeder (`sends::plan_turns`).
-- **Interface.** The device's header has an **SC** button, lit while it reads a key; it and the device's menu
-  (*Sidechain*) offer *None*, the tracks it can read (not its own, not one it plays into), the tap point and the
-  gain. A track's menu has **Sidechain to**, listing the devices on other tracks that can read it; a pick sets
+- **Interface.** The device's header has a **Sidechain** button with a dot before the word (filled while the
+  device reads its key, a ring while the key is off or there is none) and a chevron beside it. With a source
+  chosen, the button switches the key off and on and keeps its source, tap and gain
+  (`device.setKeyEnabled`); without one it opens the choices. The chevron and the device's menu (*Sidechain*)
+  offer *None*, the tracks it can read (not its own, not one it plays into), the tap point and the gain. A track's menu has **Sidechain to**, listing the devices on other tracks that can read it; a pick sets
   that device's key from this track, a ticked one clears it. Both are `device.setKey` / `device.clearKey`.
 
 ## What it is
@@ -228,6 +230,11 @@ pub struct DeviceInput {
     /// for an auxiliary bus (`"Sidechain"`, `"Aux 1"`, `"2"` for a VST2 pair without a name).
     pub port: String,
     pub source: SignalPoint,
+    /// The key's level before the device reads it, linear (unity by default).
+    pub gain: f64,
+    /// Whether the device reads it: off, it hears its own input again, and the source, tap and gain
+    /// stay for when it is switched back on.
+    pub enabled: bool,
 }
 
 /// Where a key is read: a channel, or a branch of a device group inside a track's chain
@@ -291,6 +298,9 @@ A key read from a device group's branch carries the point instead of the channel
 { "port": "key", "source": { "branch": { "track": 3, "device": [2], "branch": 1, "tap": "postFx" } } }
 ```
 
+A key that is switched off carries `"enabled": false`; a key that is read writes nothing for it, and a key
+without the field is read. A value that is not `true` or `false` refuses the file.
+
 The reader accepts both versions and refuses an unknown `tap` or an unknown point with a message that names it,
 never silently.
 
@@ -304,7 +314,8 @@ groups land).
 |---|---|---|---|
 | `device.setKey` | edit | `track`; `device`; `source` (a track, or `"none"`); `tap` (`preFx`, `postFx` or `postFader`, optional, default `postFx`); `gain` (dB, -150 to +24, optional, default 0); `port` (text, optional, default `"key"`) | Makes the device read the track's signal, replacing a key it had. Refused for a device that reads no key, for a device inside a device group, for a track without a mixer channel and when the edge would close a loop (the reader's own track is a loop after its devices). `"none"` is `device.clearKey`. One undo step. |
 | `device.clearKey` | edit | `track`; `device` | Removes the key. One undo step. |
-| `track.devices` | read | `track` | Lists each device; a device with a key gains `key: { channel, tap, gain (dB), port }`. |
+| `device.setKeyEnabled` | edit | `track`; `device`; `enabled` (bool) | Switches the key off (the device hears its own input) or on again, keeping its source, tap and gain. Refused for a device that reads no key. Answers whether it changed. One undo step. `device.setKey` switches a key it sets on. |
+| `track.devices` | read | `track` | Lists each device; a device with a key gains `key: { channel, tap, gain (dB), port, enabled }`. |
 
 The command is the only way a key is made: the UI, the CLI and MCP all dispatch it. `device.add` never adds one,
 and a device that is duplicated (`device.duplicate`) or moved keeps its key, since it is a field of the device.
@@ -487,7 +498,7 @@ until then the file never contains one.
 
 ## The interface
 
-*As built* above describes the first version: an **SC** button in the device's header and *Sidechain* in its
+*As built* above describes the first version: a **Sidechain** button in the device's header and *Sidechain* in its
 menu instead of a row, *Sidechain to* on the source track's menu, and no branches yet. The plan:
 
 In the device panel ([ADR 0009](../decisions/0009-ui-toolkit-and-look.md), [components](../design/components.md)),

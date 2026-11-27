@@ -306,15 +306,12 @@ pub(crate) fn menu_width(ui: &Ui, (caption, word): (Option<&str>, &str)) -> f32 
     MENU_PAD + caption + word + CHEVRON + MENU_PAD
 }
 
-/// A toolbar menu's button in `rect`, drawn as the Rows group's toggles are, so the right side of
-/// the toolbar has one look (› Layout): no fill until hovered or while its menu is open, rounded,
-/// a dim `caption` when given, its `word` in `ink` and a chevron right after. Its accessible label
-/// is `label`. Returns its response, for the menu to open from.
+/// A toolbar menu's button in `rect`, drawn as the toolbar's other buttons are, so the toolbar
+/// has one look (› Layout): a dim `caption` when given, its `word` and a chevron right after. Its
+/// accessible label is `label`. Returns its response, for the menu to open from.
 ///
-/// It is `dropdown[kind="subtle"]`, quiet on the bar as a track header's routing fields are: only
-/// a rule for that kind reaches it (its `background-color` while hovered or open, its `color`),
-/// not one for every `dropdown`. Its words are `bar-item[kind="menu"]`'s `color`, `[muted]` while
-/// `dim`, `[checked]` while it is lit. Its caption is `label[kind="hint"]`.
+/// It is `piano-tool[kind="menu"]`, `[checked]` while its menu is open and `[muted]` while `dim`:
+/// no fill until hovered or open, as the sheet says. Its caption is `label[kind="hint"]`.
 pub(crate) fn menu_face(
     ui: &Ui,
     rect: Rect,
@@ -326,21 +323,13 @@ pub(crate) fn menu_face(
     let rect =
         Rect::from_min_max(Pos2::new(rect.left(), rect.top() + 1.0), Pos2::new(rect.right(), rect.bottom() - 1.0));
     let response = widgets::button_area(ui, rect, id, label);
-    let lit = response.hovered() || egui::Popup::menu(&response).is_open();
-    let plain = crate::kit::element::DROPDOWN.response(&response).probe();
-    let own = crate::kit::element::DROPDOWN.response(&response).attribute("kind", "subtle").look();
-    let fill = if lit { ui.visuals().widgets.hovered.weak_bg_fill } else { Color32::TRANSPARENT };
-    let words = crate::kit::element::BAR_ITEM
-        .attribute("kind", "menu")
-        .attr(crate::kit::element::Muted, dim)
-        .attr(crate::kit::element::Checked, lit)
-        .look();
-    // What only a rule for the kind gives: not what a rule for every dropdown does.
-    let fill = own.unlike(&plain, crate::kit::element::Paint::Background, fill);
-    let ink = own.themed_unlike(&plain, crate::kit::element::Paint::Color).unwrap_or_else(|| words.color());
     let caption_ink = crate::detail::detail_view::hint_ink();
+    let ink =
+        tool_face(ui, ui.painter(), rect, &response, crate::kit::element::PIANO_TOOL.attribute("kind", "menu"), |el| {
+            el.attr(crate::kit::element::Checked, egui::Popup::menu(&response).is_open())
+                .attr(crate::kit::element::Muted, dim)
+        });
     let painter = ui.painter();
-    painter.rect_filled(rect, 3.0, fill);
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut x = rect.left() + MENU_PAD;
     for (text, color, after) in
@@ -353,6 +342,23 @@ pub(crate) fn menu_face(
     }
     chevron(painter, Pos2::new(x + CHEVRON / 2.0, rect.center().y), ink);
     response
+}
+
+/// The face every button of the toolbar has in `rect`: `tool` (a `piano-tool`) with the states
+/// `states` adds, its fill fading to the one it has under the pointer (none at rest, as the base
+/// sheet says) and its corners rounded. Returns its ink.
+fn tool_face<'a>(
+    ui: &Ui,
+    painter: &egui::Painter,
+    rect: Rect,
+    response: &'a egui::Response,
+    tool: crate::kit::element::Builder<'a>,
+    states: impl FnOnce(crate::kit::element::Builder<'a>) -> crate::kit::element::Builder<'a>,
+) -> Color32 {
+    let el = states(tool.response(response)).enter();
+    let fill = el.hover_fade(widgets::hover(ui, response), crate::kit::element::Look::background);
+    el.paint_with(painter, rect, crate::kit::element::Native { radius: 3.0, fill });
+    el.color()
 }
 
 /// A small chevron pointing down, centered on `at`: a toolbar menu's sign that it opens a list.
@@ -452,21 +458,9 @@ fn row_toggle(
 ) -> bool {
     let response = widgets::button_area(ui, input, Id::unique(("piano-roll-rows", button.name())), button.name());
     response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, button.name()));
-    // Lit as a selected word is (the selection's fill and ink), as the toolbar's words were. It is
-    // `piano-tool#piano-fold` (and the others), `[checked]` while on: only a rule for the lit
-    // state lights it, so one for every `piano-tool` does not hide which is on.
-    let visuals = ui.visuals();
-    let tool = || crate::kit::element::PIANO_TOOL.id(button.id()).attribute("kind", button.id()).response(&response);
-    // Its words are `piano-tool`'s `color`, brighter under the pointer.
-    let off = (
-        if response.hovered() { visuals.widgets.hovered.weak_bg_fill } else { Color32::TRANSPARENT },
-        tool().look().color(),
-    );
-    let (lit_fill, lit_ink) = (visuals.selection.bg_fill, visuals.selection.stroke.color);
-    let (el, sides) = tool().enter_toggle(&[crate::kit::element::Checked], on, false);
-    let toggle = widgets::Toggle::of(&el, sides.as_ref(), widgets::UnlitInk::Own, off, lit_fill, |_| lit_ink);
-    let (fill, ink) = toggle.at(if on { 1.0 } else { 0.0 });
-    painter.rect_filled(rect, 3.0, fill);
+    // `piano-tool#piano-fold` (and the others), `[checked]` while on.
+    let tool = crate::kit::element::PIANO_TOOL.id(button.id()).attribute("kind", button.id());
+    let ink = tool_face(ui, painter, rect, &response, tool, |el| el.attr(crate::kit::element::Checked, on));
     // An icon alone sits in the middle of its box, as the toolbar's other buttons' do; beside a
     // word it stands the same room from the left edge.
     let left = if word.is_some() { BUTTON_ROOM * scale / 2.0 } else { (rect.width() - rect.height()) / 2.0 };
@@ -501,8 +495,8 @@ fn edit_menu(paint: &ButtonPaint<'_>, area: Rect, selected: bool) -> Option<Icon
     egui::Popup::menu(&response).show(|ui| {
         for button in [IconButton::Cut, IconButton::Copy, IconButton::Paste, IconButton::Duplicate] {
             let enabled = matches!(button, IconButton::Paste) || selected;
-            let text = egui::RichText::new(icon_hint(button, paint.keymap)).font(theme::ui_font(theme::TEXT_SMALL));
-            if ui.add_enabled(enabled, egui::Button::new(text)).clicked() {
+            let text = icon_hint(button, paint.keymap);
+            if crate::kit::menu::Entry::new(&text).enabled(enabled).compact().show(ui).clicked() {
                 picked = Some(button);
                 ui.close();
             }
@@ -565,41 +559,32 @@ fn workflow_menu(
 /// dim at the right, then Allow stacked notes. A pick is left in `state` for the window, which
 /// keeps it in the keymap.
 pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Keymap, state: &mut PianoRollState) {
+    use crate::kit::menu::{self, Entry};
     use crate::settings::keymap::Preset;
     use crate::settings::workflow::{Pick, Setting};
     let mode = keymap.preset();
     let current = keymap.workflow();
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    // Each setting's value, dim at the right: `label[kind="hint"]`.
-    let hint = crate::detail::detail_view::hint_ink();
     let mut picked = None;
     for choice in Preset::MODES {
-        let response = ui.selectable_label(choice == mode, egui::RichText::new(choice.name()).font(font.clone()));
-        if response.clicked() {
+        if Entry::new(choice.name()).chosen(choice == mode).compact().show(ui).clicked() {
             if choice != mode {
                 picked = Some(Pick::Mode(choice));
             }
             ui.close();
         }
     }
-    ui.separator();
+    menu::separator(ui);
     // Each setting in a word or two, its value dim at the right and its choices one level down:
     // short enough to read at a glance, and changed and tried at once.
     for setting in Setting::ALL {
         let chosen = current.get(setting);
         let shown = setting.choices().get(chosen).copied().unwrap_or("");
         let value = setting.short_choices().get(chosen).copied().unwrap_or(shown);
-        let button = egui::Button::new(egui::RichText::new(setting.short_name()).font(font.clone())).right_text((
-            egui::RichText::new(value).font(font.clone()).color(hint),
-            egui::containers::menu::SubMenuButton::arrow_atom(None),
-        ));
         let label = format!("{}: {shown}", setting.name());
-        let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
+        let response = Entry::new(setting.short_name()).value(value).named(&label).compact().submenu(ui, |ui| {
             for (index, choice) in setting.choices().iter().enumerate() {
-                let response = ui.selectable_label(index == chosen, egui::RichText::new(*choice).font(font.clone()));
                 let name = format!("{}: {choice}", setting.name());
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, index == chosen, &name));
-                if response.clicked() {
+                if Entry::new(choice).chosen(index == chosen).named(&name).compact().show(ui).clicked() {
                     if index != chosen {
                         picked = Some(Pick::Setting(setting, index));
                     }
@@ -607,17 +592,14 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
                 }
             }
         });
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
         response.on_hover_text(setting.note());
     }
     // How notes that land on others of their key behave belongs with how the mouse edits them
     // (› Allow stacked notes).
-    ui.separator();
+    menu::separator(ui);
     let stacked = !state.notes_replace;
-    let response = ui.selectable_label(stacked, egui::RichText::new("Allow stacked notes").font(font.clone()));
-    response
-        .widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, stacked, "Workflow: Allow stacked notes"));
-    if response.clicked() {
+    let entry = Entry::new("Allow stacked notes").check(stacked).named("Workflow: Allow stacked notes");
+    if entry.compact().show(ui).clicked() {
         state.view_picked = Some(super::ViewPick::AllowStacked(!stacked));
         ui.close();
     }
@@ -625,31 +607,23 @@ pub(super) fn workflow_entries(ui: &mut Ui, keymap: &crate::settings::keymap::Ke
     // runs on past the note placed over it (› Resizing, Covered notes).
     let whole = state.covered_whole;
     let mut covered_pick = None;
-    ui.add_enabled_ui(!stacked, |ui| {
-        let value = if whole { "Delete" } else { "Keep rest" };
-        let button = egui::Button::new(egui::RichText::new("Covered notes").font(font.clone())).right_text((
-            egui::RichText::new(value).font(font.clone()).color(hint),
-            egui::containers::menu::SubMenuButton::arrow_atom(None),
-        ));
-        let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| {
-            for (on, name) in [(true, "Delete them"), (false, "Keep the rest")] {
-                let response = ui.selectable_label(whole == on, egui::RichText::new(name).font(font.clone()));
-                let label = format!("Covered notes: {name}");
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, whole == on, &label));
-                if response.clicked() {
-                    if whole != on {
-                        covered_pick = Some(on);
-                    }
-                    ui.close();
+    let value = if whole { "Delete" } else { "Keep rest" };
+    let label = format!("Covered notes: {}", if whole { "Delete them" } else { "Keep the rest" });
+    let covered = Entry::new("Covered notes").value(value).named(&label).enabled(!stacked).compact();
+    let response = covered.submenu(ui, |ui| {
+        for (on, name) in [(true, "Delete them"), (false, "Keep the rest")] {
+            let label = format!("Covered notes: {name}");
+            if Entry::new(name).chosen(whole == on).named(&label).compact().show(ui).clicked() {
+                if whole != on {
+                    covered_pick = Some(on);
                 }
+                ui.close();
             }
-        });
-        let label = format!("Covered notes: {}", if whole { "Delete them" } else { "Keep the rest" });
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, !stacked, &label));
-        response.on_hover_text(
-            "With stacked notes off: a note that one placed over it covers from its start goes whole, or keeps what runs on past",
-        );
+        }
     });
+    response.on_hover_text(
+        "With stacked notes off: a note that one placed over it covers from its start goes whole, or keeps what runs on past",
+    );
     if let Some(on) = covered_pick {
         state.view_picked = Some(super::ViewPick::CoveredWhole(on));
     }
@@ -668,7 +642,7 @@ pub(super) struct ButtonPaint<'a> {
 }
 
 impl ButtonPaint<'_> {
-    /// One icon button: the shape in the tool's colours, a tooltip with its name and the key it
+    /// One icon button: the shape in the tool's colors, a tooltip with its name and the key it
     /// has, and the same name as its accessible label. Returns whether it was clicked.
     pub(super) fn place(&self, area: Rect, button: IconButton, chosen: bool, active: bool) -> bool {
         let ui = self.ui;

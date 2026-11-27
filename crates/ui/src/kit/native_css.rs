@@ -179,7 +179,7 @@ impl Computed {
         std::array::from_fn(|side| padding[side] + self.border_sides[side])
     }
 
-    /// The element's outline, when it has one: its width, colour and offset in points.
+    /// The element's outline, when it has one: its width, color and offset in points.
     pub fn outline(&self) -> Option<(f32, Color32, f32)> {
         use suhina_style::value::Length;
         if self.value(Property::OutlineStyle) != Value::Keyword("solid") {
@@ -239,8 +239,8 @@ impl Computed {
         self.variables.get(name).map(String::as_str)
     }
 
-    /// The custom property `name` (with its `--`) as a colour, when it is one.
-    pub fn colour_variable(&self, name: &str) -> Option<Color32> {
+    /// The custom property `name` (with its `--`) as a color, when it is one.
+    pub fn color_variable(&self, name: &str) -> Option<Color32> {
         color_of(self.variable(name)?)
     }
 
@@ -345,7 +345,7 @@ impl Computed {
 }
 
 /// Only authored properties override native defaults. An unrelated CSS rule must not
-/// replace every label's native colour, size or corner radius with defaults.
+/// replace every label's native color, size or corner radius with defaults.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Authored {
     pub color: bool,
@@ -381,23 +381,23 @@ struct Motion {
 #[derive(Default)]
 struct Engine {
     source: Option<Arc<str>>,
-    /// What the base tier was last given: whether the base sheet applies, and the theme's colour
+    /// What the base tier was last given: whether the base sheet applies, and the theme's color
     /// map as a `:root` rule ([`set_colors`]). `None` before the first frame.
     base_inputs: Option<(bool, Option<Arc<str>>)>,
-    /// The colour map's rule, parsed.
+    /// The color map's rule, parsed.
     colors: Option<Arc<Sheet>>,
-    /// The window's faded colours as a rule for `window` ([`set_window_opacity`]), and parsed.
+    /// The window's faded colors as a rule for `window` ([`set_window_opacity`]), and parsed.
     window_rule: Option<(String, Arc<Sheet>)>,
-    /// The style reset, the window's opacity and the host's colours ([`set_window_colors`]) the
-    /// root's colours were last read at.
+    /// The style reset, the window's opacity and the host's colors ([`set_window_colors`]) the
+    /// root's colors were last read at.
     snapshot: Option<(u64, u32, u64)>,
-    /// The custom properties the root sees, the window's faded colours in place: what an element
+    /// The custom properties the root sees, the window's faded colors in place: what an element
     /// that sets none of its own sees ([`style_class`](super::style_class) compares with it).
     root_variables: Arc<std::collections::BTreeMap<String, String>>,
     /// The root's custom properties before the window's opacity is applied.
     unfaded: Arc<std::collections::BTreeMap<String, String>>,
     size: [u32; 2],
-    /// The theme's swatches by colour.
+    /// The theme's swatches by color.
     swatches: HashMap<String, Computed>,
     /// The styles [`settings_of`] worked out, by the path asked for, until the styles reset.
     settings: HashMap<Vec<&'static str>, Option<Computed>>,
@@ -455,7 +455,7 @@ struct Engine {
     motions: HashMap<u64, Motion>,
     native: Option<native::Paint>,
     motion: bool,
-    /// The colour scheme the styles were worked out in ([`skin::Skin::light`]).
+    /// The color scheme the styles were worked out in ([`skin::Skin::light`]).
     light: bool,
     styles_changed: bool,
     /// The user's own sheet (`user.css`), above every theme and device sheet.
@@ -532,7 +532,7 @@ thread_local! {
     static ENGINE: RefCell<Engine> = RefCell::new(Engine::default());
     static USER_SHEET: RefCell<Option<Arc<str>>> = const { RefCell::new(None) };
     /// Counts the times every computed style was forgotten (a sheet, variant, user sheet, width,
-    /// colour or engine change): what the root's `Visuals` are rebuilt on.
+    /// color or engine change): what the root's `Visuals` are rebuilt on.
     static STYLE_EPOCH: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
@@ -1096,19 +1096,19 @@ fn finish_tree(now: f64) -> (bool, bool) {
 }
 
 thread_local! {
-    /// The theme's colour map ([`set_colors`]): the colours it sets, and its `:root` rule.
+    /// The theme's color map ([`set_colors`]): the colors it sets, and its `:root` rule.
     static COLORS: RefCell<(theme::Colors, Option<Arc<str>>)> = const { RefCell::new((theme::Colors::new(), None)) };
-    /// How much of the window's own colours covers a backdrop image, 0 to 1 ([`set_window_opacity`]).
+    /// How much of the window's own colors covers a backdrop image, 0 to 1 ([`set_window_opacity`]).
     static WINDOW_OPACITY: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
     /// The sheet of a skin that has none, one allocation for every frame.
     static NO_SHEET: Arc<str> = Arc::from("");
-    /// Colour variables the host writes on `window` over the theme's ([`set_window_colors`]).
+    /// Color variables the host writes on `window` over the theme's ([`set_window_colors`]).
     static WINDOW_COLORS: RefCell<Vec<(&'static str, Color32)>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Uses the theme's colour map `colors` (`Theme.colors`: the colours it sets, by variable name
+/// Uses the theme's color map `colors` (`Theme.colors`: the colors it sets, by variable name
 /// without `--`) from the next frame on, as a `:root` rule in the base tier, after the base sheet:
-/// any `:root` in the theme's own sheet beats it. A colour it does not set is Suhina Studio's, the
+/// any `:root` in the theme's own sheet beats it. A color it does not set is Suhina Studio's, the
 /// core variables' registered value.
 pub fn set_colors(colors: &theme::Colors) {
     COLORS.with(|current| {
@@ -1121,9 +1121,9 @@ pub fn set_colors(colors: &theme::Colors) {
     });
 }
 
-/// How much of the window's own background, its panels' and its lines' colours covers a backdrop
+/// How much of the window's own background, its panels' and its lines' colors covers a backdrop
 /// image from the next frame on, 0 to 1 (1 when there is none): the host writes those three
-/// colour variables faded on `window`, in the base tier, so every rule that reads them takes them.
+/// color variables faded on `window`, in the base tier, so every rule that reads them takes them.
 pub fn set_window_opacity(ctx: &egui::Context, opacity: f32) {
     let opacity = if opacity.is_finite() { opacity.clamp(0.0, 1.0) } else { 1.0 };
     if WINDOW_OPACITY.with(|current| current.replace(opacity)) != opacity {
@@ -1131,11 +1131,11 @@ pub fn set_window_opacity(ctx: &egui::Context, opacity: f32) {
     }
 }
 
-/// Writes the colour variables `colors` (names with their `--`) on `window` from the next frame
-/// on, in the base tier with the window's faded colours ([`set_window_opacity`]): everything in the
+/// Writes the color variables `colors` (names with their `--`) on `window` from the next frame
+/// on, in the base tier with the window's faded colors ([`set_window_opacity`]): everything in the
 /// window takes them over the value the theme's `:root` gives, and a theme's own rule for an
-/// element inside it still wins. For a setting that replaces a theme colour everywhere, such as a
-/// custom selection colour; an empty list writes none.
+/// element inside it still wins. For a setting that replaces a theme color everywhere, such as a
+/// custom selection color; an empty list writes none.
 pub fn set_window_colors(colors: &[(&'static str, Color32)]) {
     WINDOW_COLORS.with(|current| {
         let mut current = current.borrow_mut();
@@ -1145,8 +1145,8 @@ pub fn set_window_colors(colors: &[(&'static str, Color32)]) {
     });
 }
 
-/// The colour variable `name` (with its `--`) as the root has it, before the window's opacity:
-/// the theme's own colour (the panels' base under a backdrop). `None` before a frame resolved it.
+/// The color variable `name` (with its `--`) as the root has it, before the window's opacity:
+/// the theme's own color (the panels' base under a backdrop). `None` before a frame resolved it.
 pub fn root_color(name: &str) -> Option<Color32> {
     ENGINE.with(|engine| {
         let engine = engine.borrow();
@@ -1155,12 +1155,12 @@ pub fn root_color(name: &str) -> Option<Color32> {
     })
 }
 
-/// A custom property's value as a colour, when it is one.
+/// A custom property's value as a color, when it is one.
 pub(in crate::kit) fn color_of(value: &str) -> Option<Color32> {
     rgba(&suhina_style::value::Color::parse(value.trim()).ok()?)
 }
 
-/// A property's value as a colour, when it is one.
+/// A property's value as a color, when it is one.
 pub(in crate::kit) fn value_color(value: &Value) -> Option<Color32> {
     match value {
         Value::Color(color) => rgba(color),
@@ -1168,7 +1168,7 @@ pub(in crate::kit) fn value_color(value: &Value) -> Option<Color32> {
     }
 }
 
-/// `color` as egui's colour, when it is a plain one.
+/// `color` as egui's color, when it is a plain one.
 fn rgba(color: &suhina_style::value::Color) -> Option<Color32> {
     match *color {
         suhina_style::value::Color::Rgba([r, g, b, a]) => Some(Color32::from_rgba_unmultiplied(r, g, b, a)),
@@ -1176,19 +1176,19 @@ fn rgba(color: &suhina_style::value::Color) -> Option<Color32> {
     }
 }
 
-/// The custom properties the root sees, the window's faded colours in place.
+/// The custom properties the root sees, the window's faded colors in place.
 pub(super) fn root_variables() -> Arc<std::collections::BTreeMap<String, String>> {
     ENGINE.with(|engine| Arc::clone(&engine.borrow().root_variables))
 }
 
-/// The colours the window's opacity fades over a backdrop: its background, its panels' and its
+/// The colors the window's opacity fades over a backdrop: its background, its panels' and its
 /// lines', by their custom properties.
 const FADED: [&str; 3] = ["--window-background", "--panel-background", "--border"];
 
-/// Reads the root's colours, when the styles reset, the window's opacity or the host's colours
-/// changed since the last time. Over a backdrop the window's colours are faded, written as
+/// Reads the root's colors, when the styles reset, the window's opacity or the host's colors
+/// changed since the last time. Over a backdrop the window's colors are faded, written as
 /// variables on `window`, in the base tier, so every rule that reads them takes them; the host's
-/// colours ([`set_window_colors`]) are written there too.
+/// colors ([`set_window_colors`]) are written there too.
 fn snapshot(engine: &mut Engine, opacity: f32, own: &[(&'static str, Color32)]) {
     let own_key = {
         let mut hash = std::hash::DefaultHasher::new();
@@ -1237,7 +1237,7 @@ fn snapshot(engine: &mut Engine, opacity: f32, own: &[(&'static str, Color32)]) 
     engine.snapshot = Some((style_epoch(), opacity.to_bits(), own_key));
 }
 
-/// Refresh only when the sheets, the theme's colours or colour scheme, the window's opacity or the
+/// Refresh only when the sheets, the theme's colors or color scheme, the window's opacity or the
 /// viewport change.
 pub fn begin_frame(ui: &egui::Ui) {
     let size = ui.ctx().input(|i| i.content_rect().size());
@@ -1250,7 +1250,7 @@ pub fn begin_frame(ui: &egui::Ui) {
 const SIZE_BEFORE_A_FRAME: [u32; 2] = [1280, 800];
 
 /// Gives the engine the sheets as they are now (the theme's, its variant's, the user's, the
-/// theme's colours and the window's opacity and colours) and the window's `size`, its last one
+/// theme's colors and the window's opacity and colors) and the window's `size`, its last one
 /// (or [`SIZE_BEFORE_A_FRAME`]) when `None`; forgets the styles worked out for anything that
 /// changed.
 fn sync_sheets(engine: &mut Engine, size: Option<[u32; 2]>) {
@@ -1365,7 +1365,7 @@ fn same_source(engine: Option<&Arc<str>>) -> bool {
 }
 
 impl Engine {
-    /// Forgets every style worked out, after the sheets, the theme's colours, the window's opacity
+    /// Forgets every style worked out, after the sheets, the theme's colors, the window's opacity
     /// or its size changed.
     fn reset_styles(&mut self) {
         bump_epoch();
@@ -1577,7 +1577,7 @@ pub fn theme_swatch(color: Color32) -> Option<Computed> {
 /// The style the window's sheets give the elements named by `path` (from `window` inward), for the
 /// settings Suhina reads outside a frame's tree: a menu's, popup's or tooltip's frame and blur,
 /// the Arrangement view's track height, a device panel's columns. Worked out by the style engine
-/// with the sheets, tiers, window size and colour scheme it styles the window with, under
+/// with the sheets, tiers, window size and color scheme it styles the window with, under
 /// `html > body > window`, so a rule gives these what it gives an element in the window (#1585).
 /// Kept per path until the styles reset. `None` when the engine is busy (asked while it works
 /// out a style), so the caller keeps its own default.

@@ -1,6 +1,6 @@
-/* Suhina Meadow, reduced to a few settings: most colours below follow them. */
-@property --paper { syntax: "<color>"; initial-value: #ECE9D8; label: "Paper"; group: "Colours"; }
-@property --tint { syntax: "<color>"; initial-value: #316AC5; label: "Accent"; group: "Colours"; }
+/* Suhina Meadow, reduced to a few settings: most colors below follow them. */
+@property --paper { syntax: "<color>"; initial-value: #ECE9D8; label: "Paper"; group: "Colors"; }
+@property --tint { syntax: "<color>"; initial-value: #316AC5; label: "Accent"; group: "Colors"; }
 @property --glassiness { syntax: "<integer>"; initial-value: 48; label: "Glassiness"; group: "Material"; range: 0 90; step: 1; }
 @property --panel-clear { syntax: "<integer>"; initial-value: 15; label: "Panel transparency"; group: "Material"; range: 0 90; step: 1; }
 @property --browser-clear { syntax: "<integer>"; initial-value: 40; label: "Browser transparency"; group: "Material"; range: 0 90; step: 1; }
@@ -55,8 +55,8 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   window, session, arrangement {
     background-color: transparent;
     color: var(--text-primary);
-    /* The parts inside take the region's text colour through its variables too (not
-       --text-value, which the fader caps' colour mixes in). */
+    /* The parts inside take the region's text color through its variables too (not
+       --text-value, which the fader caps' color mixes in). */
     --text-primary: color-mix(in oklab, white, black 79.8%);
     --text-secondary: var(--text-primary);
     --text-hint: var(--text-primary);
@@ -79,8 +79,8 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   toolbar, status-bar {
     background-color: color-mix(in srgb, var(--paper), transparent var(--panel-clear)%);
     color: var(--text-primary);
-    /* The parts inside take the region's text colour through its variables too (not
-       --text-value, which the fader caps' colour mixes in). */
+    /* The parts inside take the region's text color through its variables too (not
+       --text-value, which the fader caps' color mixes in). */
     --text-primary: color-mix(in oklab, white, black 79.8%);
     --text-secondary: var(--text-primary);
     --text-hint: var(--text-primary);
@@ -111,11 +111,11 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   }
   button { color: var(--text-primary); --text-primary: color-mix(in oklab, color-mix(in oklab, var(--paper), var(--tint) 79.2%), black 54.2%); --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: var(--paper); border-color: #7F9DB9; border-radius: 2px; }
   button:hover { color: var(--text-primary); --text-primary: #003C74; --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: #FFF4C9; border-color: #E5A629; }
-  /* A figure shown as words takes the text colour of the region it is in (not `--text-value`, which
-     the fader caps' colour mixes in). */
+  /* A figure shown as words takes the text color of the region it is in (not `--text-value`, which
+     the fader caps' color mixes in). */
   label[kind="value"] { color: var(--text-primary); }
-  /* What the base sheet colours with `--text-value` or `--border-strong` inside the detail area
-     takes the region's text, as it did before the sheet gave it a colour: the piano roll's ruler
+  /* What the base sheet colors with `--text-value` or `--border-strong` inside the detail area
+     takes the region's text, as it did before the sheet gave it a color: the piano roll's ruler
      numbers and the lines of its toolbar, a device's values. */
   piano-roll ruler-number, piano-roll-toolbar separator[kind="bar"], device-control[kind="value"], device-canvas[kind="value"] { color: var(--text-primary); }
   /* The lit fills of the toggles (Suhina's base sheet gives them, and this theme's rule for every
@@ -133,9 +133,9 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   button[kind="metronome"][checked] { background-color: var(--control-activeBackground); color: var(--accent); }
   button[kind="envelope"][checked] { background-color: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   button[kind="record"][checked] { color: var(--recording); }
-  /* A send's pointer and value take the text colour of the region it is in, as the other words do. */
+  /* A send's pointer and value take the text color of the region it is in, as the other words do. */
   send { color: var(--text-primary); }
-  /* A clip's gain figure takes the text colour of the region it is in, as the other words do. */
+  /* A clip's gain figure takes the text color of the region it is in, as the other words do. */
   clip-gain { color: var(--text-primary); }
   /* The lit fill of the browser's filter chips, as the toggles'. */
   button[kind="chip"][checked] { background-color: var(--control-selectedBackground); }
@@ -153,6 +153,17 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   button[kind="preset"][checked] { background-color: var(--control-activeBackground); color: inherit; }
   button[kind="preset"][checked]:hover { background-color: var(--control-hoverBackground); }
   button[kind="switch"][checked], button[kind="check"][checked] { background-color: var(--text-value); }
+  /* The buttons drawn as a menu's rows (a choice in a list, a section's row, a grid's widths) and
+     the browser's "…": no fill until hovered, the chosen one lit (this theme's rule for every
+     `button` overrides the base sheet's: state them again). */
+  button[kind="entry"], button[kind="more"] { background-color: transparent; }
+  button[kind="entry"]:hover { background-color: var(--control-hoverBackground); }
+  /* A dialog's main action keeps its accent edge. */
+  button[kind="primary"] { border-color: var(--accent); }
+  /* This theme gives every word one color, so it says how a row or button that cannot be used now
+     is dimmed, and which words read on the chosen row's fill. */
+  list-row[kind="menu"]:disabled, button:disabled { color: color-mix(in srgb, var(--text-primary) 45%, transparent); }
+  list-row[kind="menu"][selected], button[kind="entry"][checked] { background-color: var(--control-selectedBackground); color: white; }
   knob { color: var(--tint); background-color: var(--paper); }
   value, dropdown, dropdown-arrow, text-input { color: var(--text-primary); --text-primary: color-mix(in oklab, white, black 79.8%); --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: white; border-radius: 0px; }
   text-input[kind="typed"] { background-color: var(--control-activeBackground); color: var(--text-value); }
@@ -162,9 +173,9 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   meter-horizontal meter-level { background: linear-gradient(to right, #21A92B, #7CCE3E 76%, #E3C02C 91%, #D85430); }
 }
 
-/* The mixer strip's layout: no colour band, the meter before the fader, the dB value over the
+/* The mixer strip's layout: no color band, the meter before the fader, the dB value over the
    meter, and the pan as a knob. */
-mixer track-colour { display: none; }
+mixer track-color { display: none; }
 mixer meter { order: -1; margin: 0 8px 0 0; }
 mixer fader-scale { margin: 0 6px 0 0; }
 #mixer-volume { margin-right: 6px; }
@@ -183,7 +194,7 @@ knob-body { image: url("assets/knob.body.svg"); }
 knob-pointer { image: url("assets/knob.pointer.svg"); }
 meter { image: url("assets/meter.svg"); }
 icon[kind="play"] { image: url("assets/play.svg"); }
-icon[kind="record"] { image: url("assets/record.svg"); }
+icon[kind="record"] { image: url("assets/record.svg"); color: inherit; }
 icon[kind="solo"] { image: url("assets/solo.svg"); }
 icon[kind="stop"] { image: url("assets/stop.svg"); }
 icon[kind="audio"] { image: url("assets/track.audio.svg"); }

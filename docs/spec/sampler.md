@@ -3,7 +3,7 @@ description: Suhina's sample and granular instrument, sample loading and SDK pan
 read_when: sampler, granular instrument, sample recording, sample drop
 type: spec
 status: draft
-last_verified: 2026-11-20
+last_verified: 2026-11-23
 covers:
   - devices/sampler/**
   - crates/device-sdk/src/sample_instrument.rs
@@ -26,7 +26,7 @@ implementation below is local and awaits the authorized release build and runtim
   They use the SDK and Suhina's theme, with a stable waveform rectangle across modes.
 - The source Start/End region stays bright and the unused audio is dimmed. Selection,
   sounding slices, read heads and loop bounds have separate marks. Stereo lanes are
-  drawn separately. Automatic and pinned boundaries differ by shape as well as colour.
+  drawn separately. Automatic and pinned boundaries differ by shape as well as color.
 - Ctrl+wheel zooms around the pointer. Horizontal wheel input and Shift+wheel pan;
   middle-button dragging pans without editing a boundary. Fit source and Fit selection
   change only the view. Zoom is bounded by one source frame and the whole file.
@@ -40,7 +40,7 @@ implementation below is local and awaits the authorized release build and runtim
   The active mode uses an accent-filled button with contrasting text. The ruler has
   its own strip and shows one unit at a time: source bars/beats when the beat grid
   is available, otherwise seconds. Grid lines are subdued; slice boundaries use
-  text-colour lines and caps, distinct from the accent-coloured waveform. The
+  text-color lines and caps, distinct from the accent-colored waveform. The
   selected slice has a stronger background and bottom edge; unused audio is neutral
   and dim. Output controls precede the adjacent voice and note-release sections.
 - Grid division and the Beat slicing division are independent. Straight and triplet
@@ -96,7 +96,7 @@ most 480 by 20 pixels (`builtin::HEADER_WIDTH`, `HEADER_HEIGHT`).
 
 Sample, Slice and Grain are buttons in a column left of the waveform, each a drawn glyph over
 its caption (a wave between two bars, a strip cut in three, scattered grains); the chosen one has
-a lighter face and its glyph and caption in the accent, the others are in a dimmer text colour.
+a lighter face and its glyph and caption in the accent, the others are in a dimmer text color.
 On the Sample page the waveform fills the space right of the mode buttons, 96 pixels high, with
 identical bounds in every mode; its times (`0:00`, `0:00.480`, or bar, beat and sixteenth from
 the source tempo: `5`, `5.3`, `5.3.2`) sit on the grid lines along its bottom. Stereo channels
@@ -105,10 +105,10 @@ between the plain background and a lighter band, so neighbours stand apart; thei
 the accent turned to the opposite hue and lightened, so they differ from the waveform in any
 theme. A slice past the last key (127, counted from Root) is dimmed and has no line: no note
 plays it. The selected slice has a background highlight, pinned boundaries a thick line and a
-dot, and voice heads a separate text-colour line. Clicking a slice selects it and plays its note
+dot, and voice heads a separate text-color line. Clicking a slice selects it and plays its note
 for a moment; its number and note are in the waveform's context menu. Dragging the waveform away
 from a boundary zooms the view, in as it goes down and out as it goes up, around where the drag
-began, and moves it sideways with the pointer. Marker colours come from the theme.
+began, and moves it sideways with the pointer. Marker colors come from the theme.
 
 The Controls page puts in the waveform's place the LFO (its drawn shape, and its pitch, filter,
 volume and pan depths) and the Amplitude and Filter envelopes (A, D, S, R) and the Pitch
@@ -132,7 +132,7 @@ envelope's amount and velocity and key tracking, First beat, the editing grid an
 and Freeze.
 
 All controls retain SDK bindings and dispatch device.setParam. The panel has no
-fixed colour stylesheet: typed controls inherit the active theme and user CSS.
+fixed color stylesheet: typed controls inherit the active theme and user CSS.
 Control identities use parameter names (with suffixes for repeated controls),
 bounded by the existing device-panel scope. Knobs use the theme's artwork;
 mode buttons share the scoped button foreground/accent, and waveform ink, grid and
@@ -237,7 +237,7 @@ Mono. Grain reports each voice's scan position. Inactive voices have no line.
 **The waveform** (the SDK's `SampleWaveform` widget, [custom panels](sdk-custom-ui.md) › Reusable functional widgets). `SampleWaveform` supports anchored vertical zoom and horizontal pan on empty space.
 Source/loop handles, slice lines and voice heads share its view transform. Peaks
 are overlaid with solid two-pixel orange marker lines, without outlines;
-source/loop handles use the same colour. The Slice by selector reserves room
+source/loop handles use the same color. The Slice by selector reserves room
 for its full caption and arrow alongside the region and fade fields.
 Peaks are rebuilt for the visible range, and areas outside S/E are gray. Manual lines
 have horizontal resize cursors; double-click adds/removes a line. Line drags

@@ -511,9 +511,10 @@ pub struct Settings {
     /// whole desktop, so a second screen counts.
     pub map_window: bool,
     pub map_window_rect: Option<[i32; 4]>,
-    /// Last eight distinct track colours applied, newest first, and the floating picker's placement.
-    pub recent_colours: Vec<suhina_engine::model::Rgb>,
-    pub colour_window_rect: Option<[i32; 4]>,
+    /// The colors saved in the picker, in the order shown, none twice, and the floating picker's
+    /// placement.
+    pub saved_colors: Vec<suhina_engine::model::Rgb>,
+    pub color_window_rect: Option<[i32; 4]>,
     /// The plug-in manager's column widths in points, as dragged (`docs/spec/plugin-manager.md`
     /// › The table); empty for the widths it starts with.
     pub plugin_manager_columns: Vec<u32>,
@@ -626,8 +627,8 @@ impl Default for Settings {
             map_label_size: MAP_LABEL_SIZE,
             map_window: false,
             map_window_rect: None,
-            recent_colours: Vec::new(),
-            colour_window_rect: None,
+            saved_colors: Vec::new(),
+            color_window_rect: None,
             plugin_manager_columns: Vec::new(),
             plugin_manager_hidden: Vec::new(),
             plugin_manager_owned_first: false,
@@ -946,7 +947,7 @@ const WINDOW_POSITION: i32 = 30_000;
 /// What a saved built-in theme that has since gone or changed its id is called now.
 fn renamed_theme(id: &str) -> Option<String> {
     Some(match id {
-        // Editor Dark's colours are Suhina Studio's Darker variant.
+        // Editor Dark's colors are Suhina Studio's Darker variant.
         "editor-dark" => "suhina-studio@darker".into(),
         "suhina-dark" | "suhina-studio-dark" | "dracula" | "solarized-dark" | "suhina-forest-amber" => {
             crate::kit::theme::BUILT_IN.into()

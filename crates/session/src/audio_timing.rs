@@ -57,7 +57,7 @@ impl Mapping {
     }
 
     /// File seconds at content beat `beat`, the end segments extended.
-    fn seconds(&self, beat: f64) -> f64 {
+    pub(crate) fn seconds(&self, beat: f64) -> f64 {
         match self {
             Self::Linear { per_beat, .. } => beat * per_beat,
             Self::Warp(markers) => along(markers, beat, |m| m.0, |m| m.1),
@@ -73,7 +73,7 @@ impl Mapping {
     }
 
     /// Content beat at file second `seconds`: the inverse of [`Mapping::seconds`].
-    fn beat(&self, seconds: f64) -> f64 {
+    pub(crate) fn beat(&self, seconds: f64) -> f64 {
         match self {
             Self::Linear { per_beat, .. } => seconds / per_beat,
             Self::Warp(markers) => along(markers, seconds, |m| m.1, |m| m.0),

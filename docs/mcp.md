@@ -3,7 +3,7 @@ description: The MCP server for agents: tools, file roots, errors and how to run
 read_when: MCP, agents, attach, mcp --attach, agents in the app, live agent edits, allow agent, audio output, MIDI input, arm, record, recording, count-in, audio device, buffer size, ASIO, project_open, command_run, file roots, rmcp, suhina-cli mcp, several projects, project id, plug-in commands, device commands, library commands, add samples, track.add, clip.addFiles, preview, preview.noteOn, preview.noteOff, note.split, mute a note, note.setMuted, note.humanize, note.fitToScale, note.invert, note.reverse, note.legato, note.stretch, note.randomizeVelocity, note.rampVelocity, MIDI tools, note.setVelocityRange, velocity range, note.join, note.fitToTime, clip.crop, clip.setOrigin
 type: system
 status: current
-last_verified: 2026-11-17
+last_verified: 2026-11-23
 covers:
   - crates/automation/src/server.rs
   - crates/automation/src/workspace.rs
@@ -396,7 +396,7 @@ suhina-cli mcp --read-root ./projects --write-root ./renders [--audio]
   presets and projects in it, the built-in effects and instruments, and installed plug-ins; `library.list`,
   `library.info`, `library.folders`, `library.refresh`, `library.recent`, `library.pinned`,
   `library.tags` read it; `library.pin`, `library.unpin`, `library.tag`, `library.setTag` and
-  `library.removeTag` change pins and colour tags. `library.addFolder` and
+  `library.removeTag` change pins and color tags. `library.addFolder` and
   `library.removeFolder` are refused for agents: the user chooses the browser's folders.
 
 - **The sample map.** The server also analyses the library's samples in the background, as the

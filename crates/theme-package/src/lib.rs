@@ -75,11 +75,11 @@ pub const CORE_SHEET: &str = include_str!("core.css");
 /// Suhina's user-agent style sheet: the first sheet of every cascade, under the base sheet, the
 /// theme, its variant, device panel sheets and the user's sheet (`docs/spec/theme-skins.md` › The
 /// user-agent sheet). It styles elements by name, state and attribute only, with no classes, ids,
-/// variables, and gives only `window` a plain text and background colour, and holds the default artwork (`knob-body { image: url("suhina:knob.body.svg"); }`).
+/// variables, and gives only `window` (and what floats over it) a plain text and background color and the window's buttons on Windows the system's own look, and holds the default artwork (`knob-body { image: url("suhina:knob.body.svg"); }`).
 pub const USER_AGENT_SHEET: &str = include_str!("user-agent.css");
 
 /// Suhina's base sheet: Suhina's own design under every theme, in the cascade's base tier between
-/// the user-agent sheet and the theme (`docs/spec/theme-skins.md` › The base sheet). Every colour
+/// the user-agent sheet and the theme (`docs/spec/theme-skins.md` › The base sheet). Every color
 /// in it reads a variable; a theme leaves it out with `"base": "none"` in its `theme.json`.
 pub const BASE_SHEET: &str = include_str!("base.css");
 
@@ -263,7 +263,7 @@ pub fn validate(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<String>, String
     Ok(warnings)
 }
 
-/// Refuses a theme whose swatch does not resolve to a colour for its default variant and for
+/// Refuses a theme whose swatch does not resolve to a color for its default variant and for
 /// every variant in `variants/`, with the core properties ([`CORE_SHEET`]) below the theme's sheet.
 fn check_swatch(theme_meta: &meta::ThemeMeta, files: &BTreeMap<String, Vec<u8>>) -> Result<(), String> {
     let core = suhina_style::sheet::Sheet::parse(CORE_SHEET).map_err(|e| format!("the core theme properties: {e}"))?;

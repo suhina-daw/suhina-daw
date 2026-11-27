@@ -948,7 +948,7 @@ struct StemsPlaced {
 }
 
 /// Places a Stems file (`docs/spec/stems-format.md`): a group named after the file holding a
-/// muted track for the master and one track per stem (named and coloured from the file), each
+/// muted track for the master and one track per stem (named and colored from the file), each
 /// with a clip of its audio track at `start` or in `scene`; the file's mastering compressor and
 /// limiter on the group, which sums the stems before them (ADR 0004 › 10). The group goes
 /// after `target`, or into it when it is a group, or at the end of the regular tracks. The file

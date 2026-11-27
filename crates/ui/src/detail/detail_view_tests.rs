@@ -1765,16 +1765,16 @@ fn a_marker_is_dragged_by_the_place_under_the_pointer() {
     assert!(offsets.last().is_some_and(|o| (o - o.round()).abs() < 1e-9 && *o > 1.0), "whole beats: {offsets:?}");
 }
 
-/// A slot's clip shows its colour, but no palette: `clip.setColor` names arrangement clips.
+/// A slot's clip opens the palette, as an arrangement clip's does: `clip.setColor` takes either.
 #[test]
-fn a_slots_clip_has_no_colour_palette() {
+fn a_slots_clip_has_the_color_palette() {
     use egui_kittest::kittest::Queryable;
     let (Detail::Clip(mut info, chain), _) = audio_detail(AudioPanel::default(), 0.0, 0.0) else {
         panic!("expected the clip")
     };
     info.at = Some(ClipRef::Slot(TrackId(1), 0));
     let harness = panel_harness(Detail::Clip(info, chain));
-    assert!(harness.query_by_label("Clip colour").is_none());
+    assert!(harness.query_by_label("Clip color").is_some(), "a slot's clip opens the palette too");
 }
 
 /// Semitones at the top and cents added stay in the transpose's range.
@@ -2090,19 +2090,19 @@ fn switch_fills(css: &str, on: bool) -> Vec<egui::Color32> {
         .collect()
 }
 
+/// A clip panel's switch is a toggle as every view's is: `button[kind="toggle"]`, lit by its
+/// `[checked]` rule.
 #[test]
-fn a_clip_panel_switch_takes_the_theme_s_button_and_stays_lit_while_on() {
+fn a_clip_panel_switch_is_a_toggle_lit_by_its_checked_rule() {
     let red = egui::Color32::from_rgb(0xFF, 0, 0);
     let green = egui::Color32::from_rgb(0, 0xFF, 0);
-    // A rule for every button paints a switch that is off.
-    let every = "button { background-color: #FF0000; }";
-    assert!(switch_fills(every, false).contains(&red), "off takes the button's background");
-    // One that is on keeps its lit fill, so it still shows it is on.
-    assert!(!switch_fills(every, true).contains(&red), "on keeps its lit fill");
-    // Unless the sheet gives `[checked]` a background of its own.
-    let checked = "button { background-color: #FF0000; } button[checked] { background-color: #00FF00; }";
-    let fills = switch_fills(checked, true);
-    assert!(fills.contains(&green) && !fills.contains(&red), "{fills:?}");
+    // Drawn as CSS shapes (`image: none`), so a fill is a rectangle's color.
+    let sheet = "button { image: none; } button[kind=\"toggle\"] { background-color: #FF0000; } \
+                 button[kind=\"toggle\"][checked] { background-color: #00FF00; }";
+    let off = switch_fills(sheet, false);
+    assert!(off.contains(&red) && !off.contains(&green), "off: {off:?}");
+    let on = switch_fills(sheet, true);
+    assert!(on.contains(&green) && !on.contains(&red), "on: {on:?}");
 }
 
 /// A check box shows its whole name where it fits and its short one where it does not, so a
@@ -2214,11 +2214,11 @@ fn the_slot_after_a_chains_last_device_never_covers_it() {
             shapes = output.shapes;
         }
         crate::kit::skin::configure(&crate::kit::skin::Skin::default());
-        let fills = |colour: egui::Color32| -> Vec<Rect> {
+        let fills = |color: egui::Color32| -> Vec<Rect> {
             shapes
                 .iter()
                 .filter_map(|s| match &s.shape {
-                    egui::Shape::Rect(r) if r.fill == colour => Some(r.rect),
+                    egui::Shape::Rect(r) if r.fill == color => Some(r.rect),
                     _ => None,
                 })
                 .collect()
@@ -2338,7 +2338,7 @@ fn sidechain_to_searches_the_keyed_devices() {
             let menu = TrackMenu {
                 track: TrackId(1),
                 name: "Kick",
-                colour: suhina_engine::model::Rgb(200, 100, 50),
+                color: suhina_engine::model::Rgb(200, 100, 50),
                 is_group: false,
                 is_return: false,
                 selection: &[],
@@ -2349,12 +2349,15 @@ fn sidechain_to_searches_the_keyed_devices() {
                 tracks_copied: false,
                 key_readers: &readers,
             };
-            track_menu(ui, &menu, actions);
+            // Inside a right-click menu, as the views open it.
+            ui.button("Kick").context_menu(|ui| track_menu(ui, &menu, actions));
         },
         Vec::new(),
     );
     harness.run();
-    harness.get_by_label("Sidechain to").click();
+    harness.get_by_label("Kick").click_secondary();
+    harness.run();
+    harness.get_by_label("Sidechain to").hover();
     harness.run();
     harness.run();
     assert!(harness.query_by_label("Pad 3 › Compressor").is_some(), "every device is listed");
@@ -2367,4 +2370,45 @@ fn sidechain_to_searches_the_keyed_devices() {
     let set: Vec<_> = harness.state().iter().filter(|a| a.id == "device.setKey").cloned().collect();
     assert_eq!(set.len(), 1, "{:?}", harness.state());
     assert_eq!((&set[0].params["track"], &set[0].params["source"]), (&json!(17), &json!(1)));
+}
+
+/// A device's on/off parameter draws its tick box in the middle of its cell, as the device's
+/// panel places it.
+#[test]
+fn a_toggle_parameter_s_tick_box_is_in_the_middle_of_its_cell() {
+    use super::parameters::parameter_widget;
+    use suhina_device_sdk::{ParameterControl, ParameterUi};
+    let parameter = GraphParameter {
+        text: String::new(),
+        default: 0.0,
+        control: ParameterControl::Toggle,
+        unit: String::new(),
+        id: "on".into(),
+        name: "On".into(),
+        min: 0.0,
+        max: 1.0,
+        value: 1.0,
+        ui: ParameterUi::default(),
+    };
+    let cell = egui::Rect::from_min_size(Pos2::new(40.0, 20.0), egui::Vec2::new(120.0, 30.0));
+    let ctx = egui::Context::default();
+    theme::install(&ctx);
+    let mut value = 1.0;
+    let mut hit = None;
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        hit = Some(parameter_widget(ui, &parameter, cell, None, &mut value).rect);
+    });
+    output.textures_delta.clear();
+    // The mark: the 11-point square drawn for it.
+    let mark = output
+        .shapes
+        .iter()
+        .find_map(|shape| match &shape.shape {
+            egui::Shape::Rect(rect) if (rect.rect.width() - 11.0).abs() < 0.01 => Some(rect.rect),
+            _ => None,
+        })
+        .unwrap();
+    assert!((mark.center().x - cell.center().x).abs() < 0.5, "{mark:?} in {cell:?}");
+    assert!((mark.center().y - cell.center().y).abs() < 0.5, "{mark:?} in {cell:?}");
+    assert!(hit.unwrap().contains(mark.center()));
 }

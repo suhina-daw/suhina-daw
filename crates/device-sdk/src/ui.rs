@@ -60,7 +60,7 @@ pub struct DeviceUi {
     /// rather than over the whole main area at its own size.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub strip: bool,
-    /// Whether a button that is on fills with the accent (`true`) or the control's active colour.
+    /// Whether a button that is on fills with the accent (`true`) or the control's active color.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub accent_on: bool,
     /// While this is above zero the host keeps drawing the canvas, about 30 frames a second, for
@@ -80,7 +80,7 @@ pub struct DeviceUi {
 /// Longest panel style sheet, in bytes.
 pub const MAX_STYLE_BYTES: usize = 64 * 1024;
 
-/// Host theme colours used to resolve the SDK's built-in widget drawings.
+/// Host theme colors used to resolve the SDK's built-in widget drawings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WidgetPalette {
     pub text: [u8; 4],
@@ -353,6 +353,8 @@ pub enum TextFormat {
     Balance,
     /// A MIDI key shown as its note name (60 is C3), as the host names keys elsewhere.
     Key,
+    /// A ratio, written `n:1` (a compressor's ratio).
+    Ratio,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -513,9 +515,9 @@ pub const READOUT_IDS: [&str; 35] = [
     "#r29", "#r30", "#r31", "#r32", "#r33", "#r34",
 ];
 
-/// Colours a theme sets by name: a drawing in one of these RGB values (its alpha kept) takes the
-/// CSS custom property's colour, or the default when the theme sets none. A display's dark ground
-/// and a device's series of colours (its bands, its operators, a gain line, a spectrum) follow the
+/// Colors a theme sets by name: a drawing in one of these RGB values (its alpha kept) takes the
+/// CSS custom property's color, or the default when the theme sets none. A display's dark ground
+/// and a device's series of colors (its bands, its operators, a gain line, a spectrum) follow the
 /// theme so.
 pub const THEME_TOKENS: [([u8; 3], &str, [u8; 3]); 6] = [
     ([3, 0, 1], "--device-display", [10, 17, 23]),
@@ -711,6 +713,13 @@ impl DeviceUi {
                             && c.x.is_none()
                             && c.y.is_none()
                     }
+                    // Only the built-in Compressor's parameter set reads as a CompressorDisplay's.
+                    Widget::CompressorDisplay => {
+                        const COMPRESSOR: [&str; 5] = ["threshold", "ratio", "knee", "output", "mix"];
+                        COMPRESSOR.iter().all(|&id| parameters.iter().any(|p| p.id == id))
+                            && c.x.is_none()
+                            && c.y.is_none()
+                    }
                     Widget::Envelope { attack, decay, level, release } => {
                         let ids: Vec<_> =
                             [Some(attack), Some(decay), Some(level), release.as_ref()].into_iter().flatten().collect();
@@ -874,6 +883,7 @@ impl DeviceUi {
                             | Widget::DeviceFiles { .. }
                             | Widget::DeviceNote
                             | Widget::EqCurve
+                            | Widget::CompressorDisplay
                     )
                 )
             {

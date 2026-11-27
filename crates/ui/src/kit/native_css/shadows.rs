@@ -101,7 +101,7 @@ impl Shadow {
     }
 
     /// Casts this shadow from artwork rather than a rectangle: copies of `shape` (the artwork's
-    /// mesh), tinted with the shadow's colour, at its offset and spread around the blur's radius,
+    /// mesh), tinted with the shadow's color, at its offset and spread around the blur's radius,
     /// so a round button glows round. Returns the copies, to draw under the artwork.
     pub fn cast_by_artwork(&self, shape: &egui::Mesh, opacity: f32) -> Vec<egui::Mesh> {
         if self.inset || self.color.a() == 0 || !self.blur.is_finite() || !self.offset.is_finite() {
@@ -109,7 +109,7 @@ impl Shadow {
         }
         let blur = self.blur.clamp(0.0, 64.0);
         let spread = self.spread.clamp(-32.0, 32.0);
-        // The center and eight taps around half the blur, each a share of the colour.
+        // The center and eight taps around half the blur, each a share of the color.
         let mut taps = vec![Vec2::ZERO];
         if blur > 0.5 {
             taps.extend((0..8).map(|i| Vec2::angled(i as f32 * std::f32::consts::FRAC_PI_4) * (blur / 2.0)));

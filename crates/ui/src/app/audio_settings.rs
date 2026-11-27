@@ -438,8 +438,8 @@ impl App {
             self.arrangement.returns_hidden = self.settings.view.returns_hidden;
             self.arrangement.waveform_zoom = self.settings.view.waveform_zoom as f32 / 100.0;
             self.arrangement.waveform_appearance = self.settings.view.waveform;
-            self.arrangement.audio_colour_strength = self.settings.view.audio_colour_strength;
-            self.arrangement.header_colour_strength = self.settings.view.header_colour_strength;
+            self.arrangement.audio_color_strength = self.settings.view.audio_color_strength;
+            self.arrangement.header_color_strength = self.settings.view.header_color_strength;
             self.settings_changed = true;
         }
         if outcome.close {

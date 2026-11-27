@@ -204,3 +204,42 @@ fn a_loud_key_ducks_a_quiet_signal_and_a_silent_key_leaves_it() {
     let mut short = quiet.clone();
     compressor(&settings).process_keyed(&ProcessContext::default(), &loud[..100], &mut short);
 }
+
+#[test]
+fn the_readouts_show_what_the_detector_heard_and_the_reduction() {
+    let mut c = compressor(&[(param::THRESHOLD, -20.0), (param::RATIO, 4.0), (param::KNEE, 0.0)]);
+    let idle = c.readouts().unwrap();
+    assert_eq!(idle[readout::DETECTOR], READOUT_FLOOR_DB as f32, "nothing heard yet");
+    assert_eq!(idle[readout::REDUCTION], 0.0);
+    // A sine peaking at -6 dB, 14 dB over the threshold: about 10.5 dB of reduction at 4 : 1.
+    let mut s = sines(&[(1_000.0, 0.5)], 24_000);
+    c.process(&ProcessContext::default(), &mut s);
+    let r = c.readouts().unwrap();
+    assert!((f64::from(r[readout::DETECTOR]) + 6.02).abs() < 0.3, "detector {}", r[readout::DETECTOR]);
+    assert!((f64::from(r[readout::INPUT]) + 6.02).abs() < 0.3, "input {}", r[readout::INPUT]);
+    assert!((f64::from(r[readout::REDUCTION]) - 10.5).abs() < 0.5, "reduction {}", r[readout::REDUCTION]);
+    assert!((f64::from(r[readout::OUTPUT]) + 16.5).abs() < 0.6, "output {}", r[readout::OUTPUT]);
+    assert_eq!(r[readout::KEYED], 0.0);
+    // Silence: the peaks fall back toward the floor and the reduction toward nothing.
+    // Three seconds: the levels fall about 60 dB a second, the reduction with the 0.3 s release.
+    let mut quiet = vec![0.0f32; 288_000];
+    c.process(&ProcessContext::default(), &mut quiet);
+    let r = c.readouts().unwrap();
+    assert!(r[readout::DETECTOR] < -90.0 && r[readout::OUTPUT] < -90.0, "{r:?}");
+    assert!(r[readout::REDUCTION] < 0.01, "{}", r[readout::REDUCTION]);
+    c.reset();
+    assert_eq!(c.readouts().unwrap(), idle, "a reset clears them");
+}
+
+#[test]
+fn a_key_drives_the_detector_readout_and_marks_it_keyed() {
+    let mut c = compressor(&[(param::THRESHOLD, -30.0), (param::KNEE, 0.0)]);
+    let key = sines(&[(100.0, 0.5)], 24_000);
+    let mut quiet = sines(&[(1_000.0, 0.01)], 24_000);
+    c.process_keyed(&ProcessContext::default(), &key, &mut quiet);
+    let r = c.readouts().unwrap();
+    assert_eq!(r[readout::KEYED], 1.0);
+    assert!(r[readout::DETECTOR] > -7.0, "the detector heard the key: {}", r[readout::DETECTOR]);
+    assert!(r[readout::INPUT] < -38.0, "the input is the device's own quiet sound: {}", r[readout::INPUT]);
+    assert!(r[readout::REDUCTION] > 10.0, "the key pushes the gain down: {}", r[readout::REDUCTION]);
+}

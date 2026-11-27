@@ -351,7 +351,7 @@ pub(crate) fn key_edges(project: &Project) -> Vec<(TrackId, usize, TrackId, suhi
     for channel in &project.channels {
         let Some(reader) = track_of(channel.id) else { continue };
         for (position, device) in channel.devices.iter().enumerate() {
-            let Some(input) = device.inputs.first().filter(|_| device.enabled) else { continue };
+            let Some(input) = device.inputs.first().filter(|i| device.enabled && i.enabled) else { continue };
             let Some(source) = track_of(input.source.channel()) else { continue };
             if source == TrackId::MAIN || project.key_closes_loop(input.source, channel.id) {
                 continue;

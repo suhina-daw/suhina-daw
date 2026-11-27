@@ -3,7 +3,7 @@
 
 //! The browser's library (`docs/spec/browser.md`, ADR 0012): the folders the user added, an
 //! index of the files in them kept on disk and up to date, and the pins, recent items and
-//! colour tags. It belongs to Suhina, not to one project; the session's `library.*` commands
+//! color tags. It belongs to Suhina, not to one project; the session's `library.*` commands
 //! run on it.
 
 pub mod find;
@@ -787,7 +787,7 @@ impl Library {
         self.save()
     }
 
-    /// Changes the colour of the tag `id` ([#1254]: a colour may repeat across tags).
+    /// Changes the color of the tag `id` ([#1254]: a color may repeat across tags).
     pub fn set_tag_color(&mut self, id: u32, color: Option<&str>) -> Result<(), String> {
         self.load();
         self.store.set_tag_color(id, color)?;

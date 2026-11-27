@@ -17,6 +17,7 @@ use suhina_engine::model::{AutomationLane, AutomationPoint, ClipId, DeviceKind, 
 
 use crate::arrangement::gesture::{Gesture, GestureSlot};
 use crate::interaction::timeline_grid::TimelineGrid;
+use crate::kit::menu;
 use crate::kit::theme::{self, PAD};
 use crate::kit::widgets::{self, Action};
 
@@ -1190,22 +1191,24 @@ fn stretch_slider(
     middle: f64,
 ) -> Option<(f64, bool)> {
     let kept = state.stretch.clone().filter(|s| s.of == of);
-    let mut percent = kept.as_ref().map_or(1.0, |s| s.shown) * 100.0;
-    let response = ui
-        .add(egui::Slider::new(&mut percent, 0.0..=200.0).text("Scale").suffix(" %").fixed_decimals(0))
-        .on_hover_text(
-            "Pushes the points away from the dashed line (over 100 %) or pulls them toward it (under 100 %), \
+    let mut percent = (kept.as_ref().map_or(1.0, |s| s.shown) * 100.0) as f32;
+    let response = menu::slider(ui, "Scale", &mut percent, 0.0..=200.0, 1.0, |v| format!("{v:.0} %")).on_hover_text(
+        "Pushes the points away from the dashed line (over 100 %) or pulls them toward it (under 100 %), \
              from the line as it was: back at 100 % it is as before. Their timing stays.",
-        );
+    );
     // Around: the points' middle, or the bottom of the lane (a share of each value).
     let mut bottom = state.scale_bottom;
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Around").color(crate::kit::element::hint_ink()).size(theme::TEXT_SMALL));
-        ui.selectable_value(&mut bottom, false, "Middle")
-            .on_hover_text("Around half-way between the lowest and highest point, so the shape swings more or less");
-        ui.selectable_value(&mut bottom, true, "Bottom")
-            .on_hover_text("Around the bottom of the lane: 50 % halves every value");
+    let around = ui.horizontal(|ui| {
+        crate::kit::controls::text(ui, "Around");
+        crate::kit::controls::options(ui, "Around", &[("Middle", false), ("Bottom", true)], bottom)
     });
+    around.response.on_hover_text(
+        "Middle: around half-way between the lowest and highest point, so the shape swings more or less. \
+         Bottom: around the bottom of the lane, so 50 % halves every value.",
+    );
+    if let Some(picked) = around.inner {
+        bottom = picked;
+    }
     let changed_around = bottom != state.scale_bottom;
     state.scale_bottom = bottom;
     let pivot = if bottom { 0.0 } else { kept.as_ref().filter(|_| !changed_around).map_or(middle, |s| s.pivot) };
@@ -1213,7 +1216,7 @@ fn stretch_slider(
     let shown_at =
         if response.hovered() || response.dragged() { now } else { kept.as_ref().map_or(0.0, |s| s.shown_at) };
     let started = kept.as_ref().is_some_and(|s| s.started);
-    let shown = percent / 100.0;
+    let shown = f64::from(percent) / 100.0;
     state.stretch = Some(Stretch { of, track, key: key.clone(), shown, pivot, started, shown_at });
     let due = live(ui, state, &response) || (changed_around && started);
     if !due {
@@ -1358,9 +1361,9 @@ pub struct LanesState {
     /// A click anywhere on a lane adds a point (Settings › Arrangement › Automation); off, only a
     /// click on or near the line does, and a double-click adds one anywhere.
     pub click_anywhere: bool,
-    /// How the envelopes are coloured (Settings › Arrangement › Automation › Automation colour):
-    /// in their track's colour, or in one line and one point colour; the app sets it each frame.
-    pub colours: crate::settings::view_settings::AutomationAppearance,
+    /// How the envelopes are colored (Settings › Arrangement › Automation › Automation color):
+    /// in their track's color, or in one line and one point color; the app sets it each frame.
+    pub colors: crate::settings::view_settings::AutomationAppearance,
     /// The shape a point added from now on gives the segment that ends at it, chosen from a lane's
     /// menu away from a painted range; `None` for a straight line.
     pub new_shape: Option<&'static str>,
@@ -2073,61 +2076,61 @@ fn place_of(plot: Rect, y: f32) -> f64 {
     if plot.height() > 0.0 { f64::from((plot.bottom() - y) / plot.height()) } else { 0.0 }
 }
 
-/// A track colour from the project as egui draws it.
+/// A track color from the project as egui draws it.
 /// The element an envelope's line or points are drawn as: `[kind="fixed"]` while Automation
-/// colour is Fixed.
+/// color is Fixed.
 fn envelope_part(
     name: crate::kit::element::Name,
-    colours: &crate::settings::view_settings::AutomationAppearance,
+    colors: &crate::settings::view_settings::AutomationAppearance,
 ) -> crate::kit::element::Builder<'static> {
     let part = name.builder();
-    if colours.mode == crate::settings::view_settings::AutomationColour::Fixed {
+    if colors.mode == crate::settings::view_settings::AutomationColor::Fixed {
         part.attribute("kind", "fixed")
     } else {
         part
     }
 }
 
-/// An envelope's line colour while it is `enabled`: the track's colour `track` (a theme's rule for
-/// every line wins over it), or with Automation colour Fixed the line colour chosen in Settings,
+/// An envelope's line color while it is `enabled`: the track's color `track` (a theme's rule for
+/// every line wins over it), or with Automation color Fixed the line color chosen in Settings,
 /// else `automation-line[kind="fixed"]`'s, which the base sheet gives every theme.
-/// `automation-line[muted]`'s colour is a lane's while it is off, in either mode.
-fn line_ink(colours: &crate::settings::view_settings::AutomationAppearance, track: Color32, enabled: bool) -> Color32 {
+/// `automation-line[muted]`'s color is a lane's while it is off, in either mode.
+fn line_ink(colors: &crate::settings::view_settings::AutomationAppearance, track: Color32, enabled: bool) -> Color32 {
     let look =
-        envelope_part(crate::kit::element::AUTOMATION_LINE, colours).attr(crate::kit::element::Muted, !enabled).look();
+        envelope_part(crate::kit::element::AUTOMATION_LINE, colors).attr(crate::kit::element::Muted, !enabled).look();
     if !enabled {
         return look.own_color_or(look.color());
     }
-    if colours.mode == crate::settings::view_settings::AutomationColour::Fixed {
-        // The computed colour: the base sheet's rule for `[kind="fixed"]` counts.
-        colours.line.unwrap_or_else(|| look.color())
+    if colors.mode == crate::settings::view_settings::AutomationColor::Fixed {
+        // The computed color: the base sheet's rule for `[kind="fixed"]` counts.
+        colors.line.unwrap_or_else(|| look.color())
     } else {
         look.own_color_or(track)
     }
 }
 
-/// An envelope's point colours: a point's own (`None`: the line's), and a picked point's. With
-/// Automation colour Fixed, a point takes the colour chosen in Settings, else
+/// An envelope's point colors: a point's own (`None`: the line's), and a picked point's. With
+/// Automation color Fixed, a point takes the color chosen in Settings, else
 /// `automation-point[kind="fixed"]`'s, which the base sheet gives every theme; a picked point keeps
 /// `automation-point[selected]`'s in either mode. On a lane that is off (not `enabled`) the points
-/// take the line's `[muted]` colour, as in Track colour.
+/// take the line's `[muted]` color, as in Track color.
 fn point_inks(
-    colours: &crate::settings::view_settings::AutomationAppearance,
+    colors: &crate::settings::view_settings::AutomationAppearance,
     enabled: bool,
 ) -> (Option<Color32>, Color32) {
-    let plain = envelope_part(crate::kit::element::AUTOMATION_POINT, colours).probe();
+    let plain = envelope_part(crate::kit::element::AUTOMATION_POINT, colors).probe();
     let picked =
-        envelope_part(crate::kit::element::AUTOMATION_POINT, colours).attr(crate::kit::element::Selected, true).look();
+        envelope_part(crate::kit::element::AUTOMATION_POINT, colors).attr(crate::kit::element::Selected, true).look();
     // A rule for every point does not hide which are picked: only a `[selected]` rule
-    // recolours them.
-    // A rule's colour beats every base rule, so a rule for every point reaches the picked
-    // ones too: where it does, they take the words' colour, the base sheet's own.
+    // recolors them.
+    // A rule's color beats every base rule, so a rule for every point reaches the picked
+    // ones too: where it does, they take the words' color, the base sheet's own.
     let declared =
         plain.style().filter(|style| style.declared(suhina_style::property::Property::Color)).map(|s| s.color);
     let selected = Some(picked.color()).filter(|c| declared != Some(*c)).unwrap_or_else(crate::kit::element::name_ink);
-    let own = if colours.mode == crate::settings::view_settings::AutomationColour::Fixed && enabled {
-        // The computed colour: the base sheet's rule for `[kind="fixed"]` counts.
-        Some(colours.point.unwrap_or_else(|| plain.color()))
+    let own = if colors.mode == crate::settings::view_settings::AutomationColor::Fixed && enabled {
+        // The computed color: the base sheet's rule for `[kind="fixed"]` counts.
+        Some(colors.point.unwrap_or_else(|| plain.color()))
     } else {
         declared
     };
@@ -2495,12 +2498,12 @@ fn group_heading(
         if !picked.contains(&index) {
             picked = vec![index];
         }
-        if ui.button("Rename").clicked() {
+        if menu::entry(ui, "Rename", None, true).clicked() {
             state.renaming = Some((track, index, group.name.clone()));
             ui.close();
         }
         let ungroup = if picked.len() > 1 { format!("Ungroup {} groups", picked.len()) } else { "Ungroup".into() };
-        if ui.button(ungroup).clicked() {
+        if menu::entry(ui, &ungroup, None, true).clicked() {
             let mut changed = layout.clone();
             changed.ungroup(&picked);
             actions.push(changed.action(track));
@@ -2508,7 +2511,7 @@ fn group_heading(
             ui.close();
         }
         let delete = if picked.len() > 1 { format!("Delete {} groups", picked.len()) } else { "Delete group".into() };
-        if ui.button(delete).clicked() {
+        if menu::entry(ui, &delete, None, true).clicked() {
             let mut changed = layout.clone();
             changed.remove(&[], &picked);
             actions.push(changed.action(track));
@@ -2926,8 +2929,8 @@ fn lane(
             let y = y_of(plot, param.scale.position(value));
             let x = geometry.x_of(beat);
             let guide = painter.with_clip_rect(visible);
-            let line = line_ink(&state.colours, color(lanes.color), param.enabled);
-            guide.circle_filled(Pos2::new(x, y), POINT, point_inks(&state.colours, param.enabled).0.unwrap_or(line));
+            let line = line_ink(&state.colors, color(lanes.color), param.enabled);
+            guide.circle_filled(Pos2::new(x, y), POINT, point_inks(&state.colors, param.enabled).0.unwrap_or(line));
             egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), id.with("value"), egui::PopupAnchor::Pointer)
                 .gap(12.0)
                 .show(|ui| ui.add(egui::Label::new(param.scale.text(value)).wrap_mode(egui::TextWrapMode::Extend)));
@@ -3094,7 +3097,7 @@ fn lane(
         };
         // On the line: Add value puts a point on it there, on the grid, keeping its shape.
         if let Some(at) = state.menu_line {
-            if ui.button("Add value").clicked() {
+            if menu::entry(ui, "Add value", None, true).clicked() {
                 let mut params = key.params(track);
                 params["beat"] = json!(at);
                 // Without a value the command splits a bent segment so it plays as before; a lane
@@ -3109,7 +3112,7 @@ fn lane(
                 state.selection = None;
                 ui.close();
             }
-            ui.separator();
+            menu::separator(ui);
         }
         match state.range.as_ref().filter(|r| r.track == track && &r.key == key && (r.start..=r.end).contains(&beat)) {
             // Inside a painted range: the shape fills it, once a beat for a repeating one.
@@ -3129,7 +3132,7 @@ fn lane(
                     state.new_shape = (state.new_shape != Some(shape)).then_some(shape);
                     ui.close();
                 }
-                if state.new_shape.is_some() && ui.button("Straight lines for new points").clicked() {
+                if state.new_shape.is_some() && menu::entry(ui, "Straight lines for new points", None, true).clicked() {
                     state.new_shape = None;
                     ui.close();
                 }
@@ -3139,7 +3142,7 @@ fn lane(
         grid_menu(ui, state, actions);
     });
 
-    // The envelope: in the track colour while it plays, dimmed while a manual change has turned
+    // The envelope: in the track color while it plays, dimmed while a manual change has turned
     // it off.
     let lane_painter = painter.with_clip_rect(visible);
     // A point being dragged is drawn where the pointer is now: its own response, read further
@@ -3207,9 +3210,9 @@ fn lane(
         let at = if held { None } else { painting };
         state.drawn_drag = Some(Dragged { track, key: key.clone(), points: points.clone(), at });
     }
-    // The envelope's line: the track's colour, or the fixed one (Automation colour), and
+    // The envelope's line: the track's color, or the fixed one (Automation color), and
     // `automation-line[muted]`'s while it is off.
-    let ink = line_ink(&state.colours, color(lanes.color), param.enabled);
+    let ink = line_ink(&state.colors, color(lanes.color), param.enabled);
     let line = envelope(&points, &param.scale, plot, geometry);
     // A finished bend asks for its command only now, after the envelope above drew it: the
     // project has the new curve only once the command has run, after this frame, so dropping
@@ -3398,7 +3401,7 @@ fn lane(
     // The points: a click selects (Shift or Ctrl adds), a drag moves (the selection with it), a
     // double-click or the menu deletes.
     let dragging = gesture.lane_point().filter(|d| d.track == track && &d.key == key).map(|d| d.point);
-    let (point_ink, selected_point) = point_inks(&state.colours, param.enabled);
+    let (point_ink, selected_point) = point_inks(&state.colors, param.enabled);
     for (index, point) in param.points.iter().enumerate() {
         // Drawn where a drag puts it.
         let shown = match dragging {
@@ -3512,20 +3515,20 @@ fn lane(
         let selected = state.is_selected(track, key, index);
         egui::Popup::context_menu(&response).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
             // Edit value: a field beside the point takes the value typed, in the set command's unit.
-            if ui.button("Edit value").clicked() {
+            if menu::entry(ui, "Edit value", None, true).clicked() {
                 state.editing = Some((track, key.clone(), index, param.scale.typed_text(point.value)));
                 ui.close();
             }
-            ui.separator();
+            menu::separator(ui);
             let several = state.selection.as_ref().filter(|s| selected && s.points.len() > 1);
             if let Some(selection) = several {
-                if ui.button(format!("Delete {} points", selection.points.len())).clicked() {
+                if menu::entry(ui, &format!("Delete {} points", selection.points.len()), None, true).clicked() {
                     if let Some(action) = state.delete_selected() {
                         actions.push(action);
                     }
                     ui.close();
                 }
-            } else if ui.button("Delete point").clicked() {
+            } else if menu::entry(ui, "Delete point", None, true).clicked() {
                 let mut params = key.params(track);
                 params["point"] = json!(index);
                 actions.push(Action::new("automation.deletePoint", params));
@@ -3534,7 +3537,7 @@ fn lane(
             }
             // The segment from the point before to this one takes a shape, between their heights.
             if param.points.len() > 1 && !param.scale.stepped() {
-                ui.separator();
+                menu::separator(ui);
                 if let Some(shape) = shape_menu(ui, "Shape to this point", None) {
                     let mut params = key.params(track);
                     params["point"] = json!(index);
@@ -3614,17 +3617,13 @@ fn range_menu(
     let bar = bar_beats.max(1e-3);
     let bars = (end - start) / bar;
     let shown = if (bars - bars.round()).abs() < 1e-6 { format!("{}", bars.round()) } else { format!("{bars:.2}") };
-    ui.label(
-        egui::RichText::new(format!("{shown} bar{} selected", if (bars - 1.0).abs() < 1e-6 { "" } else { "s" }))
-            .color(crate::kit::element::hint_ink())
-            .size(theme::TEXT_SMALL),
-    );
+    menu::heading(ui, &format!("{shown} bar{} selected", if (bars - 1.0).abs() < 1e-6 { "" } else { "s" }));
     // The range's span loops, over every lane it reaches, as Ctrl+L does.
-    if ui.add(egui::Button::new("Loop selection").shortcut_text(crate::settings::keymap::shown("Ctrl+L"))).clicked() {
+    if menu::entry(ui, "Loop selection", Some(&crate::settings::keymap::shown("Ctrl+L")), true).clicked() {
         actions.push(Action::new("transport.setLoop", json!({ "start": start, "end": end, "enabled": true })));
         ui.close();
     }
-    ui.separator();
+    menu::separator(ui);
     // The lane and the range, the params every command of this menu starts from.
     let ranged = || {
         let mut params = key.params(track);
@@ -3658,31 +3657,23 @@ fn range_menu(
         put(state, shape, actions);
         ui.close();
     }
-    let mut depth = state.shape_depth.unwrap_or(1.0) * 100.0;
-    let depth_slider =
-        ui.add(egui::Slider::new(&mut depth, 0.0..=100.0).text("Depth").suffix(" %").fixed_decimals(0)).on_hover_text(
-            "How far the inserted shape swings around its middle: 100 % from the bottom of the lane to its top, \
-             50 % half of that. Changing it puts the shape in again.",
-        );
+    let mut depth = (state.shape_depth.unwrap_or(1.0) * 100.0) as f32;
+    let depth_slider = menu::slider(ui, "Depth", &mut depth, 0.0..=100.0, 1.0, |v| format!("{v:.0} %")).on_hover_text(
+        "How far the inserted shape swings around its middle: 100 % from the bottom of the lane to its top, \
+         50 % half of that. Changing it puts the shape in again.",
+    );
     if depth_slider.changed() {
-        state.shape_depth = Some(depth / 100.0);
+        state.shape_depth = Some(f64::from(depth) / 100.0);
     }
-    let mut rate = state.shape_rate.unwrap_or(DEFAULT_RATE);
-    let rate_slider = ui
-        .add(
-            egui::Slider::new(&mut rate, 0..=RATES.len() - 1)
-                .text("Rate")
-                .custom_formatter(|v, _| RATES.get(v as usize).map_or_else(String::new, |(l, _)| (*l).to_owned()))
-                .custom_parser(|text| {
-                    RATES.iter().position(|(l, _)| l.eq_ignore_ascii_case(text.trim())).map(|i| i as f64)
-                }),
-        )
+    let mut rate = state.shape_rate.unwrap_or(DEFAULT_RATE).min(RATES.len() - 1) as f32;
+    let rate_name = |v: f32| RATES.get(v.round() as usize).map_or_else(String::new, |(l, _)| (*l).to_owned());
+    let rate_slider = menu::slider(ui, "Rate", &mut rate, 0.0..=(RATES.len() - 1) as f32, 1.0, rate_name)
         .on_hover_text(
             "How long one cycle of a repeating shape lasts: 1 bar is once a bar, 1/4 once a quarter note \
              (a beat in 4/4), 1/16 four times a beat. Changing it puts the shape in again.",
         );
     if rate_slider.changed() {
-        state.shape_rate = Some(rate);
+        state.shape_rate = Some(rate.round() as usize);
     }
     let depth_due = live(ui, state, &depth_slider);
     let rate_due = live(ui, state, &rate_slider);
@@ -3696,15 +3687,11 @@ fn range_menu(
         Some(_) => {}
         // Nothing of this menu's in the range to change: the two set the next shape.
         None => {
-            ui.label(
-                egui::RichText::new("Depth and Rate apply to the next shape inserted here")
-                    .color(crate::kit::element::hint_ink())
-                    .size(theme::TEXT_SMALL),
-            );
+            menu::hint(ui, "Depth and Rate apply to the next shape inserted here");
         }
     }
-    ui.separator();
-    ui.label(egui::RichText::new("Points in the range").color(crate::kit::element::hint_ink()).size(theme::TEXT_SMALL));
+    menu::separator(ui);
+    menu::heading(ui, "Points in the range");
     let of = format!("{}/{key:?}/range {start} {end}", track.0);
     let middle = middle_of(points, scale, start, end);
     if let Some((factor, again)) = stretch_slider(ui, state, (track, key), of.clone(), middle) {
@@ -3720,14 +3707,13 @@ fn range_menu(
         state.smooth = None;
     }
     let kept = state.smooth.clone().filter(|s| s.of == of);
-    let mut amount = kept.as_ref().map_or(0.0, |s| s.amount) * 100.0;
-    let smooth_slider = ui
-        .add(egui::Slider::new(&mut amount, 0.0..=100.0).text("Smooth").suffix(" %").fixed_decimals(0))
+    let mut amount = (kept.as_ref().map_or(0.0, |s| s.amount) * 100.0) as f32;
+    let smooth_slider = menu::slider(ui, "Smooth", &mut amount, 0.0..=100.0, 1.0, |v| format!("{v:.0} %"))
         .on_hover_text(
             "Rounds the corners and jumps in the range into curves: a square's steps ease from one value \
              to the next, a triangle's tips turn round. 0 % leaves them sharp.",
         );
-    let amount = amount / 100.0;
+    let amount = f64::from(amount) / 100.0;
     state.smooth = Some(Smoothed { of: of.clone(), amount });
     if live(ui, state, &smooth_slider) {
         // Each amount replaces the one before in this range's step (one gesture), so it rounds
@@ -3745,21 +3731,16 @@ fn range_menu(
     // lets them; the line from before is drawn faintly while the menu is open.
     let inside = |points: &[AutomationPoint]| points.iter().filter(|p| p.beat >= start && p.beat <= end).count();
     let kept = state.simplify.clone().filter(|s| s.of == of);
-    let mut amount = kept.as_ref().map_or(0.0, |s| s.amount) * 100.0;
+    let mut amount = (kept.as_ref().map_or(0.0, |s| s.amount) * 100.0) as f32;
     let now = inside(points);
     let before = kept.as_ref().map_or(now, |s| s.before);
-    let simplify_slider = ui
-        .add(egui::Slider::new(&mut amount, 0.0..=100.0).text("Simplify").suffix(" %").fixed_decimals(0))
+    let simplify_slider = menu::slider(ui, "Simplify", &mut amount, 0.0..=100.0, 1.0, |v| format!("{v:.0} %"))
         .on_hover_text(
             "Removes the points the line does not need, bending the rest to keep its shape: further right \
              lets the new line stray further from the old one, which shows faintly while this menu is open.",
         );
-    ui.label(
-        egui::RichText::new(format!("{before} \u{2192} {now} points"))
-            .color(crate::kit::element::hint_ink())
-            .size(theme::TEXT_SMALL),
-    );
-    let amount = amount / 100.0;
+    menu::hint(ui, &format!("{before} \u{2192} {now} points"));
+    let amount = f64::from(amount) / 100.0;
     let original = kept.as_ref().map_or_else(|| level.to_vec(), |s| s.original.clone());
     state.simplify = Some(Simplified { of, track, key: key.clone(), amount, original, before });
     if live(ui, state, &simplify_slider) {
@@ -3791,13 +3772,9 @@ fn picked_menu(
     else {
         return;
     };
-    ui.separator();
+    menu::separator(ui);
     let count = points.len();
-    ui.label(
-        egui::RichText::new(format!("{count} point{} selected", if count == 1 { "" } else { "s" }))
-            .color(crate::kit::element::hint_ink())
-            .size(theme::TEXT_SMALL),
-    );
+    menu::heading(ui, &format!("{count} point{} selected", if count == 1 { "" } else { "s" }));
     let beats = points.iter().filter_map(|&i| param.points.get(i)).map(|p| p.beat);
     let (first, last) = beats.fold((f64::MAX, f64::MIN), |(lo, hi), b| (lo.min(b), hi.max(b)));
     let middle = middle_of(&param.points, &param.scale, first, last);
@@ -3830,7 +3807,7 @@ pub const RANGE_GESTURE: &str = "range:";
 /// The grid entries at the end of the lanes' menus: the Arrangement's grid, as its toolbar and
 /// its lanes' menus offer it.
 fn grid_menu(ui: &mut Ui, state: &mut LanesState, _actions: &mut Vec<Action>) {
-    ui.separator();
+    menu::separator(ui);
     let keys = state.grid_keys.clone();
     if let Some(picked) = crate::interaction::grid_menu::grid_entries(ui, state.grid, &keys, &|_| true) {
         state.grid_picked = Some(picked);
@@ -3841,7 +3818,7 @@ fn grid_menu(ui: &mut Ui, state: &mut LanesState, _actions: &mut Vec<Action>) {
 /// A menu's shapes under `title`, drawn as small pictures in rows of five, `chosen` lit; the one
 /// clicked, by name.
 fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static str> {
-    ui.label(egui::RichText::new(title).color(crate::kit::element::hint_ink()).size(theme::TEXT_SMALL));
+    menu::heading(ui, title);
     let mut picked = None;
     for row in suhina_session::AUTOMATION_SHAPES.chunks(5) {
         ui.horizontal(|ui| {
@@ -3856,6 +3833,7 @@ fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static
                 let el = crate::kit::element::BUTTON
                     .attribute("kind", "shape")
                     .attr(crate::kit::element::Checked, chosen == Some(name))
+                    .response(&response)
                     .enter();
                 let fill = if chosen == Some(name) {
                     el.background()
@@ -3866,7 +3844,7 @@ fn shape_menu(ui: &mut Ui, title: &str, chosen: Option<&str>) -> Option<&'static
                         widgets::hover(ui, &response),
                     )
                 };
-                painter.rect_filled(rect, 2.0, fill);
+                widgets::button_surface(painter, rect, &el, &response, chosen == Some(name), fill, 2.0);
                 let line = shape_icon(name, rect.shrink2(Vec2::new(5.0, 4.0)));
                 painter.add(Shape::line(line, Stroke::new(1.3, el.color())));
                 drop(el);
@@ -3998,13 +3976,21 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
     let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), sense);
     if ui.is_rect_visible(rect) {
         let painter = ui.painter();
-        if toggles && response.hovered() {
-            painter.rect_filled(rect, 2.0, ui.visuals().widgets.hovered.weak_bg_fill);
-        }
+        // A `button[kind="entry"]`, as the menu's rows are: the pointer's fill under the pointer.
+        let entry = crate::kit::element::BUTTON.attribute("kind", "entry");
+        let hot = toggles && (response.hovered() || response.has_focus());
+        let fill = if hot {
+            entry.clone().pointer(true, false, false).look().background()
+        } else {
+            egui::Color32::TRANSPARENT
+        };
+        let el = entry.clone().response(&response).enter();
+        widgets::button_surface(painter, rect, &el, &response, false, fill, 2.0);
+        drop(el);
         widgets::chevron(painter, Pos2::new(rect.left() + 6.0, rect.center().y), open, crate::kit::element::hint_ink());
-        let font = egui::TextStyle::Button.resolve(ui.style());
+        let font = theme::ui_font(theme::TEXT);
         let text = Pos2::new(rect.left() + 14.0, rect.center().y);
-        painter.text(text, Align2::LEFT_CENTER, name, font.clone(), ui.visuals().text_color());
+        painter.text(text, Align2::LEFT_CENTER, name, font.clone(), entry.response(&response).look().color());
         let count = format!("{count}{}", if marked { " •" } else { "" });
         let end = Pos2::new(rect.right() - 4.0, rect.center().y);
         painter.text(end, Align2::RIGHT_CENTER, count, font, crate::kit::element::hint_ink());
@@ -4019,12 +4005,8 @@ fn heading_row(ui: &mut Ui, name: &str, count: usize, marked: bool, open: bool, 
 fn parameter_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scroll: bool) -> bool {
     let mark = if choice.points.is_empty() { "" } else { " •" };
     let selected = choice.key == *current;
-    let text = egui::RichText::new(format!("{}{mark}", choice.short_name()));
-    let text = if selected { text.color(theme::text_on(ui.visuals().selection.bg_fill)) } else { text };
-    let button = egui::Button::selectable(selected, text);
-    let response = ui.add_enabled(free, button);
-    let label = choice.label();
-    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, free, selected, &label));
+    let (text, label) = (format!("{}{mark}", choice.short_name()), choice.label());
+    let response = menu::Entry::new(&text).chosen(selected).enabled(free).named(&label).show(ui);
     if scroll && selected {
         response.scroll_to_me(Some(egui::Align::Center));
     }
@@ -4037,12 +4019,9 @@ fn parameter_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scr
 /// its row in its device. Answers whether it was clicked.
 fn automated_row(ui: &mut Ui, choice: &Param, current: &LaneKey, free: bool, scroll: bool) -> bool {
     let selected = choice.key == *current;
-    let label = choice.label();
-    let text = egui::RichText::new(&label);
-    let text = if selected { text.color(theme::text_on(ui.visuals().selection.bg_fill)) } else { text };
-    let response = ui.add_enabled(free, egui::Button::selectable(selected, text));
-    let label = format!("{label} (automated)");
-    response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, free, selected, &label));
+    let text = choice.label();
+    let label = format!("{text} (automated)");
+    let response = menu::Entry::new(&text).chosen(selected).enabled(free).named(&label).show(ui);
     if scroll && selected {
         response.scroll_to_me(Some(egui::Align::Center));
     }
@@ -4089,7 +4068,8 @@ fn parameter_menu(
     let field_id = filter.with("field");
     // Enter ends the field's focus, so whether it had it is read before the field is shown.
     let had_focus = ui.memory(|m| m.has_focus(field_id));
-    let field = ui.add(
+    let field = widgets::text_input(
+        ui,
         egui::TextEdit::singleline(&mut menu.query)
             .id(field_id)
             .hint_text("Search parameters")
@@ -4119,12 +4099,12 @@ fn parameter_menu(
     ui.allocate_ui(Vec2::new(ui.available_width(), height), |ui| {
         egui::ScrollArea::vertical().max_height(height).auto_shrink([true, true]).show(ui, |ui| {
             if sections.is_empty() {
-                ui.label(egui::RichText::new("No parameter matches").color(crate::kit::element::hint_ink()));
+                menu::hint(ui, "No parameter matches");
             }
             // Every parameter with points, again at the top: their devices may be closed.
             if !automated.is_empty() {
-                ui.separator();
-                ui.label(egui::RichText::new("Automated").color(crate::kit::element::hint_ink()));
+                menu::separator(ui);
+                menu::heading(ui, "Automated");
                 for choice in &automated {
                     if automated_row(ui, choice, current, free(choice), first_frame && to_top) {
                         chosen = Some((choice.key.clone(), true));
@@ -4132,7 +4112,7 @@ fn parameter_menu(
                 }
             }
             for section in &sections {
-                ui.separator();
+                menu::separator(ui);
                 // The mixer's few parameters have no heading.
                 let Some(device) = section.device else {
                     for choice in &section.loose {
@@ -4294,7 +4274,7 @@ fn lane_header(
     let track = lanes.track;
     let layout = state.layout(track, params);
     let top = !layout.lanes.contains(&param.key);
-    // The header's own look, picked or not: its background and its text colour.
+    // The header's own look, picked or not: its background and its text color.
     let picked = state.is_picked(track, &param.key);
     let look = crate::kit::element::AUTOMATION_HEADER.attr(crate::kit::element::Selected, picked).look();
     let surface = super::arrangement_view::panel_surface();
@@ -4326,18 +4306,18 @@ fn lane_header(
     let grouped = layout.groups.iter().position(|g| g.keys.contains(&param.key));
     background.context_menu(|ui| {
         let tall = state.heights.contains_key(&(track, param.key.clone()));
-        if ui.add_enabled(tall, egui::Button::new("Reset height")).clicked() {
+        if menu::entry(ui, "Reset height", None, tall).clicked() {
             state.set_lane_height(track, &param.key, LANE);
             ui.close();
         }
         if top {
             return;
         }
-        ui.separator();
+        menu::separator(ui);
         // The picked lanes, or this one alone when it is not picked.
         let keys = state.dragged_with(track, &param.key, params);
         let label = if keys.len() > 1 { format!("Group {} lanes", keys.len()) } else { "Group lane".into() };
-        if ui.button(label).clicked() {
+        if menu::entry(ui, &label, None, true).clicked() {
             let mut changed = layout.clone();
             changed.group(&keys);
             actions.push(changed.action(track));
@@ -4345,7 +4325,7 @@ fn lane_header(
             ui.close();
         }
         if let Some(index) = grouped
-            && ui.button("Ungroup").clicked()
+            && menu::entry(ui, "Ungroup", None, true).clicked()
         {
             let mut changed = layout.clone();
             changed.ungroup(&[index]);
@@ -4412,12 +4392,7 @@ fn lane_header(
             param.enabled,
         );
         let (fill, ink) = lit.colors();
-        lit.el.paint_over(
-            &painter,
-            toggle,
-            crate::kit::element::Native { radius: 0.0, fill },
-            lit.toggle.image(lit.lit),
-        );
+        widgets::toggle_surface(&painter, toggle, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         if !param.enabled {
             painter.rect_stroke(toggle, 0.0, theme::hairline(lit.el.accent()), StrokeKind::Inside);
         }
@@ -4426,7 +4401,7 @@ fn lane_header(
     }
 
     // The pin: on the top lane an outline that pins its parameter as a lane of its own; on a
-    // mounted lane filled, in the accent colour, and a click unpins it with the picked lanes.
+    // mounted lane filled, in the accent color, and a click unpins it with the picked lanes.
     if top {
         let response = widgets::button_area(
             ui,
@@ -4511,16 +4486,20 @@ const PIN_NEEDLE: [(f32, f32); 2] = [(8.0, 8.7), (8.0, 13.5)];
 
 /// Draws one of a lane header's small buttons: no box, a faint background under the pointer,
 /// and `glyph` in its middle, drawn with lines so it is the same in every font; dim until the
-/// pointer is on it, a filled pin in the accent colour.
+/// pointer is on it, a filled pin in the accent color.
 fn small_button(ui: &Ui, painter: &egui::Painter, rect: Rect, response: &egui::Response, glyph: Glyph) {
     let hover = widgets::hover(ui, response);
-    if hover > 0.0 {
+    let resting = crate::kit::motion::mix(crate::kit::element::hint_ink(), crate::kit::element::name_ink(), hover);
+    // The entry's own `color` (a theme that gives it a fill gives its ink too) over the dim inks.
+    let entry_ink = {
         let hot = crate::kit::element::BUTTON.builder().pointer(true, false, false).probe().background();
-        painter.rect_filled(rect, 3.0, hot.gamma_multiply(hover));
-    }
+        let el = crate::kit::element::BUTTON.attribute("kind", "entry").response(response).enter();
+        widgets::button_surface(painter, rect, &el, response, false, hot.gamma_multiply(hover), 3.0);
+        el.own_color_or(resting)
+    };
     let ink = match glyph {
         Glyph::Pinned => crate::kit::element::AUTOMATION_PIN.look().color(),
-        _ => crate::kit::motion::mix(crate::kit::element::hint_ink(), crate::kit::element::name_ink(), hover),
+        _ => entry_ink,
     };
     let stroke = Stroke::new(1.25, ink);
     let side = (rect.width().min(rect.height()) - 1.0).max(4.0);

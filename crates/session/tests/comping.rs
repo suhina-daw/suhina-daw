@@ -1,8 +1,8 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Comping from take lanes (#989): parts named and coloured after their takes, swapping a part's
-//! take, moving the cut between parts, recolouring a take, and splits reaching the takes.
+//! Comping from take lanes (#989): parts named and colored after their takes, swapping a part's
+//! take, moving the cut between parts, recoloring a take, and splits reaching the takes.
 #![allow(clippy::unwrap_used)] // test helpers outside #[test] functions
 
 use serde_json::json;
@@ -69,7 +69,7 @@ fn a_parts_take_is_swapped_in_turn_and_the_cut_between_parts_moves() {
 }
 
 #[test]
-fn recolouring_a_take_colours_its_parts_and_a_split_cuts_the_takes() {
+fn recoloring_a_take_colors_its_parts_and_a_split_cuts_the_takes() {
     let mut s = session();
     run(&mut s, "take.comp", json!({ "track": 1, "take": 2, "start": 0.0, "end": 8.0 })).unwrap();
     run(&mut s, "take.setColor", json!({ "track": 1, "take": 2, "color": "#ff00aa" })).unwrap();
@@ -81,9 +81,9 @@ fn recolouring_a_take_colours_its_parts_and_a_split_cuts_the_takes() {
     run(&mut s, "take.setColor", json!({ "track": 1, "take": 2, "color": "#00ff00", "piece": 1 })).unwrap();
     let take = &s.project().arrangement.takes[1];
     assert_eq!((take.clips[0].color, take.clips[1].color), (None, Some(Rgb(0, 0xff, 0))));
-    let colours: Vec<Option<Rgb>> = lane(&s).iter().map(|c| c.color).collect();
-    assert_eq!(colours, [Some(Rgb(0xff, 0x00, 0xaa)), Some(Rgb(0, 0xff, 0))]);
-    // Recolor lane gives every piece the lane's colour again.
+    let colors: Vec<Option<Rgb>> = lane(&s).iter().map(|c| c.color).collect();
+    assert_eq!(colors, [Some(Rgb(0xff, 0x00, 0xaa)), Some(Rgb(0, 0xff, 0))]);
+    // Recolor lane gives every piece the lane's color again.
     run(&mut s, "take.setColor", json!({ "track": 1, "take": 2, "color": "#123456" })).unwrap();
     let take = &s.project().arrangement.takes[1];
     assert!(take.clips.iter().all(|c| c.color.is_none()));

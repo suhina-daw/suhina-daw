@@ -23,7 +23,7 @@ const SIZE: (f32, f32) = (1280.0, 800.0);
 const CLIP: &str = "Clip Beat B on Drums at bar 17";
 const CLIP_START: f64 = 64.0;
 
-/// The demo project in the Arrangement view with the clip selected, so the piano roll shows it,
+/// The demo project in the Arrangement view with the clip opened (a double-click), so the piano roll shows it,
 /// and every note of the clip moved a tenth of a beat late, off the grid.
 fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     let mut session = Session::new(demo_project());
@@ -42,8 +42,7 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     let mut params = address(&harness);
     params["notes"] = json!((0..notes(&harness).len()).collect::<Vec<_>>());
     params["beats"] = json!(0.1);
@@ -183,4 +182,24 @@ fn ctrl_u_does_nothing_while_the_piano_roll_is_hidden() {
     h.run();
     quantise(&mut h);
     assert_eq!(notes(&h), late);
+}
+
+/// With no notes in the clip, Apply is an ordinary push button that cannot be pressed: it says
+/// so to a reader, and a click quantizes nothing.
+#[test]
+fn apply_is_a_disabled_push_button_while_the_clip_has_no_notes() {
+    let mut renderer = engine();
+    let mut h = piano_app(&mut renderer);
+    let mut params = address(&h);
+    params["notes"] = json!((0..notes(&h).len()).collect::<Vec<_>>());
+    h.state_mut().run(&Action::new("note.delete", params));
+    h.run();
+    assert!(notes(&h).is_empty());
+    h.get_by_label("Quantise").click();
+    h.run();
+    let apply = h.get_by_label("Quantise clip");
+    assert!(egui_kittest::kittest::NodeT::accesskit_node(&apply).is_disabled(), "Apply cannot be pressed");
+    apply.click();
+    h.run();
+    assert!(notes(&h).is_empty());
 }

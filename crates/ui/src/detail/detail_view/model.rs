@@ -85,6 +85,8 @@ pub struct KeyBox {
     pub name: String,
     pub tap: suhina_engine::model::TapPoint,
     pub gain_db: f64,
+    /// Whether the device reads it (`device.setKeyEnabled`): off, the source stays chosen.
+    pub enabled: bool,
 }
 
 pub use crate::interaction::device_at::DeviceAt;
@@ -133,7 +135,7 @@ pub struct GraphParameter {
     pub text: String,
     /// What a double-click puts it back to.
     pub default: f64,
-    /// How it looks: label, size, colours, step, decimals, a choice's labels.
+    /// How it looks: label, size, colors, step, decimals, a choice's labels.
     pub ui: suhina_device_sdk::ParameterUi,
     /// The control that edits it.
     pub control: ParameterControl,
@@ -340,6 +342,9 @@ pub struct ClipInfo {
     pub warped: bool,
     pub stretch: StretchMode,
     pub transpose: f64,
+    /// The settings of the warp modes that have them (`clip.setAudio`'s slice, tail, envelope,
+    /// grain and scatter).
+    pub warp: suhina_engine::model::WarpSettings,
     /// The clip the column's controls edit; none where nothing can be edited.
     pub at: Option<ClipRef>,
     /// Fade-in and fade-out in beats (`clip.setFades`).
@@ -359,20 +364,24 @@ pub struct ClipInfo {
     /// The other arrangement clips selected with it, by id: the title says how many are
     /// selected, and a switch (Loop) turns all of them as it turns this one.
     pub others: Vec<u32>,
+    /// Of them, the audio clips, by id, while this one is an audio clip: the panel's audio
+    /// settings (Warp, its mode and settings, tempo, gain, pitch) set all of them at once, one undo
+    /// step (`docs/spec/clip-panel.md` › Several clips).
+    pub audio_others: Vec<u32>,
     /// Every picked MIDI clip, for its row in the column that gives it the piano roll's focus
     /// (#1054): its track and clip, what the row says ("Bass · Riff") and whether it has the focus.
     pub picked: Vec<(TrackId, ClipId, String, bool)>,
-    /// What the clip's panel shows beyond the rows (`docs/spec/clip-panel.md`): its colour, length,
+    /// What the clip's panel shows beyond the rows (`docs/spec/clip-panel.md`): its color, length,
     /// scale and Set buttons for every clip, and an audio clip's own state.
     pub panel: Option<AudioPanel>,
 }
 
-/// What a clip's panel shows beyond the rows: its id, colour, length, scale and where the playhead
+/// What a clip's panel shows beyond the rows: its id, color, length, scale and where the playhead
 /// is in it, and for an audio clip its tempo and envelope.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AudioPanel {
     pub clip: ClipId,
-    /// The colour it shows: its own, or its track's.
+    /// The color it shows: its own, or its track's.
     pub color: Option<suhina_engine::model::Rgb>,
     /// The tempo its audio is warped from, when it is warped, and where that came from.
     pub tempo: Option<f64>,
@@ -523,6 +532,9 @@ pub enum Detail {
     Devices(Chain),
     Clip(Box<ClipInfo>, Chain),
     Nothing,
+    /// The clip view with no clip selected: it stays the clip view until a track's devices are
+    /// asked for (a double-click on its header).
+    NoClip,
 }
 
 impl Detail {
@@ -558,7 +570,7 @@ impl Detail {
     ) -> Vec<(TrackId, Vec<usize>, u32, f64)> {
         let chain = match self {
             Self::Devices(chain) | Self::Clip(_, chain) => chain,
-            Self::Nothing => return Vec::new(),
+            Self::Nothing | Self::NoClip => return Vec::new(),
         };
         let Some(channel) = project
             .tracks
@@ -788,6 +800,7 @@ pub fn build_with(
                 warped: audio.is_some() && placed.audio.warped,
                 stretch: if audio.is_some() { placed.audio.stretch } else { Default::default() },
                 transpose: if audio.is_some() { placed.audio.transpose } else { 0.0 },
+                warp: placed.audio.warp,
                 at: Some(match scene {
                     Some(scene) => ClipRef::Slot(id, scene),
                     None => ClipRef::Arrangement(id, placed.id),
@@ -799,6 +812,7 @@ pub fn build_with(
                 switch: None,
                 switch_both: false,
                 others: Vec::new(),
+                audio_others: Vec::new(),
                 picked: Vec::new(),
                 panel: Some(AudioPanel {
                     clip: placed.id,
@@ -881,7 +895,13 @@ fn key_box(project: &Project, device: &suhina_engine::model::Device) -> Option<K
     let channel = input.source.channel();
     let track = project.tracks.iter().find(|t| t.channel == Some(channel))?.id;
     let gain_db = if input.gain > 0.0 { 20.0 * input.gain.log10() } else { -150.0 };
-    Some(KeyBox { track, name: project.shown_track_name(track), tap: input.source.tap(), gain_db })
+    Some(KeyBox {
+        track,
+        name: project.shown_track_name(track),
+        tap: input.source.tap(),
+        gain_db,
+        enabled: input.enabled,
+    })
 }
 
 /// One device as the detail area shows it, at `path` on track `id`; a group with its branches.

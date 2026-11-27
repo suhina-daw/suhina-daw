@@ -46,6 +46,127 @@ pub struct ClipAudio {
     pub warp_markers: Vec<WarpMarker>,
     /// Where the tempo the clip was warped from came from (#824); `None` when it was never known.
     pub tempo_source: Option<TempoSource>,
+    /// How the stretch modes that have settings play this clip (`docs/spec/clip-panel.md` ›
+    /// Warp mode settings). Kept whatever the mode, so a mode picked again has its settings back.
+    pub warp: WarpSettings,
+}
+
+/// Where the Rhythmic mode cuts the audio into slices.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SliceAt {
+    /// At the sound's transients (and the warp markers).
+    #[default]
+    Transients,
+    /// On every quarter note of the clip's beats (and at the warp markers).
+    Quarter,
+    Eighth,
+    Sixteenth,
+    ThirtySecond,
+}
+
+impl SliceAt {
+    pub const ALL: [Self; 5] = [Self::Transients, Self::Quarter, Self::Eighth, Self::Sixteenth, Self::ThirtySecond];
+
+    /// The name used in project files and commands.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Transients => "transients",
+            Self::Quarter => "1/4",
+            Self::Eighth => "1/8",
+            Self::Sixteenth => "1/16",
+            Self::ThirtySecond => "1/32",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.name() == name)
+    }
+
+    /// The beats between slices of a note value; `None` for transients.
+    pub fn beats(self) -> Option<f64> {
+        match self {
+            Self::Transients => None,
+            Self::Quarter => Some(1.0),
+            Self::Eighth => Some(0.5),
+            Self::Sixteenth => Some(0.25),
+            Self::ThirtySecond => Some(0.125),
+        }
+    }
+}
+
+/// What the Rhythmic mode plays after a slice that ends before the next one starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SliceTail {
+    /// Nothing.
+    Off,
+    /// The slice's second half, again and again.
+    #[default]
+    Loop,
+    /// The slice's second half, back and forth.
+    BackAndForth,
+}
+
+impl SliceTail {
+    pub const ALL: [Self; 3] = [Self::Off, Self::Loop, Self::BackAndForth];
+
+    /// The name used in project files and commands.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Loop => "loop",
+            Self::BackAndForth => "back-and-forth",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.name() == name)
+    }
+}
+
+/// The range of the Rhythmic mode's envelope, in percent: 100 keeps a slice level, 0 fades it
+/// out over its length.
+pub const ENVELOPE_RANGE: std::ops::RangeInclusive<f64> = 0.0..=100.0;
+/// The range of a grain's length, in milliseconds (Tonal, Texture).
+pub const GRAIN_RANGE: std::ops::RangeInclusive<f64> = 10.0..=400.0;
+/// The range of Texture's scatter, in percent: how far grains move at random.
+pub const SCATTER_RANGE: std::ops::RangeInclusive<f64> = 0.0..=100.0;
+
+/// The settings of the stretch modes that have them: Rhythmic's slices, tail and envelope, Tonal's
+/// grain, Texture's grain and scatter. Smooth and High quality have none.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WarpSettings {
+    pub slice: SliceAt,
+    pub tail: SliceTail,
+    /// Percent, within [`ENVELOPE_RANGE`].
+    pub envelope: f64,
+    /// Milliseconds, within [`GRAIN_RANGE`].
+    pub grain: f64,
+    /// Percent, within [`SCATTER_RANGE`].
+    pub scatter: f64,
+}
+
+impl Default for WarpSettings {
+    /// Slices at transients with a looping tail and no fade; grains of 60 ms, a quarter scatter.
+    fn default() -> Self {
+        Self { slice: SliceAt::Transients, tail: SliceTail::Loop, envelope: 100.0, grain: 60.0, scatter: 25.0 }
+    }
+}
+
+impl WarpSettings {
+    /// The settings with every number inside its range (and a number that is not one at its
+    /// default), as the engine plays them.
+    pub fn held(self) -> Self {
+        let keep = |v: f64, range: &std::ops::RangeInclusive<f64>, default: f64| {
+            if v.is_finite() { v.clamp(*range.start(), *range.end()) } else { default }
+        };
+        let default = Self::default();
+        Self {
+            envelope: keep(self.envelope, &ENVELOPE_RANGE, default.envelope),
+            grain: keep(self.grain, &GRAIN_RANGE, default.grain),
+            scatter: keep(self.scatter, &SCATTER_RANGE, default.scatter),
+            ..self
+        }
+    }
 }
 
 impl Default for ClipAudio {
@@ -59,6 +180,7 @@ impl Default for ClipAudio {
             stretch: StretchMode::default(),
             warp_markers: Vec::new(),
             tempo_source: None,
+            warp: WarpSettings::default(),
         }
     }
 }

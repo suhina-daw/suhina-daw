@@ -1753,7 +1753,7 @@ fn circles_filled(harness: &Harness<'static, App>, color: egui::Color32) -> usiz
 }
 
 /// A rule for every automation point does not hide which are picked: the picked one keeps its
-/// native colour unless a `[selected]` rule gives it one (#1428 review).
+/// native color unless a `[selected]` rule gives it one (#1428 review).
 #[test]
 fn a_rule_for_every_point_keeps_the_picked_one_apart() {
     let mut harness = with_lanes();
@@ -1775,7 +1775,7 @@ fn a_rule_for_every_point_keeps_the_picked_one_apart() {
     assert_eq!(points(&mut harness, "automation-point { color: #135751; }", every), 2, "the picked one stays apart");
     let picked = egui::Color32::from_rgb(0x13, 0x57, 0x52);
     let css = "automation-point { color: #135751; } automation-point[selected] { color: #135752; }";
-    assert_eq!(points(&mut harness, css, picked), 1, "a `[selected]` rule recolours it");
+    assert_eq!(points(&mut harness, css, picked), 1, "a `[selected]` rule recolors it");
 }
 
 /// The demo project with a volume lane of two points on Drums and on Bass, `bass_on` saying
@@ -1799,10 +1799,10 @@ fn with_two_envelopes(bass_on: bool) -> Harness<'static, App> {
     harness
 }
 
-/// Sets Settings › Arrangement › Automation › Automation colour, with its line and point colours.
-fn automation_colour(
+/// Sets Settings › Arrangement › Automation › Automation color, with its line and point colors.
+fn automation_color(
     harness: &mut Harness<'static, App>,
-    mode: suhina_ui::settings::view_settings::AutomationColour,
+    mode: suhina_ui::settings::view_settings::AutomationColor,
     line: Option<egui::Color32>,
     point: Option<egui::Color32>,
 ) {
@@ -1827,34 +1827,34 @@ fn paths_stroked(harness: &Harness<'static, App>, color: egui::Color32) -> usize
     found
 }
 
-/// With Automation colour Fixed, the envelopes of tracks of different colours are drawn in the
-/// same line colour and the same point colour, the ones chosen in Settings at once; Track colour
+/// With Automation color Fixed, the envelopes of tracks of different colors are drawn in the
+/// same line color and the same point color, the ones chosen in Settings at once; Track color
 /// draws neither (#1518).
 #[test]
-fn fixed_automation_colours_draw_every_envelope_alike() {
-    use suhina_ui::settings::view_settings::AutomationColour;
+fn fixed_automation_colors_draw_every_envelope_alike() {
+    use suhina_ui::settings::view_settings::AutomationColor;
     let mut harness = with_two_envelopes(true);
     let (line, point) = (egui::Color32::from_rgb(0xF0, 0x11, 0x22), egui::Color32::from_rgb(0x11, 0xF0, 0x33));
-    assert_eq!((paths_stroked(&harness, line), circles_filled(&harness, point)), (0, 0), "Track colour");
-    automation_colour(&mut harness, AutomationColour::Fixed, Some(line), Some(point));
+    assert_eq!((paths_stroked(&harness, line), circles_filled(&harness, point)), (0, 0), "Track color");
+    automation_color(&mut harness, AutomationColor::Fixed, Some(line), Some(point));
     assert!(paths_stroked(&harness, line) >= 2, "both tracks' lines");
     assert_eq!(circles_filled(&harness, point), 4, "both tracks' points");
-    // Without colours of its own, Fixed takes the theme's: its accent by default.
-    automation_colour(&mut harness, AutomationColour::Fixed, None, None);
+    // Without colors of its own, Fixed takes the theme's: its accent by default.
+    automation_color(&mut harness, AutomationColor::Fixed, None, None);
     let accent = suhina_ui::kit::native_css::root_color("--accent").expect("the accent");
-    assert!(paths_stroked(&harness, accent) >= 2, "the theme's line colour");
-    assert!(circles_filled(&harness, accent) >= 4, "the theme's point colour");
+    assert!(paths_stroked(&harness, accent) >= 2, "the theme's line color");
+    assert!(circles_filled(&harness, accent) >= 4, "the theme's point color");
 }
 
-/// With Automation colour Fixed, a lane that is off keeps its `[muted]` look, points included, and
+/// With Automation color Fixed, a lane that is off keeps its `[muted]` look, points included, and
 /// a picked point keeps `[selected]`'s (#1518).
 #[test]
-fn fixed_automation_colours_keep_a_lane_off_and_a_picked_point_apart() {
-    use suhina_ui::settings::view_settings::AutomationColour;
+fn fixed_automation_colors_keep_a_lane_off_and_a_picked_point_apart() {
+    use suhina_ui::settings::view_settings::AutomationColor;
     let mut harness = with_two_envelopes(false);
     let (line, point) = (egui::Color32::from_rgb(0xF0, 0x11, 0x22), egui::Color32::from_rgb(0x11, 0xF0, 0x33));
-    automation_colour(&mut harness, AutomationColour::Fixed, Some(line), Some(point));
-    assert_eq!(circles_filled(&harness, point), 2, "only the lane that plays takes the fixed colours");
+    automation_color(&mut harness, AutomationColor::Fixed, Some(line), Some(point));
+    assert_eq!(circles_filled(&harness, point), 2, "only the lane that plays takes the fixed colors");
     let one = harness.get_by_label("Volume point 1 on Drums").rect().center();
     click_at(&mut harness, one);
     // Away from the lanes, so no dot marks where a click would add a point.

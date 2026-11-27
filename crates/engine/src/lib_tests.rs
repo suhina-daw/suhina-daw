@@ -1826,7 +1826,9 @@ fn a_stretched_loop_whose_envelope_is_dragged_sounds_on_every_pass() {
 /// new voice on from the old one's sound, with no click where the two meet.
 #[test]
 fn a_stretched_clip_changes_its_tempo_while_playing_without_a_click() {
-    for mode in [StretchMode::Smooth, StretchMode::Rhythmic, StretchMode::HighQuality] {
+    // Rhythmic cuts a held tone into slices, whose starts are meant to be heard: it is checked on
+    // a drum loop instead (`rhythmic_mode_keeps_hits_on_the_beat_and_their_length`).
+    for mode in [StretchMode::Smooth, StretchMode::Tonal, StretchMode::HighQuality] {
         let (project, pool) = stretched_project(440.0, 4.0, 8.0, 110.0, mode);
         let mut renderer = Renderer::build(
             &project,
@@ -2142,4 +2144,136 @@ fn a_velocity_range_rolls_on_each_pass_and_repeats() {
     let mut events = Vec::new();
     collect_notes(&placed, &plain, &map, (TrackId(1), 1.0, 1.0, 0, 0, 0), None, 0.0, &mut events);
     assert!(events.iter().all(|e| e.velocity == 100.0 / 127.0));
+}
+
+fn render(project: &Project, pool: &AudioPool) -> Vec<f32> {
+    render_offline_from(project, RenderInputs::from_audio(pool, suhina_device_registry::factory()), SR, 512, None)
+        .unwrap()
+}
+
+/// A loop of four hits a second (each a 5 ms burst of a 2 kHz tone), its file at 120 BPM.
+fn drum_loop(mode: StretchMode, bpm: f64) -> (Project, AudioPool) {
+    let (mut project, mut pool) = stretched_project(440.0, 2.0, 4.0, bpm, mode);
+    let rate = 44_100usize;
+    let samples: Vec<f32> = (0..2 * rate)
+        .map(|i| {
+            let into = i % (rate / 2);
+            if into < rate / 200 {
+                ((std::f64::consts::TAU * 2_000.0 * into as f64 / rate as f64).sin() * 0.8) as f32
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    pool.files.insert("sine.wav".into(), std::sync::Arc::new(AudioData { sample_rate: 44_100, channels: 1, samples }));
+    project.arrangement.lanes[0].clips[0].length = 4.0;
+    (project, pool)
+}
+
+/// Where the hits start in `out` (left channel), and how long each stays loud.
+fn hits(out: &[f32]) -> Vec<(usize, usize)> {
+    let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0].abs()).collect();
+    let mut found = Vec::new();
+    let mut i = 0;
+    while i < left.len() {
+        if left[i] > 0.3 {
+            let start = i;
+            let mut last = i;
+            while i < left.len() && i < last + 64 {
+                if left[i] > 0.3 {
+                    last = i;
+                }
+                i += 1;
+            }
+            found.push((start, last - start));
+        } else {
+            i += 1;
+        }
+    }
+    found
+}
+
+/// Rhythmic slices a drum loop at its hits: played at 60 BPM (half its speed) each hit starts on
+/// its beat and is as short as in the file, where a spectral stretch smears it.
+#[test]
+fn rhythmic_mode_keeps_hits_on_the_beat_and_their_length() {
+    let (project, pool) = drum_loop(StretchMode::Rhythmic, 60.0);
+    let found = hits(&render(&project, &pool));
+    // The file's hits are half a second apart at 120 BPM, a beat; at 60 BPM a beat is a second.
+    let want: Vec<usize> = (0..4).map(|k| k * SR as usize).collect();
+    assert_eq!(found.len(), want.len(), "{found:?}");
+    for ((start, length), w) in found.iter().zip(&want) {
+        assert!(start.abs_diff(*w) <= SR as usize / 1_000, "a hit at {start}, its beat at {w}");
+        // 5 ms in the file, 5 ms played (the tail is off once the burst has died away).
+        assert!(*length < SR as usize / 100, "a hit {length} frames long");
+    }
+}
+
+/// Tonal and Texture keep a tone's pitch at 0.7 times its speed, as Smooth does.
+#[test]
+fn grain_modes_keep_the_pitch() {
+    for mode in [StretchMode::Tonal, StretchMode::Texture] {
+        let (project, pool) = stretched_project(330.0, 2.0, 4.0, 84.0, mode);
+        let hz = frequency(&render(&project, &pool));
+        assert!((hz - 330.0).abs() < 330.0 * 0.03, "{mode:?}: {hz} Hz");
+    }
+}
+
+/// Each stretch mode sounds its own way: the same clip at the same tempo renders differently in
+/// each of them.
+#[test]
+fn every_stretch_mode_sounds_different() {
+    let modes = [
+        StretchMode::Rhythmic,
+        StretchMode::Tonal,
+        StretchMode::Texture,
+        StretchMode::Smooth,
+        StretchMode::HighQuality,
+    ];
+    let renders: Vec<Vec<f32>> = modes
+        .iter()
+        .map(|mode| {
+            let (project, pool) = drum_loop(*mode, 90.0);
+            render(&project, &pool)
+        })
+        .collect();
+    for (i, a) in renders.iter().enumerate() {
+        for (j, b) in renders.iter().enumerate().skip(i + 1) {
+            let differ = a.iter().zip(b).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max);
+            assert!(differ > 0.05, "{:?} and {:?} sound the same ({differ})", modes[i], modes[j]);
+        }
+    }
+}
+
+/// Texture's scatter and grain change its sound; Rhythmic's settings change its sound.
+#[test]
+fn a_modes_settings_change_its_sound() {
+    // Grains on the drum loop; slices on a held tone, whose tails and envelope are heard.
+    let with = |mode, warp: WarpSettings| {
+        let (mut project, pool) = if mode == StretchMode::Rhythmic {
+            stretched_project(330.0, 2.0, 4.0, 75.0, mode)
+        } else {
+            drum_loop(mode, 75.0)
+        };
+        project.arrangement.lanes[0].clips[0].audio.warp = warp;
+        render(&project, &pool)
+    };
+    let base = WarpSettings::default();
+    let pairs = [
+        (StretchMode::Texture, WarpSettings { scatter: 0.0, ..base }, WarpSettings { scatter: 90.0, ..base }),
+        (StretchMode::Texture, WarpSettings { grain: 20.0, ..base }, WarpSettings { grain: 300.0, ..base }),
+        (StretchMode::Tonal, WarpSettings { grain: 20.0, ..base }, WarpSettings { grain: 300.0, ..base }),
+        (
+            StretchMode::Rhythmic,
+            WarpSettings { tail: SliceTail::Off, ..base },
+            WarpSettings { tail: SliceTail::Loop, ..base },
+        ),
+        (StretchMode::Rhythmic, WarpSettings { envelope: 100.0, ..base }, WarpSettings { envelope: 0.0, ..base }),
+        (StretchMode::Rhythmic, base, WarpSettings { slice: SliceAt::Eighth, ..base }),
+    ];
+    for (mode, a, b) in pairs {
+        let (one, two) = (with(mode, a), with(mode, b));
+        let differ = one.iter().zip(&two).map(|(x, y)| (x - y).abs()).fold(0.0, f32::max);
+        assert!(differ > 0.01, "{mode:?}: {a:?} and {b:?} sound the same");
+    }
 }

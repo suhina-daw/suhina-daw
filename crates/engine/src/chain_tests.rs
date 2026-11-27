@@ -894,3 +894,19 @@ fn modal_profile_identity_changes_without_losing_sample_identity() {
     stored.set_sample_file("different.wav");
     assert_ne!(second, identity(&stored));
 }
+
+/// A key switched off (`DeviceInput::enabled`) is not read: the compressor hears its own input, as
+/// without a key, and switched back on it ducks again.
+#[test]
+fn a_key_switched_off_is_not_read() {
+    let compressor = || device("compressor", &[("threshold", -30.0), ("ratio", 20.0), ("knee", 0.0), ("attack", 0.1)]);
+    let render = |p: &Project| render_offline(p, SR, 512, suhina_device_registry::factory()).unwrap();
+    let tail = |out: &[f32]| peak(out.get(SR as usize * 4 / 5..SR as usize * 8 / 5).unwrap_or_default());
+    let plain = render(&keyed_pair(vec![compressor()]));
+    let mut off = keyed_pair(vec![compressor()]);
+    off.channels[0].devices[0].inputs =
+        vec![DeviceInput { enabled: false, ..DeviceInput::key(ChannelId(2), TapPoint::PostFx) }];
+    assert!((tail(&render(&off)) - tail(&plain)).abs() < 1e-5, "switched off, nothing is ducked");
+    off.channels[0].devices[0].inputs[0].enabled = true;
+    assert!(tail(&render(&off)) < tail(&plain) * 0.5, "switched on, it ducks");
+}

@@ -468,11 +468,16 @@ impl App {
         let target = self.drop_target(&items, pointer);
         let separate = ui.input(|i| i.modifiers.command) != self.settings.drop_separate;
         if !dropped {
+            self.system_separate = Some(separate);
             if let Some(pointer) = pointer {
                 self.drag_label(ui, pointer, &items, target, separate);
             }
             return;
         }
+        // The drop does what the label said while the files hovered: on Windows the drag runs in
+        // the system's own loop, and the window, given the focus by the drop, reads Ctrl afresh,
+        // so eight files the label put on eight new tracks went onto one.
+        let separate = self.system_separate.take().unwrap_or(separate);
         self.view.drop = None;
         self.arrangement.drop = None;
         match (target, pointer) {

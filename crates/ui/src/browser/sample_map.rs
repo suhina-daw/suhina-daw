@@ -1,10 +1,11 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The sample map view (docs/spec/sample-map.md): points laid out by how they sound, coloured by
+//! The sample map view (docs/spec/sample-map.md): points laid out by how they sound, colored by
 //! kind, as a cloud or a grid. The view draws and reports what the user did as [`MapEvent`]s;
 //! the browser turns them into its own selection, previews and drags.
 
+use crate::kit::controls;
 use std::collections::HashSet;
 
 use egui::{Color32, CornerRadius, Key, PointerButton, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2};
@@ -56,7 +57,7 @@ pub struct MapPoint {
     /// An NKS preset, drawn as a ring.
     pub preset: bool,
     pub pinned: bool,
-    /// The colour tags it carries.
+    /// The color tags it carries.
     pub tags: Vec<String>,
 }
 
@@ -87,7 +88,7 @@ pub enum MapEvent {
     Similar(usize),
     /// Pin it, or unpin it when it is pinned.
     Pin(usize),
-    /// Set (`on`) or clear a colour tag on it.
+    /// Set (`on`) or clear a color tag on it.
     Tag {
         item: usize,
         tag: String,
@@ -216,8 +217,8 @@ struct DensityKey {
     spread: usize,
     /// The gray of the dimmed points, baked into the raster, so a theme change redraws it.
     hint: Color32,
-    /// Each kind's colour, baked into the raster likewise.
-    kind_colours: [Color32; Kind::ALL.len()],
+    /// Each kind's color, baked into the raster likewise.
+    kind_colors: [Color32; Kind::ALL.len()],
 }
 
 /// What to do with the density raster this frame.
@@ -500,11 +501,11 @@ fn step(positions: &[[f32; 2]], from: usize, direction: [f32; 2]) -> Option<usiz
         .map(|(i, _)| i)
 }
 
-/// A kind's colour: its `sample-point[kind="…"]` element's `color`, which the user-agent sheet
+/// A kind's color: its `sample-point[kind="…"]` element's `color`, which the user-agent sheet
 /// gives (Suhina's muted palette, extended, with neighbouring kinds told apart) and a theme may
-/// change. Worked out once a frame, when the map is drawn ([`refresh_kind_colours`]).
-pub fn kind_colour(kind: Kind) -> Color32 {
-    KIND_COLOURS.with(|colours| colours.get()[kind_index(kind)])
+/// change. Worked out once a frame, when the map is drawn ([`refresh_kind_colors`]).
+pub fn kind_color(kind: Kind) -> Color32 {
+    KIND_COLORS.with(|colors| colors.get()[kind_index(kind)])
 }
 
 fn kind_index(kind: Kind) -> usize {
@@ -512,30 +513,30 @@ fn kind_index(kind: Kind) -> usize {
 }
 
 thread_local! {
-    static KIND_COLOURS: std::cell::Cell<[Color32; Kind::ALL.len()]> =
-        std::cell::Cell::new(user_agent_kind_colours());
+    static KIND_COLORS: std::cell::Cell<[Color32; Kind::ALL.len()]> =
+        std::cell::Cell::new(user_agent_kind_colors());
 }
 
-/// Each kind's colour as the user-agent sheet alone gives it, for where no sheet styles the
+/// Each kind's color as the user-agent sheet alone gives it, for where no sheet styles the
 /// window: the sheet's own cascade, so its rules may be written in any form.
-pub(crate) fn user_agent_kind_colours() -> [Color32; Kind::ALL.len()] {
-    static COLOURS: std::sync::OnceLock<[Color32; Kind::ALL.len()]> = std::sync::OnceLock::new();
-    *COLOURS.get_or_init(|| {
+pub(crate) fn user_agent_kind_colors() -> [Color32; Kind::ALL.len()] {
+    static COLORS: std::sync::OnceLock<[Color32; Kind::ALL.len()]> = std::sync::OnceLock::new();
+    *COLORS.get_or_init(|| {
         Kind::ALL.map(|kind| {
             crate::kit::native_css::base_color("sample-point", &[("kind", kind.id())]).unwrap_or(Color32::GRAY)
         })
     })
 }
 
-/// Works out each kind's colour for this frame, inside the map's element: one `sample-point`
+/// Works out each kind's color for this frame, inside the map's element: one `sample-point`
 /// element per kind, styled by the sheets in use, the user-agent sheet's rules included.
-fn refresh_kind_colours() {
-    let defaults = user_agent_kind_colours();
-    let colours = std::array::from_fn(|at| {
+fn refresh_kind_colors() {
+    let defaults = user_agent_kind_colors();
+    let colors = std::array::from_fn(|at| {
         let kind = Kind::ALL[at];
         crate::kit::element::SAMPLE_POINT.attribute("kind", kind.id()).enter().computed_color_or(defaults[at])
     });
-    KIND_COLOURS.with(|cell| cell.set(colours));
+    KIND_COLORS.with(|cell| cell.set(colors));
 }
 
 /// One part of the status's tooltip: a heading ("4 955 could not be read") and lines under it.
@@ -568,7 +569,7 @@ pub fn show(
     events: &mut Vec<MapEvent>,
 ) {
     let style_class = crate::kit::element::SAMPLE_MAP.enter();
-    refresh_kind_colours();
+    refresh_kind_colors();
     let mut styled_ui = style_class.ui(ui);
     let ui = &mut *styled_ui;
     let whole = ui.available_rect_before_wrap();
@@ -692,31 +693,29 @@ fn together(ui: &mut Ui, width: f32, add: impl FnOnce(&mut Ui)) {
 fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
     let tier = crate::browser::browser_view::inks();
     for (layout, name) in [(Layout::Cloud, "Cloud"), (Layout::Grid, "Grid")] {
-        if ui.selectable_label(view.layout == layout, name).clicked() && view.layout != layout {
+        if controls::choice_word(ui, name, name, view.layout == layout).clicked() && view.layout != layout {
             view.layout = layout;
             events.push(MapEvent::Layout(layout));
         }
     }
-    if ui.button("+").on_hover_text("Zoom in").clicked() {
+    if controls::button(ui, "+").on_hover_text("Zoom in").clicked() {
         view.zoom = (view.zoom * 1.5).min(MAX_ZOOM);
     }
-    if ui.button("−").on_hover_text("Zoom out").clicked() {
+    if controls::button(ui, "−").on_hover_text("Zoom out").clicked() {
         view.zoom = (view.zoom / 1.5).max(MIN_ZOOM);
         view.clamp_center();
     }
-    if ui.button("Fit").on_hover_text("Fit all points in view").clicked() {
+    if controls::button(ui, "Fit").on_hover_text("Fit all points in view").clicked() {
         view.fit();
     }
     if !view.window
-        && ui
-            .button(if view.large { "Close" } else { "Large" })
+        && controls::button(ui, if view.large { "Close" } else { "Large" })
             .on_hover_text("Show the map in the main area")
             .clicked()
     {
         events.push(MapEvent::ToggleLarge);
     }
-    if ui
-        .button(if view.window { "Dock" } else { "Window" })
+    if controls::button(ui, if view.window { "Dock" } else { "Window" })
         .on_hover_text(if view.window {
             "Put the map back into the browser"
         } else {
@@ -746,21 +745,23 @@ fn controls(ui: &mut Ui, view: &mut MapView, events: &mut Vec<MapEvent>) {
         ui.label(egui::RichText::new("Labels").color(tier.secondary).size(theme::TEXT_SMALL));
         let percent = (view.label_size * 100.0).round() as u32;
         let name = |p: u32| if p == 0 { "Off".to_string() } else { format!("{p} %") };
-        egui::ComboBox::from_id_salt("sample-map-labels")
-            .width(56.0)
-            .selected_text(name(percent))
-            .show_ui(ui, |ui| {
+        crate::kit::widgets::combo_box(
+            ui,
+            egui::ComboBox::from_id_salt("sample-map-labels").width(56.0).selected_text(name(percent)),
+            |ui| {
                 for size in crate::settings::MAP_LABEL_SIZES {
-                    if ui.selectable_label(percent == size, name(size)).clicked() && percent != size {
-                        view.label_size = size as f32 / 100.0;
-                        events.push(MapEvent::LabelSize(size));
+                    if crate::kit::menu::item(ui, &name(size), percent == size).clicked() {
+                        if percent != size {
+                            view.label_size = size as f32 / 100.0;
+                            events.push(MapEvent::LabelSize(size));
+                        }
+                        ui.close();
                     }
                 }
-            })
-            .response
-            .on_hover_text(
-                "The size of the groups' names on the map; Off hides them, the legend still names the kinds",
-            );
+            },
+        )
+        .response
+        .on_hover_text("The size of the groups' names on the map; Off hides them, the legend still names the kinds");
     });
     together(ui, 170.0, |ui| {
         ui.label(egui::RichText::new("Volume").color(tier.secondary).size(theme::TEXT_SMALL));
@@ -782,7 +783,7 @@ struct Content<'a> {
     /// Where each point is, in map coordinates.
     positions: &'a [[f32; 2]],
     grid: Option<&'a Grid>,
-    /// The library's colour tags, for the right-click menu.
+    /// The library's color tags, for the right-click menu.
     tags: &'a [String],
 }
 
@@ -899,34 +900,34 @@ fn map_area(ui: &mut Ui, rect: Rect, view: &mut MapView, content: &Content<'_>, 
             return;
         };
         {
-            if ui.button("Show similar").clicked() {
+            if crate::kit::menu::entry(ui, "Show similar", None, true).clicked() {
                 events.push(MapEvent::Similar(i));
                 ui.close();
             }
             let pinned = points.get(i).is_some_and(|p| p.pinned);
-            if ui.button(if pinned { "Unpin" } else { "Pin" }).clicked() {
+            if crate::kit::menu::entry(ui, if pinned { "Unpin" } else { "Pin" }, None, true).clicked() {
                 events.push(MapEvent::Pin(i));
                 ui.close();
             }
             if !tags.is_empty() {
-                ui.menu_button("Tag", |ui| {
+                crate::kit::menu::submenu(ui, "Tag", false, |ui| {
                     for tag in tags {
-                        let mut on = points.get(i).is_some_and(|p| p.tags.contains(tag));
-                        if ui.checkbox(&mut on, tag.as_str()).clicked() {
-                            events.push(MapEvent::Tag { item: i, tag: tag.clone(), on });
+                        let on = points.get(i).is_some_and(|p| p.tags.contains(tag));
+                        if crate::kit::menu::toggle(ui, tag.as_str(), on).clicked() {
+                            events.push(MapEvent::Tag { item: i, tag: tag.clone(), on: !on });
                             ui.close();
                         }
                     }
                 });
             }
             if let Some(point) = points.get(i) {
-                ui.menu_button("Kind", |ui| kind_menu(ui, i, point, events));
+                crate::kit::menu::submenu(ui, "Kind", false, |ui| kind_menu(ui, i, point, events));
             }
-            if ui.button("Show in folder").clicked() {
+            if crate::kit::menu::entry(ui, "Show in folder", None, true).clicked() {
                 events.push(MapEvent::ShowInFolder(i));
                 ui.close();
             }
-            if ui.button("Copy to folder…").clicked() {
+            if crate::kit::menu::entry(ui, "Copy to folder…", None, true).clicked() {
                 events.push(MapEvent::CopyTo(i));
                 ui.close();
             }
@@ -1029,13 +1030,13 @@ fn kind_text(point: &MapPoint) -> String {
 /// The point menu's **Kind** submenu: **Automatic** (the name and the sound decide), then every
 /// kind, the one set by hand marked.
 fn kind_menu(ui: &mut Ui, item: usize, point: &MapPoint, events: &mut Vec<MapEvent>) {
-    if ui.radio(!point.by_hand, "Automatic").on_hover_text("From its name and its sound").clicked() {
+    if crate::kit::menu::item(ui, "Automatic", !point.by_hand).on_hover_text("From its name and its sound").clicked() {
         events.push(MapEvent::SetKind { item, kind: None });
         ui.close();
     }
-    ui.separator();
+    crate::kit::menu::separator(ui);
     for kind in Kind::ALL {
-        if ui.radio(point.by_hand && point.kind == kind, kind.label()).clicked() {
+        if crate::kit::menu::item(ui, kind.label(), point.by_hand && point.kind == kind).clicked() {
             events.push(MapEvent::SetKind { item, kind: Some(kind) });
             ui.close();
         }
@@ -1090,7 +1091,7 @@ fn draw_points(
             similar: view.similar.clone(),
             spread: density_spread(view.dot_size),
             hint: crate::browser::browser_view::inks().hint,
-            kind_colours: Kind::ALL.map(kind_colour),
+            kind_colors: Kind::ALL.map(kind_color),
         };
         let now = painter.ctx().input(|i| i.time);
         if view.resized.0 != area {
@@ -1099,9 +1100,9 @@ fn draw_points(
         let drawn = view.cache.density.as_ref().map(|d| (&d.key, d.area));
         match density_plan(drawn, &key, area, view.resized.1, now) {
             DensityPlan::Build => {
-                let colour = |i: usize| points.get(i).filter(|p| !dimmed(i, p)).map(|p| kind_colour(p.kind));
+                let color = |i: usize| points.get(i).filter(|p| !dimmed(i, p)).map(|p| kind_color(p.kind));
                 // The dimmed points' gray is `label[kind="hint"]`'s.
-                let image = crowd::density(screen, colour, area, key.spread, key.hint);
+                let image = crowd::density(screen, color, area, key.spread, key.hint);
                 let texture = painter.ctx().load_texture("sample-map-density", image, egui::TextureOptions::LINEAR);
                 view.cache.density = Some(Density { key, area, transform, texture });
             }
@@ -1133,14 +1134,14 @@ fn draw_points(
             if crowded && !marked {
                 continue;
             }
-            let mut colour = kind_colour(point.kind);
+            let mut color = kind_color(point.kind);
             if point.guessed {
-                colour = colour.gamma_multiply(0.7);
+                color = color.gamma_multiply(0.7);
             }
             if pass {
-                colour = colour.gamma_multiply(0.18);
+                color = color.gamma_multiply(0.18);
             } else if !marked {
-                colour = colour.gamma_multiply(opacity);
+                color = color.gamma_multiply(opacity);
             }
             if cell > 0.0 {
                 let side = (cell - 1.0).max(1.0);
@@ -1149,20 +1150,20 @@ fn draw_points(
                     painter.rect_stroke(
                         r.shrink(1.0),
                         CornerRadius::same(2),
-                        Stroke::new(1.5, colour),
+                        Stroke::new(1.5, color),
                         StrokeKind::Inside,
                     );
                 } else {
-                    painter.rect_filled(r, CornerRadius::same(2), colour);
+                    painter.rect_filled(r, CornerRadius::same(2), color);
                 }
             } else if point.preset {
-                painter.circle_stroke(*at, radius + 0.5, Stroke::new(1.2, colour));
+                painter.circle_stroke(*at, radius + 0.5, Stroke::new(1.2, color));
             } else {
-                painter.circle_filled(*at, radius, colour);
+                painter.circle_filled(*at, radius, color);
             }
             let size = if cell > 0.0 { cell / 2.0 } else { radius };
             if point.in_use {
-                painter.circle_stroke(*at, size + 3.0, Stroke::new(1.5, colour));
+                painter.circle_stroke(*at, size + 3.0, Stroke::new(1.5, color));
             }
             if point.selected {
                 painter.circle_stroke(*at, size + 1.5, Stroke::new(1.0, rings.0));
@@ -1198,7 +1199,7 @@ fn draw_labels(painter: &egui::Painter, view: &MapView, transform: Transform) {
         .iter()
         .map(|c| {
             let font = theme::ui_font(label_font_size(view.label_size, crowd::label_scale(c.count, smallest)));
-            // Light text: a label sits on its own kind's colour, so that colour would not read.
+            // Light text: a label sits on its own kind's color, so that color would not read.
             painter.layout_no_wrap(c.kind.label().to_string(), font, tier.primary.gamma_multiply(fade))
         })
         .collect();
@@ -1229,20 +1230,22 @@ fn similar_strip(ui: &mut Ui, rect: Rect, view: &mut MapView, points: &[MapPoint
     egui::ScrollArea::vertical().show(&mut child, |ui| {
         for i in items {
             let Some(point) = points.get(i) else { continue };
-            ui.horizontal(|ui| {
-                if ui.small_button("▶").on_hover_text(format!("Preview {}", point.name)).clicked() {
-                    events.push(MapEvent::Preview(i));
-                }
-                let row = ui
-                    .selectable_label(point.selected, egui::RichText::new(&point.name).color(kind_colour(point.kind)));
-                if row.clicked() {
-                    events.push(MapEvent::Select { items: vec![i], add: false });
-                    events.push(MapEvent::Preview(i));
-                }
+            // A scope of the sample's own, so two samples of one name keep their ids apart.
+            ui.push_id(i, |ui| {
+                ui.horizontal(|ui| {
+                    if controls::button_named(ui, "▶", &format!("Preview {}", point.name)).clicked() {
+                        events.push(MapEvent::Preview(i));
+                    }
+                    let row = controls::choice_inked(ui, &point.name, point.selected, kind_color(point.kind));
+                    if row.clicked() {
+                        events.push(MapEvent::Select { items: vec![i], add: false });
+                        events.push(MapEvent::Preview(i));
+                    }
+                });
             });
         }
     });
-    if child.button("Close").clicked() {
+    if controls::button(&mut child, "Close").clicked() {
         view.similar = None;
     }
 }
@@ -1259,10 +1262,10 @@ fn legend(ui: &mut Ui, rect: Rect, view: &mut MapView) {
             continue;
         }
         let shown = view.legend.is_empty() || view.legend.contains(&kind);
-        let colour = if shown { kind_colour(kind) } else { kind_colour(kind).gamma_multiply(0.3) };
+        let color = if shown { kind_color(kind) } else { kind_color(kind).gamma_multiply(0.3) };
         let (dot, dot_response) = child.allocate_exact_size(Vec2::splat(10.0), Sense::click());
-        child.painter().circle_filled(dot.center(), 3.5, colour);
-        let text = egui::RichText::new(format!("{} {count}", kind.label())).color(colour).size(theme::TEXT_SMALL);
+        child.painter().circle_filled(dot.center(), 3.5, color);
+        let text = egui::RichText::new(format!("{} {count}", kind.label())).color(color).size(theme::TEXT_SMALL);
         let response: Response = child.add(egui::Label::new(text).sense(Sense::click()));
         child.add_space(theme::PAD);
         if response.clicked() || dot_response.clicked() {

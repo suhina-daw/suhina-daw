@@ -3,7 +3,7 @@ description: How to author the Live Sets used to learn the .als format and test 
 read_when: making test sets, locators, corpus, new series, what to save in Live, test files, device corpus, bounce, device parameters, test signal, automation, envelopes
 type: howto
 status: current
-last_verified: 2026-10-28
+last_verified: 2026-11-23
 covers:
   - crates/als/tests/corpus.rs
   - scripts/test-signal.py
@@ -51,7 +51,7 @@ share one `Samples/` folder.
 | 07 | `07-note-key.als` | Change the note to E3. |
 | 08 | `08-clip-length-2-bars.als` | Set the clip length to 2 bars (Clip View, loop length). |
 | 09 | `09-clip-loop-off.als` | Turn the clip's Loop switch off. |
-| 10 | `10-clip-name-color.als` | Rename the clip to `Test` and pick a different clip colour. |
+| 10 | `10-clip-name-color.als` | Rename the clip to `Test` and pick a different clip color. |
 | 11 | `11-insert-scene.als` | Insert a scene (Create › Insert Scene). |
 | 12 | `12-session-clip.als` | Create a clip in the first Session slot of the MIDI track with one note: C3 on beat 1. |
 | 13 | `13-second-session-clip.als` | Create a clip in the second slot of the same track with one note: G3 on beat 1. |

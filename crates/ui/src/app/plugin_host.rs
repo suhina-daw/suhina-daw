@@ -55,11 +55,11 @@ impl App {
             self.waker_set = true;
         }
         self.projects.set_editor_embedding(self.settings.plugin_editors == EditorPlacement::DeviceView);
-        // Tracks keep the colour they show when others come and go (#690, #709).
+        // Tracks keep the color they show when others come and go (#690, #709).
         for id in self.projects.ids() {
             let Ok(session) = self.projects.session_mut(Some(id)) else { continue };
-            session.set_one_new_track_colour(self.settings.view.fixed_track_colour);
-            session.set_new_clips_take_track_colour(self.settings.view.new_clip_track_colour);
+            session.set_one_new_track_color(self.settings.view.fixed_track_color);
+            session.set_new_clips_take_track_color(self.settings.view.new_clip_track_color);
         }
         let changes = self.session().map(suhina_session::Session::change_count);
         let was_preparing = self.session().is_some_and(Session::audio_preparing);

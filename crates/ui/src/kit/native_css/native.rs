@@ -22,9 +22,9 @@ pub(super) struct Paint {
     sheet: Sheet,
     /// Whether the base sheet applies under the theme (`"base": "none"` turns it off).
     base: bool,
-    /// The theme's colour map as a `:root` rule ([`super::set_colors`]), in the base tier.
+    /// The theme's color map as a `:root` rule ([`super::set_colors`]), in the base tier.
     colors: Option<Arc<Sheet>>,
-    /// The window's faded colours over a backdrop ([`super::set_window_opacity`]), in the base tier.
+    /// The window's faded colors over a backdrop ([`super::set_window_opacity`]), in the base tier.
     window: Option<Arc<Sheet>>,
     /// The whole tree's element styles, kept by what each depends on, so a tree that changed in a
     /// few elements works out only those (#1489).
@@ -52,7 +52,7 @@ impl Paint {
         })
     }
 
-    /// Uses the theme's colour map `colors` and the window's rule `window` from now on.
+    /// Uses the theme's color map `colors` and the window's rule `window` from now on.
     pub fn set_base(&mut self, base: bool, colors: Option<Arc<Sheet>>, window: Option<Arc<Sheet>>) {
         self.base = base;
         self.colors = colors;
@@ -123,7 +123,7 @@ impl Paint {
     }
 
     /// The cascade of the user-agent sheet, the base tier (the core variables, the base sheet, the
-    /// theme's colour map and the window's faded colours), the theme, the chosen variant's values,
+    /// theme's color map and the window's faded colors), the theme, the chosen variant's values,
     /// device panel sheets (each bounded to its panel's element) and the user's sheet, in that
     /// order of precedence.
     fn styles(
@@ -184,9 +184,9 @@ pub(in crate::kit) fn user_agent() -> Option<&'static Sheet> {
     SHEET.get_or_init(|| Sheet::parse(suhina_theme_package::USER_AGENT_SHEET).ok()).as_ref()
 }
 
-/// The colour Suhina's base sheet alone gives the element `name` with `attributes`
-/// (`sample-point[kind="kick"]`), with Suhina Studio's colours, as the element's own rule: what it
-/// looks like where no sheet styles the window. `None` where the sheet gives it no colour.
+/// The color Suhina's base sheet alone gives the element `name` with `attributes`
+/// (`sample-point[kind="kick"]`), with Suhina Studio's colors, as the element's own rule: what it
+/// looks like where no sheet styles the window. `None` where the sheet gives it no color.
 pub fn base_color(name: &str, attributes: &[(&str, &str)]) -> Option<Color32> {
     base_property(None, name, attributes, Property::Color)
 }
@@ -571,7 +571,7 @@ fn computed_from(resolved: Arc<ComputedStyle>) -> Computed {
         Value::Color(Color::Rgba(value)) => value,
         _ => [255; 4],
     };
-    // currentColor in other colours resolves to the foreground.
+    // currentColor in other colors resolves to the foreground.
     let ink = |property| match style.get(property) {
         Value::Color(Color::Current) => {
             let [r, g, b, a] = foreground;

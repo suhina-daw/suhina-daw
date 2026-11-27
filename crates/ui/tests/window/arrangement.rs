@@ -233,9 +233,93 @@ fn markers_are_added_jumped_to_and_deleted_from_the_marker_row() {
     assert_eq!(markers(&harness)[0], (24.0, "Marker 1".to_string()));
 }
 
+/// The demo project in the Arrangement with a loop from beat 4 to beat 12, and a click on its
+/// brace at beat 8 (8 points a beat by default).
+fn arrangement_with_a_clicked_loop_brace() -> Harness<'static, App> {
+    let mut harness = arrangement_app();
+    harness.state_mut().run(&Action::new("transport.setLoop", json!({ "start": 4.0, "end": 12.0, "enabled": true })));
+    harness.run();
+    let row = harness.get_by_label("Loop brace").rect();
+    let at = egui::pos2(row.left() + 8.0 * 8.0, row.center().y);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+    harness
+}
+
+/// The id of the track named `name` in the project open.
+fn track_id(h: &Harness<'static, App>, name: &str) -> Option<TrackId> {
+    h.state().session().and_then(|s| s.project().tracks.iter().find(|t| t.name == name).map(|t| t.id))
+}
+
+/// A click on the loop brace selects its span in time over every track and leaves the loop as
+/// it was (`docs/spec/arrangement-editing.md` › Loop region).
+#[test]
+fn a_click_on_the_loop_brace_selects_its_span_over_every_track() {
+    let harness = arrangement_with_a_clicked_loop_brace();
+    let span = harness.state().arrangement().time_selection().cloned();
+    let span = span.expect("the click made a time selection");
+    assert_eq!((span.start, span.end), (4.0, 12.0));
+    for name in ["Drums", "Bass", "Keys"] {
+        let id = track_id(&harness, name).expect("a demo track");
+        assert!(span.tracks.contains(&id), "{name} is in the selection: {:?}", span.tracks);
+    }
+    let transport = harness.state().session().map(|s| s.project().transport.clone()).unwrap_or_default();
+    assert_eq!((transport.loop_range.map(|r| (r.start, r.end)), transport.loop_enabled), (Some((4.0, 12.0)), true));
+}
+
+/// A header clicked after the brace takes the span over to its track, and Delete then removes
+/// the track (the header click is the newer act), not what plays in the span; one undo brings
+/// it back (`docs/spec/arrangement-editing.md` › the track headers).
+#[test]
+fn after_a_brace_click_a_header_click_gives_delete_to_the_tracks() {
+    let mut harness = arrangement_with_a_clicked_loop_brace();
+    let before = names(&harness);
+    let drums = track_id(&harness, "Drums").expect("a demo track");
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    let span = harness.state().arrangement().time_selection().map(|s| (s.tracks.clone(), s.start, s.end));
+    assert_eq!(span, Some((vec![drums], 4.0, 12.0)), "the span goes over to the clicked track");
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert!(!names(&harness).iter().any(|n| n == "Drums"), "Delete removed the track: {:?}", names(&harness));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(names(&harness), before, "one undo brings it back");
+}
+
+/// A device picked in the detail area, then another track's header clicked: Delete removes that
+/// track, not the device picked before the click, which stays on its track
+/// (`docs/spec/arrangement-editing.md` › the track headers).
+#[test]
+fn a_header_click_after_a_device_pick_gives_delete_to_the_tracks() {
+    let devices = |h: &Harness<'static, App>| {
+        let drums = track_id(h, "Drums")?;
+        h.state().session().and_then(|s| s.project().channel_of_track(drums).map(|c| c.devices.len()))
+    };
+    let mut app = App::new();
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Arrangement view").click();
+    harness.run();
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Device Utility").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert!(!names(&harness).iter().any(|n| n == "Bass"), "Delete removed the track: {:?}", names(&harness));
+    assert_eq!(devices(&harness), Some(1), "the device picked before the header click stays");
+}
+
 /// The loop brace row under the ruler: a drag draws a region on the bar grid and turns looping
-/// on, Ctrl+L and a click on the brace turn it off and on, its end and its middle are dragged,
-/// and undo takes an edit back (`docs/spec/arrangement-editing.md` › Loop region).
+/// on, Ctrl+L turns it off and on, a click on the brace selects its span without switching
+/// looping, its end and its middle are dragged, and undo takes an edit back
+/// (`docs/spec/arrangement-editing.md` › Loop region).
 #[test]
 fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
     let mut renderer = suhina_engine::Renderer::stopped(
@@ -268,7 +352,8 @@ fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
     drag(&mut harness, at_beat(4.0) + egui::vec2(3.0, 0.0), 8.0 * 8.0 - 5.0);
     assert_eq!(looped(&harness), (Some((4.0, 12.0)), true));
 
-    // Ctrl+L turns it off, a click on the brace on again.
+    // Ctrl+L turns it off; a click on the brace selects its span and leaves looping off, and
+    // Ctrl+L then loops that span again.
     harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
     harness.run();
     assert_eq!(looped(&harness), (Some((4.0, 12.0)), false));
@@ -276,6 +361,9 @@ fn a_loop_region_is_drawn_resized_moved_and_toggled_in_the_loop_brace_row() {
     harness.run();
     harness.drag_at(at_beat(8.0));
     harness.drop_at(at_beat(8.0));
+    harness.run();
+    assert_eq!(looped(&harness), (Some((4.0, 12.0)), false), "a click never switches looping");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::L);
     harness.run();
     assert_eq!(looped(&harness), (Some((4.0, 12.0)), true));
 
@@ -564,6 +652,90 @@ fn shift_clicking_a_header_takes_the_run_of_tracks_between() {
     assert_eq!(names(&harness)[..4], ["Group", "Drums", "Bass", "Keys"]);
 }
 
+/// With several tracks selected, the track menu's Assign track color to all clips gives every
+/// selected track's clips their track's color back, not only the clicked one's, in one undo step.
+#[test]
+fn assign_track_color_to_all_clips_acts_on_every_selected_track() {
+    let mut harness = arrangement_app();
+    let own_colors = |h: &Harness<'static, App>| -> Vec<bool> {
+        h.state()
+            .session()
+            .map(|s| {
+                let p = s.project();
+                ["Drums", "Bass"]
+                    .iter()
+                    .map(|name| {
+                        let track = p.tracks.iter().find(|t| t.name == *name).map(|t| t.id);
+                        p.arrangement
+                            .lanes
+                            .iter()
+                            .find(|l| l.track == track)
+                            .is_some_and(|l| l.clips.iter().any(|c| c.color.is_some()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    for name in ["Drums", "Bass"] {
+        harness.state_mut().run(&Action::new("clip.setColor", json!({ "track": name, "color": "#123456" })));
+    }
+    harness.run();
+    assert_eq!(own_colors(&harness), [true, true]);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::SHIFT);
+    harness.run();
+    harness.get_by_label("Track Bass").click_secondary();
+    harness.run();
+    harness.get_by_label("Assign track color to all clips").click();
+    harness.run();
+    assert_eq!(own_colors(&harness), [false, false], "both tracks' clips");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(own_colors(&harness), [true, true], "one undo step");
+}
+
+/// With several tracks selected, the track menu's Assign track name to clips names every selected
+/// track's clips after their own track, not only the clicked one's, in one undo step.
+#[test]
+fn assign_track_name_to_clips_acts_on_every_selected_track() {
+    let mut harness = arrangement_app();
+    // Whether every clip of Drums, and of Bass, is named after its track.
+    let named = |h: &Harness<'static, App>| -> Vec<bool> {
+        h.state()
+            .session()
+            .map(|s| {
+                let p = s.project();
+                ["Drums", "Bass"]
+                    .iter()
+                    .map(|name| {
+                        let track = p.tracks.iter().find(|t| t.name == *name).map(|t| t.id);
+                        p.arrangement.lanes.iter().find(|l| l.track == track).is_some_and(|l| {
+                            !l.clips.is_empty()
+                                && l.clips
+                                    .iter()
+                                    .all(|c| p.content(c.content).is_some_and(|content| content.name == *name))
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(named(&harness), [false, false], "the demo's clips have names of their own");
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Track Bass").click_modifiers(Modifiers::SHIFT);
+    harness.run();
+    harness.get_by_label("Track Bass").click_secondary();
+    harness.run();
+    harness.get_by_label("Assign track name to clips").click();
+    harness.run();
+    assert_eq!(named(&harness), [true, true], "both tracks' clips");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(named(&harness), [false, false], "one undo step");
+}
+
 /// How many arrangement clips each of the first four tracks has.
 fn clip_counts(h: &Harness<'static, App>) -> Vec<usize> {
     h.state()
@@ -747,8 +919,8 @@ fn groups_nest_fold_and_take_tracks_from_the_menu_and_by_dragging() {
     assert_eq!(parent_name(&harness, "Drums").as_deref(), Some("Group"));
 
     // Ancestor bands stay aligned while each deeper level becomes thinner.
-    let groups: Vec<_> = harness.get_all_by_label("Group colour").map(|node| node.rect()).collect();
-    let drums = harness.get_by_label("Drums colour").rect();
+    let groups: Vec<_> = harness.get_all_by_label("Group color").map(|node| node.rect()).collect();
+    let drums = harness.get_by_label("Drums color").rect();
     assert_eq!(groups.len(), 2);
     assert_eq!((groups[0].width(), groups[1].width(), drums.width()), (6.0, 4.0, 3.0));
     let inward = |rect: egui::Rect| {
@@ -762,7 +934,8 @@ fn groups_nest_fold_and_take_tracks_from_the_menu_and_by_dragging() {
     harness.run();
     harness.get_by_label_contains("Move into group").click();
     harness.run();
-    harness.get_all_by_label("Group").next().unwrap().click();
+    // The submenu's first entry, the outer group; the menu's own Group (Ctrl+G) comes before it.
+    harness.get_all_by_label("Group").nth(1).unwrap().click();
     harness.run();
     assert!(parent_name(&harness, "Keys").is_some());
 
@@ -928,7 +1101,7 @@ fn container_headers_have_wide_fold_targets_and_double_click_toggles_them() {
 }
 
 #[test]
-fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_separate() {
+fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_color_band_separate() {
     struct Arrangement {
         timeline: Timeline,
         state: ArrangementViewState,
@@ -956,11 +1129,11 @@ fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_sepa
             harness.run();
             let header = harness.get_by_label("Track Container").rect();
             let target = harness.get_by_label("Fold Container").rect();
-            let colour = harness.get_by_label("Container colour").rect();
+            let color = harness.get_by_label("Container color").rect();
             assert!((target.top() - header.top()).abs() <= 1.0, "{target:?} / {header:?}");
             assert!((target.bottom() - header.bottom()).abs() <= 1.0, "{target:?} / {header:?}");
             assert_eq!(target.center().x > header.center().x, headers_left);
-            assert!(!target.intersects(colour), "the colour strip keeps its own action");
+            assert!(!target.intersects(color), "the color strip keeps its own action");
             // Exercise the entire gutter, well away from the small glyph at the top.
             for fraction in [0.08, 0.5, 0.92] {
                 let at = egui::pos2(target.center().x, target.top() + target.height() * fraction);
@@ -974,10 +1147,10 @@ fn container_disclosure_uses_the_full_inner_edge_and_leaves_the_colour_band_sepa
                 }
             }
             assert!(harness.state().actions.is_empty(), "folding is view state");
-            harness.get_by_label("Container colour").click();
+            harness.get_by_label("Container color").click();
             harness.run();
-            assert!(harness.query_by_label("+ More colours").is_some(), "the strip opens the colour menu");
-            assert!(harness.query_by_label("Track Drums").is_some(), "colour selection does not fold");
+            assert!(harness.query_by_label("More colors").is_some(), "the strip opens the color menu");
+            assert!(harness.query_by_label("Track Drums").is_some(), "color selection does not fold");
         }
     }
 }
@@ -2200,9 +2373,9 @@ fn the_empty_area_menu_pastes_tracks_and_insert_multiple_adds_several() {
 }
 
 /// A track with take lanes has a button in its header that hides and shows them, and a click on
-/// a take puts its part on the track in the take's colour (#953).
+/// a take puts its part on the track in the take's color (#953).
 #[test]
-fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_colour() {
+fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_color() {
     let mut project = demo_project();
     let drums = project.tracks.iter().find(|t| t.name == "Drums").map(|t| t.id).unwrap();
     let clip = project
@@ -2233,7 +2406,7 @@ fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_colour() {
     harness.get_by_label("Show take lanes of Drums").click();
     harness.run();
     // The track's clip is the take's own pass, so it reads as a part of Take 1 (#989). A click on
-    // the take's clip comps it, coloured: at the clip's own place on the row, the same as on the
+    // the take's clip comps it, colored: at the clip's own place on the row, the same as on the
     // track's lane.
     let lane = harness.get_by_label("Clip Drums Take 1 on Drums at bar 1").rect();
     let row = harness.get_by_label("Comp from Drums Take 1").rect();
@@ -2255,7 +2428,7 @@ fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_colour() {
     harness.run();
     harness.drop_at(to);
     harness.run();
-    let coloured = harness.state().session().is_some_and(|s| {
+    let colored = harness.state().session().is_some_and(|s| {
         s.project()
             .arrangement
             .lanes
@@ -2264,8 +2437,8 @@ fn the_take_lanes_button_hides_them_and_a_comped_part_takes_the_takes_colour() {
             .flat_map(|l| &l.clips)
             .any(|c| c.color.is_some())
     });
-    assert!(coloured, "the comped part shows the take's colour");
-    // The part is still named after its take, and the take lane's menu recolours it.
+    assert!(colored, "the comped part shows the take's color");
+    // The part is still named after its take, and the take lane's menu recolors it.
     harness.get_by_label("Clip Drums Take 1 on Drums at bar 1");
     harness.get_by_label("Comp from Drums Take 1").click_secondary();
     harness.run();
@@ -2306,8 +2479,8 @@ fn a_click_on_the_piano_rolls_ruler_sets_where_playback_starts() {
     .unwrap();
     let mut harness = arrangement_app_with_engine(&mut renderer);
     let monitor = renderer.monitor();
-    // The clip at bar 17 (beat 64), its piano roll in the detail area.
-    harness.get_by_label("Clip Beat B on Drums at bar 17").click();
+    // The clip at bar 17 (beat 64), opened (a double-click): its piano roll in the detail area.
+    open_clip(&mut harness, "Clip Beat B on Drums at bar 17");
     harness.run_steps(2);
     let ruler = harness.get_by_label("Piano roll ruler").rect();
     // Low on the ruler, under the loop row, a little in from the clip's start.
@@ -3209,7 +3382,8 @@ fn a_clips_gain_envelope_is_drawn_and_edited_on_its_waveform() {
     harness.get_by_label("Arrangement view").click();
     harness.run();
     let clip = harness.get_by_label("Clip Loop on Loop at bar 1").rect();
-    click_name_bar(&mut harness, "Clip Loop on Loop at bar 1");
+    // Opened with a double-click on its name bar, so the clip panel shows its Envelope switch.
+    double_click_at(&mut harness, clip.center_top() + egui::vec2(0.0, 6.0));
     harness.get_by_label("Edit gain envelope of Loop").click();
     harness.run();
     assert!(harness.query_by_label("Envelope: On").is_some(), "the panel's switch follows the button");
@@ -3485,7 +3659,7 @@ fn a_selection_rectangle_past_the_edge_scrolls_and_picks_clips_out_of_view() {
     assert!(picked.contains(&chords), "a clip out of view when it began: {picked:?}");
 }
 
-/// A click on an unselected track's header outlines it from the first frame in the colour it
+/// A click on an unselected track's header outlines it from the first frame in the color it
 /// keeps: the header's element is selected in the frame that selects the track, so its border is
 /// not the unselected look's for one frame (a flicker, #1023's combined pull request).
 #[test]
@@ -3534,4 +3708,43 @@ fn a_clicked_header_s_outline_does_not_flicker() {
     let settled = outlines(&h, rect);
     assert!(!settled.is_empty(), "the selected header is outlined");
     assert_eq!(first, settled, "the frame of the click outlines it as the frames after do");
+}
+
+/// The loop brace's right-click menu, drawn with the kit's rows, turns looping off and on (#1688).
+#[test]
+fn the_loop_braces_menu_turns_looping_off_and_on() {
+    let mut harness = arrangement_with_a_clicked_loop_brace();
+    let enabled = |h: &Harness<'static, App>| h.state().session().is_some_and(|s| s.project().transport.loop_enabled);
+    assert!(enabled(&harness));
+    harness.get_by_label("Loop brace").click_secondary();
+    harness.run();
+    harness.get_by_label("Turn loop off").click();
+    harness.run();
+    assert!(!enabled(&harness));
+    harness.get_by_label("Loop brace").click_secondary();
+    harness.run();
+    harness.get_by_label("Turn loop on").click();
+    harness.run();
+    assert!(enabled(&harness));
+}
+
+/// The Arrangement toolbar's grid button opens the grid's entries, drawn with the kit's rows; a
+/// pick changes the grid the button shows (#1688).
+#[test]
+fn the_arrangement_toolbars_grid_button_opens_the_grid_entries() {
+    use egui_kittest::kittest::NodeT;
+    let mut harness = arrangement_app();
+    let mut settings = suhina_ui::settings::Settings::default();
+    settings.view.arrangement_toolbar = true;
+    let ctx = harness.ctx.clone();
+    harness.state_mut().set_settings(&ctx, settings);
+    harness.run();
+    let shown = |h: &Harness<'static, App>| h.get_by_label_contains("Arrangement grid").accesskit_node().label();
+    let before = shown(&harness);
+    harness.get_by_label_contains("Arrangement grid").click();
+    harness.run();
+    harness.get_by_label("Narrow grid").click();
+    harness.run();
+    assert!(harness.query_by_label("Narrow grid").is_none(), "the pick closed the menu");
+    assert_ne!(shown(&harness), before, "the grid changed");
 }
