@@ -142,7 +142,7 @@ fn zoomed_out_the_grid_stays_on_the_bar_lines_with_triplets_and_odd_bars() {
     let mut three = clip(Vec::new());
     (three.bar_beats, three.grid) = (3.0, 2.0);
     let grabbed = note(2.0, 0.5, 60);
-    assert_eq!(resize_by(-0.5, &grabbed, &[grabbed.clone()], note_grid(&three, 40.0), false), 0.5);
+    assert_eq!(resize_by(-0.5, &grabbed, std::slice::from_ref(&grabbed), note_grid(&three, 40.0), false), 0.5);
 }
 
 #[test]
@@ -164,9 +164,9 @@ fn a_resize_puts_the_end_on_the_grid_and_keeps_notes_long_enough() {
     let grabbed = note(1.0, 1.0, 60);
     let other = note(3.0, 0.5, 62);
     assert_eq!(resize_by(0.3, &grabbed, &[grabbed.clone(), other.clone()], grid, false), 0.25);
-    assert!((resize_by(0.3, &grabbed, &[grabbed.clone()], grid, true) - 0.3).abs() < 1e-12);
+    assert!((resize_by(0.3, &grabbed, std::slice::from_ref(&grabbed), grid, true) - 0.3).abs() < 1e-12);
     // Dragged onto its start: one step long.
-    assert_eq!(resize_by(-1.0, &grabbed, &[grabbed.clone()], grid, false), -0.75);
+    assert_eq!(resize_by(-1.0, &grabbed, std::slice::from_ref(&grabbed), grid, false), -0.75);
     // The other selected note is shorter: it keeps the shortest length.
     assert!(
         (resize_by(-0.75, &grabbed, &[grabbed.clone(), other.clone()], grid, false) - (MIN_LENGTH - 0.5)).abs() < 1e-12
@@ -408,11 +408,17 @@ fn a_note_off_the_grid_drags_magnetically() {
     assert_eq!(edits::magnetic(1.0, 0.3, &on.notes, grid), 0.25);
     // The end of an off-grid note is dragged the same way: free, then onto a line or its offset.
     let humanised = note(1.0, 1.03, 60);
-    assert!((resize_by(0.1, &humanised, &[humanised.clone()], grid, false) - 0.1).abs() < 1e-9, "free first");
-    assert!((resize_by(0.225, &humanised, &[humanised.clone()], grid, false) - 0.22).abs() < 1e-9, "onto 2.25");
+    assert!(
+        (resize_by(0.1, &humanised, std::slice::from_ref(&humanised), grid, false) - 0.1).abs() < 1e-9,
+        "free first"
+    );
+    assert!(
+        (resize_by(0.225, &humanised, std::slice::from_ref(&humanised), grid, false) - 0.22).abs() < 1e-9,
+        "onto 2.25"
+    );
     // And its start.
     let late = note(1.03, 1.0, 60);
-    assert!((start_by(-0.04, &late, &[late.clone()], grid, false) + 0.03).abs() < 1e-9, "onto 1.0");
+    assert!((start_by(-0.04, &late, std::slice::from_ref(&late), grid, false) + 0.03).abs() < 1e-9, "onto 1.0");
 }
 
 #[test]
@@ -782,9 +788,9 @@ fn a_rectangle_covers_whole_grid_steps() {
     let long = note(0.25, 3.0, 60);
     let middle = layout.note_rect(&long).center();
     let sliver = Rect::from_min_max(Pos2::new(100.0, middle.y - 1.0), Pos2::new(110.0, middle.y + 1.0));
-    assert_eq!(swept_span(grid, &layout, &[long.clone()], sliver), (0.25, 3.25));
+    assert_eq!(swept_span(grid, &layout, std::slice::from_ref(&long), sliver), (0.25, 3.25));
     let clear = Rect::from_min_max(Pos2::new(100.0, middle.y + 40.0), Pos2::new(110.0, middle.y + 42.0));
-    assert_eq!(swept_span(grid, &layout, &[long.clone()], clear), (1.0, 1.5), "one it misses is not");
+    assert_eq!(swept_span(grid, &layout, std::slice::from_ref(&long), clear), (1.0, 1.5), "one it misses is not");
 }
 
 #[test]
