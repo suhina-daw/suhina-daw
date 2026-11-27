@@ -940,9 +940,12 @@ impl Session {
     }
 
     /// The selected track (`docs/spec/selection.md`, #1679): what the window, controllers,
-    /// mappings and agents point at. `None` when nothing is selected or the track is gone.
+    /// mappings and agents point at. `None` when nothing is selected or the track is gone. A
+    /// presentation folder is a track without a channel, and Main is a channel without a track.
     pub fn selected_track(&self) -> Option<suhina_model::TrackId> {
-        self.selection.track().filter(|track| self.project.channel_of_track(*track).is_some())
+        self.selection
+            .track()
+            .filter(|track| self.project.track(*track).is_some() || self.project.channel_of_track(*track).is_some())
     }
 
     /// The selected device's path on the selected track, when one is: an index on the track's

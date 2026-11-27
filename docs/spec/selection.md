@@ -47,6 +47,8 @@ covers:
   picked in the chain.
 - **A device inside a group can be selected** by its path, with the same addressing every other
   device command uses (`"2/1/0"` — [`track.devices`](midi-mapping.md) lists the paths).
+- **A presentation folder is a track** with no mixer channel or devices: it can be selected and
+  stepped through, so next reaches its first child and previous returns to the folder.
 
 ## The commands
 
@@ -125,7 +127,11 @@ controller's ring uses the same normalized position either way
   a CLI or MCP call — is the session's: the frame's end does not publish the window's older
   pick, so the next frame shows the command's selection instead of springing back to it.
 - A click that selects a track or picks a device sets the same selection — the window runs the
-  commands, as it runs every action.
+  commands, as it runs every action. A device clicked on another track publishes that track and
+  that device together, not the track's first device.
+- An empty session selection clears the window's track highlight and device pick when the track
+  it showed has gone; a window pick of a track that still exists, such as a folder, is the
+  frame's own and stays until it publishes.
 - Each open project keeps its own selection, so switching tabs switches it.
 
 ## Testing
@@ -137,9 +143,11 @@ controller's ring uses the same normalized position either way
   dials in panel order and a page change moving them; a plug-in's generated panel listing its
   sliders as dials, with a switch between them left out and its project's value winning over
   the plug-in's.
-- A removal clearing the selection, and undo not restoring it.
-- The window: a command-set selection showing (the highlight and the chain), and a click
-  changing the reading.
+- A removal clearing the selection before a later read, and undo not restoring it. Stepping
+  through a folder into its child and back; Main staying selected.
+- The window: a command-set selection showing (the highlight and the chain), a click changing
+  the reading, a device clicked with another track published together, and a removed track's
+  highlight gone after undo.
 
 ## Not yet
 

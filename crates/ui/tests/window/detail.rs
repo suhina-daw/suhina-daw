@@ -38,6 +38,47 @@ fn a_devices_menu_removes_it_and_undo_brings_it_back() {
     assert_eq!(device_count(&harness), 1, "the device is back");
 }
 
+/// Removing a selected device and undoing it brings the device back without selecting it
+/// again: the selection is not an edit. A later click selects it as any click does.
+#[test]
+fn undoing_a_removed_selected_device_does_not_select_it_again() {
+    let selected = |h: &Harness<'static, App>| h.state().session().and_then(Session::selected_device_path);
+    let mut app = App::new();
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.get_by_label("Device Utility").click();
+    harness.run();
+    assert_eq!(selected(&harness), Some(vec![0]));
+    harness.get_by_label("Device Utility").click_secondary();
+    harness.run();
+    harness.get_by_label("Remove device").click();
+    harness.run();
+    assert_eq!(selected(&harness), None, "the removed device left the selection");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert!(harness.query_by_label("Device Utility").is_some(), "undo brought the device back");
+    assert_eq!(selected(&harness), None, "undo did not select the restored device");
+    harness.get_by_label("Device Utility").click();
+    harness.run();
+    assert_eq!(selected(&harness), Some(vec![0]), "a click selects it");
+}
+
+/// A header clicked with no device picked gives Delete to its track: following the session's
+/// first device does not turn Delete into a device removal.
+#[test]
+fn a_header_click_alone_gives_delete_to_the_track() {
+    let mut app = App::new();
+    app.set_session(Session::new(project_with_a_device()), &[]);
+    let mut harness = window(app);
+    harness.get_by_label("Track Drums").click();
+    harness.run();
+    harness.key_press(Key::Delete);
+    harness.run();
+    assert!(!names(&harness).iter().any(|n| n == "Drums"), "Delete removed the track: {:?}", names(&harness));
+}
+
 /// Save as preset… on the device's menu (`device.savePreset`, docs/decisions/
 /// 0036-library-and-shipped-content.md › 5): the field comes with the device's name, a typed
 /// name saves the device's values into the library, and the status bar says where.

@@ -170,6 +170,44 @@ fn a_removed_device_or_track_leaves_nothing_selected() {
     assert_eq!(gone["device"], Value::Null, "{gone}");
 }
 
+/// The commands clear what they remove, not a later reading: undo before a read still leaves
+/// the selection empty, for a device and for a whole track.
+#[test]
+fn undo_before_a_reading_does_not_restore_what_was_removed() {
+    let (mut session, track) = with_devices();
+    run(&mut session, "track.select", json!({ "track": track.0 })).unwrap();
+    run(&mut session, "device.remove", json!({ "track": track.0, "device": 0 })).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let after = selection(&mut session);
+    assert_eq!(after["track"], track.0);
+    assert_eq!(after["device"], Value::Null, "the device stays unselected after undo: {after}");
+
+    run(&mut session, "track.delete", json!({ "track": track.0 })).unwrap();
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    let after = selection(&mut session);
+    assert_eq!(after["track"], Value::Null, "the track stays unselected after undo: {after}");
+    assert_eq!(after["device"], Value::Null, "{after}");
+}
+
+/// A presentation folder has no channel but is a track: selecting one keeps it across the next
+/// step, forward into its child and back, instead of restarting at the project's first track.
+#[test]
+fn stepping_reaches_a_folders_children_in_both_directions() {
+    let mut session = Session::new(blank_project());
+    let first = session.project().tracks[0].id;
+    let made = run(&mut session, "track.folder", json!({ "tracks": [first.0], "name": "Folder" })).unwrap();
+    let folder = suhina_model::TrackId(made["track"].as_u64().unwrap_or_default() as u32);
+    run(&mut session, "track.select", json!({ "track": folder.0 })).unwrap();
+    assert_eq!(selection(&mut session)["track"], folder.0, "the folder stays selected");
+    let child = run(&mut session, "track.selectNext", json!({})).unwrap();
+    assert_eq!(child["track"], first.0, "next leaves the folder for its child: {child}");
+    let back = run(&mut session, "track.selectPrevious", json!({})).unwrap();
+    assert_eq!(back["track"], folder.0, "previous goes back into the folder: {back}");
+    // Main is a channel without a track and stays selected too.
+    run(&mut session, "track.select", json!({ "track": "main" })).unwrap();
+    assert_eq!(selection(&mut session)["track"], suhina_model::TrackId::MAIN.0);
+}
+
 /// Naming a device that is not there is refused with its reason, as every other device command
 /// is; with no track selected and none named, `device.select` says so.
 #[test]

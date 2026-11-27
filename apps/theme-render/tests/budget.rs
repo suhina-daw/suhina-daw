@@ -113,7 +113,7 @@ use suhina_theme_render::{Subject, scenes};
 ///
 /// On Windows the window's three controls are `window-button` elements a sheet styles (they were
 /// egui buttons with no frame and are deliberately not `button`s), 3 more nodes in the Launcher
-/// and 1 in the FM synth, on top of #1678's counts (500 and 760); the recorded identities stay.
+/// and 1 in the FM synth on top of #1678's counts (500 and 760); the recorded identities stay.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
