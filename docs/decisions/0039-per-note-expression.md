@@ -156,6 +156,16 @@ What is built: [MPE specification](../spec/mpe.md#status).
     [acceptance matrix](../spec/mpe.md#acceptance-and-implementation-order) includes exact
     split-block equality, allocation checks and deterministic offline audio comparisons.
 
+## Amendment: expression versioned alone (2026-11-27)
+
+Decision 7 asked expression and notation to share one version bump. When #928 changed the
+writer, no notation work had landed (no model field, no file field, no decision), and the
+project file rule allows no field without a rise: an older Suhina skips a key it does not know
+and drops it on its next save ([ADR 0010](0010-project-files.md) › Amendment: format versions).
+So expression takes version 17 on its own: a note's optional `expression` with `pitch`,
+`pressure` and `timbre` lists of `[offset, value]` points, missing in earlier files
+([project file](../spec/suhina-format.md#versions)). Notation takes the next version when it lands.
+
 ## Consequences
 
 The common core can play repeated pitches and recycled channels without moving a release tail

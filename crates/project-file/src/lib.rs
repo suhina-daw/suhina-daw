@@ -34,6 +34,9 @@ use suhina_model::{
     max_clip_gain, valid_bpm,
 };
 use suhina_model::{ENVELOPE_RANGE, GRAIN_RANGE, SCATTER_RANGE, SliceAt, SliceTail, WarpSettings};
+use suhina_model::{
+    ExpressionKind, ExpressionPoint, MAX_CONTENT_EXPRESSION_POINTS, MAX_CURVE_POINTS, NoteExpression, Shared,
+};
 use suhina_model::{LaneGroup, LaneLayout, LaneRef, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
 
 /// The file extension, without the dot.
@@ -44,7 +47,7 @@ const FORMAT: &str = "suhina";
 /// change to what a file holds, so a Suhina that reads up to an older version refuses the file
 /// rather than dropping what it does not know (ADR 0010 › Amendment: format versions,
 /// `docs/spec/suhina-format.md` › Versions). Files of every earlier version are still read.
-pub const VERSION: u64 = 16;
+pub const VERSION: u64 = 17;
 /// A larger file is refused before it is parsed.
 const MAX_FILE: u64 = 512 * 1024 * 1024;
 
@@ -721,8 +724,9 @@ fn read_warp_settings(a: &Map<String, Value>, at: &str) -> Result<WarpSettings, 
     })
 }
 
-/// One note as the file writes it. `muted` is written only on a muted note and `velocity_range`
-/// only on a note with one, so a project without them is written as before they existed.
+/// One note as the file writes it. `muted` is written only on a muted note, `velocity_range`
+/// only on a note with one and `expression` only on a note with a curve, so a project without
+/// them is written as before they existed.
 fn note_value(n: &Note) -> Value {
     let mut out = json!({
         "time": number(n.time),
@@ -742,7 +746,82 @@ fn note_value(n: &Note) -> Value {
     {
         map.insert("velocity_range".into(), json!(n.velocity_range));
     }
+    if let Some(expression) = n.expression()
+        && let Some(map) = out.as_object_mut()
+    {
+        map.insert("expression".into(), expression_value(expression));
+    }
     out
+}
+
+/// A note's curves: `{ "pitch": [[offset, value], …], … }`, each curve only when it has points
+/// (ADR 0039 › 6).
+fn expression_value(expression: &NoteExpression) -> Value {
+    let mut map = Map::new();
+    for kind in ExpressionKind::ALL {
+        let curve = expression.curve(kind);
+        if !curve.is_empty() {
+            let points = curve.iter().map(|p| json!([number(p.offset), number(p.value)])).collect();
+            map.insert(kind.name().into(), Value::Array(points));
+        }
+    }
+    Value::Object(map)
+}
+
+/// A note's `expression` (from version 17; missing in an earlier file, so no curves). Each
+/// curve's length and the content's running total `points` are checked against the limits before
+/// anything is allocated; every point must be two finite numbers, its offset inside the note
+/// (0 to `duration`) and after the one before it, and its value inside the kind's range.
+fn read_expression(
+    n: &Obj,
+    duration: f64,
+    points: &mut usize,
+    at: &str,
+) -> Result<Option<Shared<NoteExpression>>, ProjectFileError> {
+    let at = format!("{at}.expression");
+    let e = match n.get("expression") {
+        None | Some(Value::Null) => return Ok(None),
+        Some(value) => object(value, &at)?,
+    };
+    let mut expression = NoteExpression::default();
+    for kind in ExpressionKind::ALL {
+        let name = kind.name();
+        let items = list(e, name, &at)?;
+        if items.len() > MAX_CURVE_POINTS {
+            return Err(format!("{at}.{name}: {} points, more than {MAX_CURVE_POINTS}", items.len()).into());
+        }
+        *points = points.saturating_add(items.len());
+        if *points > MAX_CONTENT_EXPRESSION_POINTS {
+            return Err(format!(
+                "{at}.{name}: the content's notes have more than {MAX_CONTENT_EXPRESSION_POINTS} expression points"
+            )
+            .into());
+        }
+        let (low, high) = kind.range();
+        let mut curve = Vec::with_capacity(items.len());
+        for (i, item) in items.iter().enumerate() {
+            let at = format!("{at}.{name}[{i}]");
+            let pair = match item.as_array().map(Vec::as_slice) {
+                Some([offset, value]) => offset.as_f64().zip(value.as_f64()),
+                _ => None,
+            };
+            let Some((offset, value)) = pair.filter(|(o, v)| o.is_finite() && v.is_finite()) else {
+                return Err(format!("{at}: expected [offset, value], two numbers").into());
+            };
+            if !(0.0..=duration).contains(&offset) {
+                return Err(format!("{at}: offset {offset} is outside the note (0 to {duration})").into());
+            }
+            if !(low..=high).contains(&value) {
+                return Err(format!("{at}: {name} {value} is outside {low} to {high}").into());
+            }
+            if curve.last().is_some_and(|last: &ExpressionPoint| offset <= last.offset) {
+                return Err(format!("{at}: offset {offset} is not after the point before it").into());
+            }
+            curve.push(ExpressionPoint::new(offset, value));
+        }
+        *expression.curve_mut(kind) = curve;
+    }
+    Ok((!expression.is_empty()).then(|| Shared::new(expression)))
 }
 
 /// A note's `velocity_range`: a whole number from -127 to 127, 0 when left out (a file from before
@@ -1673,6 +1752,8 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
     let c = object(value, at)?;
     let mut lanes = Vec::new();
     let mut legacy = None;
+    // Expression points in all the content's notes, against MAX_CONTENT_EXPRESSION_POINTS.
+    let mut expression_points = 0;
     for (i, v) in list(c, "lanes", at)?.iter().enumerate() {
         let at = format!("{at}.lanes[{i}]");
         let lane = object(v, &at)?;
@@ -1688,9 +1769,11 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
                     if key > 127 || channel > 15 {
                         return Err(format!("{at}: key must be 0 to 127 and channel 0 to 15").into());
                     }
+                    let time = float(n, "time", &at)?;
+                    let duration = float(n, "duration", &at)?;
                     notes.push(Note {
-                        time: float(n, "time", &at)?,
-                        duration: float(n, "duration", &at)?,
+                        time,
+                        duration,
                         key,
                         velocity: float_or(n, "velocity", 1.0, &at)?.clamp(0.0, 1.0) as f32,
                         release_velocity: float_or(n, "release_velocity", 0.0, &at)?.clamp(0.0, 1.0) as f32,
@@ -1698,7 +1781,7 @@ fn read_content(value: &Value, at: &str) -> Result<(ClipContent, Option<ClipAudi
                         // A file from before muted notes reads every note as unmuted.
                         muted: flag(n, "muted", false, &at)?,
                         velocity_range: velocity_range(n, &at)?,
-                        expression: None,
+                        expression: read_expression(n, duration, &mut expression_points, &at)?,
                     });
                 }
                 LaneData::Notes(notes.into())

@@ -1540,7 +1540,20 @@ fn every_feature() -> Project {
         Device::new("Lost synth", DeviceKind::Foreign { format: "flp".into(), id: "Lost synth".into() });
     placeholder.mark_missing_instrument();
     project.channels[0].devices.push(placeholder);
+    // Version 17: a note's expression curves (#928).
+    if let Some(note) = notes_of(&mut project).and_then(|notes| notes.get_mut(0)) {
+        *note.expression_mut() = curves();
+    }
     renumbered(project)
+}
+
+/// All three curves, for a note one beat long.
+fn curves() -> NoteExpression {
+    NoteExpression {
+        pitch: vec![ExpressionPoint::new(0.0, 0.0), ExpressionPoint::new(0.5, 2.0), ExpressionPoint::new(1.0, -1.5)],
+        pressure: vec![ExpressionPoint::new(0.0, 0.2), ExpressionPoint::new(1.0, 0.9)],
+        timbre: vec![ExpressionPoint::new(0.25, 0.5)],
+    }
 }
 
 /// `project` with its devices' ids given again in document order, right after the other objects'
@@ -1631,6 +1644,14 @@ fn a_file_of_every_version_reads() {
             // The stretch modes' settings came with version 16.
             for clip in expected.arrangement.lanes.iter_mut().flat_map(|l| &mut l.clips) {
                 clip.audio.warp = WarpSettings::default();
+            }
+        }
+        if version < 17 {
+            // A note's expression curves came with version 17 (#928).
+            for lane in expected.contents.iter_mut().flat_map(|c| c.lanes.iter_mut()) {
+                if let LaneData::Notes(notes) = &mut lane.data {
+                    notes.iter_mut().for_each(|n| n.expression = None);
+                }
             }
         }
         // Devices get their ids in document order when a file before version 6 is read.
@@ -2010,4 +2031,111 @@ fn warp_settings_out_of_range_save_as_they_play() {
     }
     let read = from_json(&to_json(&project)).unwrap();
     assert!(read.arrangement.lanes.iter().flat_map(|l| &l.clips).all(|c| c.audio.warp == own));
+}
+
+/// A note's curves are written inside the note, only on a note that has one, and read back as
+/// they were (#928).
+#[test]
+fn a_notes_expression_curves_round_trip() {
+    let project = every_feature();
+    let written = to_json(&project);
+    assert_eq!(written.matches("\"expression\"").count(), 1, "only the note that has curves");
+    for kind in ExpressionKind::ALL {
+        assert!(written.contains(&format!("\"{}\"", kind.name())), "{written}");
+    }
+    let read = from_json(&written).unwrap();
+    assert_eq!(renumbered(read.clone()), renumbered(project));
+    let mut read = read;
+    let note = notes_of(&mut read).and_then(|notes| notes.first().cloned()).unwrap();
+    assert_eq!(note.expression(), Some(&curves()));
+    // One curve alone writes only that curve.
+    let mut project = everything();
+    if let Some(note) = notes_of(&mut project).and_then(|notes| notes.get_mut(0)) {
+        note.expression_mut().timbre = vec![ExpressionPoint::new(0.0, 1.0)];
+    }
+    let written = to_json(&project);
+    assert!(!written.contains("\"pitch\"") && !written.contains("\"pressure\""), "{written}");
+    assert_eq!(from_json(&written), Ok(project));
+}
+
+/// A project without curves writes byte for byte what version 16 wrote, apart from the version,
+/// and an empty curve list writes nothing.
+#[test]
+fn a_project_without_curves_writes_what_version_16_wrote() {
+    let mut project = every_feature();
+    if let Some(note) = notes_of(&mut project).and_then(|notes| notes.get_mut(0)) {
+        note.expression = Some(Shared::new(NoteExpression::default()));
+    }
+    let written = to_json(&project).replacen(&format!("\"version\": {VERSION}"), "\"version\": 16", 1);
+    let v16 = std::fs::read_to_string(version_file(16)).unwrap().replace("\r\n", "\n");
+    assert!(written == v16, "a project without curves writes something else than version 16 did");
+    assert!(!written.contains("expression"));
+}
+
+/// A file with one note one beat long and `expression` as given.
+fn with_expression(expression: &str) -> Result<Project, ProjectFileError> {
+    from_json(&format!(
+        r#"{{ "format": "suhina", "version": {VERSION}, "project": {{ "contents": [ {{ "id": 1, "length": 4,
+        "lanes": [ {{ "notes": [ {{ "time": 0, "duration": 1, "key": 60, "expression": {expression} }} ] }} ] }} ] }} }}"#
+    ))
+}
+
+#[test]
+fn malformed_expression_curves_are_refused() {
+    assert!(with_expression(r#"{ "pitch": [[0, -256], [1, 256]], "timbre": [[0.5, 0]] }"#).is_ok());
+    assert!(with_expression("null").is_ok());
+    let mut empty = with_expression(r#"{ "pitch": [] }"#).unwrap();
+    assert!(notes_of(&mut empty).unwrap()[0].expression.is_none(), "no curves");
+    let at = "project.contents[0].lanes[0].notes[0].expression";
+    for (expression, path, why) in [
+        (r#"[]"#, at.to_string(), "an object"),
+        (r#"{ "pitch": 1 }"#, format!("{at}.pitch"), "a list"),
+        (r#"{ "pitch": [[0, "x"]] }"#, format!("{at}.pitch[0]"), "two numbers"),
+        (r#"{ "pitch": [[0, null]] }"#, format!("{at}.pitch[0]"), "two numbers"),
+        (r#"{ "pitch": [[0]] }"#, format!("{at}.pitch[0]"), "two numbers"),
+        (r#"{ "pitch": [[0, 1, 2]] }"#, format!("{at}.pitch[0]"), "two numbers"),
+        (r#"{ "pressure": [[0, 1.5]] }"#, format!("{at}.pressure[0]"), "outside 0 to 1"),
+        (r#"{ "timbre": [[0, -0.1]] }"#, format!("{at}.timbre[0]"), "outside 0 to 1"),
+        (r#"{ "pitch": [[0, 300]] }"#, format!("{at}.pitch[0]"), "outside -256 to 256"),
+        (r#"{ "pitch": [[1.5, 0]] }"#, format!("{at}.pitch[0]"), "outside the note"),
+        (r#"{ "pitch": [[-0.5, 0]] }"#, format!("{at}.pitch[0]"), "outside the note"),
+        (r#"{ "pitch": [[0.5, 0], [0.5, 1]] }"#, format!("{at}.pitch[1]"), "not after"),
+        (r#"{ "pressure": [[0.5, 0], [0.25, 1]] }"#, format!("{at}.pressure[1]"), "not after"),
+    ] {
+        let error = with_expression(expression).unwrap_err().to_string();
+        assert!(error.contains(&format!("{path}:")) && error.contains(why), "{expression}: {error}");
+    }
+    // A number JSON cannot hold as a finite one never reaches a curve.
+    assert!(with_expression(r#"{ "pitch": [[0, 1e999]] }"#).is_err());
+}
+
+/// The points of one curve, offsets increasing inside a note one beat long.
+fn points(count: usize) -> String {
+    let list: Vec<String> = (0..count).map(|i| format!("[{}, 0.5]", i as f64 / 8192.0)).collect();
+    format!("[{}]", list.join(","))
+}
+
+#[test]
+fn a_curve_with_too_many_points_is_refused() {
+    assert!(with_expression(&format!(r#"{{ "pitch": {} }}"#, points(MAX_CURVE_POINTS))).is_ok());
+    let error = with_expression(&format!(r#"{{ "pitch": {} }}"#, points(MAX_CURVE_POINTS + 1))).unwrap_err();
+    assert!(error.to_string().contains(&format!("more than {MAX_CURVE_POINTS}")), "{error}");
+}
+
+/// The limit is on all the curves of one content together, across its lanes.
+#[test]
+fn a_content_with_too_many_expression_points_is_refused() {
+    let full = points(MAX_CURVE_POINTS);
+    let note = format!(
+        r#"{{ "time": 0, "duration": 1, "key": 60, "expression": {{ "pitch": {full}, "pressure": {full}, "timbre": {full} }} }}"#
+    );
+    // 22 notes of three full curves are 66 curves, two more than a content may hold.
+    let notes = vec![note; 11].join(",");
+    let text = format!(
+        r#"{{ "format": "suhina", "version": {VERSION}, "project": {{ "contents": [ {{ "id": 1, "length": 4,
+        "lanes": [ {{ "notes": [{notes}] }}, {{ "notes": [{notes}] }} ] }} ] }} }}"#
+    );
+    let error = from_json(&text).unwrap_err().to_string();
+    assert!(error.contains(&format!("more than {MAX_CONTENT_EXPRESSION_POINTS} expression points")), "{error}");
+    assert!(error.contains("project.contents[0].lanes[1]."), "{error}");
 }

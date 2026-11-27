@@ -23,7 +23,8 @@ The shared API provides runtime identity allocation, validated musical expressio
 atomic initial note state, explicit event-admission results, and an opt-in instrument capability
 with bounded retirement feedback. These are contract primitives; no built-in opts in on this
 branch. The current live path has ordinary notes, channel bend, pressure and controllers.
-End-to-end identified events, live MPE, recording, editable curves and plug-in adapters are not yet built.
+A note holds its curves in the model and the project file saves them (version 17).
+End-to-end identified events, live MPE, recording, editing curves and plug-in adapters are not yet built.
 The rules below are planned behavior, not a claim that a controller already exercises them.
 
 `Device::note_instances` returns `None` for an ordinary device. The validated
@@ -137,8 +138,10 @@ Playback prepares curves off the audio thread and evaluates against beat time in
 renderer. Release holds the note's terminal value unless an explicitly addressed live event
 changes it. Tempo changes use the same beat-to-frame map as notes. Loops, seeks and transport
 stops terminate old occurrences and start fresh ones; they never reuse a runtime ID. Curves
-are stored inside the note's representation, without runtime IDs. #928 coordinates the file
-migration with notation as specified by ADR 0039; this document alone changes no file version.
+are stored inside the note, without runtime IDs: project file version 17 writes a note's
+`expression` as `[offset, value]` lists per curve and refuses a file that breaks the rules above
+([project file](suhina-format.md#versions)). Notation was not ready, so expression took its own
+version (ADR 0039 › Amendment: expression versioned alone).
 
 ## Plug-in boundaries
 
