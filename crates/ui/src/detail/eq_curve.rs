@@ -2694,6 +2694,18 @@ fn adds_to_selection(ui: &egui::Ui) -> bool {
     })
 }
 
+/// The order the dots are drawn in, bottom to top: the bands that are off, then those that are on,
+/// each by slot, and the selected band last.
+fn dot_order(panel: &Panel<'_>) -> Vec<usize> {
+    let rank = |slot: usize| {
+        let on = panel.bands.get(slot).is_some_and(|band| band.on);
+        (panel.state.selected == Some(slot), on)
+    };
+    let mut slots: Vec<usize> = (0..panel.bands.len()).collect();
+    slots.sort_by_key(|&slot| rank(slot));
+    slots
+}
+
 /// Where a band's dot is drawn: at its frequency and its gain after Scale (on the 0 dB line for a
 /// type without gain), kept inside the display.
 fn dot_position(band: &Band, scale: f64, display: Rect, plot: Rect, range: f64) -> Pos2 {
@@ -2773,7 +2785,10 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
     let range = panel.state.db_range;
     let radius = if big { 7.5 } else { 5.8 };
     let mut hovered = None;
-    for slot in 0..panel.bands.len() {
+    // Drawn bottom to top: the bands that are off, then those that are on, the selected band last.
+    // The dot drawn on top takes the click, so of two dots in one place (two bands at the same
+    // frequency and gain) the one that is heard, or selected, is the one a click picks.
+    for slot in dot_order(panel) {
         let Some(band) = panel.bands.get(slot).copied().filter(|band| band.in_use) else { continue };
         let at = dot_position(&band, value(panel.parameters, "scale"), display, plot, range);
         let id = panel.address.ids.with(("eq-dot", slot));

@@ -474,6 +474,15 @@ fn render_the_panel() {
 }
 
 #[test]
+fn a_click_where_two_dots_meet_picks_the_band_that_is_on() {
+    // A new EQ's band 4 (on) and band 7 (off) both sit at 5 kHz and 0 dB.
+    let mut harness = window();
+    harness.get_by_label_contains("Band 4: ").click();
+    harness.run();
+    assert!(harness.query_by_label("Band 4 Frequency").is_some(), "band 4 is selected, not band 7");
+}
+
+#[test]
 fn ctrl_click_selects_several_bands_and_delete_removes_them_together() {
     let mut harness = window();
     harness.get_by_label_contains("Band 3: ").click();
@@ -481,7 +490,6 @@ fn ctrl_click_selects_several_bands_and_delete_removes_them_together() {
     // Ctrl (Cmd) held over the click, as a hand holds it: down a frame before, up a frame after.
     harness.event(egui::Event::ModifiersChanged(Modifiers::COMMAND));
     harness.run();
-    // Band 2 (200 Hz): the default bands 4 and 7 share a dot at 5 kHz, and band 7 lies on top.
     harness.get_by_label_contains("Band 2: ").click_modifiers(Modifiers::COMMAND);
     harness.run();
     harness.event(egui::Event::ModifiersChanged(Modifiers::NONE));
