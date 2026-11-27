@@ -132,10 +132,12 @@ fn start_one(
 ) -> Result<Option<OfflineDevice>, PluginError> {
     let Some(device) = device_of(project, found) else { return Ok(None) };
     let Some((matched, instrument)) = find(&env.catalog, device) else { return Ok(None) };
+    let state = state.or_else(|| saved_state(device));
     let mut ara_sources = Vec::new();
+    // Bound to its clips as the live rack binds it ([`crate::ara::binds_clips`]).
     let ara = found
         .track
-        .filter(|_| matched.plugin.ara)
+        .filter(|_| crate::ara::binds_clips(device, state.as_ref()))
         .and_then(|t| crate::ara::Layout::of(project, audio, t).document(audio));
     let ara = ara.map(|(mut document, sources)| {
         ara_sources = sources;
@@ -152,7 +154,7 @@ fn start_one(
         group: env.launch_group(&matched),
         ara,
     };
-    let (control, audio, refused) = start(launch, state.or_else(|| saved_state(device)))?;
+    let (control, audio, refused) = start(launch, state)?;
     Ok(Some(OfflineDevice {
         control,
         audio,

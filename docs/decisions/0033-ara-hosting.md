@@ -26,7 +26,8 @@ covers:
 # 0033: ARA hosting
 
 - **Date:** 2026-10-17; the plug-in belongs to the clip 2026-10-25 (#990, decisions 2 and 5);
-  what is built moved to [ARA hosting](../spec/ara-hosting.md) 2026-11-02 (#759)
+  what is built moved to [ARA hosting](../spec/ara-hosting.md) 2026-11-02 (#759); an ARA
+  plug-in in a chain is an insert 2026-11-24 (amendment)
 - **Epic:** [#587](https://github.com/suhina-daw/suhina-daw/issues/587), under plug-in hosting
   ([#30](https://github.com/suhina-daw/suhina-daw/issues/30))
 
@@ -232,11 +233,43 @@ The sub-issues of [#587](https://github.com/suhina-daw/suhina-daw/issues/587), i
 7. The UI: open a clip in its ARA editor, show conflicts and their fixes, render to audio.
 8. The SDK's example plug-ins and real plug-ins on each system; this ADR records the results.
 
+## Amendment: an ARA plug-in in a chain is an insert (2026-11-24)
+
+Decision 2 made the plug-in the clip's, but a plug-in the scan marked as supporting ARA was still
+bound to every audio clip of its track wherever it was put: dropped on a track, added with
+`device.addPlugin`, or found in an imported project. A tester's imported project had a pitch
+corrector that supports ARA as an insert on many tracks, as the project's own host ran it. Each
+was loaded bound to its track's clips, the plug-in stopped answering the first state read after it
+bound, and as every instance of one plug-in shares one document controller in one process
+(decision 2), the one crash took every track that used it down. Supporting ARA says what a plug-in
+can do, not how the user wants it on a given track: hosts that host ARA either list such a plug-in
+twice, once as an ordinary effect and once bound to the clips, or leave it to a setting. Now:
+
+- **A plug-in put in a chain is an insert there,** whatever it supports, and stays where it was
+  put. The scan's mark, and a host's answer that the plug-in supports ARA when it loads, only teach
+  the catalog what the plug-in can do; neither binds it to the clips or loads it again.
+- **Only a clip host is bound to the clips:** the device a clip's **Edit with** or `clip.setAra`
+  adds (`Device::clip_host`), first in its chain as decision 2 says. A track with an insert of
+  the plug-in gets a clip host of its own beside it.
+- **A device bound before keeps its edits.** A device whose state holds an ARA archive (the state a
+  bound plug-in writes, decision 7) is loaded bound as before, so no edit is lost and nothing
+  sounds different; without one it loads as an insert. An imported project's devices carry their
+  own state, so they load as inserts.
+- **Live and offline the same:** the session decides it in one place for the live rack and the
+  offline render (AGENTS.md rule 4).
+
+Still to come, each its own change: the browser lists a plug-in that supports ARA twice (an insert
+and one that edits clips), and a device can be switched between the two with a command, its
+archive kept in its state so switching back brings the edits back.
+
 ## Sources
 
 - ARA SDK and API, licence, ChangeLog: https://github.com/Celemony/ARA_SDK, https://github.com/Celemony/ARA_API
   (`ARAInterface.h`: audio access controller, document controller, archiving, region sequences;
   `ARAVST3.h`: `IMainFactory`, `IPlugInEntryPoint`, `IPlugInEntryPoint2`)
+- Hosts that list an ARA plug-in as an ordinary effect beside its ARA form, or switch with a
+  setting: help.antarestech.com (Auto-Tune in Logic Pro and in Studio One), help.sonible.com,
+  helpcenter.celemony.com (Melodyne in Reaper), soundonsound.com (Studio One's Event FX).
 - This repository: [ADR 0006](0006-plug-in-hosting.md), [ADR 0010](0010-project-files.md),
   [ADR 0011](0011-preview-and-added-audio.md), [ADR 0024](0024-musical-time-and-tempo.md),
   [ADR 0025](0025-object-identity.md), `crates/ui/src/arrangement/timeline.rs` (`sub_rows`).

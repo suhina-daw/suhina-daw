@@ -59,3 +59,87 @@ fn the_clip_host_stays_first_in_the_chain() {
     assert!(devices[0].clip_host, "{:?}", devices.iter().map(|d| d.name.as_str()).collect::<Vec<_>>());
     assert_eq!(devices[1].name, "Utility");
 }
+
+/// A track whose ARA plug-in is an insert in its chain (ADR 0033, amendment) gets a clip host of
+/// its own when a clip is edited with it: the insert stays where it is, not bound to the clips.
+#[test]
+fn editing_a_clip_adds_a_clip_host_beside_an_insert_of_the_same_plug_in() {
+    use suhina_plugins::scan::{Catalog, PluginInfo};
+    let project = ProjectBuilder::new()
+        .audio_track(1, "Vox")
+        .audio(1, "Take", 8.0, AudioRegion::new("take.wav"))
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .build();
+    let mut s = Session::new(project);
+    let tune = PluginInfo {
+        path: "Tune.vst3".into(),
+        id: "00112233445566778899AABBCCDDEEFF".into(),
+        name: "Tune".into(),
+        vendor: "Vendor".into(),
+        version: "1.0".into(),
+        features: vec!["Fx|Pitch Shift".into()],
+        replaces: Vec::new(),
+        ara: true,
+    };
+    let mut catalog = Catalog::new();
+    catalog.insert(tune.path.clone(), vec![tune]);
+    s.rack_mut().set_env(std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into())));
+    run(&mut s, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    run(&mut s, "device.addPlugin", json!({ "track": 1, "plugin": "Tune" })).unwrap();
+    assert_eq!(flags(&s), [false], "an insert binds no clip");
+    run(&mut s, "clip.setAra", json!({ "clips": [{ "track": 1, "index": 0 }], "on": true, "plugin": "Tune" })).unwrap();
+    assert_eq!(flags(&s), [true]);
+    let channel = s.project().tracks[0].channel.unwrap();
+    let devices = &s.project().channels.iter().find(|c| c.id == channel).unwrap().devices;
+    let chain: Vec<(&str, bool)> = devices.iter().map(|d| (d.name.as_str(), d.clip_host)).collect();
+    assert_eq!(chain, [("Tune", true), ("Utility", false), ("Tune", false)]);
+}
+
+/// **Edit with** on a clip when the scan did not mark the installed Melodyne as ARA: its VST3
+/// is added as the clip host all the same (the host binds it when it loads, or says why it
+/// cannot), and keeps the mark through a device edit made before any host has answered; a
+/// plug-in of another format is refused, and the refusal changes nothing.
+#[test]
+fn a_vst3_the_scan_did_not_mark_becomes_the_clip_host() {
+    use suhina_plugins::scan::{Catalog, PluginInfo};
+    let project = ProjectBuilder::new()
+        .audio_track(1, "Vox")
+        .audio(1, "Take", 8.0, AudioRegion::new("take.wav"))
+        .clip(1, Clip::new(ContentId(1), 0.0, 4.0))
+        .build();
+    let plugin = |path: &str, id: &str, name: &str| PluginInfo {
+        path: path.into(),
+        id: id.into(),
+        name: name.into(),
+        vendor: "Vendor".into(),
+        version: "1.0".into(),
+        features: vec!["Fx".into()],
+        replaces: Vec::new(),
+        ara: false,
+    };
+    let mut catalog = Catalog::new();
+    for info in [
+        plugin("Melodyne.vst3", "00112233445566778899AABBCCDDEEFF", "Melodyne"),
+        plugin("Verb.clap", "com.vendor.verb", "Verb"),
+    ] {
+        catalog.insert(info.path.clone(), vec![info]);
+    }
+    let mut s = Session::new(project);
+    s.rack_mut().set_env(std::sync::Arc::new(suhina_session::PluginEnv::new(catalog, "no-such-host".into())));
+    let (_, melodyne) = s.ara_plugin().unwrap();
+    let refused =
+        run(&mut s, "clip.setAra", json!({ "clips": [{ "track": 1, "index": 0 }], "on": true, "plugin": "Verb" }));
+    assert!(refused.unwrap_err().contains("does not edit clips"));
+    assert_eq!(flags(&s), [false], "nothing changed");
+    run(&mut s, "clip.setAra", json!({ "clips": [{ "track": 1, "index": 0 }], "on": true, "plugin": melodyne }))
+        .unwrap();
+    assert_eq!(flags(&s), [true]);
+    let channel = s.project().tracks[0].channel.unwrap();
+    let devices = &s.project().channels.iter().find(|c| c.id == channel).unwrap().devices;
+    assert!(devices[0].clip_host && devices[0].name == "Melodyne");
+    // No host has answered (there is none here): a device edit keeps it the clip host.
+    run(&mut s, "device.add", json!({ "track": 1, "id": "utility" })).unwrap();
+    let devices = &s.project().channels.iter().find(|c| c.id == channel).unwrap().devices;
+    assert!(devices[0].clip_host && devices[0].name == "Melodyne", "the mark stays");
+    assert_eq!(flags(&s), [true], "the clip still plays through it");
+}

@@ -184,23 +184,6 @@ fn reading_fills_each_channel_with_silence_outside() {
 }
 
 #[test]
-fn a_state_carries_the_archive_and_reads_back() {
-    let wrapped = wrap_state(vec![1, 2, 3], Some(("com.example.doc".into(), vec![9; 5])));
-    let (component, archive) = unwrap_state(&wrapped);
-    assert_eq!(component, [1, 2, 3]);
-    assert_eq!(archive, Some(("com.example.doc".to_string(), [9u8; 5].as_slice())));
-    // Without an archive, and any state of the plug-in's own, it is the component's.
-    assert_eq!(wrap_state(vec![4, 5], None), [4, 5]);
-    assert_eq!(unwrap_state(&[4, 5]), ([4u8, 5].as_slice(), None));
-    // Cut short, it is not split.
-    let cut = &wrapped[..wrapped.len() - 1];
-    assert_eq!(unwrap_state(cut), (cut, None));
-    let mut huge = wrapped.clone();
-    huge[20..28].copy_from_slice(&u64::MAX.to_le_bytes());
-    assert_eq!(unwrap_state(&huge).1, None);
-}
-
-#[test]
 fn archives_are_read_and_written_within_bounds() {
     let mut archive = Archive { bytes: Vec::new(), id: CString::new("com.example.doc").unwrap() };
     let writer: ARAArchiveWriterHostRef = std::ptr::from_mut(&mut archive).cast();

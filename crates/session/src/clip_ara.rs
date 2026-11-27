@@ -32,7 +32,8 @@ pub(crate) fn keep_hosts_first(p: &mut Project) {
 /// catalog finds the plug-in, does not list it as an ARA one, and no host found it to support ARA
 /// since. An earlier build took the plug-ins of a shell module for ARA ones (#1673) and made them
 /// clip hosts, pinned first in their chains (before the instrument) and left out of the device
-/// lists. The clips of a track left without a clip host no longer name one, so they play as they
+/// lists. A clip host `clip.setAra` made of a plug-in nothing has said supports ARA yet keeps its
+/// mark until a host answers for it (`Rack::awaits_ara`). The clips of a track left without a clip host no longer name one, so they play as they
 /// are. A device whose plug-in is not installed keeps its mark. Runs before each device edit, in
 /// its undo step. Returns whether anything changed.
 pub(crate) fn drop_false_hosts(session: &mut Session) -> bool {
@@ -41,7 +42,8 @@ pub(crate) fn drop_false_hosts(session: &mut Session) -> bool {
     for (channel_at, channel) in session.project.channels.iter().enumerate() {
         for (at, device) in channel.devices.iter().enumerate().filter(|(_, d)| d.clip_host) {
             let Some((found, _)) = crate::plugins::device_plugin(&env.catalog, device) else { continue };
-            if !found.plugin.ara && !session.plugins.found_to_edit_clips(&found.plugin.spec()) {
+            let spec = found.plugin.spec();
+            if !found.plugin.ara && !session.plugins.found_to_edit_clips(&spec) && !session.plugins.awaits_ara(&spec) {
                 false_hosts.push((channel_at, at));
             }
         }
@@ -161,7 +163,7 @@ pub(crate) fn set_ara(session: &mut Session, params: &Value) -> Result<Value, Co
                 session,
                 &json!({ "track": track.0, "plugin": plugin, "position": 0, "clip_host": true }),
             )?;
-            if added["ara"] != json!(true) {
+            if added["clip_host"] != json!(true) {
                 return Err(format!("{plugin} does not edit clips over ARA").into());
             }
         }

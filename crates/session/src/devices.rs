@@ -2079,10 +2079,16 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
     if !instrument {
         check_effect_position(first_effect, channel.devices.len(), position)?;
     }
-    // A plug-in that edits clips (ARA, ADR 0033) plays the clips from their files, so a device
-    // before it would not be heard: it goes first, wherever it was asked for.
-    let moved_first = plugin.ara && Args::new(params).has("position") && position != 0;
-    let position = if plugin.ara { 0 } else { position };
+    // A plug-in put in a chain is an insert there, even one that supports ARA (ADR 0033,
+    // amendment: an ARA plug-in in a chain is an insert). Only a clip host, which `clip.setAra`
+    // adds (#990), is bound to the clips: it plays them from their files, so a device before it
+    // would not be heard, and it goes first wherever it was asked for. A VST3 plug-in the scan
+    // did not mark (`Session::ara_plugin`'s Melodyne) can be one too: the host binds it, which
+    // teaches the catalog, or refuses the load with why.
+    let may_edit_clips = plugin.ara || plugin.plugin_format() == suhina_plugins::scan::PluginFormat::Vst3;
+    let clip_host = may_edit_clips && Args::new(params).value("clip_host").and_then(Value::as_bool) == Some(true);
+    let moved_first = clip_host && Args::new(params).has("position") && position != 0;
+    let position = if clip_host { 0 } else { position };
     let position = take_out(&mut channel.devices, replaced.as_ref(), position);
     channel.devices.insert(position, device);
     let result = json!({
@@ -2092,19 +2098,17 @@ pub(crate) fn add_plugin(session: &mut Session, params: &Value) -> Result<Value,
         "format": plugin.format(),
         "instrument": instrument,
         "ara": plugin.ara,
+        "clip_host": clip_host,
         "moved_first": moved_first,
         "replaced": replaced.map(|(_, name)| name),
     });
-    // An ARA plug-in is its channel's clip host (#990): `clip.setAra` names the clips it plays;
-    // put on a track, it plays every audio clip of the track, as before.
-    if plugin.ara {
+    if clip_host {
+        if !plugin.ara {
+            session.plugins.await_ara(plugin.spec());
+        }
         let track = track_or_main_id(&session.project, params)?;
-        if Args::new(params).value("clip_host").and_then(Value::as_bool) == Some(true) {
-            if let Some(first) = session.project.channel_of_track_mut(track).and_then(|c| c.devices.first_mut()) {
-                first.clip_host = true;
-            }
-        } else {
-            crate::clip_ara::make_host(&mut session.project, track);
+        if let Some(first) = session.project.channel_of_track_mut(track).and_then(|c| c.devices.first_mut()) {
+            first.clip_host = true;
         }
     }
     Ok(result)

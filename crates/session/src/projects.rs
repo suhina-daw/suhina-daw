@@ -1043,8 +1043,8 @@ impl Projects {
         session.rack_mut().set_owner(owner);
         session.rack_mut().set_embedding(embed);
         let notices = session.sync_plugins();
-        // A plug-in that turned out to edit clips is remembered, so it starts with them from
-        // now on (in every project) instead of loading twice.
+        // A plug-in that turned out to edit clips is remembered, so the catalog lists it as one
+        // (in every project); its devices stay inserts unless they are clip hosts.
         let learned = session.rack_mut().take_ara_learned();
         for spec in learned {
             if let Ok(true) = self.plugin_host.library.mark_ara(&spec) {
