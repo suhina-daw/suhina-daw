@@ -242,7 +242,8 @@ Measurements in canvas px, `[x, y, w, h]`:
 
 - **The band column** `[2, 2, 92, 164]`, in rows (positions relative to it): the selected band's
   number in its colour `[2, 2, 22, 18]` (a click switches the band on or off — the number is its
-  power button —, a right click lists the bands in use to pick another), previous and next
+  power button —, a right click lists the bands in use to pick another), on/off beside it
+  `[26, 2, 20, 18]`, previous and next
   `[50, 2, 19, 18]`, `[71, 2, 19, 18]`; the shape menu `[2, 22, 88, 18]` (the type's glyph and
   name); the placement menu `[2, 42, 44, 18]` (its name in its colour), listen `[48, 42, 20, 18]`
   (the listen mode's switch) and delete `[70, 42, 20, 18]`; the mode's menu `[2, 62, 64, 16]`

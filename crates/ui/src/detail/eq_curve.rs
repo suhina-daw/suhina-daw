@@ -946,6 +946,7 @@ fn small_button(
 /// The icons the panel's buttons draw.
 #[derive(Clone, Copy)]
 enum Icon {
+    Power,
     Delete,
     Previous,
     Next,
@@ -962,6 +963,17 @@ fn icon(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
     let c = rect.center();
     let stroke = Stroke::new(1.35, color);
     match icon {
+        Icon::Power => {
+            // An arc open at the top, with the stem through the gap.
+            let points: Vec<Pos2> = (0..=20)
+                .map(|i| {
+                    let a = (-0.32 + 1.64 * i as f32 / 20.0) * std::f32::consts::PI;
+                    c + Vec2::new(0.0, 0.5) + Vec2::new(a.cos(), a.sin()) * 4.1
+                })
+                .collect();
+            painter.add(egui::Shape::line(points, stroke));
+            painter.line_segment([c + Vec2::new(0.0, -4.8), c], stroke);
+        }
         Icon::Delete => {
             painter.line_segment([c + Vec2::splat(-3.2), c + Vec2::splat(3.2)], stroke);
             painter.line_segment([c + Vec2::new(3.2, -3.2), c + Vec2::new(-3.2, 3.2)], stroke);
@@ -1473,6 +1485,19 @@ fn draw_column(ui: &mut egui::Ui, panel: &mut Panel<'_>, column: Rect) {
     let ids = panel.address.ids;
     // Row 1: the number (the band menu), previous and next.
     number_button(ui, panel, &painter, at(2.0, 2.0, 22.0, 18.0), ids.with("eq-number"), slot, band, true);
+    let power_ink = if band.on { band_color(slot) } else { colors.text_secondary };
+    if small_button(
+        ui,
+        at(26.0, 2.0, 20.0, 18.0),
+        ids.with("eq-power"),
+        "Switch the band on or off",
+        None,
+        |p, r, _| icon(p, r, Icon::Power, power_ink),
+    )
+    .clicked()
+    {
+        panel.edit(&[(slot, "On", if band.on { 0.0 } else { 1.0 })], "eq-curve-on");
+    }
     if small_button(ui, at(50.0, 2.0, 19.0, 18.0), ids.with("eq-prev"), "Previous band", None, |p, r, c| {
         icon(p, r, Icon::Previous, c)
     })
