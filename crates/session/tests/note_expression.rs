@@ -369,3 +369,66 @@ fn joining_concatenates_matching_curves_and_refuses_a_jump() {
     run(&mut session, "note.join", with(json!({ "notes": [0, 1] }))).unwrap();
     assert_curve(&curve(&session, 0, ExpressionKind::Pressure), &[(0.0, 0.5), (1.0, 0.0)]);
 }
+
+/// A note from beat 0, 5 beats long, whose pitch curve holds `count` points at 1/1024, 2/1024, …
+fn dense(count: usize) -> Note {
+    let list: Vec<(f64, f64)> = (1..=count).map(|i| (i as f64 / 1024.0, 0.0)).collect();
+    bent(note(0.0, 5.0, 60), &list)
+}
+
+#[test]
+fn edits_keep_a_full_curve_within_the_curve_limit() {
+    // A cut before the first point: the right part's first value holds already, no point added.
+    let mut session = session(vec![dense(MAX_CURVE_POINTS)]);
+    run(&mut session, "note.split", with(json!({ "notes": [0], "at": 0.0005 }))).unwrap();
+    assert_eq!(pitch(&session, 1).len(), MAX_CURVE_POINTS);
+    undo(&mut session);
+    // The left edge moved to before the first point: the same.
+    run(&mut session, "note.resize", with(json!({ "notes": [0], "startBy": 0.0005 }))).unwrap();
+    assert_eq!(pitch(&session, 0).len(), MAX_CURVE_POINTS);
+}
+
+#[test]
+fn a_join_past_the_curve_limit_is_refused_and_changes_nothing() {
+    let half = |count: usize, time: f64| {
+        let list: Vec<(f64, f64)> = (0..count).map(|i| (i as f64 / count as f64, 0.0)).collect();
+        bent(note(time, 1.0, 60), &list)
+    };
+    let mut session = session(vec![half(MAX_CURVE_POINTS / 2, 0.0), half(MAX_CURVE_POINTS / 2 + 1, 1.0)]);
+    let before = session.project().clone();
+    let error = run(&mut session, "note.join", with(json!({ "notes": [0, 1] }))).unwrap_err();
+    assert!(error.contains("4097 points, more than 4096"), "{error}");
+    assert_eq!(session.project(), &before);
+    assert!(!session.can_undo());
+
+    // One point fewer fits exactly.
+    let mut session = self::session(vec![half(MAX_CURVE_POINTS / 2, 0.0), half(MAX_CURVE_POINTS / 2, 1.0)]);
+    run(&mut session, "note.join", with(json!({ "notes": [0, 1] }))).unwrap();
+    assert_eq!(pitch(&session, 0).len(), MAX_CURVE_POINTS);
+}
+
+#[test]
+fn a_quantised_end_never_leaves_a_point_past_the_note() {
+    // 2.921875 * (3 / 2.921875) is a hair above 3: the stretched last point is cropped back.
+    let mut session = session(vec![bent(note(0.0, 2.921875, 60), &[(0.0, 0.0), (2.921875, 1.0)])]);
+    run(&mut session, "note.quantize", with(json!({ "grid": "1/4", "ends": true }))).unwrap();
+    let quantised = &notes(&session)[0];
+    assert_eq!(quantised.duration, 3.0);
+    assert_curve(&pitch(&session, 0), &[(0.0, 0.0), (3.0, 1.0)]);
+    assert_eq!(quantised.expression().unwrap().validate(quantised.duration), Ok(()));
+}
+
+#[test]
+fn an_edit_past_the_content_expression_limit_is_refused() {
+    // 64 full curves on 64 notes: the content is at its limit, and a duplicate would pass it.
+    let full: Vec<(f64, f64)> = (0..MAX_CURVE_POINTS).map(|i| (i as f64 / 1024.0, 0.5)).collect();
+    let all = (0..MAX_CONTENT_EXPRESSION_POINTS / MAX_CURVE_POINTS)
+        .map(|n| bent(note(n as f64 * 0.125, 4.0, 60 + (n % 8) as u8), &full))
+        .collect();
+    let mut session = session(all);
+    let before = session.project().clone();
+    let error = run(&mut session, "note.duplicate", with(json!({ "notes": [0] }))).unwrap_err();
+    assert!(error.contains("TooManyExpressionPoints"), "{error}");
+    assert_eq!(session.project(), &before);
+    assert!(!session.can_undo());
+}

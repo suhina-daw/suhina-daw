@@ -131,7 +131,69 @@ fn join_rebuilds_a_split_and_refuses_a_jump() {
     assert_eq!(joined.value_at(ExpressionKind::Pitch, 1.5), 3.0);
 
     let jump = bend(&[(0.0, 7.0)]);
-    assert_eq!(left.joined(1.0, &jump), None);
+    assert_eq!(left.joined(1.0, &jump), Err(JoinError::ValueDiffers(ExpressionKind::Pitch)));
+}
+
+/// A curve of `count` points at offsets 1, 2, … `count`, all at value 0.
+fn full(count: usize) -> NoteExpression {
+    bend(&(1..=count).map(|i| (i as f64, 0.0)).collect::<Vec<_>>())
+}
+
+#[test]
+fn values_hold_the_first_value_for_an_offset_that_is_not_a_number() {
+    let expression = bend(&[(0.5, 3.0)]);
+    assert_eq!(curve_value(&expression.pitch, f64::NAN), Some(3.0));
+    let two = bend(&[(0.5, 3.0), (1.0, 5.0)]);
+    assert_eq!(curve_value(&two.pitch, f64::NAN), Some(3.0));
+}
+
+#[test]
+fn move_start_before_the_first_point_adds_no_point_at_the_limit() {
+    let mut expression = full(MAX_CURVE_POINTS);
+    expression.move_start(0.5);
+    assert_eq!(expression.pitch.len(), MAX_CURVE_POINTS);
+    assert_eq!(expression.pitch.first(), Some(&p(0.5, 0.0)));
+    expression.validate(MAX_CURVE_POINTS as f64).unwrap();
+    // Past the first point, the boundary takes the dropped point's place.
+    expression.move_start(1.0);
+    assert_eq!(expression.pitch.len(), MAX_CURVE_POINTS);
+    assert_eq!(expression.pitch.first(), Some(&p(0.0, 0.0)));
+}
+
+#[test]
+fn split_parts_never_have_more_points_than_the_curve() {
+    let expression = full(MAX_CURVE_POINTS);
+    // Before every point: the right part holds the first value already.
+    let (left, right) = expression.split(0.5);
+    assert_eq!(left.pitch, vec![p(0.5, 0.0)]);
+    assert_eq!(right.pitch.len(), MAX_CURVE_POINTS);
+    assert_eq!(right.pitch.first(), Some(&p(0.5, 0.0)));
+    // After every point: the left part holds the last value already.
+    let end = MAX_CURVE_POINTS as f64 + 0.5;
+    let (left, right) = expression.split(end);
+    assert_eq!(left.pitch.len(), MAX_CURVE_POINTS);
+    assert_eq!(right.pitch, vec![p(0.0, 0.0)]);
+    // On a point: the boundary takes its place on both sides.
+    let (left, right) = expression.split(2.0);
+    assert_eq!(left.pitch, vec![p(1.0, 0.0), p(2.0, 0.0)]);
+    assert_eq!(right.pitch.len(), MAX_CURVE_POINTS - 1);
+    assert_eq!(right.pitch.first(), Some(&p(0.0, 0.0)));
+}
+
+#[test]
+fn join_refuses_a_curve_past_the_limit() {
+    let half = MAX_CURVE_POINTS / 2;
+    let first = bend(&(0..half).map(|i| (i as f64, 0.0)).collect::<Vec<_>>());
+    let at = half as f64;
+    // Exactly at the limit joins.
+    let joined = first.joined(at, &first).unwrap();
+    assert_eq!(joined.pitch.len(), MAX_CURVE_POINTS);
+    // One more point is refused, with nothing made.
+    let longer = bend(&(0..=half).map(|i| (i as f64, 0.0)).collect::<Vec<_>>());
+    assert_eq!(
+        first.joined(at, &longer),
+        Err(JoinError::TooManyPoints { kind: ExpressionKind::Pitch, count: MAX_CURVE_POINTS + 1 })
+    );
 }
 
 #[test]

@@ -35,7 +35,7 @@ pub use clip_audio::{
     envelope_db_at, gain_to_db, max_clip_gain,
 };
 pub use expression::{
-    ExpressionError, ExpressionKind, ExpressionPoint, MAX_CONTENT_EXPRESSION_POINTS, MAX_CURVE_POINTS,
+    ExpressionError, ExpressionKind, ExpressionPoint, JoinError, MAX_CONTENT_EXPRESSION_POINTS, MAX_CURVE_POINTS,
     MAX_PITCH_SEMITONES, NoteExpression,
 };
 pub use groups::{
@@ -1372,6 +1372,21 @@ pub enum ValidationError {
         channel: ChannelId,
         device: Vec<usize>,
     },
+    /// The note at this index of this lane of the content has a curve the file refuses: a point
+    /// outside the note or its kind's range, out of order, or more than [`MAX_CURVE_POINTS`]
+    /// points ([ADR 0039](../../docs/decisions/0039-per-note-expression.md) › 6).
+    BadExpression {
+        content: ContentId,
+        lane: usize,
+        note: usize,
+        error: ExpressionError,
+    },
+    /// The content's notes have this many curve points together, more than
+    /// [`MAX_CONTENT_EXPRESSION_POINTS`].
+    TooManyExpressionPoints {
+        content: ContentId,
+        count: usize,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -1461,6 +1476,14 @@ impl fmt::Display for ValidationError {
             Self::MappedTwice { channel, device } => {
                 write!(f, "device group {} on channel {} maps a parameter twice", path(device), channel.0)
             }
+            Self::BadExpression { content, lane, note, error } => {
+                write!(f, "note {note} of lane {lane} in content {}: {error}", content.0)
+            }
+            Self::TooManyExpressionPoints { content, count } => write!(
+                f,
+                "the notes of content {} have {count} expression points, more than {MAX_CONTENT_EXPRESSION_POINTS}",
+                content.0
+            ),
         }
     }
 }
@@ -1635,10 +1658,28 @@ impl Project {
             }
         }
         for content in &self.contents {
-            for lane in &content.lanes {
+            // Each note's curves and the content's total of points, as the file reader checks them.
+            let mut points = 0usize;
+            for (lane_index, lane) in content.lanes.iter().enumerate() {
                 if let Some(target) = lane.target {
                     track_ref(target, &mut errors);
                 }
+                let LaneData::Notes(notes) = &lane.data else { continue };
+                for (note_index, note) in notes.iter().enumerate() {
+                    let Some(expression) = note.expression() else { continue };
+                    points = points.saturating_add(expression.point_count());
+                    if let Err(error) = expression.validate(note.duration) {
+                        errors.push(ValidationError::BadExpression {
+                            content: content.id,
+                            lane: lane_index,
+                            note: note_index,
+                            error,
+                        });
+                    }
+                }
+            }
+            if points > MAX_CONTENT_EXPRESSION_POINTS {
+                errors.push(ValidationError::TooManyExpressionPoints { content: content.id, count: points });
             }
         }
         for lane in &self.arrangement.lanes {

@@ -119,7 +119,10 @@ Each saved note may own three optional curves. Points have finite beat offsets i
 editing replaces an existing equal-time point, while malformed files with duplicates are
 rejected. Interpolation is linear; before the first point and after the last, hold its value.
 An absent curve means the neutral value. Constant curves may have one point. Limits are 4,096
-points per curve and 262,144 expression points per clip content, enforced before allocation.
+points per curve and 262,144 expression points per clip content. The file reader checks a list's
+length in the parsed document before it stores the curve's points; a command checks before it
+changes the note, and an edit that would pass either limit (a join, a duplicate) is refused whole.
+An edit that reshapes a curve never adds points to it beyond the limit.
 Curve values and note data participate in the same command validation and undo operation.
 `note.setExpression {clip, note, kind, points}` replaces one curve of one note, one undo step:
 `kind` is `pitch`, `pressure` or `timbre`, `points` is `[[offset, value], ...]` given strictly
@@ -131,10 +134,10 @@ curve; the result is `{note, kind, points}`, the last the number of points.
 | Move or start quantize | Keep relative offsets and values; the complete gesture moves with the note. |
 | Transpose | Change base key; keep pitch offsets, pressure and timbre unchanged. |
 | Resize right edge | Crop beyond the new duration, inserting the evaluated boundary value when needed; extending holds the endpoint. |
-| Resize left edge | Crop/rebase offsets by the start change and insert the boundary value; extending holds the old initial value. |
+| Resize left edge | Crop/rebase offsets by the start change and insert the boundary value when a point was cropped; extending holds the old initial value. |
 | Stretch, including duration quantize | Scale offsets by new duration / old duration; reject zero or nonfinite divisors. |
-| Split at an interior time | Evaluate each curve at the split; both parts get that boundary value, the right offsets are rebased. The first note keeps its editing ID, the second gets a new one. |
-| Join adjacent notes | Require matching key/channel, touching endpoints, and equal evaluated boundary values for every curve; retain the first editing ID and concatenate rebased points. Reject a discontinuous or nonadjacent join rather than inserting a ramp into the earlier note. |
+| Split at an interior time | Evaluate each curve at the split; both parts get that boundary value, as a point where the part has points on the other side of the cut (else its held endpoint already is that value), the right offsets are rebased. The first note keeps its editing ID, the second gets a new one. |
+| Join adjacent notes | Require matching key/channel, touching endpoints, and equal evaluated boundary values for every curve; retain the first editing ID and concatenate rebased points. Reject a discontinuous or nonadjacent join rather than inserting a ramp into the earlier note, and a join whose curve would pass 4,096 points. |
 | Duplicate / copy content | Copy values with the normal editing identity rules; playback allocates independent runtime occurrences. |
 | Delete / mute | Delete curves with their note, or suppress the whole muted occurrence. |
 

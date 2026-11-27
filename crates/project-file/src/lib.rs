@@ -769,9 +769,11 @@ fn expression_value(expression: &NoteExpression) -> Value {
 }
 
 /// A note's `expression` (from version 17; missing in an earlier file, so no curves). Each
-/// curve's length and the content's running total `points` are checked against the limits before
-/// anything is allocated; every point must be two finite numbers, its offset inside the note
-/// (0 to `duration`) and after the one before it, and its value inside the kind's range.
+/// curve's length in the parsed document and the content's running total `points` are checked
+/// against the limits before that curve's points are converted or stored (the parse itself is
+/// bounded by the file's size cap, not by these limits); every point must be two finite numbers,
+/// its offset inside the note (0 to `duration`) and after the one before it, and its value inside
+/// the kind's range.
 fn read_expression(
     n: &Obj,
     duration: f64,

@@ -20,7 +20,7 @@
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use serde_json::{Value, json};
-use suhina_engine::model::{ExpressionKind, ExpressionPoint, Note};
+use suhina_engine::model::{ExpressionKind, ExpressionPoint, Note, NoteId};
 
 use super::{Layout, PianoClip, PianoRollState, nearest_line};
 use crate::interaction::key_name::key_name;
@@ -32,13 +32,28 @@ const HANDLE: f32 = 5.0;
 /// The smallest gap kept between two points' offsets while one is dragged, in beats.
 const GAP: f64 = 1.0e-4;
 
-/// A point being dragged: the note, the curve as it is while dragged, and the point's place in it.
+/// A point being dragged: the note (by its id, so the drag stays on it when another writer's
+/// edit moves it to another index), the curve as it is while dragged, the point's place in it,
+/// and the curve as it was when the drag began.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PointDrag {
-    pub(crate) note: usize,
+    pub(crate) note: NoteId,
     pub(crate) kind: ExpressionKind,
     pub(crate) index: usize,
     pub(crate) curve: Vec<ExpressionPoint>,
+    pub(crate) from: Vec<ExpressionPoint>,
+}
+
+impl PointDrag {
+    /// Whether this drag is of point `point` of note `id`'s `kind` curve.
+    fn is(&self, id: Option<NoteId>, kind: ExpressionKind, point: usize) -> bool {
+        self.of(id, kind) && self.index == point
+    }
+
+    /// Whether this drag is on note `id`'s `kind` curve.
+    fn of(&self, id: Option<NoteId>, kind: ExpressionKind) -> bool {
+        id == Some(self.note) && self.kind == kind
+    }
 }
 
 /// The y of the middle of a row `pitch` stands for, `pitch` a key and a fraction of a semitone
@@ -142,13 +157,28 @@ fn handles(layout: &Layout, note: &Note, kind: ExpressionKind, curve: &[Expressi
 /// The curve of `kind` a note shows: the one being dragged, or its own.
 fn shown_curve<'a>(
     state: &'a PianoRollState,
-    index: usize,
+    id: Option<NoteId>,
     note: &'a Note,
     kind: ExpressionKind,
 ) -> &'a [ExpressionPoint] {
     match &state.expression_drag {
-        Some(drag) if drag.note == index && drag.kind == kind => &drag.curve,
-        _ => note.expression().map_or(&[], |e| e.curve(kind)),
+        Some(drag) if drag.of(id, kind) => &drag.curve,
+        _ => own_curve(note, kind),
+    }
+}
+
+/// A note's own `kind` curve, empty when it has none.
+fn own_curve(note: &Note, kind: ExpressionKind) -> &[ExpressionPoint] {
+    note.expression().map_or(&[], |e| e.curve(kind))
+}
+
+/// Lets go of a point drag whose note is gone, or whose curve another writer changed since the
+/// drag began: its copy of the curve no longer belongs to any note.
+pub(super) fn settle_drag(clip: &PianoClip, state: &mut PianoRollState) {
+    let Some(drag) = &state.expression_drag else { return };
+    let current = clip.notes.position(drag.note).and_then(|i| clip.notes.get(i)).map(|n| own_curve(n, drag.kind));
+    if current != Some(drag.from.as_slice()) {
+        state.expression_drag = None;
     }
 }
 
@@ -186,7 +216,7 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
     let ink = if ink == Color32::TRANSPARENT { ui.visuals().strong_text_color() } else { ink };
     let accent = if accent == Color32::TRANSPARENT { ink } else { accent };
     for (index, note) in clip.notes.iter().enumerate() {
-        let curve = shown_curve(state, index, note, ExpressionKind::Pitch);
+        let curve = shown_curve(state, clip.notes.id(index), note, ExpressionKind::Pitch);
         if curve.is_empty() {
             continue;
         }
@@ -231,7 +261,7 @@ fn draw_lane(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState,
     let middle = lane_y(layout.lane, 0.5);
     painter.hline(layout.lane.x_range(), middle.round() + 0.5, Stroke::new(1.0, ink.gamma_multiply(0.15)));
     for (index, note) in clip.notes.iter().enumerate() {
-        let curve = shown_curve(state, index, note, kind);
+        let curve = shown_curve(state, clip.notes.id(index), note, kind);
         let selected = state.selected.contains(&index);
         let color = if selected { accent } else { ink.gamma_multiply(0.45) };
         let (start, end) = (layout.x_of(note.time), layout.x_of(note.time + note.duration));
@@ -275,9 +305,9 @@ pub(super) fn lane_switch(ui: &Ui, layout: &Layout, state: &mut PianoRollState) 
     response.on_hover_text("What the lane shows: Velocity, Pressure or Slide. Click to switch.");
 }
 
-/// The handles of the selected notes' points, made widgets after the grid's, so a press on one
-/// is the handle's: dragging moves the point, a double-click removes it. Returns whether a handle
-/// took the pointer this frame.
+/// The handles of the selected notes' points, made widgets after the grid's and the lane's, so a
+/// press on one is the handle's: dragging moves the point, a double-click removes it. Returns
+/// whether a handle took the pointer this frame.
 pub(super) fn handle_points(
     ui: &Ui,
     layout: &Layout,
@@ -287,6 +317,7 @@ pub(super) fn handle_points(
     state: &mut PianoRollState,
     actions: &mut Vec<Action>,
 ) -> bool {
+    settle_drag(clip, state);
     let mut busy = false;
     let selected: Vec<usize> = state.selected.iter().copied().collect();
     let kinds: Vec<(ExpressionKind, Rect)> = std::iter::once((ExpressionKind::Pitch, layout.grid))
@@ -298,6 +329,11 @@ pub(super) fn handle_points(
                 return true;
             }
         }
+    }
+    // A drag whose handle no frame made a widget for (its note left the selection, or the lane
+    // stopped showing its kind) never hears the button let go: it ends with the button.
+    if state.expression_drag.is_some() && !ui.input(|i| i.pointer.primary_down()) {
+        state.expression_drag = None;
     }
     busy || state.expression_drag.is_some()
 }
@@ -313,14 +349,18 @@ fn handle_note(
 ) -> bool {
     {
         let Some(note) = clip.notes.get(index) else { return false };
-        let curve = shown_curve(state, index, note, kind).to_vec();
+        let id = clip.notes.id(index);
+        let curve = shown_curve(state, id, note, kind).to_vec();
         for (point, at) in handles(layout, note, kind, &curve) {
-            if !area.contains(at) {
+            // The dragged point's handle stays a widget wherever the pointer takes it, so the drag
+            // hears the button let go outside the grid too.
+            let dragged = state.expression_drag.as_ref().is_some_and(|d| d.is(id, kind, point));
+            if !area.contains(at) && !dragged {
                 continue;
             }
             let rect = Rect::from_center_size(at, Vec2::splat(HANDLE * 2.0));
             let response =
-                ui.interact(rect, Id::unique(("piano-mpe-point", kind.name(), index, point)), Sense::click_and_drag());
+                ui.interact(rect, Id::unique(("piano-mpe-point", kind.name(), id, point)), Sense::click_and_drag());
             if response.hovered() || response.dragged() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                 *busy = true;
@@ -336,18 +376,20 @@ fn handle_note(
                 state.expression_drag = None;
                 return true;
             }
-            if response.drag_started() {
-                state.expression_drag = Some(PointDrag { note: index, kind, index: point, curve: curve.clone() });
+            if response.drag_started()
+                && let Some(id) = id
+            {
+                let from = own_curve(note, kind).to_vec();
+                state.expression_drag = Some(PointDrag { note: id, kind, index: point, curve: curve.clone(), from });
             }
             if response.dragged()
                 && let Some(pos) = ui.ctx().pointer_latest_pos()
-                && let Some(drag) =
-                    state.expression_drag.as_mut().filter(|d| d.note == index && d.index == point && d.kind == kind)
+                && let Some(drag) = state.expression_drag.as_mut().filter(|d| d.is(id, kind, point))
             {
                 drag_point(layout, note, grid, free, drag, pos);
             }
             if response.drag_stopped()
-                && let Some(drag) = state.expression_drag.take().filter(|d| d.note == index && d.kind == kind)
+                && let Some(drag) = state.expression_drag.take_if(|d| d.of(id, kind))
             {
                 actions.push(set_action(clip, index, drag.kind, &drag.curve));
                 return true;
@@ -358,13 +400,15 @@ fn handle_note(
 }
 
 /// Moves a dragged point to `pos`: its beat on the grid unless `free`, kept between its
-/// neighbours and inside the note; its pitch on whole semitones unless `free`.
+/// neighbours and inside the note; its pitch on whole semitones unless `free`. A point whose
+/// neighbours are closer than [`GAP`] to it keeps its beat and changes only its value.
 fn drag_point(layout: &Layout, note: &Note, grid: TimelineGrid, free: bool, drag: &mut PointDrag, pos: Pos2) {
+    let Some(current) = drag.curve.get(drag.index).copied() else { return };
     let beat = layout.beat_at(pos.x);
     let beat = if free { beat } else { nearest_line(grid, beat) };
-    let low = drag.index.checked_sub(1).and_then(|i| drag.curve.get(i)).map_or(0.0, |p| p.offset + GAP);
-    let high = drag.curve.get(drag.index + 1).map_or(note.duration, |p| p.offset - GAP);
-    let offset = (beat - note.time).clamp(low.min(high), high.max(low)).clamp(0.0, note.duration.max(0.0));
+    let low = drag.index.checked_sub(1).and_then(|i| drag.curve.get(i)).map_or(0.0, |p| p.offset + GAP).max(0.0);
+    let high = drag.curve.get(drag.index + 1).map_or(note.duration, |p| p.offset - GAP).min(note.duration);
+    let offset = if low <= high { (beat - note.time).clamp(low, high) } else { current.offset };
     let Some(value) = value_at(layout, note, drag.kind, pos.y, free) else { return };
     if let Some(point) = drag.curve.get_mut(drag.index) {
         *point = ExpressionPoint::new(offset, value);

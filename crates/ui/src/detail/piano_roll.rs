@@ -445,8 +445,16 @@ pub fn show(
         );
     }
     let workflow = options.workflow;
+    // The velocity lane and its top edge are widgets before the curve handles: egui gives a press
+    // to the last widget made under the pointer, so a handle over them takes it.
+    let lane_response =
+        (lane.height() > 4.0).then(|| ui.interact(lane, Id::unique("piano-roll-velocity"), Sense::click_and_drag()));
+    // The lane's top edge: dragging it makes the lane taller or shorter (› Layout).
+    let room = area.height() - RULER;
+    gestures::lane_edge(ui, &layout, room, state);
     // MPE: the selected notes' curve points are handles over the grid, and a click on the empty
-    // grid in a selected note's time is the curve's, a double-click adding a point (› MPE).
+    // grid in a selected note's time is the curve's, a double-click adding a point (› MPE). A
+    // press on a handle is the handle's alone: it selects, draws and sounds no note under it.
     let mpe_busy =
         state.expression.is_some() && expression::handle_points(ui, &layout, clip, grid, inputs.alt, state, actions);
     let mpe_spot = state.expression.is_some()
@@ -545,6 +553,7 @@ pub fn show(
     // press goes down, not when the button is let go, and dragging before letting go sets its
     // length as the Draw tool's drag does (› Double-click).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && !mpe_busy
         && state.tool == Tool::Select
         && workflow.double_click_adds
         && !workflow.empty_click_draws
@@ -569,6 +578,7 @@ pub fn show(
     // the button is let go (with Shift or Ctrl it joins the selection); a press on a selected note
     // keeps the selection, so it can be dragged, and its click picks the note alone (› Selecting).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && !mpe_busy
         && matches!(state.tool, Tool::Select | Tool::Draw | Tool::Paint)
         && let Some(pos) = widgets::pointer_over(ui, grid_rect)
     {
@@ -611,6 +621,7 @@ pub fn show(
     // The audition starts on the press: a note pressed, or the note a press is about to draw, sounds
     // for as long as the button is held (› Playing the keys).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && !mpe_busy
         && let Some(pos) = widgets::pointer_over(ui, grid_rect)
     {
         let sounded = match (note_at(&layout, &clip.notes, pos), state.tool) {
@@ -707,8 +718,6 @@ pub fn show(
     }
 
     // The velocity lane's gestures.
-    let lane_response =
-        (lane.height() > 4.0).then(|| ui.interact(lane, Id::unique("piano-roll-velocity"), Sense::click_and_drag()));
     // MPE: while the lane shows pressure or slide, a double-click in a selected note's time adds
     // a point there and the velocity gestures rest (› MPE).
     let lane_kind = expression::lane_kind(state);
@@ -759,10 +768,6 @@ pub fn show(
             }
         }
     }
-    // The lane's top edge: dragging it makes the lane taller or shorter (› Layout).
-    let room = area.height() - RULER;
-    gestures::lane_edge(ui, &layout, room, state);
-
     // The key column: a press or a drag selects the notes of those keys and plays the key under
     // the pointer through the track's instrument; Shift adds a range, and Ctrl selects in silence.
     key_column(ui, &keys, &layout, clip, state, inputs, actions);

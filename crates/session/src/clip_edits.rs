@@ -15,7 +15,7 @@ use suhina_model::{LaneData, LoopRange, Note, NoteExpression, Notes, Shared, on_
 use crate::commands::Args;
 use crate::notes::{
     ClipAt, MAX_BEAT, after_removal, clip_at, clip_mut, copy_on_write, covered_go, edit_notes, indices, locate,
-    notes_mut, placements, replace_under, replaces, split_piece, with_replaced,
+    notes_mut, placements, replace_under, replaces, set_duration_cropping, split_piece, with_replaced,
 };
 use crate::{CommandError, Session};
 
@@ -80,8 +80,9 @@ fn joined(notes: &Notes, named: &[usize]) -> Result<Vec<Joined>, CommandError> {
 }
 
 /// The curves of one key's `line` of notes (in time order) joined end to end into the first
-/// one's; `None` when none of them has any. Fails where a curve's value differs across a join: a
-/// join never invents a ramp (spec mpe.md › Note curves and editing).
+/// one's; `None` when none of them has any. Fails where a curve's value differs across a join (a
+/// join never invents a ramp) and where a joined curve would hold more points than one curve may,
+/// before anything changes (spec mpe.md › Note curves and editing).
 fn joined_curves(notes: &Notes, line: &[(f64, usize)]) -> Result<Option<NoteExpression>, CommandError> {
     let picked: Vec<&Note> = line.iter().filter_map(|(_, i)| notes.get(*i)).collect();
     if picked.iter().all(|n| n.expression().is_none()) {
@@ -92,12 +93,9 @@ fn joined_curves(notes: &Notes, line: &[(f64, usize)]) -> Result<Option<NoteExpr
     let mut curves = first.expression().cloned().unwrap_or_default();
     for next in rest {
         let at = next.time - first.time;
-        curves = curves.joined(at, next.expression().unwrap_or(&empty)).ok_or_else(|| {
-            format!(
-                "the notes on key {} cannot join at beat {}: a curve's value differs across the join",
-                next.key, next.time
-            )
-        })?;
+        curves = curves
+            .joined(at, next.expression().unwrap_or(&empty))
+            .map_err(|error| format!("the notes on key {} cannot join at beat {}: {error}", next.key, next.time))?;
     }
     Ok((!curves.is_empty()).then_some(curves))
 }
@@ -143,7 +141,8 @@ pub(crate) fn fit_to_time(session: &mut Session, params: &Value) -> Result<Value
                     note.expression_mut().stretch(factor);
                 }
                 note.time = time;
-                note.duration = length;
+                // The stretched end can round a hair past the new length: the crop brings it back.
+                set_duration_cropping(note, length);
             }
         }
         let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };

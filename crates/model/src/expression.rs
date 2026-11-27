@@ -119,6 +119,29 @@ impl std::fmt::Display for ExpressionError {
 
 impl std::error::Error for ExpressionError {}
 
+/// Why two notes' curves cannot be joined ([`NoteExpression::joined`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum JoinError {
+    /// This curve's value at the end of the first note differs from its value at the start of
+    /// the next.
+    ValueDiffers(ExpressionKind),
+    /// This joined curve would have `count` points, more than [`MAX_CURVE_POINTS`].
+    TooManyPoints { kind: ExpressionKind, count: usize },
+}
+
+impl std::fmt::Display for JoinError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JoinError::ValueDiffers(kind) => write!(f, "the {} curve's value differs across the join", kind.name()),
+            JoinError::TooManyPoints { kind, count } => {
+                write!(f, "the joined {} curve would have {count} points, more than {MAX_CURVE_POINTS}", kind.name())
+            }
+        }
+    }
+}
+
+impl std::error::Error for JoinError {}
+
 /// A note's curves. An empty curve is the kind's neutral value throughout.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct NoteExpression {
@@ -217,6 +240,8 @@ impl NoteExpression {
     /// The note's start moves by `delta` beats with its end fixed (resize from the left).
     /// Moving it later drops the points before it and keeps the value there as a first point;
     /// moving it earlier shifts the points along, so the old first value holds from the new start.
+    /// A curve whose first point is after the new start gets no new point (its first value holds
+    /// to the start already), so a curve never grows: one at [`MAX_CURVE_POINTS`] stays there.
     pub fn move_start(&mut self, delta: f64) {
         if !delta.is_finite() || delta == 0.0 {
             return;
@@ -228,11 +253,13 @@ impl NoteExpression {
             }
             if delta > 0.0 {
                 let boundary = curve_value(curve, delta);
+                let before = curve.len();
                 curve.retain(|point| point.offset > delta);
+                let dropped = curve.len() < before;
                 for point in curve.iter_mut() {
                     point.offset -= delta;
                 }
-                if let Some(value) = boundary {
+                if let Some(value) = boundary.filter(|_| dropped) {
                     curve.insert(0, ExpressionPoint::new(0.0, value));
                 }
             } else {
@@ -258,7 +285,9 @@ impl NoteExpression {
     }
 
     /// Splits the curves at `at` beats from the note's start: the left part ends and the right
-    /// part starts with the value there, the right part's offsets from its own start.
+    /// part starts with the value there, the right part's offsets from its own start. A part
+    /// that already holds that value at the cut (all the curve's points on its other side) gets
+    /// no boundary point, so neither part has more points than the curve it came from.
     pub fn split(&self, at: f64) -> (NoteExpression, NoteExpression) {
         let mut left = NoteExpression::default();
         let mut right = NoteExpression::default();
@@ -267,8 +296,12 @@ impl NoteExpression {
             let Some(boundary) = curve_value(curve, at) else { continue };
             let (l, r) = (left.curve_mut(kind), right.curve_mut(kind));
             l.extend(curve.iter().copied().filter(|point| point.offset < at));
-            l.push(ExpressionPoint::new(at, boundary));
-            r.push(ExpressionPoint::new(0.0, boundary));
+            if curve.last().is_some_and(|last| last.offset >= at) {
+                l.push(ExpressionPoint::new(at, boundary));
+            }
+            if curve.first().is_some_and(|first| first.offset <= at) {
+                r.push(ExpressionPoint::new(0.0, boundary));
+            }
             r.extend(
                 curve
                     .iter()
@@ -279,17 +312,24 @@ impl NoteExpression {
         (left, right)
     }
 
-    /// Joins `next`, which starts `duration` beats after this note's start, onto this one. `None`
-    /// when a curve's value differs across the join: a join never invents a ramp.
-    pub fn joined(&self, duration: f64, next: &NoteExpression) -> Option<NoteExpression> {
+    /// Joins `next`, which starts `duration` beats after this note's start, onto this one.
+    /// Refused when a curve's value differs across the join (a join never invents a ramp), and
+    /// when a joined curve would have more than [`MAX_CURVE_POINTS`] points.
+    pub fn joined(&self, duration: f64, next: &NoteExpression) -> Result<NoteExpression, JoinError> {
         let mut out = self.clone();
         for kind in ExpressionKind::ALL {
             let end = self.value_at(kind, duration);
             let start = next.value_at(kind, 0.0);
             if (end - start).abs() > 1e-9 {
-                return None;
+                return Err(JoinError::ValueDiffers(kind));
             }
             let curve = out.curve_mut(kind);
+            let last = curve.last().map(|last| last.offset);
+            let added = next.curve(kind).iter().filter(|p| last.is_none_or(|last| p.offset + duration > last)).count();
+            let count = curve.len().saturating_add(added);
+            if count > MAX_CURVE_POINTS {
+                return Err(JoinError::TooManyPoints { kind, count });
+            }
             for point in next.curve(kind) {
                 let offset = point.offset + duration;
                 if curve.last().is_some_and(|last| last.offset >= offset) {
@@ -298,7 +338,7 @@ impl NoteExpression {
                 curve.push(ExpressionPoint::new(offset, point.value));
             }
         }
-        Some(out)
+        Ok(out)
     }
 }
 
@@ -313,7 +353,10 @@ pub fn curve_value(curve: &[ExpressionPoint], offset: f64) -> Option<f64> {
     let Some(next) = curve.get(index) else {
         return curve.last().map(|last| last.value);
     };
-    let prev = curve[index - 1];
+    // An offset that is not a number is before no point and after none: the first value holds.
+    let Some(prev) = index.checked_sub(1).and_then(|i| curve.get(i)) else {
+        return Some(first.value);
+    };
     let span = next.offset - prev.offset;
     if span <= 0.0 {
         return Some(next.value);

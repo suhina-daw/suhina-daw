@@ -866,7 +866,8 @@ pub(crate) fn quantize(session: &mut Session, params: &Value) -> Result<Value, C
                     note.expression_mut().stretch(factor);
                 }
                 note.time = time;
-                note.duration = duration;
+                // The stretched end can round a hair past the new length: the crop brings it back.
+                set_duration_cropping(note, duration);
             }
         }
         let replaced =

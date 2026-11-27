@@ -111,22 +111,21 @@ What is built: [MPE specification](../spec/mpe.md#status).
    pitch, pressure and timbre curves with finite beat offsets relative to note start and
    finite values in the runtime units. A missing curve means its neutral default. Curves
    use piecewise-linear interpolation and hold endpoints. Each curve has at most 4,096
-   points; all curves in one clip content have at most 262,144 points. Checks apply before
-   allocating from a file or a command. The prepared renderer owns immutable bounded curve
-   data; an audio callback does not clone or free it. Editing identities retain ADR 0025's
+   points; all curves in one clip content have at most 262,144 points. A file's lists are
+   counted before their points are stored, and a command is checked before it changes a note;
+   an edit never leaves a curve or a content past a limit. The prepared renderer owns
+   immutable bounded curve data; an audio callback does not clone or free it. Editing identities retain ADR 0025's
    rules. [Curve operations](../spec/mpe.md#note-curves-and-editing) define move, resize,
    stretch, split, join, quantize and transpose, including boundary interpolation and undo.
    Adding owned curves means auditing existing `Note: Copy` assumptions rather than hiding
    mutable expression in an untracked global side table.
 
-7. **Expression and notation share a coordinated file migration.** The implementation of
-   #928 coordinates with the note-notation work before it changes the file writer. They add
-   their agreed optional fields in one version bump from the then-current format, with
-   missing fields read as defaults and old-file tests. This decision does not reserve a
-   historical version number or claim either feature already exists. If the features cannot
-   land together, amend this decision before separate bumps; do not hold a partially valid
-   writer on an obsolete version. Runtime IDs are never serialized. Source MIDI channels
-   may remain as import/export hints, not a key for stored expression.
+7. **Expression and notation each take their own file version.** Expression is version 17:
+   a note's optional `expression`, missing fields read as defaults, with old-file tests.
+   Notation takes the next version when it lands; neither holds a partially valid writer on
+   an obsolete version. Runtime IDs are never serialized. Source MIDI channels may remain as
+   import/export hints, not a key for stored expression.
+   *Amended 2026-11-27, see Amendment: expression versioned alone.*
 
 8. **Host protocols map at their boundaries.** CLAP note tuples and VST3 note IDs map through
    preallocated tables to the same `NoteInstanceId`. CLAP wildcard addressing is expanded to

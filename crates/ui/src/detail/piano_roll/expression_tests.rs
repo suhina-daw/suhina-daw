@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::detail::piano_roll::{PianoClip, PianoRollState};
-use suhina_engine::model::{NoteExpression, Shared};
+use suhina_engine::model::{NoteExpression, NoteId, Shared};
 
 fn layout(clip: &PianoClip, state: &PianoRollState) -> Layout {
     crate::detail::piano_roll::tests::layout_for(clip, state)
@@ -67,8 +67,9 @@ fn a_dragged_point_stays_between_its_neighbours_on_whole_semitones() {
     let layout = layout(&clip, &state);
     let grid = TimelineGrid::new(0.25, layout.beat_width, 4.0, 6.0);
     let note = &clip.notes[0];
+    let curve = note.expression().unwrap().pitch.clone();
     let mut drag =
-        PointDrag { note: 0, kind: ExpressionKind::Pitch, index: 1, curve: note.expression().unwrap().pitch.clone() };
+        PointDrag { note: NoteId(0), kind: ExpressionKind::Pitch, index: 1, curve: curve.clone(), from: curve };
     // Past the next point and between rows: held before it, on a whole semitone.
     let pos = Pos2::new(layout.x_of(3.0), pitch_y(&layout, 63.4).unwrap());
     drag_point(&layout, note, grid, false, &mut drag, pos);
@@ -116,4 +117,51 @@ fn lane_heights_and_values_are_inverse() {
         assert!((lane_value(lane, lane_y(lane, value)) - value).abs() < 1e-6);
     }
     assert!(lane_y(lane, 1.0) < lane_y(lane, 0.0));
+}
+
+#[test]
+fn a_point_too_close_to_its_neighbours_keeps_its_beat() {
+    let points = [(0.0, 0.0), (0.00001, 1.0), (0.00002, 2.0)];
+    let clip = crate::detail::piano_roll::tests::clip_with(vec![bent(0.0, 4.0, 60, &points)]);
+    let state = PianoRollState::default();
+    let layout = layout(&clip, &state);
+    let grid = TimelineGrid::new(0.25, layout.beat_width, 4.0, 6.0);
+    let note = &clip.notes[0];
+    let curve = note.expression().unwrap().pitch.clone();
+    let mut drag =
+        PointDrag { note: NoteId(0), kind: ExpressionKind::Pitch, index: 1, curve: curve.clone(), from: curve };
+    drag_point(&layout, note, grid, false, &mut drag, Pos2::new(layout.x_of(1.0), pitch_y(&layout, 65.0).unwrap()));
+    assert_eq!(drag.curve[1], ExpressionPoint::new(0.00001, 5.0));
+    assert_eq!(suhina_engine::model::expression::validate_curve(ExpressionKind::Pitch, &drag.curve, 4.0), Ok(()));
+}
+
+#[test]
+fn a_point_drag_follows_its_note_and_ends_when_the_note_or_curve_changes() {
+    let first = bent(0.0, 2.0, 60, &[(0.0, 0.0), (1.0, 2.0)]);
+    let second = bent(2.0, 2.0, 64, &[(0.0, 0.0), (1.0, 5.0)]);
+    let mut clip = crate::detail::piano_roll::tests::clip_with(vec![first, second]);
+    let id = clip.notes.id(1).unwrap();
+    let curve = clip.notes[1].expression().unwrap().pitch.clone();
+    let mut dragged = curve.clone();
+    dragged[1].value = 7.0;
+    let drag = PointDrag { note: id, kind: ExpressionKind::Pitch, index: 1, curve: dragged.clone(), from: curve };
+    let mut state = PianoRollState { expression_drag: Some(drag.clone()), ..PianoRollState::default() };
+
+    // Another writer removes the first note: the dragged one is now at index 0, and only it shows
+    // the dragged curve.
+    clip.notes.remove(0);
+    settle_drag(&clip, &mut state);
+    assert!(state.expression_drag.is_some());
+    assert_eq!(shown_curve(&state, clip.notes.id(0), &clip.notes[0], ExpressionKind::Pitch), dragged.as_slice());
+
+    // Its curve changed by another writer: the drag's copy no longer belongs to it.
+    clip.notes[0].expression_mut().pitch[1].value = 3.0;
+    settle_drag(&clip, &mut state);
+    assert_eq!(state.expression_drag, None);
+
+    // The note gone: the drag ends.
+    let mut state = PianoRollState { expression_drag: Some(drag), ..PianoRollState::default() };
+    clip.notes.remove(0);
+    settle_drag(&clip, &mut state);
+    assert_eq!(state.expression_drag, None);
 }

@@ -559,7 +559,8 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
                     note.expression_mut().stretch(factor);
                 }
                 note.time = time;
-                note.duration = length;
+                // The stretched end can round a hair past the new length: the crop brings it back.
+                set_duration_cropping(note, length);
             }
         }
         let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
