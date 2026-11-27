@@ -406,6 +406,9 @@ impl Live {
     pub(crate) fn sender(&mut self) -> LiveSender {
         let (producer, consumer) = RingBuffer::new(LIVE_QUEUE);
         self.consumer = Some(consumer);
+        // Each queue has its own overflow flag: a send that failed on a replaced queue must not
+        // make the renderer discard the new queue's notes.
+        self.overflow = Arc::new(AtomicBool::new(false));
         LiveSender { producer, overflow: Arc::clone(&self.overflow) }
     }
 
@@ -573,6 +576,21 @@ impl Live {
             for chain in chains.iter_mut().filter(|chain| chain.instrument) {
                 chain.release_all(0);
             }
+            // The notes this ends were never let go: close them in the take here, or the take
+            // would hold them to its end. A note whose release was recorded is not closed again.
+            let armed = self.armed.get(..self.armed_count).unwrap_or_default();
+            for note in self.instances.iter().flatten().filter(|note| !note.released) {
+                for (track, _) in armed.iter().filter(|(_, f)| f.takes(note.source)) {
+                    recorder.note(*track, position, note.key, None);
+                }
+            }
+            for keys in self.keys.get(..self.keys_count).unwrap_or_default() {
+                for key in (0..=127u8).filter(|key| keys.sounding(*key)) {
+                    for (track, _) in armed.iter().filter(|(_, f)| f.takes(keys.source)) {
+                        recorder.note(*track, position, key, None);
+                    }
+                }
+            }
             self.instances.fill(None);
             self.keys.fill(Keys::EMPTY);
             self.keys_count = 0;
@@ -606,6 +624,12 @@ impl Live {
                 *slot = Waiting { at, source, event };
                 self.waiting_count += 1;
                 self.next_due = self.next_due.min(at);
+                continue;
+            }
+            if at > position && matches!(event, LiveEvent::Instance { event: NoteInstanceEvent::Expression { .. }, .. })
+            {
+                // An expression with no place on a full timeline is dropped: it must not play
+                // before its own waiting note-on, and losing one value ends no note.
                 continue;
             }
             if at > position && matches!(event, LiveEvent::Instance { .. }) {

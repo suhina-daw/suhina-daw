@@ -174,6 +174,8 @@ fn fixed_capacity_rejects_held_notes_and_reclaims_only_released_occurrences() {
         assert_eq!(send(&mut input, &[0x91, 60, 100]).len(), 1);
     }
     assert!(send(&mut input, &[0x92, 64, 100]).is_empty());
+    // The refused press's own release ends nothing and frees the key for the next press.
+    assert!(send(&mut input, &[0x82, 64, 0]).is_empty());
     send(&mut input, &[0x81, 60, 0]);
     let replaced = send(&mut input, &[0x92, 64, 100]);
     assert_eq!(replaced[0], (1, LiveEvent::Instance { id: first, event: Event::Choke { key: 60 } }));
@@ -281,4 +283,29 @@ fn independent_ports_and_two_zones_keep_pedal_expression_and_resets_separate() {
         [(14, LiveEvent::Instance { id: upper, event: Event::Choke { key: 60 } })]
     );
     assert!(b.notes.iter().flatten().any(|note| note.id == other));
+}
+
+#[test]
+fn a_refused_press_never_releases_a_later_note_on_its_key() {
+    let mut input = input(MpeMode::Manual);
+    // Fill the table with held notes, A first on channel 2/key 60.
+    let (a, _) = on(&send(&mut input, &[0x91, 60, 100]));
+    for key in 0..(MAX_OCCURRENCES - 1) {
+        assert_eq!(send(&mut input, &[0x93, (key % 128) as u8, 100]).len(), 1);
+    }
+    // B, a second press on A's key, is refused: the table holds only held notes.
+    assert!(send(&mut input, &[0x91, 60, 100]).is_empty());
+    // A's release pairs with A, the oldest press.
+    let released = send(&mut input, &[0x81, 60, 0]);
+    assert_eq!(released, [(1, LiveEvent::Instance { id: a, event: Event::Off { key: 60, velocity: 0. } })]);
+    // C on the same key waits until B's release has come, so B's release cannot end C.
+    assert!(send(&mut input, &[0x91, 60, 100]).is_empty(), "a press is refused while one is owed");
+    assert!(send(&mut input, &[0x81, 60, 0]).is_empty(), "B's release ends nothing");
+    assert!(send(&mut input, &[0x81, 60, 0]).is_empty(), "the refused C's release ends nothing");
+    let replaced = send(&mut input, &[0x91, 60, 100]);
+    let (c, _) = on(&replaced[1..]);
+    assert_eq!(replaced[0], (1, LiveEvent::Instance { id: a, event: Event::Choke { key: 60 } }));
+    let held = send(&mut input, &[0xB1, 74, 100]);
+    println!("after the owed releases: {held:?}");
+    assert!(held.iter().any(|(_, e)| matches!(e, LiveEvent::Instance { id, .. } if *id == c)), "C is held");
 }

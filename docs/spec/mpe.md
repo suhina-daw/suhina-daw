@@ -123,7 +123,10 @@ Suhina's routing policies are:
 The router retains source provenance and timestamp for recording. Translation itself emits
 resolved musical events without allocating. The existing opt-in MIDI trace runs only on the
 driver thread, outside the audio render callback. The router rejects an entire new note when there is no
-bounded lifetime slot. Overflow recovery must still terminate already accepted notes.
+bounded lifetime slot. Its release is still owed: until every refused press on that channel/key
+has been released, later presses there are refused too, so releases keep pairing oldest first and
+a refused press's release never ends a newer note. CC120, CC123, a zone change and port panic clear
+what is owed. Overflow recovery must still terminate already accepted notes.
 
 The input worker conservatively retains up to 256 protocol occurrences per physical port;
 it has no per-track completion feedback. At capacity it chokes the oldest released occurrence
@@ -133,8 +136,9 @@ The engine also bounds input occurrence and per-chain recipient tables; released
 are reclaimed with an explicit choke, and all-held exhaustion rejects a new occurrence.
 Device admission reserves final completion storage; the engine drains device completions at
 render-span boundaries. Those completions free device capacity, not the input worker's
-conservative protocol history. A live queue overflow sets an out-of-band atomic panic flag:
-the renderer discards the incomplete queue batch and terminates its existing notes.
+conservative protocol history. A live queue overflow sets an out-of-band atomic panic flag, one per queue, so a replaced queue
+does not inherit it: the renderer discards the incomplete queue batch and terminates its existing
+notes, closing in a running take the ones whose release was not recorded.
 Per-chain recipient entries record delivery intent, not a promise of device admission. A
 device-capacity rejection starts no voice and owes no completion; the bounded recipient
 entry remains until the matching release/reclamation. On an ordinary-compatibility chain only
@@ -142,8 +146,9 @@ an occurrence's first termination becomes a key-wide off: reclaiming an already 
 sends nothing there, so it cannot end a newer note on the same key. Recording likewise writes
 one release per occurrence. There is no reverse admission channel
 to the physical input in this slice. Timestamped expression floods coalesce only the same
-ID/dimension; a new expression with no reserved control slot is dropped rather than being
-played before its note-on. Exhausting the note timeline invokes the same panic recovery.
+ID/dimension; a new expression with no reserved control slot, or with no place left on the note timeline, is
+dropped rather than being played before its note-on. Exhausting the note timeline with a note
+lifecycle event invokes the same panic recovery.
 
 FM Synth retains its existing 64-frame internal control quantum and fixed-point numerical
 behavior. Event dispatch is sample-offset accurate, but audible FM changes take effect at

@@ -261,8 +261,10 @@ fn set_input(projects: &mut Projects, params: &Value) -> Result<Value, CommandEr
 
 fn set_mpe(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     let args = Args::new(params);
-    let port = args.text("port")?;
-    if port.is_empty() || port.len() > 1024 {
+    // The name exactly as `midi.inputs` lists it: a system's port name may begin or end with
+    // spaces, and a trimmed name would not find that port.
+    let port = args.raw_str("port").ok_or("port must be a text")?;
+    if port.trim().is_empty() || port.len() > 1024 {
         return Err("port must contain 1 to 1024 bytes".into());
     }
     let midi = projects.midi_mut();
@@ -301,5 +303,14 @@ fn set_mpe(projects: &mut Projects, params: &Value) -> Result<Value, CommandErro
         midi.open.retain(|(name, _)| name != port);
         midi.failed.retain(|(name, _)| name != port);
     }
-    inputs(projects, &Value::Null)
+    // The configuration is in place from here on: a listing that fails now is a notice, not
+    // a failure, so the caller keeps (and saves) what the command did.
+    let port = port.to_owned();
+    inputs(projects, &Value::Null).or_else(|error| {
+        Ok(json!({
+            "port": port,
+            "mpe": config.to_json(),
+            "notices": [format!("the MIDI inputs could not be listed: {}", error.message())],
+        }))
+    })
 }

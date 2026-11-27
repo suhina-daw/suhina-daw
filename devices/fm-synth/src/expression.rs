@@ -55,6 +55,15 @@ impl NoteInstanceDevice for FmSynth {
             self.key_down_at(key, seven_bit(velocity), Some((index, id, expression)));
             return Ok(());
         }
+        if let NoteInstanceEvent::Choke { .. } = event
+            && let Some(slot) = self.slots.iter_mut().find(|s| s.retiring_instance == Some(id))
+        {
+            // A newer note took this occurrence's voice; nothing of it sounds apart from that
+            // voice, so a choke retires it at once.
+            slot.retiring_instance = None;
+            self.lifetimes.finish(id);
+            return Ok(());
+        }
         let slot =
             self.slots.iter_mut().find(|s| s.instance == Some(id)).ok_or(NoteInstanceDispatchError::UnknownInstance)?;
         match event {

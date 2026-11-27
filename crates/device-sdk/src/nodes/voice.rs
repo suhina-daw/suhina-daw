@@ -560,6 +560,17 @@ impl NoteInstanceDevice for Group {
             }
             return Ok(());
         }
+        if let NoteInstanceEvent::Choke { .. } = event
+            && let Some(voice) = self.voices.iter_mut().find(|v| v.retiring_instance == Some(id))
+        {
+            // A newer note took this occurrence's voice and it still sounds as the fade out:
+            // a choke ends that fade at once, without touching the newer note.
+            voice.fade = 0;
+            voice.fade_from = [0.; 2];
+            voice.retiring_instance = None;
+            self.lifetimes.finish(id);
+            return Ok(());
+        }
         let voice = self
             .voices
             .iter_mut()

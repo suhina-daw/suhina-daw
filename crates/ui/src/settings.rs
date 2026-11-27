@@ -928,15 +928,41 @@ impl Settings {
                         settings.midi_inputs_off.push(port.to_string());
                     }
                 }
-                ("midi_mpe", value) if value.len() <= 4096 => {
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(value)
-                        && let Some(port) = value.get("port").and_then(serde_json::Value::as_str)
-                        && !port.is_empty()
-                        && port.len() <= 1024
-                        && let Some(config) = value.get("config").and_then(suhina_session::MpeConfig::from_json)
-                        && (settings.midi_mpe.len() < 256 || settings.midi_mpe.contains_key(port))
-                    {
-                        settings.midi_mpe.insert(port.to_owned(), config);
+                ("midi_mpe", text) => {
+                    // A rejected line is said, so expression that stopped working has a reason;
+                    // the other settings still load.
+                    let parsed =
+                        (text.len() <= 4096).then(|| serde_json::from_str::<serde_json::Value>(text).ok()).flatten();
+                    let port = parsed
+                        .as_ref()
+                        .and_then(|value| value.get("port"))
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|port| !port.is_empty() && port.len() <= 1024);
+                    let config = parsed
+                        .as_ref()
+                        .and_then(|value| value.get("config"))
+                        .and_then(suhina_session::MpeConfig::from_json);
+                    let problem = match (port, config) {
+                        _ if text.len() > 4096 => Some("is longer than 4096 bytes"),
+                        _ if parsed.is_none() => Some("is not JSON"),
+                        (None, _) => Some("needs a port name of 1 to 1024 bytes"),
+                        (_, None) => Some("has a config that is not a valid MPE configuration"),
+                        (Some(port), Some(_))
+                            if settings.midi_mpe.len() >= 256 && !settings.midi_mpe.contains_key(port) =>
+                        {
+                            Some("is past the 256 MIDI inputs that are kept")
+                        }
+                        _ => None,
+                    };
+                    match (problem, port, config) {
+                        (None, Some(port), Some(config)) => {
+                            settings.midi_mpe.insert(port.to_owned(), config);
+                        }
+                        (problem, ..) => warnings.push(format!(
+                            "settings line {}: midi_mpe {} and was skipped",
+                            number + 1,
+                            problem.unwrap_or("could not be read")
+                        )),
                     }
                 }
                 _ => {

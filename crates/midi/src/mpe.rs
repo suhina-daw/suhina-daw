@@ -46,6 +46,10 @@ pub struct MpeInput {
     config: MpeConfig,
     channels: [Channel; 16],
     notes: [Option<Occurrence>; MAX_OCCURRENCES],
+    /// Per channel and key, presses that were refused and whose releases are still to come.
+    /// While one is owed, later presses there are refused too, so releases keep pairing
+    /// oldest first and a refused press's release never ends a newer note.
+    refused: [[u8; 128]; 16],
     ids: NoteIdAllocator,
 }
 
@@ -66,6 +70,7 @@ impl MpeInput {
             config,
             channels: [Channel::EMPTY; 16],
             notes: [None; MAX_OCCURRENCES],
+            refused: [[0; 128]; 16],
             ids: NoteIdAllocator::new(origin)?,
         })
     }
@@ -133,6 +138,19 @@ impl MpeInput {
             }
         }
         self.channels.fill(Channel::EMPTY);
+        self.refused = [[0; 128]; 16];
+    }
+
+    /// The count of refused presses at `channel`/`key` whose releases are still owed.
+    fn refused_at(&mut self, channel: u8, key: u8) -> Option<&mut u8> {
+        self.refused.get_mut(usize::from(channel))?.get_mut(usize::from(key))
+    }
+
+    /// A press at `channel`/`key` was refused: its release must not pair with a later note.
+    fn refuse(&mut self, channel: u8, key: u8) {
+        if let Some(count) = self.refused_at(channel, key) {
+            *count = count.saturating_add(1);
+        }
     }
 
     /// Reads one complete channel message; malformed/unsupported messages do nothing.
@@ -189,6 +207,10 @@ impl MpeInput {
     }
 
     fn on(&mut self, channel: u8, key: u8, velocity: f32, sink: &mut Sink<'_>) {
+        if self.refused_at(channel, key).is_some_and(|count| *count > 0) {
+            self.refuse(channel, key);
+            return;
+        }
         let index = self.notes.iter().position(Option::is_none).or_else(|| {
             self.notes
                 .iter()
@@ -198,9 +220,11 @@ impl MpeInput {
                 .map(|(i, _)| i)
         });
         let Some(index) = index else {
+            self.refuse(channel, key);
             return;
         };
         let Some(id) = self.ids.allocate() else {
+            self.refuse(channel, key);
             return;
         };
         if let Some(old) = self.notes[index].take() {
@@ -218,6 +242,8 @@ impl MpeInput {
         };
         if Self::emit(note, Event::On { key, velocity, expression: note.expression }, sink) {
             self.notes[index] = Some(note);
+        } else {
+            self.refuse(channel, key);
         }
     }
 
@@ -232,6 +258,11 @@ impl MpeInput {
             .min_by_key(|(_, age)| *age)
             .map(|(i, _)| i);
         let Some(index) = index else {
+            // Every held occurrence here is older than a refused press, so a release with none
+            // held pays off the oldest refused press and ends nothing.
+            if let Some(count) = self.refused_at(channel, key).filter(|count| **count > 0) {
+                *count -= 1;
+            }
             return;
         };
         self.release(index, velocity, sink);
@@ -366,6 +397,13 @@ impl MpeInput {
                 if number == 120 {
                     self.channels[usize::from(channel)].pedal = false;
                 }
+                for affected in 0..16u8 {
+                    if self.scope(channel, affected)
+                        && let Some(refused) = self.refused.get_mut(usize::from(affected))
+                    {
+                        *refused = [0; 128];
+                    }
+                }
             }
             121 => {
                 for affected in 0..16u8 {
@@ -432,6 +470,9 @@ impl MpeInput {
         for (channel, changed) in changed.into_iter().enumerate() {
             if changed {
                 self.channels[channel] = Channel::EMPTY;
+                if let Some(refused) = self.refused.get_mut(channel) {
+                    *refused = [0; 128];
+                }
             }
         }
     }

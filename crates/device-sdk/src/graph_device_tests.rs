@@ -331,3 +331,24 @@ fn graphs_pass_the_device_conformance_checks() {
     failures.extend(found.into_iter().map(|f| format!("transpose: {f}")));
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+#[test]
+fn mpe_a_choke_of_a_taken_occurrence_ends_its_fade_without_touching_the_new_note() {
+    use suhina_device_api::{NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    let graph = expression_graph("pitch");
+    let mut device = audio(&graph);
+    let ids: Vec<_> = (1..=3).map(|serial| NoteInstanceId::from_parts(6, serial).unwrap()).collect();
+    for (id, pitch) in ids.iter().zip([12., -4., 5.]) {
+        let expression = NoteExpressionState::new(pitch, 0., 0.5).unwrap();
+        device.note_instances().unwrap().event(*id, E::On { key: 60, velocity: 1., expression }).unwrap();
+    }
+    // The third note took the first one's voice, which is still fading out; choke the first.
+    device.note_instances().unwrap().event(ids[0], E::Choke { key: 60 }).unwrap();
+    let mut finished = [None; 4];
+    assert_eq!(device.note_instances().unwrap().drain_finished(&mut finished), 1);
+    assert_eq!(finished[0], Some(ids[0]));
+    let mut buffer = [0.; 34];
+    device.process(&ProcessContext::default(), &mut buffer);
+    println!("after choke: {:?}", &buffer[..4]);
+    assert!(buffer.iter().all(|sample| (*sample - 1.).abs() < 1e-6), "no fade remains: {buffer:?}");
+}

@@ -87,7 +87,8 @@ fn live_mpe_disarming_chokes_only_the_occurrences_the_track_received() {
 fn live_mpe_queue_overflow_has_an_out_of_band_termination_path() {
     let (mut renderer, _controller, mut live) = setup();
     assert!(live.send(instance(1, on(60))));
-    blocks(&mut renderer, 4, 64);
+    // The note sounds before the overflow, so the silence after it is the recovery's doing.
+    assert!(blocks(&mut renderer, 4, 64).iter().any(|v| v.abs() > 1e-4));
     for _ in 0..crate::LIVE_QUEUE {
         assert!(live.send(instance(1, NoteInstanceEvent::Expression { kind: NoteExpressionKind::Pitch, value: 0. })));
     }
@@ -213,4 +214,84 @@ fn live_mpe_records_one_release_per_occurrence() {
     }
     println!("recorded={recorded:?}");
     assert_eq!(recorded, [(60, true), (60, false), (60, true), (64, true), (64, false)]);
+}
+
+#[test]
+fn live_mpe_a_replaced_queue_does_not_inherit_the_old_queues_overflow() {
+    let (mut renderer, _controller, mut live) = setup();
+    for _ in 0..crate::LIVE_QUEUE {
+        assert!(live.send(instance(1, NoteInstanceEvent::Expression { kind: NoteExpressionKind::Pitch, value: 0. })));
+    }
+    assert!(!live.send(instance(1, on(60))), "the old queue overflows");
+    // A new controller replaces the queue before the renderer saw the overflow.
+    let mut controller = renderer.controller();
+    let mut fresh = controller.take_live_input().unwrap();
+    assert!(fresh.send(instance(2, on(67))));
+    blocks(&mut renderer, 2, 64);
+    let played: Vec<_> = renderer.live.played.iter().map(|(_, e)| *e).collect();
+    println!("played={played:?}");
+    assert!(played.contains(&instance(2, on(67))), "the new queue's note is played, not discarded");
+}
+
+#[test]
+fn live_mpe_overflow_recovery_closes_the_notes_it_ends_in_the_take() {
+    let (mut renderer, mut controller, mut live) = setup();
+    let mut recorder = controller.take_recorder().unwrap();
+    controller.send(LaunchCommand::Play).unwrap();
+    controller.send(LaunchCommand::SetRecording { on: true }).unwrap();
+    blocks(&mut renderer, 2, 256);
+    assert!(live.send(instance(1, on(60))));
+    assert!(live.send(instance(2, on(64))));
+    assert!(live.send(instance(2, NoteInstanceEvent::Off { key: 64, velocity: 0. })));
+    blocks(&mut renderer, 2, 256);
+    for _ in 0..crate::LIVE_QUEUE {
+        assert!(live.send(instance(1, NoteInstanceEvent::Expression { kind: NoteExpressionKind::Pitch, value: 0. })));
+    }
+    assert!(!live.send(instance(1, NoteInstanceEvent::Off { key: 60, velocity: 0. })), "the off is lost");
+    blocks(&mut renderer, 2, 256);
+    let mut recorded = Vec::new();
+    while let Some(note) = recorder.next_note() {
+        recorded.push((note.key, note.velocity.is_some()));
+    }
+    println!("recorded={recorded:?}");
+    // The held note is closed by the recovery; the note already let go is not closed twice.
+    assert_eq!(recorded, [(60, true), (64, true), (64, false), (60, false)]);
+}
+
+#[test]
+fn live_mpe_an_expression_with_no_room_on_a_full_timeline_is_dropped_not_a_panic() {
+    let (mut renderer, _controller, mut live) = setup();
+    let start = 1_000_000;
+    renderer.set_live_clock(start, 256);
+    // 256 stamped note events fill the waiting timeline; none of them is a control.
+    for serial in 1..=128 {
+        assert!(live.send_at(Default::default(), instance(serial, on(40 + (serial % 40) as u8)), start));
+        assert!(live.send_at(
+            Default::default(),
+            instance(serial, NoteInstanceEvent::Off { key: 40 + (serial % 40) as u8, velocity: 0. }),
+            start
+        ));
+    }
+    assert!(live.send_at(
+        Default::default(),
+        instance(1, NoteInstanceEvent::Expression { kind: NoteExpressionKind::Pressure, value: 0.5 }),
+        start
+    ));
+    blocks(&mut renderer, 10, 64);
+    let played = &renderer.live.played;
+    let ons = played
+        .iter()
+        .filter(|(_, e)| matches!(e, LiveEvent::Instance { event: NoteInstanceEvent::On { .. }, .. }))
+        .count();
+    let offs = played
+        .iter()
+        .filter(|(_, e)| matches!(e, LiveEvent::Instance { event: NoteInstanceEvent::Off { .. }, .. }))
+        .count();
+    println!("ons={ons} offs={offs} played={}", played.len());
+    assert_eq!((ons, offs), (128, 128), "every waiting note still plays at its frame");
+    assert!(
+        !played
+            .iter()
+            .any(|(_, e)| matches!(e, LiveEvent::Instance { event: NoteInstanceEvent::Expression { .. }, .. }))
+    );
 }
