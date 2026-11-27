@@ -280,8 +280,9 @@ The EQ's panel (ADR 0021 › Amendment: device panels for built-in devices) is a
 (`devices/eq/src/panel.rs`) and an expanded strip. Everything that follows the bands is one
 host-drawn widget (`Widget::EqCurve`, `crates/ui/src/detail/eq_curve.rs`) that lays itself out
 from the rectangle it is given; the globals are the SDK's own controls. The parameters stay the
-device's: every edit is one `device.setParam` command, the same one a generated list writes, and
-the edits of one gesture (a drag, a new band) are one undo step. The command's `device` is the
+device's: an edit of one value is one `device.setParam` command, the same one a generated list
+writes, and an edit of several in one frame (a group of bands dragged, a band drawn in) one
+`device.setParams`; the edits of one gesture (a drag, a new band) are one undo step. The command's `device` is the
 device's full address — the index on the track, or its path through device groups ("2/1/0") — so
 an EQ inside a group is edited where it is; the panel's widget ids and its state are keyed to that
 path too, so two devices never share either.

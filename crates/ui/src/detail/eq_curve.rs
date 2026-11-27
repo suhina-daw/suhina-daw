@@ -657,8 +657,10 @@ fn curve_points(display: Rect, range: f64, bands: &[Band], heard: impl Fn(&Band)
         .collect()
 }
 
-/// The edited values as `device.setParam` commands, all in `gesture`, so an edit of several
-/// values and a drag are one undo step each: the window ends the gesture on mouse up (#1146).
+/// The edited values in `gesture`, so an edit of several values and a drag are one undo step each
+/// (the window ends the gesture on mouse up, #1146): one value as `device.setParam`, several as one
+/// `device.setParams`, so a frame that moves a group of bands, or draws one in, runs one command
+/// and not one for each value (each edit checks the whole project).
 fn push_edits(
     actions: &mut Vec<Action>,
     edits: Vec<(&GraphParameter, f64)>,
@@ -666,14 +668,23 @@ fn push_edits(
     device: &serde_json::Value,
     gesture: &str,
 ) {
-    for (parameter, value) in edits {
-        actions.push(Action::new(
+    match edits.as_slice() {
+        [] => {}
+        [(parameter, value)] => actions.push(Action::new(
             "device.setParam",
             json!({
                 "track": track.0, "device": device, "param": parameter.id, "value": value,
                 "gesture": gesture
             }),
-        ));
+        )),
+        _ => {
+            let ids: Vec<&str> = edits.iter().map(|(parameter, _)| parameter.id.as_str()).collect();
+            let values: Vec<f64> = edits.iter().map(|(_, value)| *value).collect();
+            actions.push(Action::new(
+                "device.setParams",
+                json!({ "track": track.0, "device": device, "ids": ids, "values": values, "gesture": gesture }),
+            ));
+        }
     }
 }
 

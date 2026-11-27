@@ -1653,6 +1653,40 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
     Ok(with_override(json!({ "device": path_value(&path), "param": param, "value": value }), off))
 }
 
+/// The most parameters one `device.setParams` call sets.
+const MOST_PARAMS: usize = 512;
+
+/// `device.setParams`: several parameters of one device, each set as `device.setParam` sets it,
+/// in one call: one undo step, and one check of the project instead of one per value, so a drag
+/// that moves several values each frame (a group of an EQ's bands, a band drawn in) stays light.
+/// A playing engine takes the values as messages when every one of them could be; when any needs
+/// a new graph (an EQ band's mode, a lane turned off, a device in a group), one graph holds them
+/// all.
+pub(crate) fn set_params(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let ids = Args::new(params).texts("ids", MOST_PARAMS)?;
+    let values = Args::new(params).numbers("values", MOST_PARAMS)?;
+    if ids.is_empty() || ids.len() != values.len() {
+        return Err("ids and values must be lists of the same length, with at least one id".into());
+    }
+    let mut one = params.as_object().cloned().ok_or("the parameters must be an object")?;
+    one.remove("ids");
+    one.remove("values");
+    let mut messages = Vec::new();
+    let mut new_graph = false;
+    let mut set = Vec::with_capacity(ids.len());
+    for (id, value) in ids.into_iter().zip(values) {
+        one.insert("param".into(), json!(id));
+        one.insert("value".into(), json!(value));
+        session.sync.param_edits.clear();
+        set.push(set_param(session, &Value::Object(one.clone()))?);
+        let sent = std::mem::take(&mut session.sync.param_edits);
+        new_graph |= sent.is_empty();
+        messages.extend(sent);
+    }
+    session.sync.param_edits = if new_graph { Vec::new() } else { messages };
+    Ok(json!({ "params": set }))
+}
+
 /// `device.audition`: an EQ's band heard alone, or the whole EQ again with band 0. The value goes
 /// to the playing engine only, as the EQ's `audition` parameter: the project never holds it, so
 /// nothing is saved or undone, and a new graph plays the whole EQ (docs/spec/eq.md › Audition).

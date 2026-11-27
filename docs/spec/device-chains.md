@@ -220,7 +220,11 @@ nothing changes: the main volume scales every source as before.
 Devices are edited through commands: `device.list`, `track.devices`, `device.add` (an
 instrument always first, one per track, and only on a track that plays notes),
 `device.remove`, `device.setEnabled` and `device.setParam` (values stored limited to the
-parameter's range). `device.add {preset, voice?}` adds a device with a preset's values:
+parameter's range). `device.setParams {ids, values}` sets several parameters of one device as
+`device.setParam` sets each, in one call and one undo step (at most 512, an unknown id refuses
+the whole call): every edit command copies and checks the whole project, about 13 ms in a large
+one, so a drag that moves many values each frame sends them as one call. A playing engine takes
+them as messages, or, when any of them needs a new graph, one graph holds them all. `device.add {preset, voice?}` adds a device with a preset's values:
 `device-registry::preset` reads DX7 voice data for the FM synth and gives every parameter's
 value, which the project stores like any other (stock presets for the other devices:
 [ADR 0014](../decisions/0014-stock-presets.md), their loader is not built yet).

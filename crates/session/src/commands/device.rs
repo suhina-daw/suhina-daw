@@ -359,6 +359,20 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "device.setParams",
+        label: "Set several parameters of one device at once, as device.setParam sets each, in one undo step; a playing engine hears them from the next block",
+        params: &[
+            DEVICE_TRACK,
+            DEVICE,
+            param("ids", ParamType::Texts, "parameter ids, as device.setParam takes them; at most 512"),
+            param("values", ParamType::Numbers, "one value for each id, in the same order"),
+            GESTURE,
+        ],
+        kind: CommandKind::EDIT,
+        run: devices::set_params,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "device.audition",
         label: "Listen to one band of an EQ on a track's own chain alone, the range it works on without its boost or cut, until device.audition with band 0; nothing is saved or undone, and without a player nothing is heard",
         params: &[

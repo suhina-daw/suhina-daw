@@ -101,6 +101,78 @@ fn continuous_parameter_updates_share_one_undo_step() {
     assert!(session.project().channels[0].devices.is_empty());
 }
 
+fn stored(session: &Session, id: &str) -> Option<f64> {
+    session.project().channels[0].devices[0].params.iter().find(|p| p.id == id).map(|p| p.value)
+}
+
+#[test]
+fn several_parameters_are_set_in_one_call_and_one_undo_step() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": 1, "id": "eq" })).unwrap();
+    let set = run(
+        &mut session,
+        "device.setParams",
+        json!({ "track": 1, "device": 0, "ids": ["a1Gain", "a1Frequency", "a2Gain"], "values": [99.0, 440.0, -3.0] }),
+    )
+    .unwrap();
+    assert_eq!(set["params"].as_array().map(Vec::len), Some(3), "each value's result: {set}");
+    assert!(stored(&session, "a1Gain").is_some_and(|v| v < 99.0), "limited to the range, as device.setParam does");
+    assert_eq!(stored(&session, "a1Frequency"), Some(440.0));
+    assert_eq!(stored(&session, "a2Gain"), Some(-3.0));
+    // A drag's calls share one step with the setParam calls of the same gesture.
+    for (gain, mode) in [(1.0, 1.0), (2.0, 2.0)] {
+        run(
+            &mut session,
+            "device.setParams",
+            json!({ "track": 1, "device": 0, "ids": ["a3Gain", "a3Mode"], "values": [gain, mode], "gesture": "drag" }),
+        )
+        .unwrap();
+    }
+    run(
+        &mut session,
+        "device.setParam",
+        json!({ "track": 1, "device": 0, "param": "a3Q", "value": 2.0, "gesture": "drag" }),
+    )
+    .unwrap();
+    assert_eq!((stored(&session, "a3Gain"), stored(&session, "a3Mode")), (Some(2.0), Some(2.0)));
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_ne!(stored(&session, "a3Gain"), Some(2.0), "the drag is one step");
+    assert_ne!(stored(&session, "a3Q"), Some(2.0));
+    assert_eq!(stored(&session, "a2Gain"), Some(-3.0), "the first call is a step of its own");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert_ne!(stored(&session, "a2Gain"), Some(-3.0), "the first call's three values go together");
+    assert_ne!(stored(&session, "a1Frequency"), Some(440.0));
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!((stored(&session, "a1Frequency"), stored(&session, "a2Gain")), (Some(440.0), Some(-3.0)));
+}
+
+#[test]
+fn set_params_refuses_malformed_lists_and_changes_nothing() {
+    let mut session = Session::new(project());
+    run(&mut session, "device.add", json!({ "track": 1, "id": "eq" })).unwrap();
+    let before = session.project().clone();
+    let call = |ids: Value, values: Value| json!({ "track": 1, "device": 0, "ids": ids, "values": values });
+    for (ids, values) in [
+        (json!([]), json!([])),
+        (json!(["a1Gain", "a2Gain"]), json!([1.0])),
+        (json!("a1Gain"), json!([1.0])),
+        (json!(["a1Gain"]), json!(["loud"])),
+        (json!([1]), json!([1.0])),
+        (json!(vec!["a1Gain"; 513]), json!(vec![1.0; 513])),
+    ] {
+        assert!(run(&mut session, "device.setParams", call(ids.clone(), values)).is_err(), "{ids} is refused");
+    }
+    // An unknown id among good ones: none of the values is kept.
+    let unknown = run(&mut session, "device.setParams", call(json!(["a1Gain", "nothing"]), json!([3.0, 1.0])));
+    assert!(unknown.unwrap_err().contains("nothing"));
+    assert_eq!(session.project(), &before);
+    assert!(
+        run(&mut session, "device.setParams", json!({ "track": 1, "device": 5, "ids": ["a1Gain"], "values": [1.0] }))
+            .is_err()
+    );
+    assert!(run(&mut session, "device.setParams", json!({ "track": 1, "device": 0, "values": [1.0] })).is_err());
+}
+
 #[test]
 fn saving_during_a_parameter_gesture_keeps_later_updates_dirty() {
     let mut session = Session::new(project());
