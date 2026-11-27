@@ -4,12 +4,13 @@
 //! Spectral dynamics: an equaliser band that moves only the frequencies inside it that stand out
 //! (docs/spec/eq.md › Dynamic and Spectral bands › Spectral). The stereo signal runs through a
 //! short-time Fourier transform (a square-root Hann window, an eighth-frame hop, overlap-add). For
-//! each band, every bin's level is compared with a reference made of the spectrum around it (the
-//! mean level of a neighbourhood on each side, the bin itself left out), so a resonance that rises
-//! above its neighbours is turned down (or, with a positive range, up) and the rest of the band is
-//! left alone; each cut is spread over the bins next to it and follows the band's attack and
-//! release, faster in the highs than in the lows. The output is the input delayed by [`FRAME`]
-//! frames where nothing moves.
+//! each band whose own level passes its threshold, every bin's level is compared with a reference
+//! made of the spectrum around it (the mean level of a neighbourhood on each side, the bin itself
+//! left out), so a resonance that rises above its neighbours is turned down (or, with a positive
+//! range, up) by as much as it rises too far, and the rest of the band is left alone; each cut
+//! is spread over the bins next to it and follows the band's attack and release, faster in the
+//! highs than in the lows. The output is the input delayed by [`FRAME`] frames where nothing
+//! moves.
 //!
 //! `new` allocates (the plans, the buffers); everything else runs on the audio thread without
 //! allocating, locking or panicking.
@@ -19,7 +20,7 @@ use std::sync::Arc;
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};
 
-use crate::band_dynamics::gain_change;
+use crate::band_dynamics::{KNEE_DB, softened};
 
 /// The transform's length in frames: the delay it adds (about 43 ms at 48 kHz).
 pub const FRAME: usize = 2048;
@@ -33,8 +34,9 @@ pub const BANDS: usize = 24;
 pub const LIVE_POINTS: usize = 100;
 /// The live points' frequency range.
 pub const LIVE_RANGE: (f64, f64) = (10.0, 22_000.0);
-/// How far above its reference a bin must rise, in dB, before it counts as standing out.
-const STANDS_OUT_DB: f64 = 12.0;
+/// How far above its reference a bin may rise, in dB: what rises further is cut back to it (up to
+/// the range), in a soft knee. Far enough that a noisy spectrum's own ripple stays under it.
+const STANDS_OUT_DB: f64 = 9.0;
 /// Where the two sides of a bin's neighbourhood differ by more than this, in dB (a cliff in the
 /// spectrum), the reference is the louder side less this, so a slope never reads as a peak.
 const CLIFF_DB: f64 = 12.0;
@@ -76,7 +78,9 @@ pub struct Settings {
     pub q: f64,
     /// The most a bin may move, in dB (negative turns down).
     pub range: f64,
-    /// The level a bin must pass, in dB below full scale.
+    /// The level, in dBFS, the band's own part of the signal (or of the key) must pass for its bins
+    /// to move, read as a sine of that amplitude reads: the same level a Dynamic band's detector
+    /// reads. It opens over a soft knee around the threshold.
     pub threshold: f64,
     /// Seconds, at 1 kHz (a bin's own times scale with its frequency).
     pub attack: f64,
@@ -291,12 +295,17 @@ impl SpectralDynamics {
 
     /// One band's gains: each bin's level (of the band's part of the signal, or of the key), held
     /// at the frame's floor; its reference from the neighbourhood on each side; the soft-knee cut
-    /// of what passes both the reference and the band's threshold; spread over its neighbours,
-    /// weighted by the band's shape and smoothed in time and across bins.
+    /// of how far it rises past the reference, while the band's own level passes its threshold;
+    /// spread over its neighbours, weighted by the band's shape and smoothed in time and across
+    /// bins.
     fn detect(&mut self, index: usize, settings: Settings, keyed: bool, hop_seconds: f64) {
         let sources = if settings.keyed && keyed { &self.key_spectra } else { &self.spectra };
         let window_sum = self.window_sum;
         let mut loudest = f64::MIN;
+        // The band's own level: the power of its bins, each weighed by how much of it the band
+        // holds, as a sine's amplitude (a sine of amplitude A through the window gives one-sided
+        // powers summing to A² · FRAME² / 8).
+        let mut power = 0.0;
         for k in 0..BINS {
             let (l, r) =
                 (sources[0].get(k).copied().unwrap_or_default(), sources[1].get(k).copied().unwrap_or_default());
@@ -308,6 +317,9 @@ impl SpectralDynamics {
                 Place::Side => ((l - r) * 0.5).norm(),
             };
             let f = self.frequencies.get(k).copied().unwrap_or(1.0).max(1.0);
+            if k > 0 {
+                power += shape_weight(settings.shape, f, settings.frequency, settings.q) * f64::from(magnitude).powi(2);
+            }
             let tilt = if settings.tilt { 3.0 * (f / 1000.0).log2() } else { 0.0 };
             let level = 20.0 * (2.0 * f64::from(magnitude) / window_sum).max(1e-9).log10() + tilt;
             if k > 0 {
@@ -318,6 +330,8 @@ impl SpectralDynamics {
             }
         }
         let floor = loudest - FLOOR_DB;
+        let band_db = 10.0 * (8.0 * power / (FRAME * FRAME) as f64).max(1e-18).log10();
+        let open = opening(band_db - settings.threshold);
         // Running sums of the floored levels, so a neighbourhood's mean is one subtraction.
         let mut total = 0.0;
         if let Some(first) = self.sums.get_mut(0) {
@@ -353,8 +367,7 @@ impl SpectralDynamics {
                     (Some(one), None) | (None, Some(one)) => one,
                     (None, None) => level,
                 };
-                let threshold = settings.threshold.max(reference + STANDS_OUT_DB);
-                gain_change(level, threshold, settings.range).abs()
+                open * softened(level - reference - STANDS_OUT_DB)
             };
             if let Some(cell) = self.cuts.get_mut(k) {
                 *cell = cut;
@@ -449,6 +462,13 @@ impl SpectralDynamics {
             }
         }
     }
+}
+
+/// How open a band is, 0 to 1, with its level `over` dB over its threshold: shut under the knee,
+/// open over it, a smooth step through it.
+fn opening(over: f64) -> f64 {
+    let t = ((over + KNEE_DB / 2.0) / KNEE_DB).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 /// A bin's attack or release at `f`, from the band's time at 1 kHz: faster in the highs, slower in
@@ -552,6 +572,55 @@ mod tests {
         let neighbour = 20.0 * (level(&out, 1_637.0) / 0.004).log10();
         assert!(neighbour > -2.0, "a quiet neighbour in the band is left alone: {neighbour} dB");
         assert!(block.live(0).iter().any(|g| *g < -6.0), "the live cut shows it");
+    }
+
+    /// A dense bed of tones 37 Hz apart over 1 – 4 kHz, each 0.01 (−40 dBFS), and a resonance of
+    /// 0.06 (−24.4 dBFS) at 2.21 kHz: as a mix's band holds it, every bin under −24 dBFS while
+    /// the band itself is over it.
+    fn mix(n: usize) -> f64 {
+        (0..81).map(|i| tone(1_000.0 + 37.0 * i as f64 + 3.0, 0.01, n)).sum::<f64>() + tone(2_210.0, 0.06, n)
+    }
+
+    fn mix_band(threshold: f64) -> Settings {
+        Settings {
+            on: true,
+            frequency: 2_000.0,
+            q: 0.5,
+            range: -12.0,
+            threshold,
+            density: 0.5,
+            tilt: false,
+            ..Settings::default()
+        }
+    }
+
+    #[test]
+    fn the_threshold_is_the_bands_level_not_a_bins() {
+        // At −24 dB, each bin of the mix lies under the threshold; the band as a whole is over it,
+        // so the resonance is cut by about as much as it rises past its neighbours.
+        let mut block = SpectralDynamics::new(RATE);
+        block.set(0, mix_band(-24.0));
+        let out = run(&mut block, 96_000, mix);
+        let resonance = 20.0 * (level(&out, 2_210.0) / 0.06).log10();
+        assert!(resonance < -3.0, "the resonance is cut with the band over its threshold: {resonance} dB");
+    }
+
+    #[test]
+    fn a_band_under_its_threshold_moves_nothing() {
+        let mut block = SpectralDynamics::new(RATE);
+        block.set(0, mix_band(-3.0));
+        let out = run(&mut block, 96_000, mix);
+        let resonance = 20.0 * (level(&out, 2_210.0) / 0.06).log10();
+        assert!(resonance > -0.5, "the band is under −3 dB, so nothing moves: {resonance} dB");
+        assert!(block.live(0).iter().all(|g| g.abs() < 0.1));
+    }
+
+    #[test]
+    fn a_band_opens_over_a_soft_knee_around_its_threshold() {
+        assert_eq!(opening(-3.0), 0.0);
+        assert_eq!(opening(3.0), 1.0);
+        assert!((opening(0.0) - 0.5).abs() < 1e-12);
+        assert!(opening(-1.0) < opening(1.0));
     }
 
     #[test]

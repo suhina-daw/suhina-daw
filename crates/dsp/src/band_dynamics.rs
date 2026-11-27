@@ -95,16 +95,20 @@ impl BandDynamics {
 /// The gain change in dB for a level against a threshold: none below the knee, the whole `range`
 /// [`FULL_RANGE_OVER_DB`] over the threshold, a soft knee of [`KNEE_DB`] around it.
 pub fn gain_change(level_db: f64, threshold: f64, range: f64) -> f64 {
-    let over = level_db - threshold;
+    range * (softened(level_db - threshold) / FULL_RANGE_OVER_DB).clamp(0.0, 1.0)
+}
+
+/// How far a level is over a threshold, in dB, softened in a [`KNEE_DB`] knee around it: none
+/// under the knee, `over` itself above it, a curve joining the two inside it.
+pub fn softened(over: f64) -> f64 {
     let half = KNEE_DB / 2.0;
-    let into = if over <= -half {
+    if over <= -half {
         0.0
     } else if over >= half {
         over
     } else {
         (over + half).powi(2) / (2.0 * KNEE_DB)
-    };
-    range * (into / FULL_RANGE_OVER_DB).clamp(0.0, 1.0)
+    }
 }
 
 #[cfg(test)]

@@ -191,9 +191,16 @@ block of `crates/dsp` (`band_dynamics::BandDynamics`, AGENTS.md rule 8):
     the two sides, or where they differ by more than 12 dB (a cliff in the spectrum) the louder
     side less 12 dB, so a steep slope never reads as a peak. At a spectrum's edge the one side
     there is decides.
-  - *Threshold.* A bin moves once it is 12 dB over its reference and over the band's Threshold
-    (a level in dBFS: quieter bins never move, so at −60 dB the reference alone decides). The
-    gain change is the Dynamic bands' soft knee, the whole Range 12 dB over.
+  - *Threshold* is the band's own level, not a bin's: the power of the bins of its placement (or
+    of the key), each weighed by how much of it the band holds, read as a sine of that amplitude
+    reads, so it is the level a Dynamic band's detector reads. The band's bins move while that
+    level passes the Threshold, opening over a 6 dB knee around it (a smooth step); under it
+    nothing moves, and at −60 dB the band is nearly always open. A single bin of a mix lies tens of
+    dB under the band's level, so a threshold on each bin would leave a mix's band untouched.
+  - *Cut.* A bin that rises more than 9 dB over its reference is cut back by how far it rises past
+    that, in a 6 dB soft knee (the Dynamic bands' knee), and at most by the Range: a resonance
+    15 dB over its neighbours is cut by 6 dB. 9 dB keeps a noisy spectrum's own ripple, a bin
+    now and then a few dB over the mean, under the knee.
   - *Detail* sets the selectivity. The neighbourhood is 4.5 · 2^(−d / 12.3) octaves wide in all
     and a cut spreads over 2^(−d / 2.3) octaves, d being Detail on a 0 – 10 scale: 4.5 and one
     octave at 0 % (broad humps move, wide cuts), 2.6 and a twentieth of one at 100 % (narrow
