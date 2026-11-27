@@ -431,6 +431,51 @@ fn a_script_error_is_reported_and_restart_brings_the_script_back() {
     assert_eq!(entry["lastError"], Value::Null, "{entry}");
 }
 
+/// The shipped APC40 MkII script through the real supervisor: its mode message goes out when
+/// the claimed ports open, and each of the four per-track strip buttons sends its command and
+/// the LED its state asks for. The device section is covered by the stand-in in `apc40.rs`.
+#[test]
+fn the_shipped_apc40_script_puts_each_strip_button_on_its_command() {
+    let mut fixture = Fixture::claiming("apc40-mkii", include_str!("../../../packs/apc40-mkii/script.lua"));
+    // The blank project's first track is the strip's channel 0.
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    let track = tracks[0]["id"].as_u64().expect("the first track's id");
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
+    fixture.pump_until(|f| f.midi.written_for("APC out").iter().any(|m| m.starts_with(&mode)), "the mode message");
+    fixture.pump_until(
+        |f| f.midi.written_for("APC out").iter().any(|m| m.as_slice() == [0x90, 50, 127]),
+        "the strip state",
+    );
+    // Clip stop: the command reaches the session, which refuses it without a player but still
+    // answers the script; the press is what this slice checks.
+    fixture.midi.play("APC in", 1, &[0x90, 52, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.stop" && params["track"] == json!(track)));
+    fixture.projects.poll_plugins();
+    // Activator: the track mutes, and the activator LED goes dark.
+    fixture.midi.play("APC in", 1, &[0x90, 50, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.setMute" && params["tracks"][0] == json!(track)));
+    fixture.projects.poll_plugins();
+    fixture.pump_until(|f| written_contains(f, [0x90, 50, 0]), "the muted activator's LED");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    assert_eq!(tracks[0]["mute"], json!(true), "{tracks}");
+    // Solo: the track solos, and the solo LED lights.
+    fixture.midi.play("APC in", 1, &[0x90, 49, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.setSolo" && params["tracks"][0] == json!(track)));
+    fixture.projects.poll_plugins();
+    fixture.pump_until(|f| written_contains(f, [0x90, 49, 127]), "the solo LED");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    assert_eq!(tracks[0]["solo"], json!(true), "{tracks}");
+    // Record arm: the track arms, and the arm LED goes red.
+    fixture.midi.play("APC in", 1, &[0x90, 48, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.setArm" && params["track"] == json!(track)));
+    fixture.projects.poll_plugins();
+    fixture.pump_until(|f| written_contains(f, [0x90, 48, 5]), "the armed track's LED");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    assert_eq!(tracks[0]["armed"], json!(true), "{tracks}");
+}
+
 /// A killed process is seen as crashed and restarted by the supervisor itself.
 #[test]
 fn a_killed_process_is_restarted() {
@@ -1188,16 +1233,19 @@ impl MidiSystem for Midi {
 
     fn open(&self, name: &str, _: Arc<LiveInput>) -> Result<Box<dyn std::any::Any + Send>, String> {
         self.live.lock().unwrap().push(name.to_string());
+        programs::test_wake();
         Ok(Box::new(Keep { name: name.to_string(), open: Arc::clone(&self.live), closed: Arc::clone(&self.closed) }))
     }
 
     fn open_raw(&self, name: &str, sink: Arc<dyn RawSink>) -> Result<Box<dyn std::any::Any + Send>, String> {
         self.raw.lock().unwrap().push((name.to_string(), sink));
         self.raw_log.lock().unwrap().push(name.to_string());
+        programs::test_wake();
         Ok(Box::new(RawKeep { name: name.to_string(), open: Arc::clone(&self.raw), closed: Arc::clone(&self.closed) }))
     }
 
     fn open_output(&self, name: &str) -> Result<Box<dyn MidiOut>, String> {
+        programs::test_wake();
         Ok(Box::new(Out {
             name: name.to_string(),
             written: Arc::clone(&self.written),
