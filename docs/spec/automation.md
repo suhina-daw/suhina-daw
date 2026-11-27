@@ -252,8 +252,12 @@ priming, stopped playback, nested branches and the remaining limits.
   mixer has a lane that plays runs through a device chain (one without devices when it has none),
   and its gains apply after its devices, as for any track with devices. A group track with mixer
   lanes becomes a bus (ADR 0004 › 10), so its lanes scale the sum of the tracks routed into it.
-  The lanes are read earlier by the chain's latency compensation, so they line up with what is
-  heard. While stopped, the gains are the lanes' values at the play start marker.
+  The lanes are read at the time of the audio they scale, from the blocks played, as device
+  lanes are: as late as the devices before the fader make it, and after the fader as late as
+  the compensation delay that lines the track up with the others. A loop's wrap, a jump or a
+  stop in that delayed audio keeps its place
+  ([PDC timing contract](plugin-delay-compensation.md) › Mixer automation). While stopped, the
+  gains are the lanes' values at the play start marker.
 - **Mute and solo**: a mute lane decides the channel's mute while it plays (a muted channel with a
   mute lane sounds where the lane says 0). Solo is not automated.
 

@@ -111,6 +111,25 @@ This applies to audio effects. Native instruments and MIDI effects keep their ex
 source-time contexts until note/event alignment is implemented together with their timing;
 moving a context alone would move it away from the notes that drive the instrument.
 
+## Mixer automation
+
+The volume, pan and mute lanes of a track, bus, return or Main are read from the same
+transport history as device automation, at the time of the audio they scale
+([#1703](https://github.com/suhina-daw/suhina-daw/issues/1703)). A chain's fader follows its
+devices, so its lanes are read as late as the chain's input latency plus its devices'
+latency. Its output then goes through the compensation delay that lines it up with its
+target, and the gains applied there are read as late as that delay too. For Main, the fader
+time is the latest path into Main plus Main's own devices, and Main has no compensation delay
+after it. A key taken after the fader (the post-fader tap) uses the fader's gains, because it
+is taken before the compensation delay.
+
+A loop wrap, seek or stop/play boundary in the delayed audio splits the block's gains there.
+Each span keeps its own running state: a stopped span holds the lanes' value where the
+transport stood, and the pre-roll before arrangement frame zero holds the value at zero. The
+gains of one frame still depend only on its arrangement frame, on the mixer's 16-frame grid
+([automation](automation.md) › How the engine plays them). Planning allocates nothing and
+happens before the block's chains run.
+
 ## History and compensation limits
 
 The supported compensation horizon is two seconds at the renderer's sample rate. Every
@@ -141,10 +160,10 @@ plug-in that changes its physical latency before a replacement graph is ready.
 ## Later work
 
 These slices do not establish the complete PDC guarantee. Native instrument and MIDI-effect
-contexts, MIDI/note timing, tempo-map envelope conversion, mixer automation across transport
-discontinuities, dynamic-latency transitions, late-block fallback, recording placement and
-live/render-ahead handoffs still need their own implementation and acceptance evidence.
-Their existing issues and dependencies are linked from #1566. A low-latency monitoring
+contexts with MIDI/note timing (#1704), tempo-map envelope conversion (#1350),
+dynamic-latency transitions (#1705), late-block fallback (#1192), recording placement (#1706)
+and live/render-ahead handoffs (#1508, #1509) still need their own implementation and
+acceptance evidence. Their issues and dependencies are linked from #1566. A low-latency monitoring
 mode remains separate: compensation cannot remove the processing latency of a device on
 the played path.
 

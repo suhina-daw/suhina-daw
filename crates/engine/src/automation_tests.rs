@@ -136,7 +136,7 @@ fn mixer_gains_are_a_line_between_grid_values_in_any_block() {
     // No smoothing (a sample rate of 0): the gains are the lane's own.
     let mut mix = MixLanes::new(&c, 100.0, true, 0.0).unwrap();
     let at = |frame: f64| VolumeTaper.value(0.85 * (frame / 1000.0).min(1.0)) as f32;
-    mix.plan(0, 1024, true);
+    mix.plan_at(0, 1024, true);
     let whole: Vec<(f32, f32)> = (0..1024).map(|f| mix.gains(f)).collect();
     // At each step of the grid the lane's value, in a straight line between, centered.
     for (f, g) in whole.iter().enumerate().take(960) {
@@ -147,18 +147,75 @@ fn mixer_gains_are_a_line_between_grid_values_in_any_block() {
     }
     // In pieces of 333 frames: the same.
     for start in (0..1024).step_by(333) {
-        mix.plan(start as u64, 333, true);
+        mix.plan_at(start as u64, 333, true);
         for f in 0..333.min(1024 - start) {
             assert_eq!(mix.gains(f), whole[start + f], "frame {}", start + f);
         }
     }
     // Stopped: the value at the play start marker throughout.
-    mix.plan(500, 64, false);
+    mix.plan_at(500, 64, false);
     assert!((0..64).all(|f| mix.gains(f) == whole[500]));
-    // Latency compensation reads the lanes earlier.
-    mix.set_latency(100);
-    mix.plan(500, 1, true);
-    assert_eq!(mix.gains(0), whole[400]);
+}
+
+/// Mixer gains are read at the time of the audio they scale, from the blocks played: a delayed
+/// loop wrap, a stop, a start and the pre-roll before arrangement zero keep their places in the block,
+/// and the fader (before the compensation delay) and the output (after it) each get their own
+/// time (#1703).
+#[test]
+fn mixer_gains_follow_the_delayed_audio_across_a_wrap_a_stop_and_the_pre_roll() {
+    use crate::plugin::SongHistory;
+    let c = channel(vec![lane("volume", &[(0.0, 0.0), (10.0, 1.0)])]);
+    // The reference: the lanes' gains at one arrangement frame, which depend on it alone.
+    let at = |time: u64, running: bool| {
+        let mut mix = MixLanes::new(&c, 100.0, true, 0.0).unwrap();
+        mix.plan_at(time, 1, running);
+        mix.gains(0)
+    };
+    let playing = |position| crate::SongPosition { position, playing: true, ..Default::default() };
+    let mut mix = MixLanes::new(&c, 100.0, true, 0.0).unwrap();
+
+    // The first block: the 50 frames before it are the pre-roll, which holds the value at zero.
+    let mut songs = SongHistory::new(8_000);
+    songs.record(playing(0), 100);
+    mix.plan(&songs, 50, 50, 100);
+    for f in 0..100 {
+        let want = if f < 50 { at(0, false) } else { at(f as u64 - 50, true) };
+        assert_eq!((mix.gains(f), mix.fader_gains(f)), (want, want), "pre-roll, frame {f}");
+    }
+
+    // A loop's wrap 70 frames into the delayed block: the end of the pass, then the loop's start.
+    let mut songs = SongHistory::new(8_000);
+    songs.record(playing(900), 100);
+    songs.record(playing(200), 100);
+    mix.plan(&songs, 70, 70, 100);
+    for f in 0..100u64 {
+        let want = if f < 70 { at(930 + f, true) } else { at(200 + f - 70, true) };
+        assert_eq!(mix.gains(f as usize), want, "wrap, frame {f}");
+    }
+
+    // A stop 80 frames into the output's delayed block, 10 into the fader's: the stopped span
+    // holds the value where the transport stands, whatever the lanes did before.
+    let mut songs = SongHistory::new(8_000);
+    songs.record(playing(400), 100);
+    songs.record(crate::SongPosition { position: 600, ..Default::default() }, 100);
+    mix.plan(&songs, 10, 80, 100);
+    for f in 0..100u64 {
+        let output = if f < 80 { at(420 + f, true) } else { at(600, false) };
+        let fader = if f < 10 { at(490 + f, true) } else { at(600, false) };
+        assert_eq!(mix.gains(f as usize), output, "stop, output frame {f}");
+        assert_eq!(mix.fader_gains(f as usize), fader, "stop, fader frame {f}");
+    }
+
+    // A start from the play start marker 30 frames into the delayed block: the stopped value,
+    // then the lanes from the marker on.
+    let mut songs = SongHistory::new(8_000);
+    songs.record(crate::SongPosition { position: 600, ..Default::default() }, 100);
+    songs.record(playing(600), 100);
+    mix.plan(&songs, 70, 70, 100);
+    for f in 0..100u64 {
+        let want = if f < 70 { at(600, false) } else { at(600 + f - 70, true) };
+        assert_eq!(mix.gains(f as usize), want, "start, frame {f}");
+    }
 }
 
 #[test]
@@ -169,7 +226,7 @@ fn a_volume_jump_is_an_s_shaped_ramp_centered_on_it_and_a_straight_segment_is_le
     let mut mix = MixLanes::new(&c, 100.0, true, 48_000.0).unwrap();
     let length = (VOLUME_SMOOTHING * 48_000.0).round();
     let level = |mix: &mut MixLanes, frame: u64| {
-        mix.plan(frame, 1, true);
+        mix.plan_at(frame, 1, true);
         20.0 * f64::from(mix.gains(0).0).log10()
     };
     // Untouched outside the ramp; half-way in the fader's position at the jump.
@@ -192,13 +249,13 @@ fn a_volume_jump_is_an_s_shaped_ramp_centered_on_it_and_a_straight_segment_is_le
 fn a_mute_lane_silences_and_pan_follows_only_where_it_applies() {
     let c = channel(vec![lane("mute", &[(0.0, 1.0), (1.0, 0.0)]), lane("pan", &[(0.0, 1.0)])]);
     let mut mix = MixLanes::new(&c, 64.0, true, 48_000.0).unwrap();
-    mix.plan(0, 256, true);
+    mix.plan_at(0, 256, true);
     assert_eq!(mix.gains(0), (0.0, 0.0));
     let (l, r) = mix.gains(200);
     assert!(l.abs() < 1e-6 && (r - std::f32::consts::SQRT_2).abs() < 1e-5);
     // On a group's bus the pan does not apply.
     let mut bus = MixLanes::new(&c, 64.0, false, 48_000.0).unwrap();
-    bus.plan(0, 256, true);
+    bus.plan_at(0, 256, true);
     assert_eq!(bus.gains(200), (1.0, 1.0));
     // No lane that plays: none.
     assert!(MixLanes::new(&channel(vec![]), 64.0, true, 48_000.0).is_none());

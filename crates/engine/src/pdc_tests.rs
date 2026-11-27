@@ -47,12 +47,41 @@ impl Native for Gain {
     }
 }
 
+static KEY: DeviceInfo = DeviceInfo::new("pdc-key", "Key", Role::Effect, &[]);
+
+/// Plays the key it reads in place of its input, so a render shows the key itself.
+struct KeyListener;
+
+impl Native for KeyListener {
+    fn info(&self) -> &DeviceInfo {
+        &KEY
+    }
+    fn prepare(&mut self, _: f64) -> Result<(), DeviceError> {
+        Ok(())
+    }
+    fn reset(&mut self) {}
+    fn set_param(&mut self, _: usize, _: f64) {}
+    fn param(&self, _: usize) -> Option<f64> {
+        None
+    }
+    fn process(&mut self, _: &ProcessContext, buffer: &mut [f32]) {
+        buffer.fill(0.0);
+    }
+    fn process_keyed(&mut self, _: &ProcessContext, key: &[f32], buffer: &mut [f32]) {
+        for (sample, key) in buffer.iter_mut().zip(key) {
+            *sample = *key;
+        }
+    }
+}
+
 struct Devices;
 
 impl DeviceFactory for Devices {
     fn create(&self, id: &str, rate: f64, asset: Option<&DeviceAsset>) -> Option<Box<dyn Native>> {
         if id == "pdc-gain" {
             Some(Box::new(Gain(1.0)))
+        } else if id == "pdc-key" {
+            Some(Box::new(KeyListener))
         } else {
             suhina_device_registry::factory().create(id, rate, asset)
         }
@@ -224,8 +253,15 @@ fn fixture(hosted: bool, automated: bool, latency: usize, layout: Layout) -> (Pr
     audio
         .files
         .insert("pdc.wav".into(), Arc::new(AudioData { sample_rate: RATE, channels: 1, samples: vec![0.25; 16000] }));
+    let plugins = processors(&project, latency);
+    (project, audio, plugins)
+}
+
+/// The test processors of `project`'s plug-ins: each delay `latency` frames late, each gain at
+/// 1 until its events move it.
+fn processors(project: &Project, latency: usize) -> Plugins {
     let mut plugins = Plugins::new();
-    for found in crate::plugin_devices(&project) {
+    for found in crate::plugin_devices(project) {
         let channel = project.channels.iter().find(|channel| channel.id == found.channel).unwrap();
         let stored = suhina_model::device_at(&channel.devices, &found.path).unwrap();
         let is_delay = matches!(&stored.kind, DeviceKind::Clap { id } if id == "test:pdc-delay");
@@ -240,7 +276,7 @@ fn fixture(hosted: bool, automated: bool, latency: usize, layout: Layout) -> (Pr
             processor,
         );
     }
-    (project, audio, plugins)
+    plugins
 }
 
 fn render(hosted: bool, automated: bool, latency: usize, block: usize, looping: bool, layout: Layout) -> Vec<f32> {
@@ -870,4 +906,186 @@ fn pdc_rejected_update_keeps_the_running_graph_and_allows_a_corrected_retry() {
     renderer.process(&mut out[2048 * 2..]);
     let reference = render(false, false, 257, 1024, false, Layout::Serial);
     assert_eq!(out, reference);
+}
+
+/// Where a mixer lane plays, against which device delays the audio it scales.
+#[derive(Clone, Copy, Debug)]
+enum Fader {
+    /// The track's own lane, after its own delay.
+    Track,
+    /// Main's lane, the delay on the track that plays into it.
+    MainAfterTrack,
+    /// Main's lane, the delay on Main itself.
+    MainAfterMain,
+    /// Main's lane, the delay on a track that plays into a bus, which plays into Main.
+    MainAfterBus,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Motion {
+    Straight,
+    Loop,
+    /// A jump back to the start 1536 frames in.
+    Seek,
+}
+
+/// A mute lane: heard, muted from frame 1008 to 1504, heard again; both points on the mixer's
+/// 16-frame grid.
+fn mute_lane() -> AutomationLane {
+    AutomationLane {
+        param: suhina_model::automation::MUTE.into(),
+        enabled: true,
+        points: [(0, 0.0), (1008, 1.0), (1504, 0.0)]
+            .into_iter()
+            .map(|(frame, value)| AutomationPoint::new(f64::from(frame) / 4000.0, value))
+            .collect(),
+    }
+}
+
+/// The factor `mute_lane` scales the audio from arrangement frame `source` by, written from the
+/// mixer's rule rather than from the engine: the grid's values, in a straight line between.
+fn muted(source: usize) -> f32 {
+    match source {
+        s if s < 992 => 1.0,
+        s if s < 1008 => 1.0 - (s - 992) as f32 / 16.0,
+        s if s < 1488 => 0.0,
+        s if s < 1504 => (s - 1488) as f32 / 16.0,
+        _ => 1.0,
+    }
+}
+
+fn render_mixer(lane: bool, latency: usize, block: usize, motion: Motion, fader: Fader) -> Vec<f32> {
+    let source = crate::fade_tests::region("pdc.wav", false, StretchMode::Repitch, 2.0);
+    let mut project = crate::fade_tests::project(source, 4.0, 0.0, 0.0);
+    let mut main = Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(2), "Main") };
+    match fader {
+        Fader::Track | Fader::MainAfterTrack | Fader::MainAfterBus => project.channels[0].devices = vec![delay()],
+        Fader::MainAfterMain => main.devices = vec![delay()],
+    }
+    if matches!(fader, Fader::MainAfterBus) {
+        project.channels.push(Channel::new(ChannelId(3), "Bus"));
+        project.tracks.push(Track { channel: Some(ChannelId(3)), ..Track::new(TrackId(3), "Bus") });
+        project.channels[0].output = Some(ChannelId(3));
+        project.tracks[0].parent = Some(TrackId(3));
+    }
+    if lane {
+        let channel = if matches!(fader, Fader::Track) { &mut project.channels[0] } else { &mut main };
+        channel.automation.push(mute_lane());
+    }
+    project.channels.push(main);
+    play(&project, latency, block, motion)
+}
+
+/// `project`'s first 6144 frames, offline in blocks of `block`, its delays `latency` frames
+/// late, with the arrangement loop on for [`Motion::Loop`] and a jump back for [`Motion::Seek`].
+fn play(project: &Project, latency: usize, block: usize, motion: Motion) -> Vec<f32> {
+    let mut project = project.clone();
+    project.transport.loop_range = Some(LoopRange { start: 0.0, end: LOOP as f64 / 4000.0 });
+    project.transport.loop_enabled = motion == Motion::Loop;
+    let mut audio = AudioPool::new();
+    audio
+        .files
+        .insert("pdc.wav".into(), Arc::new(AudioData { sample_rate: RATE, channels: 1, samples: vec![0.25; 16000] }));
+    let plugins = processors(&project, latency);
+    let mut renderer = Renderer::build(
+        &project,
+        RenderInputs::from_audio(&audio, Arc::new(Devices)).with_plugins(plugins),
+        RATE,
+        RenderOptions::PLAYING,
+    )
+    .unwrap();
+    renderer.set_offline(true);
+    let mut out = vec![0.0; 6144 * 2];
+    for (part, samples) in out.chunks_mut(1536 * 2).enumerate() {
+        if motion == Motion::Seek && part == 1 {
+            renderer.handle(crate::LaunchCommand::SetPosition { beat: 0.0 });
+        }
+        for chunk in samples.chunks_mut(block * 2) {
+            renderer.process(chunk);
+        }
+    }
+    out
+}
+
+/// Checks that `actual` is `plain` scaled by [`mute_lane`] at the arrangement frame each output
+/// frame comes from, `latency` frames behind it, as `motion` moves the transport.
+fn assert_muted(plain: &[f32], actual: &[f32], latency: usize, motion: Motion, case: &str) {
+    assert!(plain.iter().any(|sample| *sample > 0.01), "{case}: silent");
+    for (frame, (got, input)) in actual.as_chunks::<2>().0.iter().zip(plain.as_chunks::<2>().0).enumerate() {
+        let source = frame.saturating_sub(latency);
+        let source = match motion {
+            Motion::Straight => source,
+            Motion::Loop => source % LOOP,
+            Motion::Seek if source >= 1536 => source - 1536,
+            Motion::Seek => source,
+        };
+        for channel in 0..2 {
+            let want = input[channel] * muted(source);
+            assert!((got[channel] - want).abs() < 1e-6, "{case}, frame {frame}: {} != {want}", got[channel]);
+        }
+    }
+}
+
+/// Mixer lanes scale the audio they reach at its own place in the arrangement, however late the
+/// devices before them make it: on a track, and on Main after a track's, a bus's track's or its
+/// own delay, across
+/// a loop's wrap and a jump (#1703). The reference is written from the lane, not taken from
+/// another engine mode.
+#[test]
+fn pdc_mixer_lanes_follow_the_delayed_audio() {
+    for fader in [Fader::Track, Fader::MainAfterTrack, Fader::MainAfterMain, Fader::MainAfterBus] {
+        for motion in [Motion::Straight, Motion::Loop, Motion::Seek] {
+            for latency in [0, 1, 257, 1500] {
+                for block in [1, 31, 257, 1024] {
+                    let plain = render_mixer(false, latency, block, motion, fader);
+                    let actual = render_mixer(true, latency, block, motion, fader);
+                    let case = format!("{fader:?}, {motion:?}, latency {latency}, block {block}");
+                    assert_muted(&plain, &actual, latency, motion, &case);
+                }
+            }
+        }
+    }
+}
+
+/// Three tracks into Main: a silent one whose device is `latency` frames late, one playing the
+/// test signal with no device (so the compensation delay after its fader lines it up with the
+/// late one), with [`mute_lane`] when `lane`, and one whose device plays the second track's key
+/// taken after its fader.
+fn keyed_mixer(lane: bool) -> Project {
+    let (region, audio) = crate::fade_tests::region("pdc.wav", false, StretchMode::Repitch, 2.0);
+    suhina_test_support::ProjectBuilder::new()
+        .audio_track(1, "Late")
+        .audio_track(2, "Lane")
+        .audio_track(3, "Key")
+        .audio(1, "Signal", 4.0, region)
+        .clip(2, Clip { audio, ..Clip::new(ContentId(1), 0.0, 4.0) })
+        .with(|p| {
+            p.channel_mut(ChannelId(1)).unwrap().devices = vec![delay()];
+            let mut listener = Device::new("Key", DeviceKind::Builtin("pdc-key".into()));
+            listener.inputs = vec![DeviceInput::key(ChannelId(2), TapPoint::PostFader)];
+            p.channel_mut(ChannelId(3)).unwrap().devices = vec![listener];
+            if lane {
+                p.channel_mut(ChannelId(2)).unwrap().automation.push(mute_lane());
+            }
+        })
+        .build()
+}
+
+/// A chain with a compensation delay after its fader reads its lanes twice: at the fader, for
+/// the post-fader key taken before the delay, and at the output, after it. Both reach Main in
+/// line with the late track, so each must carry the lane at its own source frame; reading either
+/// at the other's time moves the mute by the delay (#1703).
+#[test]
+fn pdc_mixer_lanes_at_the_fader_and_after_the_compensation_delay() {
+    let (plain_project, lane_project) = (keyed_mixer(false), keyed_mixer(true));
+    for motion in [Motion::Straight, Motion::Loop, Motion::Seek] {
+        for latency in [0, 257, 1500] {
+            for block in [1, 31, 1024] {
+                let plain = play(&plain_project, latency, block, motion);
+                let actual = play(&lane_project, latency, block, motion);
+                let case = format!("keyed, {motion:?}, latency {latency}, block {block}");
+                assert_muted(&plain, &actual, latency, motion, &case);
+            }
+        }
+    }
 }

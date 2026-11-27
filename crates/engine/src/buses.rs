@@ -268,10 +268,9 @@ pub(crate) fn build(
         };
         chain.delay = Delay::new(to.saturating_sub(arrived) as usize);
         // The sound coming into it is as late as its input: its plug-ins hear the song that late.
+        // Its mixer lanes are read as late as the sound at its fader and after its delay
+        // (`Chain::automate_mix`), from these fields.
         chain.input_latency = input.get(i).copied().unwrap_or(0);
-        if let Some(mix) = chain.mix.as_mut() {
-            mix.set_latency(to);
-        }
         let sends = send_targets
             .get(i)
             .into_iter()
