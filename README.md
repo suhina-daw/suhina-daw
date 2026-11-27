@@ -1,59 +1,157 @@
-# Suhina
-<img width="12525" height="3663" alt="suhina-logo" src="https://github.com/user-attachments/assets/7efa72b4-fba5-42f3-9503-0ea9f4e864f6" />
+<h1 align="center">
+  <a href="https://suhina.org"><img width="520" alt="Suhina" src="https://github.com/user-attachments/assets/7efa72b4-fba5-42f3-9503-0ea9f4e864f6"></a>
+</h1>
 
 <p align="center">
-  <a href="https://loupystudio-software.itch.io/suhina"><img alt="Itch" src="https://img.shields.io/badge/Itch.io-download-orange?logo=itchdotio"></a><a href="https://discord.gg/rgwp4DDNsU"><img alt="Discord" src="https://img.shields.io/discord/1558859596783689758?label=Discord&logo=discord&logoColor=white&color=5865F2"></a>
+  <b>A free, open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live.</b><br>
+  For Windows, macOS and Linux.
 </p>
 
-An open-source, clip-launching DAW in pure Rust, comparable in workflow to Ableton Live.
+<p align="center">
+  Launch clips, arrange the song, edit notes, automation and audio, and find samples by how they sound.<br>
+  Built-in instruments and effects, sandboxed CLAP, VST3 and VST2 plug-ins, CSS themes and an AI agent over MCP.
+</p>
 
-<a href="https://github.com/suhina-daw/suhina-status">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status-dark.svg">
-    <img width="680" alt="Suhina by area: how many features are done, in progress and planned, with the open bugs" src="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status.svg">
-  </picture>
-</a>
+<p align="center">
+  <b>Opens your Ableton Live (<code>.als</code>) and FL Studio (<code>.flp</code>) projects.</b>
+</p>
 
-> How much of each area of Suhina works today. A box's size is its number of features, its fill the share done; the red number is the area's open bugs. The maintainers count it from their feature list and a bot redraws it every day ([suhina-status](https://github.com/suhina-daw/suhina-status)).
+<p align="center">
+  <a href="https://github.com/suhina-daw/suhina-daw/actions/workflows/ci.yml?query=branch%3Anext"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/suhina-daw/suhina-daw/ci.yml?branch=next&event=push&label=CI"></a>
+  <a href="https://suhina.org/#download"><img alt="Download the nightly" src="https://img.shields.io/badge/download-nightly-orange"></a>
+  <a href="LICENSE"><img alt="License GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
+  <img alt="Rust 1.95 or newer" src="https://img.shields.io/badge/rust-1.95%2B-orange?logo=rust">
+  <img alt="Pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-red">
+</p>
 
-> What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and [ADR 0016](docs/decisions/0016-scope.md).
+<p align="center">
+  <a href="https://suhina.org"><img alt="Website" src="https://img.shields.io/badge/website-suhina.org-2ea44f"></a>
+  <a href="https://discord.gg/rgwp4DDNsU"><img alt="Discord" src="https://img.shields.io/discord/1558859596783689758?label=Discord&logo=discord&logoColor=white&color=5865F2"></a>
+  <a href="https://www.reddit.com/r/suhina/"><img alt="r/suhina on Reddit" src="https://img.shields.io/badge/reddit-r%2Fsuhina-FF4500?logo=reddit&logoColor=white"></a>
+</p>
 
-> **Status:** pre-alpha. Suhina opens Live Sets, plays and renders them (audio clips with
-> real-time time-stretching, MIDI through the built-in FM synth, sandboxed CLAP and VST3 plug-ins,
-> or sine tones), and lets agents edit them over MCP. The desktop app has the Launcher and
-> Arrangement views, a browser with a sample map, and settings. See [`ROADMAP.md`](ROADMAP.md) for what works and what comes next.
+<p align="center">
+  <a href="https://www.opensourcealternatives.to"><img src="https://www.opensourcealternatives.to/badge-osa.svg" alt="As seen on Open Source Alternatives"></a>
+</p>
+
+<p align="center">
+  <a href="https://suhina.org">Website</a> •
+  <a href="https://suhina.org/guide/">Guide</a> •
+  <a href="#downloads">Download</a> •
+  <a href="#features">Features</a> •
+  <a href="#building">Build from source</a> •
+  <a href="docs/architecture.md">Architecture</a> •
+  <a href="ROADMAP.md">Roadmap</a> •
+  <a href="#contributing">Contributing</a>
+</p>
+
+![Suhina's Arrangement: a song of seventeen tracks in colored groups, with its MIDI and audio clips along the timeline](docs/screenshots/arrangement.webp)
+
+<table>
+  <tr>
+    <td><img src="https://suhina.org/assets/product/suhina-launcher.webp" alt="Suhina Launcher: columns of MIDI and audio clips above a mixer whose tracks hold a plug-in synth, a compressor, EQs and multiband effects"></td>
+    <td><img src="https://suhina.org/assets/product/suhina-arrangement.webp" alt="Suhina Arrangement: lead, bass and drum clips along a timeline, with grouped tracks of plug-in synths in the track headers"></td>
+  </tr>
+  <tr>
+    <td align="center">Launch clips and scenes in the Launcher</td>
+    <td align="center">Lay out the song in the Arrangement</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/launcher-light.webp" alt="Suhina's Launcher in a light theme: MIDI and audio tracks with their clip slots above the mixer, and return tracks on the right"></td>
+    <td><img src="docs/screenshots/settings-themes.webp" alt="Suhina's Settings at Themes: the current theme with its color variants, and the built-in themes to choose from"></td>
+  </tr>
+  <tr>
+    <td align="center">The Launcher in a light theme</td>
+    <td align="center">Choose a theme and its variant in Settings</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/plugin-manager.webp" alt="Suhina's Plug-in manager: scanned plug-ins filtered by type, format and vendor, each with its version and status"></td>
+    <td><img src="docs/screenshots/missing-files.webp" alt="Suhina's Missing files window: the samples a project could not find, with a folder to search and a button to locate each one"></td>
+  </tr>
+  <tr>
+    <td align="center">Scan, filter and enable plug-ins in the Plug-in manager</td>
+    <td align="center">Find and relink a project's missing samples</td>
+  </tr>
+</table>
+
+## Status
+
+<p align="center">
+  <a href="https://github.com/suhina-daw/suhina-status">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status-dark.svg">
+      <img width="680" alt="Suhina by area: how many features are done, in progress and planned, with the open bugs" src="https://raw.githubusercontent.com/suhina-daw/suhina-status/main/status.svg">
+    </picture>
+  </a>
+</p>
+
+How much of each area of Suhina works today. A box's size is its number of features, its fill the
+share done; the red number is the area's open bugs. The maintainers count it from their feature
+list and a bot redraws it every day ([suhina-status](https://github.com/suhina-daw/suhina-status)).
+What comes next, and in what order: [`ROADMAP.md`](ROADMAP.md) and
+[ADR 0016](docs/decisions/0016-scope.md).
+
+> **Note:** Suhina is pre-alpha. Expect unfinished workflows, changing behavior and bugs, and
+> work on copies of your projects: the nightly builds are development builds, not a stable release.
+
+## Features
+
+- **Launcher and Arrangement.** Launch clips and scenes with quantization and follow actions, and
+  lay out the song on a timeline; both are views of the same project. Several projects open in
+  tabs at once.
+- **Editing.** A piano roll with scales, chords and quantize; automation lanes under each track;
+  take lanes and comping for recorded audio; real-time time-stretching that follows warp markers and
+  the song's tempo.
+- **Instruments and effects.** FM Synth (six operators, reads DX7 voices), Sampler (sample, slice
+  and grain playback), EQ, Compressor, Multiband, Limiter, Delay, Reverb, Saturator, Overdrive,
+  Vinyl Distortion, DJ EQ, Auto Pan, Utility, NAM Amp Modeler, NAM Cab Loader and the Pitch MIDI
+  effect. Every change to a control is one undo step, and automation can take it over.
+- **Plug-ins.** CLAP, VST3 and VST2 instruments and effects run in a plug-in host process of their
+  own: a plug-in that crashes or hangs never takes the project down. Experimental ARA support.
+- **Sample map.** Your sample library laid out by sound, as a cloud or a grid: similar sounds
+  become neighbors, and one good find leads to the next.
+- **Themes in CSS.** The whole look is a theme in CSS with SVG and PNG artwork. Change a built-in
+  theme's settings, rearrange the toolbar, or write your own and share it as one
+  `.theme.suhina` file.
+- **Agents and the command line.** Every action is a command with an id; the app, `suhina-cli` and
+  an AI agent over MCP run the same ones, with one undo history. Agent access is off until you
+  enable it.
+- **Real-time engine.** The audio thread never allocates, locks or touches the disk; offline
+  rendering runs the same engine code. Drawn with egui and played through cpal.
+- **Your projects, not locked in.** Open Ableton Live (`.als`) and FL Studio (`.flp`) projects,
+  bring in audio and MIDI, and save in Suhina's own format. FL Studio import brings patterns,
+  samplers, audio clips, plug-ins with their state, mixer routing and automation, and names what it
+  could not bring in; DAWproject comes next.
+- **Your own devices.** Build audio effects, MIDI effects and instruments with the Rust device SDK
+  and share each as a single `.sd` file ([Device SDK](#device-sdk)).
 
 Suhina is an independent clean-room project. It is not affiliated with, sponsored by or
-endorsed by Ableton AG or any other company named here. Ableton and Live are trademarks of Ableton AG. VST is a registered trademark and ASIO a
+endorsed by Ableton AG, Image-Line or any other company named here. Ableton and Live are trademarks of Ableton AG. FL Studio is a trademark of Image-Line Software. VST is a registered trademark and ASIO a
 trademark of Steinberg Media Technologies GmbH. DX7 is a trademark of Yamaha Corporation. Stems
 and NKS are trademarks of Native Instruments. Other product names are trademarks of their
 owners. They are named only to describe file compatibility and comparable workflows. Suhina contains no code or content from Ableton
-products; see [`CONTRIBUTING.md`](CONTRIBUTING.md) › Clean-room.
+or Image-Line products; see [`CONTRIBUTING.md`](CONTRIBUTING.md) › Clean-room.
 
 ## Goals
 
-Sampler provides single-source sample and granular playback with an SDK panel,
-editable waveform and sample loading by drag and drop.
-Manual slice maps support double-click add/remove and draggable boundaries; the
-waveform supports anchored zoom and horizontal navigation.
-
 - A real-time audio engine that never glitches, with offline rendering on the same code path.
 - Session-style clip launching with quantisation, plus a linear arrangement.
-- Reading `.als` projects you made yourself; later other formats such as DAWproject and `.flp`,
-  so projects are not locked to one program.
+- Reading `.als` and `.flp` projects you made yourself, and later DAWproject, so projects are not
+  locked to one program.
 - CLAP and VST3 plug-in hosting, sandboxed outside Suhina's process: a crashing plug-in never takes the project down.
 - Every action available headlessly: CLI and MCP for automation and agents.
 
 ## Downloads
 
-To try the current state, download the **nightly**: a build of `main` made every night, not a
+Download the latest build for Windows, macOS or Linux from [suhina.org](https://suhina.org/#download).
+It is the **nightly**: a build of `main` made every night, not a
 release, so expect unfinished parts and bugs
 ([nightly downloads](https://github.com/suhina-daw/suhina-daw/releases/tag/nightly)).
 It and tagged versions hold the desktop app `suhina`, the command-line tool `suhina-cli` and the
 plug-in host `suhina-plugin-host`, for Linux (x86_64), Windows (x64) and macOS (universal). The
 host is the process plug-ins run in: keep the three in one folder. On macOS the package holds
 `Suhina.app`, which you can drag to Applications; the other two are inside it. Tell us what works and what breaks
-on [Discord](https://discord.com/invite/e5JAZYMU) or in the
+on [Discord](https://discord.gg/rgwp4DDNsU) or in the
 [issues](https://github.com/suhina-daw/suhina-daw/issues). The binaries are not signed yet,
 so macOS and Windows warn before running them. On Linux they need the ALSA library (`libasound2`).
 You download a nightly from GitHub only once: after that Suhina checks at each start whether a
@@ -197,12 +295,26 @@ is an [issue](https://github.com/suhina-daw/suhina-daw/issues) in this repositor
 5. **Open a pull request** that says `Closes #<issue>` and fills in the template.
 
 Something missing or a bug? Open an issue with one of the forms, or ask on
-[Discord](https://discord.com/invite/e5JAZYMU).
+[Discord](https://discord.gg/rgwp4DDNsU).
+
+## Device SDK
 
 Community audio effects, MIDI effects and monophonic instruments can be authored with the Rust
 device SDK and shared as one `.sd` file, then added to a track. Version 3 can preserve node positions,
 port anchors and wire routes for a future visual editor. See the [authoring guide](docs/device-sdk.md) and
 [node reference](docs/spec/sdk-nodes.md), including node discovery for AI agents.
+
+Rust authors can use checked graph handles and standard panel-control constructors to reduce
+manual wiring and repeated UI setup ([SDK authoring guide](docs/device-sdk.md#checked-rust-authoring)).
+
+SDK effect panels can include custom vector controls, XY pads, gradients and embedded PNG/JPEG
+icons, photos and repeating backgrounds. Artwork and bindings travel inside the single `.sd`;
+see the [custom panel guide](docs/device-sdk.md#custom-panels-images-and-controls).
+
+The Rust SDK also offers prepared sample resources, private polyphonic voice/grain graphs,
+slicing, native stretch and editable sampler/granular templates. Run the
+[`sampler_composition` example](crates/device-sdk/examples/sampler_composition.rs) to save and
+render loop, reverse, slice, granular and tempo graphs using one shared resident sample.
 
 ## Documentation
 
@@ -225,16 +337,3 @@ port anchors and wire routes for a future visual editor. See the [authoring guid
 
 Suhina is free software, licensed under the [GNU General Public License v3.0 or later](LICENSE).
 Contributions are licensed the same way.
-
-Rust authors can use checked graph handles and standard panel-control constructors to reduce
-manual wiring and repeated UI setup ([SDK authoring guide](docs/device-sdk.md#checked-rust-authoring)).
-
-SDK effect panels can include custom vector controls, XY pads, gradients and embedded PNG/JPEG
-icons, photos and repeating backgrounds. Artwork and bindings travel inside the single `.sd`;
-see the [custom panel guide](docs/device-sdk.md#custom-panels-images-and-controls).
-
-
-The Rust SDK also offers prepared sample resources, private polyphonic voice/grain graphs,
-slicing, native stretch and editable sampler/granular templates. Run the
-[`sampler_composition` example](crates/device-sdk/examples/sampler_composition.rs) to save and
-render loop, reverse, slice, granular and tempo graphs using one shared resident sample.

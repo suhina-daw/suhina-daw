@@ -377,3 +377,44 @@ fn a_compressor_is_keyed_by_another_track_and_a_loop_or_a_device_without_a_sidec
     assert!(keys(&session, 2).is_empty());
     assert!(session.project().validate().is_ok());
 }
+
+/// `device.setKeyEnabled` switches a key off and on and keeps its source, tap and gain; each
+/// switch is one undo step; a device without a key is refused; choosing a source again switches it
+/// on; `track.devices` says whether it is read.
+#[test]
+fn a_key_switched_off_keeps_its_source_and_switches_back_on() {
+    let mut session = crate::support::toned(project());
+    run(&mut session, "device.add", json!({ "track": "Lead", "id": "compressor" })).unwrap();
+    let none = run(&mut session, "device.setKeyEnabled", json!({ "track": "Lead", "device": 0, "enabled": false }));
+    assert!(none.unwrap_err().contains("reads no key"));
+    run(
+        &mut session,
+        "device.setKey",
+        json!({ "track": "Lead", "device": 0, "source": "Bass", "tap": "preFx", "gain": -6 }),
+    )
+    .unwrap();
+    assert!(keys(&session, 2)[0].enabled, "a key chosen is read");
+    let off =
+        run(&mut session, "device.setKeyEnabled", json!({ "track": "Lead", "device": 0, "enabled": false })).unwrap();
+    assert_eq!((off["enabled"].as_bool(), off["changed"].as_bool()), (Some(false), Some(true)));
+    let key = &keys(&session, 2)[0];
+    assert!(!key.enabled);
+    assert_eq!((key.source.channel(), key.source.tap()), (ChannelId(1), TapPoint::PreFx), "the source stays");
+    assert!((key.gain - 0.501).abs() < 1e-3, "the gain stays");
+    let listed = run(&mut session, "track.devices", json!({ "track": "Lead" })).unwrap();
+    assert!(listed.to_string().contains(r#""enabled":false"#), "{listed}");
+    // Undo brings the key back on; switching it off when it is off changes nothing.
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!(keys(&session, 2)[0].enabled, "undone, the key is read again");
+    run(&mut session, "device.setKeyEnabled", json!({ "track": "Lead", "device": 0, "enabled": false })).unwrap();
+    let again =
+        run(&mut session, "device.setKeyEnabled", json!({ "track": "Lead", "device": 0, "enabled": false })).unwrap();
+    assert_eq!(again["changed"].as_bool(), Some(false));
+    // Off, then a source chosen again: on.
+    run(&mut session, "device.setKeyEnabled", json!({ "track": "Lead", "device": 0, "enabled": false })).unwrap();
+    run(&mut session, "device.setKey", json!({ "track": "Lead", "device": 0, "source": "Bass" })).unwrap();
+    assert!(keys(&session, 2)[0].enabled);
+    let bad = run(&mut session, "device.setKeyEnabled", json!({ "track": "Lead", "device": 0, "enabled": "yes" }));
+    assert!(bad.is_err());
+    assert!(session.project().validate().is_ok());
+}

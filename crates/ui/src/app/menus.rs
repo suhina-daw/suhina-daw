@@ -6,9 +6,10 @@
 //! the two always offer the same items. A pick from either runs `App::run_menu_item` by the item's
 //! id.
 
-use egui::Ui;
+use egui::{Align2, Sense, Ui, Vec2};
 
-use crate::kit::theme;
+use crate::kit::element::{BAR_ITEM, Checked};
+use crate::kit::{menu, theme, widgets};
 
 /// One menu of the bar.
 #[derive(Clone, Debug, PartialEq)]
@@ -73,13 +74,12 @@ pub struct Shown {
     pub open: Vec<&'static str>,
 }
 
-/// Draws `menus` as the window's menu bar.
+/// Draws `menus` as the window's menu bar: each title a `bar-item[kind="menu"]` (`[checked]`
+/// while it is hovered or its menu open), each menu's lines the kit's rows (`kit::menu`).
 pub fn show(ui: &mut Ui, menus: &[Menu]) -> Shown {
     let mut shown = Shown::default();
-    // A menu's title on the bar is a `bar-item[kind="menu"]`: its ink.
-    ui.style_mut().visuals.widgets.inactive.fg_stroke =
-        theme::hairline(crate::kit::element::BAR_ITEM.attribute("kind", "menu").look().color());
-    egui::MenuBar::new().ui(ui, |ui| {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
         for menu in menus {
             bar_menu(ui, menu.title, |ui| {
                 shown.open.push(menu.title);
@@ -93,28 +93,23 @@ pub fn show(ui: &mut Ui, menus: &[Menu]) -> Shown {
 fn entries(ui: &mut Ui, entries: &[Entry], picked: &mut Option<String>) {
     for entry in entries {
         match entry {
-            Entry::Separator => {
-                ui.separator();
-            }
+            Entry::Separator => menu::separator(ui),
             Entry::Item(item) => {
-                let mut button = egui::Button::new(&item.label);
-                // An empty shortcut would still add a gap to the label.
-                if !item.shortcut.is_empty() {
-                    button = button.shortcut_text(&item.shortcut);
-                }
-                let mut response = ui.add_enabled(item.enabled, button);
+                let mut response =
+                    menu::Entry::new(&item.label).key(Some(&item.shortcut)).enabled(item.enabled).show(ui);
                 if let Some(hint) = &item.hint {
                     response = response.on_hover_text(hint);
                 }
                 if response.clicked() {
                     *picked = Some(item.id.clone());
+                    ui.close();
                 }
             }
             Entry::Submenu { label, enabled, entries: inner } => {
-                ui.add_enabled_ui(*enabled, |ui| {
-                    // A submenu of the bar's is the bar's menu too (`menu`), on a layer of its own.
-                    ui.menu_button(label, |ui| open_menu(ui, |ui| self::entries(ui, inner, picked)));
-                });
+                // A submenu of the bar's is the bar's menu too (`menu`), on a layer of its own.
+                menu::Entry::new(label)
+                    .enabled(*enabled)
+                    .submenu(ui, |ui| open_menu(ui, |ui| self::entries(ui, inner, picked)));
             }
         }
     }
@@ -145,128 +140,39 @@ fn open_menu<R>(ui: &mut Ui, content: impl FnOnce(&mut Ui) -> R) -> R {
     content(&mut styled)
 }
 
-/// A menu of the bar that opens when the pointer moves onto it while another is open.
+/// A menu of the bar, its `title` on the bar, that opens on a click, or when the pointer moves
+/// onto its title while another menu is open.
 fn bar_menu<R>(ui: &mut Ui, title: &str, content: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
-    let shown = ui.menu_button(title, |ui| open_menu(ui, content));
-    let id = egui::Popup::default_response_id(&shown.response);
-    if shown.response.hovered() && !egui::Popup::is_id_open(ui.ctx(), id) && egui::Popup::is_any_open(ui.ctx()) {
+    let font = theme::ui_font(theme::TEXT);
+    let width = widgets::text_width(ui, title, font.clone()) + 2.0 * TITLE_PAD;
+    let height = ui.spacing().interact_size.y.max(ui.available_height());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    let response = widgets::button_area(ui, rect, egui::Id::unique(("menu-bar", title)), title);
+    let popup = egui::Popup::menu(&response);
+    let id = popup.get_id();
+    // Not on a click: the popup would take the click's pending toggle and close again.
+    if response.hovered()
+        && !response.clicked()
+        && !egui::Popup::is_id_open(ui.ctx(), id)
+        && egui::Popup::is_any_open(ui.ctx())
+    {
         egui::Popup::open_id(ui.ctx(), id);
     }
-    shown
+    let lit = response.hovered() || egui::Popup::is_id_open(ui.ctx(), id);
+    let look = BAR_ITEM.attribute("kind", "menu").attr(Checked, lit).look();
+    // `menu-bar bar-item[kind="menu"][checked]`'s fill while hovered or open (the hover color
+    // unless a theme gives its own); egui's hovered fill where no sheet styles the window.
+    if lit {
+        ui.painter().rect_filled(rect, 3.0, look.computed_background_or(ui.visuals().widgets.hovered.weak_bg_fill));
+    }
+    widgets::text_in(ui.painter(), rect, Align2::CENTER_CENTER, title, font, look.color());
+    let inner = popup.show(|ui| open_menu(ui, content)).map(|shown| shown.inner);
+    egui::InnerResponse::new(inner, response)
 }
+
+/// The room on each side of a menu's title on the bar.
+const TITLE_PAD: f32 = 7.0;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn find<'a>(entries: &'a [Entry], id: &str) -> Option<&'a Item> {
-        entries.iter().find_map(|entry| match entry {
-            Entry::Item(item) if item.id == id => Some(item),
-            Entry::Submenu { entries, .. } => find(entries, id),
-            _ => None,
-        })
-    }
-
-    #[test]
-    fn an_open_menu_s_background_covers_the_menu_not_the_window() {
-        let ctx = egui::Context::default();
-        let skin = crate::kit::skin::Skin {
-            css: Some(std::sync::Arc::from("menu { background-color: #FF0000; }")),
-            ..Default::default()
-        };
-        crate::kit::skin::configure(&skin);
-        let mut biggest = 0.0f32;
-        for frame in 0..5 {
-            let mut output = ctx.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
-                    ..Default::default()
-                },
-                |ui| {
-                    crate::kit::native_css::begin_frame(ui);
-                    let _frame = crate::kit::native_css::frame(ui);
-                    let shown = bar_menu(ui, "Options", |ui| {
-                        let _ = ui.button("Settings…");
-                    });
-                    if frame == 0 {
-                        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&shown.response));
-                    }
-                },
-            );
-            output.textures_delta.clear();
-            for shape in &output.shapes {
-                // Red, faded while the menu opens.
-                if let egui::Shape::Rect(rect) = &shape.shape
-                    && let [r, 0, 0, _] = rect.fill.to_array()
-                    && r > 0
-                {
-                    biggest = biggest.max(rect.rect.area());
-                }
-            }
-        }
-        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
-        assert!(biggest > 0.0, "the menu has its background");
-        assert!(biggest < 1280.0 * 800.0 / 4.0, "only the menu's area: {biggest}");
-    }
-
-    /// An open menu of the bar is one box, `menu`'s, in place of egui's frame: its background
-    /// painted once, however see-through, and its outline.
-    #[test]
-    fn an_open_menu_is_one_box_the_menu_s() {
-        let ctx = egui::Context::default();
-        crate::kit::skin::configure(&crate::kit::skin::Skin {
-            css: Some(std::sync::Arc::from(
-                "menu { background-color: #FF000080; outline: 2px solid #00FF00; backdrop-filter: none; }",
-            )),
-            ..Default::default()
-        });
-        let (mut backgrounds, mut outline) = (0, false);
-        for frame in 0..5 {
-            let mut output = ctx.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
-                    time: Some(f64::from(frame)),
-                    ..Default::default()
-                },
-                |ui| {
-                    crate::kit::native_css::begin_frame(ui);
-                    let _frame = crate::kit::native_css::frame(ui);
-                    crate::kit::liquid::begin_frame(ui.ctx(), Default::default());
-                    let shown = bar_menu(ui, "Options", |ui| {
-                        let _ = ui.button("Settings…");
-                    });
-                    if frame == 0 {
-                        egui::Popup::open_id(ui.ctx(), egui::Popup::default_response_id(&shown.response));
-                    }
-                    crate::kit::liquid::finish_backdrops(ui.ctx());
-                },
-            );
-            output.textures_delta.clear();
-            (backgrounds, outline) = (0, false);
-            for shape in &output.shapes {
-                if let egui::Shape::Rect(rect) = &shape.shape {
-                    backgrounds += usize::from(matches!(rect.fill.to_array(), [r, 0, 0, _] if r > 0));
-                    outline |= matches!(rect.stroke.color.to_array(), [0, g, 0, _] if g > 0);
-                }
-            }
-        }
-        crate::kit::skin::configure(&crate::kit::skin::Skin::default());
-        assert_eq!(backgrounds, 1, "the menu's background, once");
-        assert!(outline, "the menu's outline");
-    }
-
-    #[test]
-    fn without_a_project_saving_is_grayed_out_and_opening_is_not() {
-        let menus = crate::App::new().menus();
-        let titles: Vec<_> = menus.iter().map(|menu| menu.title).collect();
-        assert_eq!(titles, ["File", "Edit", "View", "Projects", "Options", "Help"]);
-        let file = &menus[0].entries;
-        assert!(find(file, "file.open").is_some_and(|item| item.enabled));
-        assert!(find(file, "file.save").is_some_and(|item| !item.enabled));
-        assert!(
-            file.iter()
-                .any(|entry| matches!(entry, Entry::Submenu { label, enabled: false, .. } if label == "Open recent"))
-        );
-        assert!(find(&menus[1].entries, "edit.undo").is_some_and(|item| !item.enabled));
-    }
-}
+#[path = "menus_tests.rs"]
+mod tests;

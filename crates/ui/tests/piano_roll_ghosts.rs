@@ -61,8 +61,7 @@ fn piano_app(renderer: &mut suhina_engine::Renderer) -> Harness<'static, App> {
     harness.run();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness
 }
 
@@ -229,8 +228,7 @@ fn render_the_ghost_notes_and_menu() {
     h.run();
     h.get_by_label("Arrangement view").click();
     h.run();
-    h.get_by_label(CLIP).click();
-    h.run();
+    crate::window::open_clip(&mut h, CLIP);
     let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-snapshots");
     std::fs::create_dir_all(&out).unwrap();
     h.render().unwrap().save(out.join("ghost-notes.png")).unwrap();

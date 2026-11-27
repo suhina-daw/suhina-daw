@@ -128,7 +128,7 @@ fn native_toolbar_css_styles_modules_and_buttons_without_reflow_or_sibling_leaks
     let play = harness.get_by_label("Play").rect();
     let tempo = harness.get_by_label("Tempo").rect();
     harness.state_mut().app.use_test_skin(skin::Skin {
-            css:Some(std::sync::Arc::from("#tempo {color:rgb(12 34 56);font-size:18px;} #transport > #control-play {color:rgb(120 40 180);background:linear-gradient(90deg,red,blue);border-radius:7px;}")),
+            css:Some(std::sync::Arc::from("#tempo {color:rgb(12 34 56);font-size:18px;} #transport > #control-play {image:none;color:rgb(120 40 180);background:linear-gradient(90deg,red,blue);border-radius:7px;}")),
             ..Default::default()
         });
     harness.run();
@@ -150,8 +150,8 @@ fn native_toolbar_css_styles_modules_and_buttons_without_reflow_or_sibling_leaks
     assert_eq!(text(&tempo_text).color, egui::Color32::from_rgb(12, 34, 56));
     assert_eq!(text(&tempo_text).font_id.size, 18.0);
     assert_eq!(text(&position_text).font_id.size, theme::TEXT, "font must not leak into the next module");
-    // `background` sets the color too (transparent), so the gradient is the button's only fill:
-    // Suhina's own button artwork is not drawn under it.
+    // `image: none` and `background`, which sets the color too (transparent): the gradient is the
+    // button's only fill, with no artwork under it.
     assert!(!harness.output().shapes.iter().any(|shape| matches!(&shape.shape,
             egui::Shape::Rect(rect) if rect.rect == play && rect.brush.is_some())));
     // On whole pixels, as egui puts the button's border.

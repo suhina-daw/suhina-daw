@@ -100,18 +100,18 @@ pub(super) fn marker_flags(
                 egui::TextEdit::singleline(name).hint_text("Marker name").desired_width(140.0),
             );
             let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ui.button("Rename").clicked() || entered {
+            if crate::kit::menu::entry(ui, "Rename", None, true).clicked() || entered {
                 let name = name.trim().to_string();
                 if !name.is_empty() && name != marker.name {
                     actions.push(Action::new("marker.rename", json!({ "index": index, "name": name })));
                 }
                 ui.close();
             }
-            if ui.button("Jump to marker").clicked() {
+            if crate::kit::menu::entry(ui, "Jump to marker", None, true).clicked() {
                 actions.push(Action::new("marker.jump", json!({ "index": index })));
                 ui.close();
             }
-            if ui.button("Delete marker").clicked() {
+            if crate::kit::menu::entry(ui, "Delete marker", None, true).clicked() {
                 actions.push(Action::new("marker.delete", json!({ "index": index })));
                 ui.close();
             }
@@ -276,7 +276,7 @@ pub(super) fn loop_brace(
     }
     response.context_menu(|ui| {
         let on = timeline.loop_brace.is_some_and(|b| b.enabled);
-        if ui.button(if on { "Turn loop off" } else { "Turn loop on" }).clicked() {
+        if crate::kit::menu::entry(ui, if on { "Turn loop off" } else { "Turn loop on" }, None, true).clicked() {
             actions.push(Action::new("transport.setLoopEnabled", json!({ "enabled": !on })));
             ui.close();
         }
@@ -286,6 +286,14 @@ pub(super) fn loop_brace(
     let Some((start, end)) = shown else { return };
     let enabled = timeline.loop_brace.is_none_or(|b| b.enabled) || state.gesture.loop_brace().is_some();
     let (left, right) = (x_of(start).round(), x_of(end).round());
+    // Held to the row, a little past each side, so the ends cut off there lie outside it: zoomed
+    // in, the brace's ends are thousands of points away, and a bar drawn (and its artwork
+    // sliced) out to them lost precision and flickered as the view zoomed.
+    let reach = (row.left() - 8.0, row.right() + 8.0);
+    if right < reach.0 || left > reach.1 {
+        return;
+    }
+    let (left, right) = (left.max(reach.0), right.min(reach.1));
     // `loop-region` styles the bar, `[checked]` while looping is on; `height` is its thickness
     // and `loop-region` (`.on` while on) its artwork, nine-sliced when the SVG says so.
     let el = crate::kit::element::LOOP_REGION.attr(crate::kit::element::Checked, enabled).enter();

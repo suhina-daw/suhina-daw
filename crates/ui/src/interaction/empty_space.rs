@@ -7,6 +7,7 @@ use egui::{Align2, Id, Pos2, Rect, Ui, Vec2};
 use serde_json::json;
 use suhina_engine::model::TrackId;
 
+use crate::kit::menu;
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::widgets::{self, Action};
 
@@ -24,21 +25,21 @@ pub(crate) fn empty_space_menu(space: &egui::Response, menu: &EmptyMenu<'_>, act
     space.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, "Empty space"));
     space.context_menu(|ui| {
         crate::interaction::menus::insert_items(ui, None, actions);
-        ui.separator();
+        menu::separator(ui);
         let tracks: Vec<u32> = menu.selection.iter().map(|t| t.0).collect();
         for (label, keys, command) in [
             ("Cut", "Ctrl+X", "track.cut"),
             ("Copy", "Ctrl+C", "track.copy"),
             ("Duplicate", "Ctrl+D", "track.duplicate"),
         ] {
-            let button = egui::Button::new(label).shortcut_text(crate::settings::keymap::shown(keys));
-            if ui.add_enabled(!tracks.is_empty(), button).clicked() {
+            let key = crate::settings::keymap::shown(keys);
+            if menu::entry(ui, label, Some(&key), !tracks.is_empty()).clicked() {
                 actions.push(Action::new(command, json!({ "tracks": tracks })));
                 ui.close();
             }
         }
-        let paste = egui::Button::new("Paste").shortcut_text(crate::settings::keymap::shown("Ctrl+V"));
-        if ui.add_enabled(menu.tracks_copied, paste).clicked() {
+        let key = crate::settings::keymap::shown("Ctrl+V");
+        if menu::entry(ui, "Paste", Some(&key), menu.tracks_copied).clicked() {
             actions.push(Action::new("track.paste", json!({ "after": null })));
             ui.close();
         }
@@ -54,16 +55,16 @@ fn insert_multiple_menu(response: &egui::Response, kind: &str, actions: &mut Vec
     response.context_menu(|ui| {
         let id = Id::unique(("insert-multiple", kind));
         let mut count: u32 = ui.data(|d| d.get_temp(id)).unwrap_or(INSERT_MULTIPLE);
-        ui.label("Insert multiple");
+        menu::heading(ui, "Insert multiple");
         ui.horizontal(|ui| {
-            let value = ui.add(egui::DragValue::new(&mut count).range(1..=64).speed(0.2));
+            let value = widgets::number_input(ui, None, egui::DragValue::new(&mut count).range(1..=64).speed(0.2));
             let what = if kind == "midi" { "MIDI tracks" } else { "audio tracks" };
             // The words after the number name it for screen readers.
-            let name = ui.label(what);
+            let name = crate::kit::controls::text(ui, what);
             value.labelled_by(name.id);
         });
         ui.data_mut(|d| d.insert_temp(id, count));
-        if ui.button("Insert").clicked() {
+        if menu::entry(ui, "Insert", None, true).clicked() {
             actions.push(Action::new("track.add", json!({ "kind": kind, "count": count })));
             ui.close();
         }
@@ -73,30 +74,12 @@ fn insert_multiple_menu(response: &egui::Response, kind: &str, actions: &mut Vec
 /// The labels of the buttons that add a track, by the kind each adds.
 const BUTTONS: [(&str, &str); 3] = [("midi", "+ MIDI track"), ("audio", "+ Audio track"), ("return", "+ Return track")];
 
-/// The room added between a button's `+` and its words, over a space's own width.
-const PLUS_GAP: f32 = 7.0;
-
-/// A button's label split after its `+`, which stands apart from the words by [`PLUS_GAP`] more
-/// than a space is; a label with no `+` is all words.
-fn plus_and_words(label: &str) -> (&str, &str) {
-    label.strip_prefix('+').map_or(("", label), |words| ("+", words.trim_start()))
-}
-
-/// The width of a button's label with the extra room after its `+`.
-fn label_width(ui: &Ui, label: &str, font: &egui::FontId) -> f32 {
-    let (plus, words) = plus_and_words(label);
-    if plus.is_empty() {
-        return widgets::text_width(ui, label, font.clone());
-    }
-    widgets::text_width(ui, plus, font.clone()) + PLUS_GAP + widgets::text_width(ui, words, font.clone())
-}
-
 /// The width the empty space needs for its buttons to show whole: a view that scrolls sideways
 /// leaves this much after its last track, so the buttons never shrink however many tracks
 /// there are.
 pub(crate) fn empty_space_width(ui: &Ui) -> f32 {
     let font = theme::ui_font(theme::TEXT_SMALL);
-    BUTTONS.iter().map(|(_, label)| label_width(ui, label, &font)).fold(0.0, f32::max) + PAD * 4.0
+    BUTTONS.iter().map(|(_, label)| widgets::text_width(ui, label, font.clone())).fold(0.0, f32::max) + PAD * 4.0
 }
 
 /// The buttons that add an empty track or a return track, at the top of the empty space after
@@ -105,40 +88,17 @@ pub(crate) fn empty_space(ui: &Ui, painter: &egui::Painter, area: Rect, actions:
     let font = theme::ui_font(theme::TEXT_SMALL);
     let mut y = area.top() + PAD;
     for (kind, label) in BUTTONS {
-        let width = (label_width(ui, label, &font) + PAD * 2.0).min(area.width() - PAD * 2.0);
+        let width = (widgets::text_width(ui, label, font.clone()) + PAD * 2.0).min(area.width() - PAD * 2.0);
         let rect = Rect::from_min_size(Pos2::new(area.left() + PAD, y), Vec2::new(width, ROW));
         y = rect.bottom() + 2.0;
         if rect.bottom() > area.bottom() || width <= 0.0 {
             break;
         }
         let response = widgets::button_area(ui, rect, Id::unique(("add-track", kind, area.min.x as i32)), label);
-        // `add-track` styles the three, `#add-midi-track`, `#add-audio-track` and
-        // `#add-return-track` one of them; `button.add-track` is their artwork.
+        // Push buttons, as every view's: `button[kind="push"]`, one of them `#control-add-midi-track`,
+        // `#control-add-audio-track` or `#control-add-return-track`.
         let name = format!("add-{kind}-track");
-        let el = crate::kit::element::ADD_TRACK.id(&name).response(&response).enter();
-        let fill = el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background);
-        let state = crate::kit::skin::State::response(&response, false);
-        if !crate::kit::skin::paint_as(&el, painter, rect, "add-track", state, el.color()) {
-            el.paint_with(painter, rect, crate::kit::element::Native { radius: 0.0, fill });
-        }
-        let font =
-            el.style().filter(|c| c.authored.font_size).map_or_else(|| font.clone(), |c| theme::ui_font(c.font_size));
-        let (plus, words) = plus_and_words(label);
-        if plus.is_empty() {
-            widgets::text_in(painter, rect, Align2::CENTER_CENTER, label, font, el.color());
-        } else {
-            // The `+` at the left of the words, a little further from them than a space.
-            let plus_width = widgets::text_width(ui, plus, font.clone());
-            let words_width = widgets::text_width(ui, words, font.clone());
-            let left = rect.center().x - (plus_width + PLUS_GAP + words_width) / 2.0;
-            let plus_box = Rect::from_min_max(Pos2::new(left, rect.top()), Pos2::new(left + plus_width, rect.bottom()));
-            widgets::text_in(painter, plus_box, Align2::LEFT_CENTER, plus, font.clone(), el.color());
-            let words_box = Rect::from_min_max(
-                Pos2::new(left + plus_width + PLUS_GAP, rect.top()),
-                Pos2::new(rect.right(), rect.bottom()),
-            );
-            widgets::text_in(painter, words_box, Align2::LEFT_CENTER, words, font, el.color());
-        }
+        widgets::push_face(ui, painter, rect, &response, (label, widgets::Push::Plain), Some(&name));
         if response.clicked() {
             if kind == "return" {
                 actions.push(Action::new("return.add", json!({})));

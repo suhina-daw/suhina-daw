@@ -85,6 +85,8 @@ pub struct KeyBox {
     pub name: String,
     pub tap: suhina_engine::model::TapPoint,
     pub gain_db: f64,
+    /// Whether the device reads it (`device.setKeyEnabled`): off, the source stays chosen.
+    pub enabled: bool,
 }
 
 pub use crate::interaction::device_at::DeviceAt;
@@ -530,6 +532,9 @@ pub enum Detail {
     Devices(Chain),
     Clip(Box<ClipInfo>, Chain),
     Nothing,
+    /// The clip view with no clip selected: it stays the clip view until a track's devices are
+    /// asked for (a double-click on its header).
+    NoClip,
 }
 
 impl Detail {
@@ -565,7 +570,7 @@ impl Detail {
     ) -> Vec<(TrackId, Vec<usize>, u32, f64)> {
         let chain = match self {
             Self::Devices(chain) | Self::Clip(_, chain) => chain,
-            Self::Nothing => return Vec::new(),
+            Self::Nothing | Self::NoClip => return Vec::new(),
         };
         let Some(channel) = project
             .tracks
@@ -890,7 +895,13 @@ fn key_box(project: &Project, device: &suhina_engine::model::Device) -> Option<K
     let channel = input.source.channel();
     let track = project.tracks.iter().find(|t| t.channel == Some(channel))?.id;
     let gain_db = if input.gain > 0.0 { 20.0 * input.gain.log10() } else { -150.0 };
-    Some(KeyBox { track, name: project.shown_track_name(track), tap: input.source.tap(), gain_db })
+    Some(KeyBox {
+        track,
+        name: project.shown_track_name(track),
+        tap: input.source.tap(),
+        gain_db,
+        enabled: input.enabled,
+    })
 }
 
 /// One device as the detail area shows it, at `path` on track `id`; a group with its branches.

@@ -13,6 +13,7 @@ impl App {
     /// strip) selects it and shows its devices, opening the detail area; a clip selected on
     /// another track is no longer selected (`docs/spec/ui-clip-editor.md` › Where it opens).
     pub(super) fn devices_asked(&mut self) {
+        let before = (self.track_devices, self.detail_showing, self.detail_open);
         if let Some(track) = self.arrangement.open_devices.take() {
             if self.arrangement.selected_clip().is_some_and(|(t, _)| t != track) {
                 self.arrangement.clear_selected_clip();
@@ -21,6 +22,7 @@ impl App {
                 self.arrangement.selected_tracks = vec![track];
             }
             self.show_devices();
+            self.track_devices = true;
         }
         if let Some(track) = self.view.open_devices.take() {
             self.view.selected = Some(track);
@@ -28,6 +30,7 @@ impl App {
                 self.view.selected_slot = None;
             }
             self.show_devices();
+            self.track_devices = true;
         }
         // A click anywhere on a track that is not a clip shows its devices too, the selection
         // as the click left it (#950). A hidden detail area stays hidden: opening it under the
@@ -40,8 +43,28 @@ impl App {
             self.selected_device = None;
             self.device_picks.clear();
         }
-        if clicked && self.detail_open {
-            self.detail_showing = detail_view::Showing::Devices;
+        // A click on a track keeps what the area shows: the devices view follows the track, the
+        // clip view stays the clip view ("No clip selected" without one). A double-click on a
+        // header shows its devices (above).
+
+        // The editor shown (a double-click on a clip, the Clip part of the switch, a menu's Show
+        // editor): the clip is in the detail area again.
+        if self.detail_showing == detail_view::Showing::Clip {
+            self.track_devices = false;
+        }
+        // This runs after the frame's detail area was drawn: what it changed is drawn next frame,
+        // asked for at once rather than left to the next input.
+        if (self.track_devices, self.detail_showing, self.detail_open) != before {
+            self.detail_redraw = true;
+        }
+    }
+
+    /// Opens the selected clip's editor as a double-click on the clip does (the next frame shows
+    /// it, opening a hidden detail area). For tests, whose frames are too far apart for a double-click.
+    pub fn open_selected_clip(&mut self) {
+        match self.shown {
+            View::Arrangement => self.arrangement.clip_opened = true,
+            View::Session => self.view.clip_opened = true,
         }
     }
 
@@ -182,7 +205,8 @@ impl App {
         {
             self.arrangement.focus_clip(first);
         }
-        // What it shows: the selected clip, or the selected track's devices.
+        // What it shows: the selected clip, or the selected track's devices; a track's devices on
+        // their own (`track_devices`) stay so with a clip selected, those of the clip's track.
         let (track, clip) = match self.shown {
             View::Session => (self.view.selected, self.view.selected_slot.map(|(t, s)| ClipRef::Slot(t, s))),
             View::Arrangement => (
@@ -190,6 +214,7 @@ impl App {
                 self.arrangement.selected_clip().map(|(t, i)| ClipRef::Arrangement(t, i)),
             ),
         };
+        let (track, clip) = if self.track_devices { (clip.map(ClipRef::track).or(track), None) } else { (track, clip) };
         // Where each plug-in on the shown track stands, read first: reading it needs the session
         // itself, building the detail only the project; and an editor embedded in the panel
         // decides how tall the panel is.
@@ -411,8 +436,9 @@ impl App {
                 self.detail_height = detail_height_in(self.detail_height, area.height(), editor_needs, least);
                 // A track's devices, reached by clicking the track, are open at one height or
                 // closed; the height the user drags is the clip's, its editor's and the devices
-                // reached from it.
-                let track_devices = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
+                // reached from it. The clip view without a clip ("No clip selected") keeps the
+                // clip's height, so the area does not jump as clips are picked.
+                let track_devices = !stacked && clip.is_none() && self.track_devices && !edits && !self.editor_in_chain;
                 if pulled {
                     // Above it only the edited track, or nothing.
                     let above = focus.map_or(0.0, |t| self.arrangement.focus_height(t));
@@ -516,7 +542,9 @@ impl App {
         // Arrangement view, past the view's least height the piano roll goes to the top, and a
         // double-click takes it there and back.
         if splitter.is_positive() {
-            let open_or_closed = !stacked && clip.is_none() && !edits && !self.editor_in_chain;
+            // A track's devices open at one height or close; the clip view, with or without a clip
+            // ("No clip selected"), takes the height dragged.
+            let open_or_closed = !stacked && clip.is_none() && self.track_devices && !edits && !self.editor_in_chain;
             let divider = crate::kit::divider::show(
                 ui,
                 crate::kit::divider::Divider {
@@ -589,6 +617,9 @@ impl App {
         let mut shown = self.session().map_or(detail_view::Detail::Nothing, |s| {
             detail_view::build_with(s.project(), track, clip, &mut |t, p| reports.remove(&(t, p.to_vec())), nam_lists)
         });
+        if clip.is_none() && !self.track_devices && self.detail_showing == detail_view::Showing::Clip {
+            shown = detail_view::Detail::NoClip;
+        }
         // Automated parameters show what plays at the playhead, running or stopped (#706, #811);
         // without a player, at the start.
         let mut wanted = Vec::new();
@@ -1074,7 +1105,8 @@ impl App {
             } else {
                 let least = self.least_detail_height();
                 // A track's devices open at their one height, at the point a drag down closes them.
-                let track_devices = self.shown_clip().is_none();
+                let track_devices = self.track_devices
+                    || self.shown_clip().is_none() && self.detail_showing == detail_view::Showing::Devices;
                 let opens_at = if track_devices { self.device_row_height() } else { least };
                 if size >= opens_at / 2.0 {
                     self.show_editor();
@@ -1201,9 +1233,10 @@ impl App {
     /// Whether a MIDI clip's piano roll is on show: with the switch on Clip, or with the devices
     /// stacked, where Devices opens them beside it and it stays open.
     pub(super) fn piano_roll_on_show(&self) -> bool {
-        self.detail_showing == detail_view::Showing::Clip
-            || self.settings.device_layout == DeviceLayout::Stack
-            || self.settings.view.stack_in_piano_roll
+        !self.track_devices
+            && (self.detail_showing == detail_view::Showing::Clip
+                || self.settings.device_layout == DeviceLayout::Stack
+                || self.settings.view.stack_in_piano_roll)
     }
 
     /// The params that name the clip the piano roll shows in a `note.*` command, if it shows one.

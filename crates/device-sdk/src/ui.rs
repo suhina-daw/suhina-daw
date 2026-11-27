@@ -351,6 +351,8 @@ pub enum TextFormat {
     Percent,
     Decibels,
     Balance,
+    /// A ratio, written `n:1` (a compressor's ratio).
+    Ratio,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -708,6 +710,13 @@ impl DeviceUi {
                             && c.x.is_none()
                             && c.y.is_none()
                     }
+                    // Only the built-in Compressor's parameter set reads as a CompressorDisplay's.
+                    Widget::CompressorDisplay => {
+                        const COMPRESSOR: [&str; 5] = ["threshold", "ratio", "knee", "output", "mix"];
+                        COMPRESSOR.iter().all(|&id| parameters.iter().any(|p| p.id == id))
+                            && c.x.is_none()
+                            && c.y.is_none()
+                    }
                     Widget::Envelope { attack, decay, level, release } => {
                         let ids: Vec<_> =
                             [Some(attack), Some(decay), Some(level), release.as_ref()].into_iter().flatten().collect();
@@ -870,6 +879,7 @@ impl DeviceUi {
                             | Widget::DeviceFiles { .. }
                             | Widget::DeviceNote
                             | Widget::EqCurve
+                            | Widget::CompressorDisplay
                     )
                 )
             {

@@ -456,10 +456,13 @@ artifact. The recordings are written on the default branch after every merge by
 
 nextest's settings are in [`.config/nextest.toml`](../.config/nextest.toml): every failing test
 is reported rather than the run stopping at the first (locally, `cargo test --workspace
---no-fail-fast` does the same), a test that runs a minute or more is named while it runs, and one
+--no-fail-fast` does the same), a test that runs a minute or more is named while it runs and
+listed with its time after the run's summary, and one
 that runs ten minutes is stopped and fails: it has hung, and would otherwise hold its runner until
 the job's six-hour limit, as `crates/engine`'s `an_offline_pools_workers_never_join_real_time_priority`
-did once on Linux (it takes milliseconds).
+did once on Linux (it takes milliseconds). After that list the test step prints the `LEAK` lines
+of tests that left a process or handle open after they finished, which nextest has no level to
+list at the end without every skipped test too (`ci.yml`, the *Tests* step).
 nextest spreads tests, not the work inside one: a test that loops over many independent cases
 holds one core for all of them, and sets how short a partition can get. A test binary whose tests
 take turns through a lock inside the binary (a `static Mutex`) needs a test group of one thread

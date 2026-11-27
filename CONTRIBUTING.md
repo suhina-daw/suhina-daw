@@ -175,9 +175,15 @@ Suhina reimplements the *behaviour* of commercial DAWs, Ableton Live in particul
 using any of their code or content. This rule outranks feature work: one contaminated change can
 force a rewrite of everything built on it, so it is not something we clean up later.
 
-The rule guards against proprietary binaries, leaked code and the content of commercial
-products. Open-source code is none of those: whether it may be used is a licence question, with
-the checks in [Taking code from open-source projects](#taking-code-from-open-source-projects).
+The rule guards against proprietary binaries, leaked code and content copied from proprietary
+products: their samples, presets, libraries and other works, and the look of their interfaces, as
+the lists below name them. Open-source code is none of those: whether it may be used is a licence
+question, with the checks in
+[Taking code from open-source projects](#taking-code-from-open-source-projects). So are facts and
+descriptive data from other sources, such as color names, scales, tunings and published
+standards, as long as they were not taken from disassembled, decompiled or leaked material: a
+list of color names whose values a crayon maker or a paint company first published is data, not a
+work copied from a product, and its licence (rule 10 of AGENTS.md) decides whether it may ship.
 
 **Allowed sources:**
 
@@ -226,12 +232,12 @@ the checks in [Taking code from open-source projects](#taking-code-from-open-sou
   window thread), not the module.
 - Reading or using leaked source code, or decompiled scripts of a proprietary program (for
   example the control-surface scripts that circulate decompiled).
-- Notes, patches, write-ups or tools that come from someone else's debugging, disassembly or
-  decompilation of a proprietary program, for example the notes and binary patches of projects
-  that make a commercial DAW run on another operating system. An unmodified, licensed copy of
-  the program may still be run on such a platform to observe it; the project's findings about
-  the program's internals, and its patched copies, may not be read or used. The one exception is
-  the VeSTige header above.
+- Notes, data (tables, constants), patches, write-ups or tools that come from someone else's
+  debugging, disassembly or decompilation of a proprietary program, for example the notes and
+  binary patches of projects that make a commercial DAW run on another operating system. An
+  unmodified, licensed copy of the program may still be run on such a platform to observe it; the
+  project's findings about the program's internals, and its patched copies, may not be read or
+  used. The one exception is the VeSTige header above.
 - Copying samples, presets, Packs, Core Library content, impulse responses, wavetables or demo
   projects from proprietary products, or committing them as test data.
 - Copying the visual design of a proprietary product: icons, artwork, interface text, colors,

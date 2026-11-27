@@ -178,12 +178,17 @@ pub(super) fn sub_row(lane_time: Rect, row: usize, rows: usize) -> Rect {
 }
 
 pub(super) fn clip_rect(lane_time: Rect, start: f64, length: f64, x_of: &dyn Fn(f64) -> f32) -> Rect {
-    let left = x_of(start).round();
-    Rect::from_min_max(
-        Pos2::new(left, lane_time.top()),
-        Pos2::new((x_of(start + length).round() - 1.0).max(left + 1.0), lane_time.bottom()),
-    )
+    // Held to a reach well past the lane's sides: zoomed in, a clip's ends are hundreds of
+    // thousands of points away, and a body drawn out to them lost precision and flickered. An end
+    // past the reach is far out of sight, so nothing (an edge, a handle) is seen where it is cut.
+    let reach = (lane_time.left() - CLIP_REACH, lane_time.right() + CLIP_REACH);
+    let left = x_of(start).round().clamp(reach.0, reach.1);
+    let right = (x_of(start + length).round() - 1.0).clamp(reach.0, reach.1);
+    Rect::from_min_max(Pos2::new(left, lane_time.top()), Pos2::new(right.max(left + 1.0), lane_time.bottom()))
 }
+
+/// How far past a lane's sides a clip's drawn body reaches (`clip_rect`).
+const CLIP_REACH: f32 = 4000.0;
 
 /// One arrangement clip: draws it and moves it when dragged, along its lane or onto another.
 /// Returns the clip and its start when it is being dragged onto another lane, to be drawn there.
@@ -941,7 +946,7 @@ pub(super) fn clip_box<'a>(
             let shape = shown.curve(edge).shape;
             response.context_menu(|ui| {
                 for choice in FadeShape::ALL {
-                    if ui.radio(choice == shape, shape_label(choice)).clicked() {
+                    if crate::kit::menu::item(ui, shape_label(choice), choice == shape).clicked() {
                         let param = if edge == FadeEdge::In { "inShape" } else { "outShape" };
                         let mut params = json!({ "clip": clip.id.0 });
                         params[param] = json!(choice.name());
@@ -949,9 +954,9 @@ pub(super) fn clip_box<'a>(
                         ui.close();
                     }
                 }
-                ui.separator();
+                crate::kit::menu::separator(ui);
                 // Back to no fade, its shape and curve the defaults.
-                if ui.button("Reset fade").clicked() {
+                if crate::kit::menu::entry(ui, "Reset fade", None, true).clicked() {
                     let (length, shape, bend) = if edge == FadeEdge::In {
                         ("in", "inShape", "inCurve")
                     } else {
@@ -2277,7 +2282,7 @@ pub(super) fn take_lanes(
             let r = clicked(delete, "Delete take", format!("Delete {}", take.name));
             let el = crate::kit::element::BUTTON.id("take-delete").response(&r).enter();
             let fill = el.background_or(motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r)));
-            painter.rect_filled(delete, 2.0, fill);
+            widgets::button_surface(painter, delete, &el, &r, false, fill, 2.0);
             let delete_ink = el.color_or(ink);
             drop(el);
             // A cross drawn, not a glyph: the interface font has no multiplication cross.
@@ -2296,7 +2301,7 @@ pub(super) fn take_lanes(
             let off = motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r));
             let (fill, _) = widgets::toggle_inks(&el, plain.as_ref(), (el.accent(), off), (ink, ink));
             let (_, text) = widgets::toggle_inks(&el, plain.as_ref(), (fill, fill), (ink_on(fill), ink));
-            painter.rect_filled(solo, 2.0, fill);
+            widgets::toggle_face(painter, solo, &el, &r, fill, widgets::toggle_image(&el, plain.as_ref(), soloed));
             widgets::text_in(painter, solo, Align2::CENTER_CENTER, "S", small.clone(), text);
             drop(el);
             if r.clicked() {
@@ -2318,7 +2323,7 @@ pub(super) fn take_lanes(
             let r = clicked(promote, "Put the whole take on the track", format!("Put {} on the track", take.name));
             let el = crate::kit::element::BUTTON.id("take-promote").response(&r).enter();
             let fill = el.background_or(motion::mix(shade, el.look_hovered(true).background(), widgets::hover(ui, &r)));
-            painter.rect_filled(promote, 2.0, fill);
+            widgets::button_surface(painter, promote, &el, &r, false, fill, 2.0);
             let promote_ink = el.color_or(ink);
             drop(el);
             widgets::text_in(painter, promote, Align2::CENTER_CENTER, "\u{2191}", small.clone(), promote_ink);
@@ -2832,34 +2837,33 @@ fn take_menu(
     state: &mut ArrangementViewState,
     actions: &mut Vec<Action>,
 ) {
-    ui.menu_button("Recolor lane", |ui| {
+    use crate::kit::menu;
+    menu::submenu(ui, "Recolor lane", false, |ui| {
         if let Some(picked) = crate::interaction::color_picker::swatch_row(ui, Some(take.color)) {
             let hex = crate::interaction::color_picker::hex(picked.color);
             actions.push(Action::new("take.setColor", json!({ "track": track.0, "take": take.number, "color": hex })));
             picked.close_menu(ui);
         }
     });
-    ui.add_enabled_ui(piece.is_some(), |ui| {
-        ui.menu_button("Recolor", |ui| {
-            let current = piece.and_then(|p| take.clips.get(p)).map(|c| c.color);
-            if let (Some(picked), Some(piece)) = (crate::interaction::color_picker::swatch_row(ui, current), piece) {
-                let hex = crate::interaction::color_picker::hex(picked.color);
-                let params = json!({ "track": track.0, "take": take.number, "color": hex, "piece": piece });
-                actions.push(Action::new("take.setColor", params));
-                picked.close_menu(ui);
-            }
-        });
+    menu::Entry::new("Recolor").enabled(piece.is_some()).submenu(ui, |ui| {
+        let current = piece.and_then(|p| take.clips.get(p)).map(|c| c.color);
+        if let (Some(picked), Some(piece)) = (crate::interaction::color_picker::swatch_row(ui, current), piece) {
+            let hex = crate::interaction::color_picker::hex(picked.color);
+            let params = json!({ "track": track.0, "take": take.number, "color": hex, "piece": piece });
+            actions.push(Action::new("take.setColor", params));
+            picked.close_menu(ui);
+        }
     });
-    ui.separator();
-    if ui.button("Add take").clicked() {
+    menu::separator(ui);
+    if menu::entry(ui, "Add take", None, true).clicked() {
         actions.push(Action::new("take.add", json!({ "track": track.0 })));
         ui.close();
     }
-    if ui.button("Delete take").clicked() {
+    if menu::entry(ui, "Delete take", None, true).clicked() {
         actions.push(Action::new("take.delete", json!({ "track": params["track"], "take": params["take"] })));
         ui.close();
     }
-    ui.separator();
+    menu::separator(ui);
     super::lane_menu::grid_section(ui, state);
 }
 

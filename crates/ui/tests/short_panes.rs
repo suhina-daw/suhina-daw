@@ -44,13 +44,13 @@ fn window() -> Harness<'static, App> {
     harness
 }
 
-/// The demo project in the Arrangement view with the clip selected, so the piano roll shows it.
+/// The demo project in the Arrangement view with the clip opened (a double-click), so the piano
+/// roll shows it.
 fn piano_app() -> Harness<'static, App> {
     let mut harness = window();
     harness.get_by_label("Arrangement view").click();
     harness.run();
-    harness.get_by_label(CLIP).click();
-    harness.run();
+    crate::window::open_clip(&mut harness, CLIP);
     harness
 }
 
@@ -504,7 +504,7 @@ fn a_click_on_empty_arrangement_space_clears_the_clip_selection() {
     assert_eq!(h.state().selected_clip(), None, "the click cleared the clip selection");
     assert!(!piano_shows(&h), "the piano roll has nothing to show");
     assert!(h.query_by_label("Detail area splitter").is_some_and(|s| s.rect().bottom() < detail_bottom(&h) - 100.0));
-    // A click on the clip selects it again.
+    // A click on the clip selects it again, and the clip view, which stayed, shows it.
     h.get_by_label(CLIP).click();
     h.run();
     assert!(piano_shows(&h));

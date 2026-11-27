@@ -74,15 +74,21 @@ label[kind="value"] { color: var(--text-value); }
 label[kind="error"] { color: var(--recording); }
 separator[kind="row"] { color: var(--border); }
 
-/* A button: its fill, its text, its edge and the color of the ring it shows while it has the keys. */
+/* A button: its fill, its text, its edge and the color of the ring it shows while it has the keys;
+   dim words while it cannot be pressed. */
 button { background-color: var(--control-background); color: var(--text-primary); border-color: var(--border-strong); accent-color: var(--accent); }
 button:hover { background-color: var(--control-hoverBackground); }
+button:disabled { color: var(--text-hint); }
+/* A push button with words (Save, Cancel): rounded corners and no edge; the dialog's main action
+   keeps a hairline edge in the accent. */
+button[kind="push"], button[kind="primary"], button[kind="secondary"] { border-radius: 4px; }
+button[kind="primary"] { border-width: 1px; border-color: var(--accent); }
 
-/* A toggle (mute, cue, a view's switch): dim words, a step brighter under the pointer; lit, the
-   chosen fill and the text on it. Solo is lit in the accent, arm in the recording colors. The
-   `toggle` element holds the same colors for a view that draws its switch itself. */
-toggle, button[kind="toggle"] { color: var(--text-hint); }
-toggle:hover, button[kind="toggle"]:hover { color: var(--text-secondary); }
+/* A toggle (mute, cue, a view's switch): off, a button like any other (dim words are for one
+   that cannot be pressed); lit, the chosen fill and the text on it. Solo is lit in the accent, arm
+   in the recording colors. The `toggle` element holds the same colors for a view that draws its
+   switch itself. */
+toggle { color: var(--text-primary); }
 toggle[checked], button[kind="toggle"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
 toggle[checked]:hover, button[kind="toggle"][checked]:hover { background-color: color-mix(in srgb, var(--control-selectedBackground), white 20%); }
 toggle { background-color: var(--control-background); }
@@ -154,6 +160,10 @@ list-row[selected] { color: var(--text-primary); }
    the button's. */
 button[kind="record"] { color: var(--text-primary); }
 button[kind="record"][checked] { background-color: var(--recording-background); color: var(--recording); }
+/* The Arrangement's button that shows or hides the return tracks: caption words. */
+button[kind="returns"] { color: var(--text-secondary); }
+/* The record button's dot, in the recording color at rest too. */
+button[kind="record"] icon[kind="record"] { color: var(--recording); }
 button[kind="metronome"] { color: var(--text-primary); }
 button[kind="metronome"][checked] { background-color: var(--control-activeBackground); color: var(--accent); }
 button[kind="monitor"] { color: var(--text-secondary); }
@@ -309,6 +319,7 @@ button[kind="chip"][checked] { background-color: var(--control-selectedBackgroun
 button[kind="tag-check"][checked] { background-color: var(--text-value); color: var(--window-background); }
 button[kind="preview"] { color: var(--browser-text-primary); }
 button[kind="preview"][checked] { color: var(--accent); }
+button[kind="more"] { background-color: transparent; }
 button[kind="more"]:hover { background-color: var(--panel-hoverBackground); }
 
 /* The browser's splitter: the border color, stronger under the pointer. */
@@ -343,7 +354,6 @@ value[kind="parameter"] { color: var(--text-value); }
 device-row[kind="branch"] { color: var(--text-secondary); }
 device-row[kind="branch"]:hover { background-color: var(--control-hoverBackground); }
 device-row[kind="branch"][selected] { background-color: var(--control-activeBackground); }
-add-track[kind="branch"]:hover { background-color: var(--control-hoverBackground); }
 
 /* The clip and MIDI panels' fields (a value's text, tinted under the pointer, stronger while it is
    dragged, its share lit in the playing color), the line under the place of a number a drag
@@ -364,13 +374,12 @@ slider[kind="quantise"] { accent-color: var(--text-primary); color: var(--text-s
 fader-scale[kind="clip"] { color: var(--text-hint); }
 fader-rail[kind="clip"] { background-color: var(--control-background); }
 
-/* The panels' buttons: a push button, a switch (dim words, the chosen fill and its text when on),
-   the one that does the panel's work (lit), the Clip and Devices switch, the entries of a list
-   and its field, the MIDI tools' tabs. */
-button[kind="panel"] { color: var(--text-primary); border-color: var(--border); }
-button[kind="panel-toggle"] { border-color: var(--border); }
-button[kind="entry"] { color: var(--text-primary); }
-button[kind="entry"][checked] { background-color: var(--control-selectedBackground); }
+/* The panels' buttons are push buttons and their switches toggles, as every view's; here the
+   entries of a list and its field, and the MIDI tools' tabs. */
+list-row[kind="menu"], button[kind="entry"] { background-color: transparent; color: var(--text-primary); }
+list-row[kind="menu"]:hover, button[kind="entry"]:hover { background-color: var(--control-hoverBackground); }
+list-row[kind="menu"][selected], button[kind="entry"][checked] { background-color: var(--control-selectedBackground); color: var(--text-inverse); }
+list-row[kind="menu"]:disabled, button[kind="entry"]:disabled { color: var(--text-hint); }
 dropdown[kind="panel"] { background-color: var(--control-background); color: var(--text-value); }
 dropdown[kind="panel"]:hover { background-color: var(--control-hoverBackground); }
 dropdown-arrow[kind="panel"] { color: var(--text-secondary); }
@@ -443,9 +452,7 @@ piano-tool { color: var(--text-secondary); }
 piano-tool[checked] { color: var(--text-primary); background-color: var(--control-activeBackground); }
 piano-tool:hover { background-color: var(--control-hoverBackground); }
 piano-tool:disabled { color: var(--text-hint); }
-piano-roll-toolbar bar-item[kind="menu"] { color: var(--text-secondary); }
-piano-roll-toolbar bar-item[kind="menu"][muted] { color: var(--text-hint); }
-piano-roll-toolbar bar-item[kind="menu"][checked] { color: var(--text-primary); }
+piano-tool[muted] { color: var(--text-hint); }
 button[kind="focus"] { background-color: transparent; color: var(--text-secondary); }
 button[kind="focus"]:hover { background-color: transparent; }
 button[kind="focus"][checked], button[kind="focus"][checked]:hover { background-color: var(--accent); color: var(--text-inverse); }
@@ -490,6 +497,7 @@ label[kind="inverse"] { color: var(--text-inverse); }
 label[kind="on-light"] { color: var(--text-onColorLight); }
 label[kind="on-dark"] { color: var(--text-onColorDark); }
 bar-item[kind="menu"] { color: var(--text-secondary); }
+menu-bar bar-item[kind="menu"][checked] { background-color: var(--control-hoverBackground); }
 bar-item[kind="status-counts"] { color: var(--text-hint); }
 project-tab { border-color: var(--border); }
 toolbar-module[kind="signature"] { color: var(--text-secondary); }
@@ -525,6 +533,8 @@ list-row[kind="plugin"][selected] { background-color: var(--control-activeBackgr
 list-row[kind="plugin"]:hover { background-color: var(--panel-hoverBackground); }
 list-row[kind="missing-file"][selected] { background-color: var(--control-activeBackground); }
 list-row[kind="missing-file"]:hover { background-color: var(--panel-hoverBackground); }
+list-row[kind="floating"][selected] { background-color: var(--control-activeBackground); }
+list-row[kind="floating"]:hover { background-color: var(--control-hoverBackground); }
 list-row[kind="picker"] { background-color: var(--panel-hoverBackground); color: var(--text-secondary); }
 color-swatch { border-color: var(--text-primary); }
 color-swatch[kind="square"] { border-color: var(--border); }
@@ -537,13 +547,11 @@ theme-card { border-color: var(--border); }
 theme-card:hover { border-color: var(--border-strong); }
 theme-card[selected] { border-color: var(--accent); accent-color: var(--accent); }
 tooltip { background-color: var(--control-activeBackground); border-color: var(--border-strong); accent-color: var(--accent); }
-add-track { background-color: var(--control-background); color: var(--text-secondary); }
-add-track:hover { background-color: var(--control-hoverBackground); }
 
 /* The buttons of Settings and the dialogs: one that stands back (Remove), a tick box (its edge, a
    step stronger under the pointer, and its mark), a part of a row of choices (`option`: the chosen
    fill and its text; `preset`: the pressed fill) and a yes/no switch's track. */
-button[kind="secondary"] { color: var(--text-secondary); }
+button[kind="secondary"] { color: var(--text-secondary); border-width: 1px; }
 button[kind="check"] { border-color: var(--border); }
 button[kind="check"]:hover { border-color: var(--border-strong); }
 button[kind="check"][checked] { background-color: var(--text-value); }

@@ -191,13 +191,13 @@ fn switch(ui: &Ui, painter: &egui::Painter, rect: Rect, id: Id, label: &str, on:
     let checked = [crate::kit::element::Checked];
     let builder = crate::kit::element::BUTTON.builder();
     let lit = if accent {
-        widgets::lit_toggle_kind(ui, &response, builder, &checked, on, "solo")
+        widgets::lit_toggle_words(ui, &response, builder, &checked, on, "solo")
     } else {
         widgets::lit_toggle(ui, &response, builder, &checked, on)
     };
     let (fill, text) = lit.colors();
+    widgets::toggle_surface(painter, rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
     drop(lit);
-    painter.rect_filled(rect, 0.0, fill);
     let word = if on { "On" } else { "Off" };
     widgets::text_in(painter, rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
     response.clicked()
@@ -308,10 +308,13 @@ fn action_field(
     widgets::dropdown(ui, painter, rect, &response, &shown);
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
-        let text = |t: String| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
         for kind in action_choices(scenes) {
-            if ui.selectable_label(kind == current, text(action_label(kind))).clicked() && kind != current {
-                picked = Some(kind);
+            let text = action_label(kind);
+            if crate::kit::menu::Entry::new(&text).chosen(kind == current).compact().show(ui).clicked() {
+                if kind != current {
+                    picked = Some(kind);
+                }
+                ui.close();
             }
         }
     });

@@ -66,10 +66,16 @@ fn hex(color: egui::Color32) -> String {
 
 /// Shows `h` with `rules` (selector, property, color) as the user's sheet, then every rule's
 /// color that no shape painted.
+/// What a test that reads a button's fill from the painted rectangles puts first in its sheet:
+/// buttons drawn as their CSS shape. With artwork, a fill tints the artwork's texture and is no
+/// rectangle's color (#1696).
+const SHAPES: &str = "button { image: none; }\n";
+
 fn missing(h: &mut Harness<'static, App>, rules: &[(&str, &str, egui::Color32)]) -> Vec<String> {
-    let css: String = rules
-        .iter()
-        .map(|(selector, property, color)| format!("{selector} {{ {property}: {}; }}\n", hex(*color)))
+    let css: String = std::iter::once(SHAPES.to_owned())
+        .chain(
+            rules.iter().map(|(selector, property, color)| format!("{selector} {{ {property}: {}; }}\n", hex(*color))),
+        )
         .collect();
     suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
     for _ in 0..4 {
@@ -529,7 +535,7 @@ fn solo_cue_and_arm_take_their_own_rules_lit_and_unlit() {
 fn a_rule_for_every_button_needs_lit_rules_to_keep_solo_cue_and_arm_lit() {
     let mut h = lit_drums();
     let show = |h: &mut Harness<'static, App>, css: &str| {
-        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
         for _ in 0..4 {
             h.step();
         }
@@ -567,7 +573,7 @@ fn a_rule_for_every_button_needs_a_lit_rule_to_keep_the_browser_s_chosen_chip_li
     let mut h = browser_with_chips();
     let general = format!("button {{ background-color: {}; }}", hex(odd(97)));
     let lit_and_unlit = |h: &mut Harness<'static, App>, css: &str| {
-        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
         for _ in 0..4 {
             h.step();
         }
@@ -607,8 +613,7 @@ fn the_pitch_dial_and_a_typed_number_take_their_rules() {
     let mut h = window_with_step(audio_app(), 1.0 / 60.0);
     h.get_by_label("Arrangement view").click();
     h.run();
-    h.get_by_label("Clip Loop on Loop at bar 1").click();
-    h.run();
+    open_clip(&mut h, "Clip Loop on Loop at bar 1");
     let rules =
         [("knob", "border-color", odd(71)), ("knob", "background-color", odd(72)), ("knob", "accent-color", odd(73))];
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
@@ -675,7 +680,7 @@ fn a_solo_turned_off_fades_from_its_lit_rule_s_fill() {
     h.run();
     let css = "button#control-solo { background-color: #101010; } \
                button#control-solo[checked] { background-color: #f0f0f0; }";
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
     h.run_steps(30);
     h.get_by_label("End solo on Drums").click();
     h.run_steps(3);
@@ -741,8 +746,7 @@ fn a_rule_for_every_text_field_is_a_typed_number_s_until_it_has_its_own() {
     let mut h = window_with_step(audio_app(), 1.0 / 60.0);
     h.get_by_label("Arrangement view").click();
     h.run();
-    h.get_by_label("Clip Loop on Loop at bar 1").click();
-    h.run();
+    open_clip(&mut h, "Clip Loop on Loop at bar 1");
     h.get_by_label_contains("Pitch: ").click();
     h.run();
     h.event(egui::Event::Text("3".into()));
@@ -788,12 +792,11 @@ fn a_rule_for_every_slider_fill_needs_a_lit_rule_to_keep_the_swing_lit() {
     assert_eq!(count_with(&mut h, &lit, odd(95)), 0, "and it leaves the general rule");
 }
 
-/// The demo with Walk on Bass picked in the Launcher: its MIDI clip's panel, its follow action and
-/// its piano roll.
+/// The demo with Walk on Bass opened in the Launcher (a double-click on its slot): its MIDI clip's
+/// panel, its follow action and its piano roll.
 fn walk_picked() -> Harness<'static, App> {
     let mut h = window(demo_app());
-    h.get_by_label("Select Walk on Bass (scene 2)").click();
-    h.run();
+    open_clip(&mut h, "Select Walk on Bass (scene 2)");
     h
 }
 
@@ -807,7 +810,7 @@ fn a_clip_panel_s_words_lines_and_menus_take_their_own_rules() {
         ("label[kind=\"caption\"]", "color", odd(72)),
         ("label[kind=\"hint\"]", "color", odd(73)),
         ("separator[kind=\"row\"]", "color", odd(75)),
-        ("dropdown[kind=\"subtle\"]", "color", odd(76)),
+        ("piano-tool[kind=\"menu\"]", "color", odd(76)),
         ("piano-tool#piano-more", "color", odd(78)),
     ];
     assert_eq!(missing(&mut h, &rules), Vec::<String>::new());
@@ -841,7 +844,7 @@ fn a_rule_for_every_button_needs_a_lit_rule_to_keep_the_follow_action_s_switch_l
     let mut h = walk_picked();
     let general = format!("button {{ background-color: {}; }}", hex(odd(80)));
     let lit_and_unlit = |h: &mut Harness<'static, App>, css: &str| {
-        suhina_ui::kit::native_css::set_user_sheet(Some(css.to_owned().into()));
+        suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
         for _ in 0..4 {
             h.step();
         }
@@ -877,7 +880,7 @@ fn a_device_group_s_panel_takes_its_own_rules() {
     h.run();
     let rules = [
         ("device-row[selected]", "background-color", odd(81)),
-        ("add-track[kind=\"branch\"]", "color", odd(82)),
+        ("button#control-add-branch", "color", odd(82)),
         ("button#control-device-on", "background-color", odd(83)),
         ("device-header", "background-color", odd(84)),
     ];
@@ -1062,7 +1065,7 @@ fn a_rule_for_every_button_needs_a_lit_rule_to_keep_a_track_s_on_switch_lit() {
         h.get_by_label("Turn Keys off").click();
         h.run();
         let fills = |h: &mut Harness<'static, App>, css: String| {
-            suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+            suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
             for _ in 0..4 {
                 h.step();
             }
@@ -1271,7 +1274,7 @@ fn inks_in(h: &Harness<'static, App>, rect: egui::Rect) -> Vec<egui::Color32> {
 
 /// Shows `h` under `css` for a few frames, runs `read`, and puts the user's sheet away again.
 fn under<R>(h: &mut Harness<'static, App>, css: String, read: impl FnOnce(&Harness<'static, App>) -> R) -> R {
-    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
     for _ in 0..4 {
         h.step();
     }
@@ -1525,8 +1528,7 @@ fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
         let mut h = window_with_step(audio_app(), 1.0 / 60.0);
         h.get_by_label("Arrangement view").click();
         h.run();
-        h.get_by_label("Clip Loop on Loop at bar 1").click();
-        h.run();
+        open_clip(&mut h, "Clip Loop on Loop at bar 1");
         h
     }
     let mut dialog = window(demo_app());
@@ -1570,7 +1572,7 @@ fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
             "clip panel",
             walk_picked(),
             vec![
-                ("toggle", "background-color"),
+                ("button[kind=\"toggle\"]", "background-color"),
                 ("button[kind=\"toggle\"][checked]", "background-color"),
                 ("dropdown-arrow", "color"),
             ],
@@ -1584,7 +1586,7 @@ fn a_theme_rule_beats_the_base_sheet_s_rules_for_the_shared_controls() {
                 ("knob", "background-color"),
                 ("knob-ring", "background-color"),
                 ("label[kind=\"value\"]", "color"),
-                ("toggle[checked]", "background-color"),
+                ("button[kind=\"toggle\"][checked]", "background-color"),
             ],
         ),
     ];
@@ -1702,7 +1704,7 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_monitor_
         let mut h = window(app);
         let ctx = h.ctx.clone();
         h.state_mut().use_theme(&ctx, id);
-        suhina_ui::kit::native_css::set_user_sheet(example.map(|css| css.to_owned().into()));
+        suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{}", example.unwrap_or("")).into()));
         for _ in 0..4 {
             h.step();
         }
@@ -1728,10 +1730,10 @@ fn a_built_in_theme_with_a_rule_for_every_button_still_shows_the_chosen_monitor_
 }
 
 /// Coloring a region goes through its variables: `window { --text-hint: … }` reaches the hint
-/// words inside it (an empty detail panel's note) and a switch's dim words, which the base sheet
-/// colors with the same variable: a track that is off, its number (#1449).
+/// words inside it (an empty detail panel's note) (#1449), and `--text-primary` the words of a
+/// switch that is off, which reads as any button does: a track that is off, its number.
 #[test]
-fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
+fn a_region_s_text_variables_reach_the_hints_and_toggles_inside_it() {
     let mut h = lit_drums();
     h.get_by_label("Turn Keys off").click();
     h.run();
@@ -1739,7 +1741,7 @@ fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
     h.event(egui::Event::PointerGone);
     h.run();
     let switch = h.get_by_label("Turn Keys on").rect();
-    let css = format!("window {{ --text-hint: {}; }}", hex(odd(151)));
+    let css = format!("window {{ --text-hint: {}; --text-primary: {}; }}", hex(odd(151)), hex(odd(152)));
     suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
     for _ in 0..4 {
         h.step();
@@ -1761,7 +1763,7 @@ fn a_region_s_text_hint_variable_reaches_the_hints_and_toggles_inside_it() {
         .iter()
         .for_each(|shape| colors_of(&shape.shape, "Select a track or a clip to see it here", &mut hint));
     suhina_ui::kit::native_css::set_user_sheet(None);
-    assert!(!toggle.is_empty() && toggle.iter().all(|c| *c == odd(151)), "the off switch's number: {toggle:?}");
+    assert!(!toggle.is_empty() && toggle.iter().all(|c| *c == odd(152)), "the off switch's number: {toggle:?}");
     assert!(!hint.is_empty() && hint.iter().all(|c| *c == odd(151)), "the hint's words: {hint:?}");
 }
 
@@ -2197,4 +2199,36 @@ fn a_rule_for_every_button_reaches_a_device_s_on_switch() {
     h.run();
     let off = under(&mut h, css, |h| painted_at(h, odd(249)));
     assert!(off.iter().any(|rect| switch.expand(1.0).contains_rect(*rect)), "the switch off: {off:?} in {switch:?}");
+}
+
+/// The menu bar's menus are drawn with the kit's rows, so a rule scoped to the bar reaches their
+/// entries (`menu-bar list-row[kind="menu"]`).
+#[test]
+fn a_rule_scoped_to_the_menu_bar_reaches_its_entries() {
+    let css = format!("menu-bar list-row[kind=\"menu\"]:hover {{ background-color: {}; }}", hex(odd(53)));
+    let mut window = window(demo_app());
+    suhina_ui::kit::native_css::set_user_sheet(Some(format!("{SHAPES}{css}").into()));
+    window.run_steps(4);
+    window.get_by_label("File").click();
+    window.run_steps(3);
+    window.get_by_label("Export…").hover();
+    window.run_steps(3);
+    let entry = filled_with(&window, odd(53));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(entry > 0, "the hovered entry is filled with the scoped rule's color");
+}
+
+#[test]
+fn a_menu_title_on_the_bar_takes_its_fill_from_its_own_rule() {
+    let css = format!("menu-bar bar-item[kind=\"menu\"][checked] {{ background-color: {}; }}", hex(odd(57)));
+    let mut window = window(demo_app());
+    window.run_steps(4);
+    window.get_by_label("File").hover();
+    window.run_steps(3);
+    assert_eq!(filled_with(&window, odd(57)), 0, "no rule, no such fill");
+    suhina_ui::kit::native_css::set_user_sheet(Some(css.into()));
+    window.run_steps(4);
+    let lit = filled_with(&window, odd(57));
+    suhina_ui::kit::native_css::set_user_sheet(None);
+    assert!(lit > 0, "the hovered title is filled with its rule's color");
 }

@@ -23,11 +23,11 @@ use crate::interaction::nesting::{self, Place};
 use crate::interaction::scroll::most_scroll_x;
 use crate::interaction::timeline_grid::TimelineGrid;
 use crate::kit::meter::{self, Meters};
-use crate::kit::motion;
 use crate::kit::theme::{self, PAD, ROW};
 use crate::kit::time_axis::{ARRANGEMENT_BEAT_WIDTHS, clamp_beat_width};
 use crate::kit::waveform;
 use crate::kit::widgets::{self, Action, Drag, VOLUME_RANGE, volume_position};
+use crate::kit::{menu, motion};
 
 mod clip;
 pub(crate) use clip::muted_clip_gray;
@@ -1022,7 +1022,7 @@ fn show_lanes(
             state.signature_menu_beat = f64::from((pointer.x - time.left() + state.scroll.x) / state.beat_width);
         }
         response.context_menu(|ui| {
-            if ui.button("Add marker here").clicked() {
+            if menu::entry(ui, "Add marker here", None, true).clicked() {
                 actions.push(Action::new("marker.add", json!({ "beat": state.marker_menu_beat })));
                 ui.close();
             }
@@ -1035,19 +1035,18 @@ fn show_lanes(
             let same = if changed || shown <= 1 { menus::SameSignature::Nothing } else { menus::SameSignature::Set };
             // A click into its field must not close it, as a click on any item of a menu does;
             // its list's picks and Enter close it themselves.
-            let keep_open =
-                egui::containers::menu::MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
-            egui::containers::menu::SubMenuButton::new(format!("Time signature from bar {shown}"))
-                .config(keep_open)
-                .ui(ui, |ui| menus::time_signature_menu(ui, shown, current, same, actions));
-            if changed && ui.button(format!("Remove the time-signature change at bar {shown}")).clicked() {
+            menu::Entry::new(&format!("Time signature from bar {shown}"))
+                .keep_open()
+                .submenu(ui, |ui| menus::time_signature_menu(ui, shown, current, same, actions));
+            let remove = format!("Remove the time-signature change at bar {shown}");
+            if changed && menu::entry(ui, &remove, None, true).clicked() {
                 actions.push(Action::new("timeSignature.delete", json!({ "bar": shown })));
                 ui.close();
             }
             // Empty time as long as the time selection, at its start; what comes after moves
             // later (#713).
             if let Some(selection) = state.time_selection.as_ref()
-                && ui.button("Add section").clicked()
+                && menu::entry(ui, "Add section", None, true).clicked()
             {
                 actions
                     .push(Action::new("range.insertTime", json!({ "start": selection.start, "end": selection.end })));
@@ -1073,12 +1072,8 @@ fn show_lanes(
         }
         let el = crate::kit::element::BUTTON.id("back-to-arrangement").response(&response).enter();
         // A button: its fill a step brighter under the pointer.
-        painter.rect_filled(
-            back,
-            0.0,
-            el.hover_fade(widgets::hover(ui, &response), crate::kit::element::Look::background),
-        );
-        back_glyph(&painter, back, el.color());
+        let ink = widgets::hover_face(ui, &painter, back, &el, &response, false, 0.0);
+        back_glyph(&painter, back, ink);
     }
     // The marker: a small triangle hanging from the ruler's lower edge.
     let marker_x = x_of(timeline.start_beat).round() + 0.5;
@@ -1097,7 +1092,7 @@ fn show_lanes(
     let corner_response = ui.interact(corner, Id::unique("arrangement-header-corner"), Sense::click());
     corner_response.context_menu(|ui| {
         let text = if state.headers_left { "Track headers on the right" } else { "Track headers on the left" };
-        if ui.button(text).clicked() {
+        if menu::entry(ui, text, None, true).clicked() {
             state.headers_left = !state.headers_left;
             ui.close();
         }
@@ -1112,7 +1107,7 @@ fn show_lanes(
         for size in TrackSize::ALL {
             let height = f32::from(state.sizes.height(size));
             let selected = timeline.lanes.iter().all(|lane| (state.height(lane) - height).abs() < 0.5);
-            if ui.selectable_label(selected, size.name()).clicked() {
+            if menu::item(ui, size.name(), selected).clicked() {
                 state.resize_all(timeline, size);
                 ui.ctx().request_repaint();
                 ui.close();
@@ -1260,17 +1255,11 @@ fn show_lanes(
         .intersect(corner);
         let response = widgets::button_area(ui, button, Id::unique("arrangement-returns-toggle"), label);
         let hover = widgets::hover(ui, &response);
-        let el = crate::kit::element::BUTTON.id("returns-toggle").response(&response).enter();
+        let el =
+            crate::kit::element::BUTTON.id("returns-toggle").attribute("kind", "returns").response(&response).enter();
         let fill = el.hover_fade(hover, crate::kit::element::Look::background);
-        painter.rect_filled(button, 2.0, fill);
-        widgets::text_in(
-            &painter,
-            button,
-            Align2::CENTER_CENTER,
-            label,
-            font,
-            el.color_or(crate::kit::element::caption_ink()),
-        );
+        widgets::button_surface(&painter, button, &el, &response, false, fill, 2.0);
+        widgets::text_in(&painter, button, Align2::CENTER_CENTER, label, font, el.color());
         if response.clicked() {
             state.returns_hidden = !state.returns_hidden;
         }

@@ -298,7 +298,7 @@ pub(crate) fn switch(
         state.enabled,
     );
     let (fill, text) = lit.colors();
-    lit.el.paint_over(ui.painter(), rect, crate::kit::element::Native { radius: 3.0, fill }, lit.toggle.image(lit.lit));
+    crate::kit::widgets::toggle_surface(ui.painter(), rect, &lit.el, &response, fill, lit.toggle.image(lit.lit), 3.0);
     drop(lit);
     let word = if state.enabled { "On" } else { "Off" };
     widgets::text_in(ui.painter(), rect, Align2::CENTER_CENTER, word, theme::ui_font(theme::TEXT_SMALL), text);
@@ -449,10 +449,7 @@ fn dropdown(
             .selected_text(egui::RichText::new(current_name).font(theme::ui_font(theme::TEXT_SMALL))),
         |ui| {
             if rows.is_empty() {
-                let empty_label = ui
-                    .selectable_label(false, egui::RichText::new(empty).font(theme::ui_font(theme::TEXT_TINY)).weak());
-                empty_label
-                    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {empty}")));
+                crate::kit::menu::hint(ui, empty);
             }
             // The rows carry the canonical form ([ADR 0036] › 5, the review): the compare
             // folds the state's side alone, once, not per row.
@@ -468,21 +465,26 @@ fn dropdown(
                 };
                 if grouped && (index == 0 || in_group != group) {
                     if index > 0 {
-                        ui.separator();
+                        crate::kit::menu::separator(ui);
                     }
                     if let Some(heading) = in_group {
-                        ui.label(egui::RichText::new(heading).font(theme::ui_font(theme::TEXT_TINY)).weak());
+                        crate::kit::menu::heading(ui, heading);
                     }
                     group = in_group;
                 }
-                let mut on = path == &current;
-                let item = ui
-                    .selectable_value(&mut on, true, egui::RichText::new(own).font(theme::ui_font(theme::TEXT_SMALL)))
+                let named = format!("{label}: {name}");
+                let item = crate::kit::menu::Entry::new(own)
+                    .chosen(path == &current)
+                    .compact()
+                    .named(&named)
+                    .show(ui)
                     .on_hover_text(name.as_str());
-                if item.changed() {
-                    choice = Some(path.clone());
+                if item.clicked() {
+                    if path != &current {
+                        choice = Some(path.clone());
+                    }
+                    ui.close();
                 }
-                item.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, format!("{label}: {name}")));
             }
         },
     )
@@ -513,7 +515,7 @@ fn stepper(ui: &mut Ui, rect: Rect, id_salt: egui::Id, up: bool, label: String) 
     let look = crate::kit::element::BUTTON.response(&response).look();
     let button = crate::kit::element::BUTTON.response(&response).enter();
     let radius = button.radius_or(2.0);
-    button.paint_with(painter, rect, crate::kit::element::Native { radius, fill: look.background() });
+    crate::kit::widgets::button_surface(painter, rect, &button, &response, false, look.background(), radius);
     drop(button);
     let inner = rect.shrink(5.0);
     let center = inner.center();

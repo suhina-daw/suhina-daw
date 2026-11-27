@@ -8,6 +8,7 @@
 
 use super::*;
 use crate::kit::element::Attr;
+use crate::kit::menu;
 use crate::settings::{PianoKeyNames, PianoKeyStyle};
 
 /// How wide a black key is, as a share of the key column.
@@ -539,34 +540,23 @@ pub(super) fn corner(
     painter.rect_filled(more, el.radius_or(3.0), fill);
     IconButton::More.draw(&painter, more, ink, scale);
     drop(el);
-    let font = theme::ui_font(theme::TEXT_SMALL);
-    let hint = crate::detail::detail_view::hint_ink();
     let theme_keys = theme_sets_keys();
     let mut picked = None;
     egui::Popup::menu(&response).show(|ui| {
+        // A submenu with its value dim at the right, named with the value for readers and tests.
         let submenu = |ui: &mut Ui, name: &str, value: &str, label: String, entries: &mut dyn FnMut(&mut Ui)| {
-            let button = egui::Button::new(egui::RichText::new(name).font(font.clone())).right_text((
-                egui::RichText::new(value).font(font.clone()).color(hint),
-                egui::containers::menu::SubMenuButton::arrow_atom(None),
-            ));
-            let (response, _) = egui::containers::menu::SubMenuButton::from_button(button).ui(ui, |ui| entries(ui));
-            response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+            menu::Entry::new(name).value(value).named(&label).compact().submenu(ui, |ui| entries(ui));
         };
         let style = if theme_keys { "Theme" } else { state.key_style.name() };
         submenu(ui, "Key style", style, format!("Key style ({style})"), &mut |ui| {
             if theme_keys {
-                let response = ui.selectable_label(true, egui::RichText::new("Theme").font(font.clone()));
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, true, "Key style: Theme"));
+                menu::Entry::new("Theme").chosen(true).named("Key style: Theme").compact().show(ui);
             }
             for style in PianoKeyStyle::ALL {
                 let on = !theme_keys && state.key_style == style;
-                let response = ui.add_enabled(
-                    !theme_keys,
-                    egui::Button::selectable(on, egui::RichText::new(style.name()).font(font.clone())),
-                );
                 let name = format!("Key style: {}", style.name());
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, &name));
-                if response.clicked() {
+                let entry = menu::Entry::new(style.name()).chosen(on).enabled(!theme_keys).named(&name);
+                if entry.compact().show(ui).clicked() {
                     picked = Some(ViewPick::KeyStyle(style));
                     ui.close();
                 }
@@ -576,10 +566,8 @@ pub(super) fn corner(
         submenu(ui, "Key names", names, format!("Key names ({names})"), &mut |ui| {
             for names in PianoKeyNames::ALL {
                 let on = state.key_names == names;
-                let response = ui.selectable_label(on, egui::RichText::new(names.name()).font(font.clone()));
                 let name = format!("Key names: {}", names.name());
-                response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, &name));
-                if response.clicked() {
+                if menu::Entry::new(names.name()).chosen(on).named(&name).compact().show(ui).clicked() {
                     picked = Some(ViewPick::KeyNames(names));
                     ui.close();
                 }

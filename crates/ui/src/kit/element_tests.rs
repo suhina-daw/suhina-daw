@@ -1139,3 +1139,57 @@ fn the_inspector_clips_a_child_by_an_overflow_box_only_while_it_is_open() {
     assert_eq!(painted(1), Some(area), "cut by the open box: {boxes:?}");
     assert_eq!(painted(2), Some(wide), "past a closed box, whole");
 }
+
+/// Each built-in theme dims a push button that cannot be pressed now (Settings' Scan during a
+/// scan), and Suhina Sheet draws none of its button artwork on the buttons drawn as a menu's rows:
+/// the sheet decides both, and a theme's rule for every `button` hides the base sheet's (#1696).
+#[test]
+fn built_in_themes_dim_a_disabled_button_and_sheet_s_row_buttons_have_no_artwork() {
+    let themes = [
+        ("suhina-studio", include_str!("../../themes/suhina-studio/theme.css")),
+        ("suhina-light", include_str!("../../themes/suhina-light/theme.css")),
+        ("suhina-glass", include_str!("../../themes/suhina-glass/theme.css")),
+        ("suhina-sheet", include_str!("../../themes/suhina-sheet/theme.css")),
+        ("suhina-blocks", include_str!("../../themes/suhina-blocks/theme.css")),
+        ("suhina-meadow", include_str!("../../themes/suhina-meadow/theme.css")),
+    ];
+    for (name, css) in themes {
+        let (enabled, disabled) = frames(css, || {
+            (
+                BUTTON.attribute("kind", "push").pointer(false, false, false).enter().color(),
+                BUTTON.attribute("kind", "push").pointer(false, false, true).enter().color(),
+            )
+        });
+        assert_ne!(enabled, disabled, "{name}: a disabled push button is dimmed");
+    }
+    let sheet = include_str!("../../themes/suhina-sheet/theme.css");
+    let (entry, more, push) = frames(sheet, || {
+        let none = |kind| super::super::skin::no_artwork(&BUTTON.attribute("kind", kind).enter());
+        (none("entry"), none("more"), none("push"))
+    });
+    assert!(entry && more, "Sheet's row buttons take their CSS look");
+    assert!(!push, "Sheet's push buttons keep its artwork");
+}
+
+/// The window's own buttons (Windows) look like the system's in every theme: no fill at rest, a
+/// faint gray under the pointer, and Close the system's red with a white cross. The user-agent
+/// sheet gives them, and neither the base sheet nor a theme's rule for every `button` reaches them.
+#[test]
+fn the_window_buttons_look_like_the_system_s_in_every_theme() {
+    // Each entered on its own, not inside the one before.
+    let window = |css: &'static str, kind: &'static str, hovered| {
+        frames(css, || {
+            let el = WINDOW_BUTTON.attribute("kind", kind).pointer(hovered, false, false).enter();
+            (el.background(), el.color())
+        })
+    };
+    let every_button = "button { background-color: #00ff00; color: #00ff00; border-radius: 9px; image: none; }";
+    for css in ["", every_button] {
+        let (rest, _) = window(css, "minimize", false);
+        let (hovered, _) = window(css, "minimize", true);
+        let (close, close_ink) = window(css, "close", true);
+        assert_eq!(rest.a(), 0, "{css}: {rest:?}");
+        assert_eq!(hovered, egui::Color32::from_rgba_unmultiplied(128, 128, 128, 46), "{css}");
+        assert_eq!((close, close_ink), (egui::Color32::from_rgb(0xc4, 0x2b, 0x1c), egui::Color32::WHITE), "{css}");
+    }
+}

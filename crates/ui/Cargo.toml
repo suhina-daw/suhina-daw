@@ -20,6 +20,7 @@ suhina-device-api.workspace = true
 suhina-device-sdk.workspace = true
 suhina-device-registry.workspace = true
 suhina-device-eq.workspace = true
+suhina-device-compressor.workspace = true
 suhina-dsp.workspace = true
 suhina-soundmap.workspace = true
 suhina-update.workspace = true

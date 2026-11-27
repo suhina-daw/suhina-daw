@@ -1125,6 +1125,7 @@ fn add_mixer(flp: &Flp, project: &mut Project, warnings: &mut Vec<String>) -> Re
                             tap: suhina_model::TapPoint::PostFader,
                         },
                         gain: 1.0,
+                        enabled: true,
                     }];
                 }
                 None => unresolved += 1,

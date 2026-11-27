@@ -312,10 +312,11 @@ refused or suspended, never by losing its edits.
 - **Zipped projects:** a zip holding a project and its samples opens after a bar asks where to
   unpack it (beside the zip by default); `suhina-cli` takes `--extract-to <folder>`.
 - **Sidechain:** a compressor or a plug-in can read another track as its key (its detector
-  listens to that track while it processes its own). Choose the track with the **SC** button
-  in the device's header or *Sidechain* in its menu, with where it is read (before or after
-  the track's devices, or after its fader) and its gain; or from the source's track menu,
-  *Sidechain to*. A plug-in hears the key on its sidechain input.
+  listens to that track while it processes its own). Choose the track with the chevron by the
+  **Sidechain** button in the device's header or *Sidechain* in its menu, with where it is read
+  (before or after the track's devices, or after its fader) and its gain; or from the source's
+  track menu, *Sidechain to*. The button switches the key off and on and keeps its source. A
+  plug-in hears the key on its sidechain input.
 - **Renaming devices:** a device's menu starts with its name in a field; type a new one and
   press Enter. A renamed plug-in still loads as itself.
 - **Notes stop at the instrument:** a plug-in effect after a track's instrument no longer gets
@@ -361,6 +362,16 @@ refused or suspended, never by losing its edits.
   reset the warp from the clip panel. The clip panel is resizable, has six warp
   modes, and a clip's end follows the audio when it is stretched. Dragging the ruler zooms and
   scrolls, with a magnifier for the pointer.
+
+- **Compressor display:** the Compressor's panel has a display between its dials with three
+  views: **Curve** (the transfer curve, a ring dragged for the threshold and the ratio),
+  **Activity** (four seconds of the level, the output and the gain reduction scrolling by) and
+  **Meters** (input or sidechain, gain reduction and output, each with its peak above it; a
+  right-click chooses the highest peak, a held peak or the level now). Its dials are grouped by
+  what they do, and the ratio reads `4.8:1`.
+- **Detail area clicks:** one click on a clip only selects it: the track's devices, or the clip
+  view, stay as they are. A double-click on a clip opens its editor; a double-click on a track
+  header shows its devices.
 
 ### M0 Foundation
 - Rust workspace, GPL-3.0-or-later, CI (fmt, clippy `-D warnings`, tests) on Linux, Windows and

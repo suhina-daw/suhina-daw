@@ -35,12 +35,11 @@ pub(super) fn routing(
     );
     widgets::subtle_dropdown(ui, painter, field, &response, current, background);
     egui::Popup::menu(&response).show(|ui| {
-        let text = |t: &str| egui::RichText::new(t).font(theme::ui_font(theme::TEXT_SMALL));
-        if ui.selectable_label(lane.output_name.is_none(), text("Main")).clicked() && lane.output_name.is_some() {
+        if crate::kit::menu::item(ui, "Main", lane.output_name.is_none()).clicked() && lane.output_name.is_some() {
             picked = Some(serde_json::Value::from("main"));
         }
         for (group, name) in groups.iter().filter(|(g, _)| *g != lane.track) {
-            if ui.selectable_label(lane.output == Some(*group), text(name)).clicked() && lane.output != Some(*group) {
+            if crate::kit::menu::item(ui, name, lane.output == Some(*group)).clicked() && lane.output != Some(*group) {
                 picked = Some(serde_json::Value::from(group.0));
             }
         }
@@ -489,12 +488,7 @@ pub(super) fn track_header(
             !hidden,
         );
         let (fill, text) = lit.colors();
-        lit.el.paint_over(
-            painter,
-            button,
-            crate::kit::element::Native { radius: 0.0, fill },
-            lit.toggle.image(lit.lit),
-        );
+        widgets::toggle_surface(painter, button, &lit.el, &response, fill, lit.toggle.image(lit.lit), 0.0);
         drop(lit);
         // Three stacked lines: the lanes under the track.
         let glyph = button.shrink2(Vec2::new(4.0, 4.0));

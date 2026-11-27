@@ -79,15 +79,18 @@ pub fn declared(ui: &mut egui::Ui, themes: &ThemesView, state: &mut State, held:
                     }
                 }
                 (_, Some(keywords), _) => {
-                    egui::ComboBox::from_id_salt(("theme-setting", &property.name))
-                        .selected_text(value.as_str())
-                        .show_ui(ui, |ui| {
+                    crate::kit::widgets::combo_box(
+                        ui,
+                        egui::ComboBox::from_id_salt(("theme-setting", &property.name)).selected_text(value.as_str()),
+                        |ui| {
                             for keyword in keywords {
-                                if ui.selectable_label(value == keyword, keyword).clicked() {
+                                if crate::kit::menu::item(ui, keyword, value == keyword).clicked() {
                                     next = Some(keyword.to_string());
+                                    ui.close();
                                 }
                             }
-                        });
+                        },
+                    );
                 }
                 _ => {
                     let draft = state.drafts.entry(property.name.clone()).or_insert_with(|| value.clone());

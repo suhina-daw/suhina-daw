@@ -21,6 +21,7 @@ use suhina_engine::model::automation::{Curve, CurveDrag};
 use suhina_engine::model::{ClipId, GAIN_POINT_RANGE, GainPoint, db_to_gain, envelope_db_at};
 
 use super::timeline::AudioView;
+use crate::kit::menu;
 use crate::kit::widgets::Action;
 
 /// The width of a point's dot, as an automation lane's are round, and of the area that takes
@@ -973,8 +974,8 @@ fn paint_grid(painter: &egui::Painter, rect: Rect, visible: Rect, step: f64, top
 /// Clear gain envelope in an audio clip's menu: takes all of `envelope`'s points away in one
 /// `clip.setEnvelope`, so the clip plays at its own level again; off while it has none.
 pub fn clear_item(ui: &mut Ui, clip: ClipId, envelope: &[GainPoint], actions: &mut Vec<Action>) {
-    ui.separator();
-    if ui.add_enabled(!envelope.is_empty(), egui::Button::new("Clear gain envelope")).clicked() {
+    menu::separator(ui);
+    if menu::entry(ui, "Clear gain envelope", None, !envelope.is_empty()).clicked() {
         actions.push(set(clip, &[]));
         ui.close();
     }
@@ -1013,14 +1014,14 @@ pub fn grid_beats(ctx: &egui::Context, bar_beats: f64) -> f64 {
 fn grid_menu(ui: &mut Ui) {
     let current = grid(ui.ctx());
     let free = free_move(ui.ctx());
-    if ui.selectable_label(free, "Free move").clicked() {
+    if menu::toggle(ui, "Free move", free).clicked() {
         set_free_move(ui.ctx(), !free);
         ui.close();
     }
-    ui.menu_button("Envelope grid", |ui| {
+    menu::submenu(ui, "Envelope grid", false, |ui| {
         for (index, value) in GRID_VALUES.iter().enumerate() {
             let name = value.replace(" bars", " Bars").replace(" bar", " Bar");
-            if ui.selectable_label(index == current, name).clicked() {
+            if menu::item(ui, &name, index == current).clicked() {
                 ui.data_mut(|d| d.insert_temp(grid_key(), EnvelopeGrid(index)));
                 ui.close();
             }
@@ -1057,8 +1058,8 @@ pub fn edit_button(
         "envelope",
     );
     let (fill, ink) = toggle.at(lit);
+    crate::kit::widgets::toggle_surface(painter, rect, &el, &response, fill, toggle.image(lit), 2.0);
     drop(el);
-    painter.rect_filled(rect, 2.0, fill);
     // A line with a peak: an envelope.
     let r = rect.shrink(3.0);
     let line = vec![
@@ -1089,9 +1090,9 @@ pub fn free_button(ui: &Ui, painter: &egui::Painter, rect: Rect, clip: ClipId, f
         "envelope",
     );
     let (fill, ink) = toggle.at(lit);
-    drop(el);
     painter.rect_filled(rect, 2.0, crate::arrangement::arrangement_view::panel_surface().gamma_multiply(0.85));
-    painter.rect_filled(rect, 2.0, fill);
+    crate::kit::widgets::toggle_surface(painter, rect, &el, &response, fill, toggle.image(lit), 2.0);
+    drop(el);
     let r = rect.shrink(3.0);
     if free {
         // Arrows up and down: moves anywhere.

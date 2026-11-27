@@ -784,7 +784,7 @@ fn the_arrangement_track_on_toggle_is_control_track_on() {
     let orange = egui::Color32::from_rgb(0xFF, 0x88, 0x00);
     let blue = egui::Color32::from_rgb(0x00, 0x88, 0xFF);
     suhina_ui::kit::native_css::set_user_sheet(Some(
-        "#control-track-on { background-color: #ff8800; } #control-track-on[checked] { background-color: #0088ff; }"
+        "button { image: none; } #control-track-on { background-color: #ff8800; } #control-track-on[checked] { background-color: #0088ff; }"
             .into(),
     ));
     let mut h = window(demo_app());
@@ -1113,8 +1113,8 @@ fn open_with_clip(css: &str, stacked: bool) -> Harness<'static, App> {
     }
     h.get_by_label("Launcher view").click();
     h.run();
-    h.get_by_label("Select Beat B on Drums (scene 3)").click();
-    h.run();
+    // A double-click on the slot opens its clip; one click only selects it.
+    open_clip(&mut h, "Select Beat B on Drums (scene 3)");
     h
 }
 
@@ -1126,9 +1126,9 @@ fn open_with_clip(css: &str, stacked: bool) -> Harness<'static, App> {
 fn a_layout_with_only_gaps_keeps_the_dragged_detail_area_in_bounds() {
     let mut h = open_with_clip("workspace-panel { margin: 4px; }", true);
     // A clip's editor lies along the bottom even with the devices stacked: a track's devices
-    // stand beside the view.
-    h.get_by_label("Track Drums").click();
-    h.run();
+    // (a double-click on its name shows them) stand beside the view.
+    let name = h.get_by_label("Track Drums").rect().center();
+    double_click_at(&mut h, name);
     let before = h.get_by_label("Detail area splitter").rect().center().x;
     let nudged = drag(&mut h, "Detail area splitter", Vec2::new(40.0, 0.0)).map(|s| s.center().x);
     assert!(nudged.is_some_and(|x| (x - before).abs() < 1.0), "one width: {before} to {nudged:?}");
@@ -1342,6 +1342,15 @@ fn the_mixer_splitter_takes_hover_and_active_and_still_drags() {
 /// box (#1336). The browser and the detail area show, in both views.
 #[test]
 fn no_bundled_theme_has_a_view_painting_past_its_region() {
+    use suhina_ui::kit::platform::{Platform, with};
+    // Windows too: Suhina draws the window's buttons there.
+    for system in [Platform::HOST, Platform::Windows] {
+        with(system, no_view_paints_past_its_region);
+    }
+}
+
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+fn no_view_paints_past_its_region() {
     let themes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("themes");
     let mut names: Vec<String> = std::fs::read_dir(&themes)
         .expect("the bundled themes")
@@ -1433,6 +1442,14 @@ fn the_detail_panel_answers_to_its_kind() {
 /// File menu, the Export dialog and Settings.
 #[test]
 fn padded_regions_hold_their_views_inside_their_content_box() {
+    use suhina_ui::kit::platform::{Platform, with};
+    for system in [Platform::HOST, Platform::Windows] {
+        with(system, padded_regions_hold_their_views);
+    }
+}
+
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+fn padded_regions_hold_their_views() {
     const BOXES: &str = "application-bar, menu-bar, project-tabs, toolbar, status-bar, workspace-panel, \
         browser, session, arrangement, mixer, detail, clip-editor, piano-roll, sample-map, popup, settings, \
         dialog, start-page, plugin-manager, export, track-column, track-header, midi-tools, clip-info, \
@@ -1457,7 +1474,7 @@ fn padded_regions_hold_their_views_inside_their_content_box() {
     h.get_by_label("Track Drums").click();
     check(&mut h, "a track's devices");
     assert!(h.query_by_label("Device Utility").is_some(), "the devices show");
-    h.get_by_label("Select Walk on Bass (scene 2)").click();
+    open_clip(&mut h, "Select Walk on Bass (scene 2)");
     check(&mut h, "a clip and its notes");
     let settings = suhina_ui::settings::Settings {
         device_layout: suhina_ui::settings::DeviceLayout::Stack,

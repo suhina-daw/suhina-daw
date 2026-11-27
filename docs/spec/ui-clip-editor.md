@@ -48,10 +48,16 @@ including clips with very dark imported colors. This is a display adjustment onl
 saved clip color is unchanged. Note labels choose contrasting ink from the actual fill,
 not from velocity or opacity. Muted, erased and out-of-window notes remain dimmed.
 
-- **Built:** selecting a MIDI clip in the Arrangement view shows the clip's properties column on the
-  left of the detail area and the piano roll in the rest of it, in place of the track's devices.
-  Selecting a track, or an audio clip, shows what it showed before (devices; an audio clip's
-  properties). With the devices stacked (Settings › Devices › Device chain layout: Stack) the
+- **Built:** the detail area shows one of two views, and one click never changes which. The
+  **devices view** (the app starts in it) shows a track's devices on their own: a click on a track
+  header shows that track's, and one click on a clip, MIDI or audio, only selects the clip, the
+  devices staying in view. The **clip view** shows a clip: a MIDI clip's properties column on the
+  left and the piano roll in the rest, an audio clip's properties and its audio editor. A
+  **double-click on a clip** opens the clip view on it (opening a hidden detail area); while the
+  clip view shows, one click on another clip shows that clip, and a click on a track header or an
+  empty spot of a lane keeps the clip view, which says *No clip selected* at the height the clip
+  view had (its splitter sizes it as a clip's). A **double-click on a track header** shows the
+  devices view again (below). With the devices stacked (Settings › Devices › Device chain layout: Stack) the
   piano roll still lies along the bottom as in a row: only the devices stack, in a column of their
   own beside the view, and never the piano roll.
 - **Built:** a clip selected in a Launcher slot opens it too (the Clip / Devices switch below).
@@ -115,9 +121,8 @@ not from velocity or opacity. Muted, erased and out-of-window notes remain dimme
   that was open opens again.
 
   The switch is window state, like Shift+Tab: not a command, not an undo step, not saved. It
-  lasts while the same clip stays selected; **selecting another clip** (in the Arrangement view or
-  in a slot) shows its editor again, and in the Arrangement view so does a click on the clip
-  already selected, so a single click on a clip keeps meaning "edit this clip". While the devices show, the piano roll's keys and Ctrl+U do nothing
+  lasts while the same clip stays selected; a **double-click on a clip** shows its editor again (one
+  click only selects it). While the devices show, the piano roll's keys and Ctrl+U do nothing
   (there are no notes on screen), the splitter's least height is the device panels' compact height, 200 px, as with a clip (the height dragged freely is for a clip's view and the devices reached from it; a track's devices, reached by clicking the track, are open at a compact panel's height or closed, never between: a drag on the splitter past half that height closes or opens the area, and a double-click closes it; a plug-in's editor embedded in the chain gets its full height, taking the view's least room when it needs to), and nothing
   is pulled to the top.
 - **Built ([#505](https://github.com/suhina-daw/suhina-daw/issues/505)):** a **double-click on a
@@ -331,9 +336,9 @@ comes back. It is window state, not a command, and not an undo step.
   selection (`pianoRoll.deselect`) and closes the quantise block, so the editor has a key of its
   own instead, one no other default uses.
 
-After the editor is closed one of these ways, **selecting a clip** (a click on a clip in the
-Arrangement view, another clip, or a slot's clip in the Launcher view) opens it again at the
-height it had. A detail area hidden with Shift+Tab stays hidden when a clip is selected, as
+After the editor is closed one of these ways, a **double-click on a clip** (in the Arrangement view
+or a slot's clip in the Launcher view) opens it again at the height it had; one click only selects
+the clip. A detail area hidden with Shift+Tab stays hidden when a clip is selected, as
 before; Shift+Tab, View › Show detail area and the splitter open it either way. A click on an
 empty spot of the Arrangement view clears the clip selection (› [Arrangement
 editing](arrangement-editing.md) › Selecting clips); the detail area stays open and shows the

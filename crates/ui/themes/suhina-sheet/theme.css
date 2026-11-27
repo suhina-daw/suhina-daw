@@ -173,6 +173,17 @@ session { header-height: 24px; return-width: 80px; scene-width: 84px; slot-heigh
   button[kind="preset"][checked] { background-color: var(--control-activeBackground); color: inherit; }
   button[kind="preset"][checked]:hover { background-color: var(--control-hoverBackground); }
   button[kind="switch"][checked], button[kind="check"][checked] { background-color: var(--text-value); }
+  /* The buttons drawn as a menu's rows (a choice in a list, a section's row, a grid's widths) and
+     the browser's "…": no fill until hovered (and none of this theme's button artwork, said beside
+     it below the layer), the chosen one lit (this theme's rule for every `button` overrides the base sheet's: state them again). */
+  button[kind="entry"], button[kind="more"] { background-color: transparent; }
+  button[kind="entry"]:hover { background-color: var(--control-hoverBackground); }
+  /* A dialog's main action keeps its accent edge. */
+  button[kind="primary"] { border-color: var(--accent); }
+  /* This theme gives every word one color, so it says how a row or button that cannot be used now
+     is dimmed, and which words read on the chosen row's fill. */
+  list-row[kind="menu"]:disabled, button:disabled { color: color-mix(in srgb, var(--text-primary) 45%, transparent); }
+  list-row[kind="menu"][selected], button[kind="entry"][checked] { background-color: var(--control-selectedBackground); color: var(--on-accent); }
   knob { color: var(--tint); background-color: white; }
   value, dropdown, dropdown-arrow, text-input { color: var(--text-primary); --text-primary: color-mix(in oklab, color-mix(in oklab, var(--tint), var(--tint-light) 24%), black 24%); --text-secondary: var(--text-primary); --text-hint: var(--text-primary); --text-value: var(--text-primary); --text-inverse: var(--text-primary); background-color: white; border-radius: 0px; }
   text-input[kind="typed"] { background-color: var(--control-activeBackground); color: var(--text-value); }
@@ -195,6 +206,8 @@ pan { appearance: knob; }
 /* Artwork. */
 icon[kind="arm"] { image: url("assets/arm.svg"); }
 button { image: url("assets/button.svg"); }
+/* The buttons drawn as a menu's rows and the browser's "…" take their CSS look alone. */
+button[kind="entry"], button[kind="more"] { image: none; }
 icon[kind="cue"] { image: url("assets/cue.svg"); }
 icon[kind="folder"] { image: url("assets/folder.svg"); }
 fader-cap { image: url("assets/fader.cap.svg"); }
@@ -203,7 +216,7 @@ knob-body { image: url("assets/knob.body.svg"); }
 knob-pointer { image: url("assets/knob.pointer.svg"); }
 meter { image: url("assets/meter.svg"); }
 icon[kind="play"] { image: url("assets/play.svg"); }
-icon[kind="record"] { image: url("assets/record.svg"); }
+icon[kind="record"] { image: url("assets/record.svg"); color: inherit; }
 icon[kind="solo"] { image: url("assets/solo.svg"); }
 icon[kind="stop"] { image: url("assets/stop.svg"); }
 icon[kind="audio"] { image: url("assets/track.audio.svg"); }

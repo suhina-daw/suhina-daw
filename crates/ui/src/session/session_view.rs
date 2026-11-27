@@ -651,7 +651,7 @@ fn main_metronome(
         "metronome",
     );
     let (fill, glyph) = toggle.at(lit);
-    painter.rect_filled(rect, 0.0, fill);
+    widgets::toggle_surface(painter, rect, &el, &response, fill, toggle.image(lit), 0.0);
     crate::session::record_controls::metronome_glyph(painter, rect, glyph);
     // The level's slider is a popup of its own, not a part of the button.
     drop(el);
@@ -1313,7 +1313,7 @@ fn column_body(
                         let clip = slot.clip.filter(|_| has_clip).map(|id| (id, slot.color));
                         menus::slot_menu(ui, column.track, scene, &slot.name, clip, can_paste, actions);
                         if let Some(launch) = slot.launch {
-                            ui.separator();
+                            crate::kit::menu::separator(ui);
                             crate::session::slot_launch::launch_menu(ui, column.track, scene, launch, actions);
                         }
                     },
