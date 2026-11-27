@@ -63,8 +63,10 @@ impl MpeInput {
         }
         let mut config = config;
         if config.mode != MpeMode::Manual {
-            config.lower_members = 0;
-            config.upper_members = 0;
+            // Zones and ranges follow the controller: no zone until its RPN 6, then the MPE
+            // defaults. Ranges saved for Manual mode stay saved but do not apply here.
+            let defaults = MpeConfig::default();
+            config = MpeConfig { mode: config.mode, lower_members: 0, upper_members: 0, ..defaults };
         }
         Some(Self {
             config,
@@ -460,6 +462,16 @@ impl MpeInput {
                 self.config.lower_members = self.config.lower_members.min(14u8.saturating_sub(count));
             }
         }
+        // A configuration message restores the addressed zone's default ranges (member ±48,
+        // manager ±2); RPN 0 changes them afterwards.
+        let defaults = MpeConfig::default();
+        if manager == 0 {
+            self.config.lower_member_bend = defaults.lower_member_bend;
+            self.config.lower_manager_bend = defaults.lower_manager_bend;
+        } else {
+            self.config.upper_member_bend = defaults.upper_member_bend;
+            self.config.upper_manager_bend = defaults.upper_manager_bend;
+        }
         let changed: [bool; 16] = std::array::from_fn(|c| before[c] != self.zone(c as u8));
         for slot in &mut self.notes {
             if let Some(note) = slot.filter(|n| changed[usize::from(n.channel)]) {
@@ -474,6 +486,10 @@ impl MpeInput {
                     *refused = [0; 128];
                 }
             }
+        }
+        // Held notes the change left in the zone sound at the restored ranges.
+        if count > 0 {
+            self.express(manager, Kind::Pitch, sink);
         }
     }
 }

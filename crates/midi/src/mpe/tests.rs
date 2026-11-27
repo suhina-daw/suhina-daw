@@ -309,3 +309,44 @@ fn a_refused_press_never_releases_a_later_note_on_its_key() {
     println!("after the owed releases: {held:?}");
     assert!(held.iter().any(|(_, e)| matches!(e, LiveEvent::Instance { id, .. } if *id == c)), "C is held");
 }
+
+fn pitch_values(events: &[(u8, LiveEvent)]) -> Vec<f64> {
+    events
+        .iter()
+        .filter_map(|(_, event)| match event {
+            LiveEvent::Instance { event: Event::Expression { kind: Kind::Pitch, value }, .. } => Some(*value),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn automatic_mode_uses_the_default_ranges_whatever_manual_mode_saved() {
+    let saved =
+        MpeConfig { mode: MpeMode::Automatic, lower_member_bend: 24, lower_manager_bend: 7, ..MpeConfig::default() };
+    let mut input = MpeInput::new(saved, 9).unwrap();
+    rpn(&mut input, 0, 6, 15);
+    assert_eq!((input.config().lower_member_bend, input.config().lower_manager_bend), (48, 2));
+    on(&send(&mut input, &[0x91, 60, 100]));
+    let bent = pitch_values(&send(&mut input, &[0xe1, 0, 96]));
+    println!("half-scale member bend: {bent:?}");
+    assert_eq!(bent, [24.]);
+}
+
+#[test]
+fn a_configuration_message_restores_its_zones_default_ranges_and_retunes_held_notes() {
+    let mut input = input(MpeMode::Automatic);
+    rpn(&mut input, 0, 6, 12);
+    rpn(&mut input, 15, 6, 2);
+    rpn(&mut input, 14, 0, 7);
+    rpn(&mut input, 1, 0, 12);
+    on(&send(&mut input, &[0x91, 60, 100]));
+    assert_eq!(pitch_values(&send(&mut input, &[0xe1, 0, 96])), [6.]);
+    // The same lower-zone configuration again: the held note stays, at the default range.
+    let retuned = rpn(&mut input, 0, 6, 12);
+    println!("after RPN 6: {retuned:?}");
+    assert!(!retuned.iter().any(|(_, e)| matches!(e, LiveEvent::Instance { event: Event::Choke { .. }, .. })));
+    assert_eq!(pitch_values(&retuned), [24.]);
+    assert_eq!(input.config().lower_member_bend, 48);
+    assert_eq!(input.config().upper_member_bend, 7, "the other zone keeps its range");
+}

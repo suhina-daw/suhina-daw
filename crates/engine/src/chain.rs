@@ -1516,6 +1516,10 @@ impl Chain {
         }
         // The track's late render blocks are its own, whatever its devices (ADR 0038 › 3).
         self.missed_blocks = old.missed_blocks;
+        // Identified notes reach the instrument through the MIDI effects in front of it. When
+        // those change, a held note's later off would pass through effects that never saw its
+        // on (a new Pitch drops it), so it is ended at the instrument at the edit instead.
+        let same_route = old.note_route() == self.note_route();
         // The same kinds alone is not enough: two identical devices that traded places would
         // each keep the other's running state.
         if old.ids == self.ids && old.device_ids == self.device_ids {
@@ -1530,12 +1534,48 @@ impl Chain {
         }
         self.held = old.held;
         self.live_instances = old.live_instances;
+        if !same_route {
+            self.end_routed_instances();
+        }
         self.next_off = old.next_off;
         self.arranged = old.arranged;
         self.scale = old.scale;
         self.delay.adopt(&mut old.delay);
         self.adopt_sends(old);
         true
+    }
+
+    /// The devices an identified note passes on its way to the instrument: every slot up to and
+    /// including the first one that is not a MIDI effect, by device id and kind.
+    fn note_route(&self) -> (&[DeviceId], &[String]) {
+        let end = self
+            .slots
+            .iter()
+            .position(|slot| !matches!(slot, DeviceSlot::MidiDevice(_)))
+            .map_or(self.slots.len(), |at| at + 1);
+        (self.device_ids.get(..end).unwrap_or(&self.device_ids), self.ids.get(..end).unwrap_or(&self.ids))
+    }
+
+    /// Ends each held identified note at the instrument itself, by its id, and forgets it: the
+    /// route its on took is gone. Released notes keep their tails, which end on their own.
+    /// Ordinary-compatibility notes keep the key-addressed path. Never allocates.
+    fn end_routed_instances(&mut self) {
+        let instrument = self.slots.iter_mut().find_map(|slot| match slot {
+            DeviceSlot::Device(device) if device.info().role == suhina_device_api::Role::Instrument => Some(device),
+            _ => None,
+        });
+        let Some(instrument) = instrument else { return };
+        for entry in &mut self.live_instances {
+            let Some(note) = entry.filter(|note| note.native) else { continue };
+            if !note.released {
+                let _ = suhina_device_api::dispatch_note_instance(
+                    instrument.as_mut(),
+                    note.id,
+                    NoteInstanceEvent::Choke { key: note.key },
+                );
+            }
+            *entry = None;
+        }
     }
 
     /// Swaps each slot of this chain with the slot of `old` that has its device id and runs the

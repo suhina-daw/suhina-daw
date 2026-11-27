@@ -295,3 +295,33 @@ fn live_mpe_an_expression_with_no_room_on_a_full_timeline_is_dropped_not_a_panic
             .any(|(_, e)| matches!(e, LiveEvent::Instance { event: NoteInstanceEvent::Expression { .. }, .. }))
     );
 }
+
+#[test]
+fn live_mpe_a_held_note_ends_when_an_edit_changes_its_route_and_plays_on_when_it_does_not() {
+    // Inserting Pitch before the instrument changes the route the note's on took: the new
+    // Pitch never saw it and would drop its off, so the edit ends it. A utility after the
+    // instrument leaves the route alone: the note plays on and its own off releases it.
+    for (route_changes, at) in [(true, 0), (false, 1)] {
+        let mut p = project(Vec::new(), 1., vec![device("fm-synth", &[])]);
+        p.assign_ids().unwrap();
+        let mut edited = p.clone();
+        edited.channels[0].devices.insert(at, device(if route_changes { "pitch" } else { "utility" }, &[]));
+        edited.assign_ids().unwrap();
+        let mut renderer = Renderer::stopped(&p, &AudioPool::new(), SR, suhina_device_registry::factory()).unwrap();
+        let mut controller = renderer.controller();
+        let mut live = controller.take_live_input().unwrap();
+        controller.send(LaunchCommand::SetArmed { track: TrackId(1), armed: true, input: Default::default() }).unwrap();
+        assert!(live.send(instance(1, on(60))));
+        assert!(peak(&blocks(&mut renderer, 4, 256)) > 1e-3, "the note sounds before the edit");
+        controller.update(&edited).unwrap();
+        let after_edit = peak(&blocks(&mut renderer, 40, 256));
+        assert!(live.send(instance(1, NoteInstanceEvent::Off { key: 60, velocity: 0. })));
+        blocks(&mut renderer, 200, 256);
+        let after_off = peak(&blocks(&mut renderer, 4, 256));
+        println!("route_changes={route_changes} after_edit={after_edit} after_off={after_off}");
+        if !route_changes {
+            assert!(after_edit > 1e-3, "an edit that keeps the route keeps the note playing");
+        }
+        assert!(after_off < 1e-6, "the note is silent after its key went up");
+    }
+}

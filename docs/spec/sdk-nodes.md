@@ -342,7 +342,9 @@ the occurrence is choked. The private body currently supports VoiceInput, MidiCo
 PitchBend, Pressure, VoiceOutput, AD/ADSR and ordinary signal nodes, with direct event input.
 Other native consumers, including a private Sampler/SamplerAsset or Component, and transformed
 inner or outer event routes stay in ordinary compatibility until their admission and retirement
-are implemented together. They do not advertise the endpoint: one native occurrence must not
+are implemented together. So do graphs with a MidiKey, MidiVelocity or MidiGate outside the
+group: those read the graph's own MIDI state, which only ordinary notes update. They do not
+advertise the endpoint: one native occurrence must not
 start both an ordinary and an independently identified note inside a nested sampler.
 
 Component embeds a named, positive-version graph snapshot including its parameters and optional

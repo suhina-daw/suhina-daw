@@ -352,3 +352,26 @@ fn mpe_a_choke_of_a_taken_occurrence_ends_its_fade_without_touching_the_new_note
     println!("after choke: {:?}", &buffer[..4]);
     assert!(buffer.iter().all(|sample| (*sample - 1.).abs() < 1e-6), "no fade remains: {buffer:?}");
 }
+
+#[test]
+fn mpe_a_voice_group_gated_by_an_outer_midi_gate_stays_on_ordinary_notes_and_sounds() {
+    use suhina_device_api::{NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    // The voice outputs a constant 1 while it plays; the outer gate multiplies it.
+    let mut graph = expression_graph("gate");
+    graph.nodes.insert(1, N::new("gate", K::MidiGate));
+    graph.nodes.insert(2, N::new("amp", K::Multiply));
+    graph.connections =
+        vec![C::ports("group", "out", "amp", "a"), C::ports("gate", "out", "amp", "b"), C::new("amp", "out")];
+    let mut device = audio(&graph);
+    assert!(device.note_instances().is_none(), "an outer MIDI value reader withholds the endpoint");
+    // The chain then plays the note on the ordinary path; dispatching identified input to the
+    // device falls back the same way, and the outer gate opens.
+    let id = NoteInstanceId::from_parts(8, 1).unwrap();
+    let event = E::On { key: 60, velocity: 1., expression: NoteExpressionState::NEUTRAL };
+    assert!(suhina_device_api::dispatch_note_instance(&mut device, id, event).is_err());
+    device.event(NoteEvent::On { key: 60, velocity: 1. });
+    let mut buffer = [0.; 34];
+    device.process(&ProcessContext::default(), &mut buffer);
+    println!("gated: {:?}", &buffer[..4]);
+    assert!(buffer.iter().all(|sample| (*sample - 1.).abs() < 1e-6), "{buffer:?}");
+}

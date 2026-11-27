@@ -78,7 +78,9 @@ Protocol channel numbers in code are 0..15; the UI displays 1..16.
 
 MPE 1.1 defines a lower zone managed by channel 1 and an upper zone managed by channel 16.
 RPN 6 chooses member counts; the latest configuration takes precedence over overlapping
-membership. Its defaults are manager bend ±2 and member bend ±48 semitones. RPN 0 on one
+membership. Its defaults are manager bend ±2 and member bend ±48 semitones: each RPN 6 restores
+them for the zone it addresses and retunes that zone's held notes, and Automatic mode starts from
+them whatever ranges are saved for Manual mode. RPN 0 on one
 member changes the whole zone's member sensitivity. Suhina accepts whole-semitone ranges
 0..96. RPN selection is tracked per port/channel, either selector order is accepted, null
 selection ends it, and an NRPN selection prevents a stale RPN from consuming data entry.
@@ -159,7 +161,10 @@ feeds the FM pressure routing. Timbre shifts each enabled voice filter by up to 
 in either direction; with the patch filter off that mapping has no effect.
 
 Pitch preserves runtime identity and the transposed key through release/choke, including
-equal-pitch occurrences and later parameter changes. Unmigrated MIDI effects, hosted plug-ins,
+equal-pitch occurrences and later parameter changes. An edit that changes the MIDI effects in
+front of the instrument ends each held identified note at the instrument, by its id, since its
+later off would pass effects that never saw its on; an edit that keeps that route keeps the note
+playing. Unmigrated MIDI effects, hosted plug-ins,
 layered SDK graphs and instruments without the capability use ordinary-note compatibility
 for the entire chain. Direct SDK voice-group graphs expose `VoiceInput.pitch` in semitones
 and `VoiceInput.timbre` in 0..1 without changing the legacy normalized `bend` output. Graphs

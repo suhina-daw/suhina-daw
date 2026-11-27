@@ -158,6 +158,12 @@ impl PreparedEffect {
     pub(crate) fn note_instances(&mut self) -> Option<&mut dyn suhina_device_api::NoteInstanceDevice> {
         let mut selected = None;
         for (index, node) in self.nodes.iter().enumerate() {
+            // These read the graph's own MIDI state, which only the ordinary event path keeps
+            // up to date: identified notes go straight to the group and would leave a gate
+            // closed or a key stale. Such a graph stays on ordinary-note compatibility.
+            if matches!(node.kind, NodeKind::MidiKey | NodeKind::MidiVelocity | NodeKind::MidiGate) {
+                return None;
+            }
             if matches!(node.state, State::Native(_)) {
                 if selected.is_some() || !matches!(node.kind, NodeKind::VoiceGroup { .. }) {
                     return None;
