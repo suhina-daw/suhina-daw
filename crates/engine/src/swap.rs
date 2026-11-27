@@ -396,8 +396,7 @@ impl Renderer {
                 }
                 let note = started
                     .iter()
-                    .filter(|e| e.bus == bus && e.key == key && e.end > time && !launcher.overrides(e.column))
-                    .next_back();
+                    .rfind(|e| e.bus == bus && e.key == key && e.end > time && !launcher.overrides(e.column));
                 if let Some(curve) = note.and_then(|e| e.curve_at(time, position)) {
                     chain.rebind_curve(0, position, key, crate::chain::mpe::StartCurve { curve, list: curves, map });
                 }
