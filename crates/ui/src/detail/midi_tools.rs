@@ -38,11 +38,18 @@ pub enum Transform {
     Humanise,
     RandomiseVelocity,
     RampVelocity,
+    /// An LFO written into the notes' pitch, slide or pressure curves (› MPE LFO).
+    MpeLfo,
 }
 
 impl Transform {
-    pub const ALL: [Transform; 4] =
-        [Transform::Quantise, Transform::Humanise, Transform::RandomiseVelocity, Transform::RampVelocity];
+    pub const ALL: [Transform; 5] = [
+        Transform::Quantise,
+        Transform::Humanise,
+        Transform::RandomiseVelocity,
+        Transform::RampVelocity,
+        Transform::MpeLfo,
+    ];
 
     /// Its name in the list.
     pub fn name(self) -> &'static str {
@@ -51,6 +58,7 @@ impl Transform {
             Transform::Humanise => "Humanise",
             Transform::RandomiseVelocity => "Randomise velocity",
             Transform::RampVelocity => "Ramp velocity",
+            Transform::MpeLfo => "MPE LFO",
         }
     }
 
@@ -61,6 +69,7 @@ impl Transform {
             Transform::Humanise => "Humanise",
             Transform::RandomiseVelocity => "Randomise",
             Transform::RampVelocity => "Ramp",
+            Transform::MpeLfo => "LFO",
         }
     }
 
@@ -71,6 +80,7 @@ impl Transform {
             Transform::Humanise => "Small shifts, like a player",
             Transform::RandomiseVelocity => "Velocities up or down",
             Transform::RampVelocity => "Velocities rise or fall",
+            Transform::MpeLfo => "A wave in pitch, slide or pressure",
         }
     }
 }
@@ -83,6 +93,8 @@ pub struct Tools<'a> {
     pub selected: &'a BTreeSet<usize>,
     /// The clip's length in beats.
     pub length: f64,
+    /// Beats in a bar, which the MPE LFO's rate is a part of.
+    pub bar_beats: f64,
     /// A time selection with no note in it: the tools act on nothing, not on the whole clip.
     pub nothing: bool,
 }
@@ -169,7 +181,56 @@ pub struct ToolSettings {
     /// The velocity **Ramp velocity** starts from and ends on.
     pub ramp_from: i32,
     pub ramp_to: i32,
+    /// **MPE LFO**: the target (0 pitch, 1 slide, 2 pressure), the wave (0 sine, 1 square,
+    /// 2 triangle, 3 random), the shape and the time shift in percent, the rate (an index into
+    /// [`LFO_RATES`]), the amount and base (semitones for pitch, 0 to 127 otherwise), attack
+    /// and decay in percent of the note, and the random wave's seed.
+    pub lfo_target: usize,
+    pub lfo_wave: usize,
+    pub lfo_shape: f64,
+    pub lfo_rate: usize,
+    pub lfo_shift: f64,
+    pub lfo_amount: f64,
+    pub lfo_base: f64,
+    pub lfo_attack: f64,
+    pub lfo_decay: f64,
+    pub lfo_seed: u64,
 }
+
+/// The MPE LFO's rates: a cycle per part of a bar, each also dotted (`.`) and triplet (`T`), and
+/// the part of a bar each is.
+pub const LFO_RATES: [(&str, f64); 24] = [
+    ("1", 1.0),
+    ("1.", 1.5),
+    ("1T", 2.0 / 3.0),
+    ("1/2", 0.5),
+    ("1/2.", 0.75),
+    ("1/2T", 1.0 / 3.0),
+    ("1/4", 0.25),
+    ("1/4.", 0.375),
+    ("1/4T", 1.0 / 6.0),
+    ("1/8", 0.125),
+    ("1/8.", 0.1875),
+    ("1/8T", 1.0 / 12.0),
+    ("1/16", 0.0625),
+    ("1/16.", 0.09375),
+    ("1/16T", 1.0 / 24.0),
+    ("1/32", 0.03125),
+    ("1/32.", 0.046875),
+    ("1/32T", 1.0 / 48.0),
+    ("1/64", 0.015625),
+    ("1/64.", 0.0234375),
+    ("1/64T", 1.0 / 96.0),
+    ("1/128", 0.0078125),
+    ("1/128.", 0.01171875),
+    ("1/128T", 1.0 / 192.0),
+];
+
+/// The MPE LFO's targets, as the command names them and as the list shows them.
+pub const LFO_TARGETS: [(&str, &str); 3] = [("pitch", "Pitch"), ("timbre", "Slide"), ("pressure", "Pressure")];
+/// The MPE LFO's waves.
+pub const LFO_WAVES: [(&str, &str); 4] =
+    [("sine", "Sine"), ("square", "Square"), ("triangle", "Triangle"), ("random", "Random")];
 
 impl Default for ToolSettings {
     fn default() -> Self {
@@ -180,6 +241,16 @@ impl Default for ToolSettings {
             random_amount: 16.0,
             ramp_from: 20,
             ramp_to: 120,
+            lfo_target: 0,
+            lfo_wave: 0,
+            lfo_shape: 0.0,
+            lfo_rate: 6,
+            lfo_shift: 0.0,
+            lfo_amount: 1.0,
+            lfo_base: 0.0,
+            lfo_attack: 0.0,
+            lfo_decay: 0.0,
+            lfo_seed: 1,
         }
     }
 }

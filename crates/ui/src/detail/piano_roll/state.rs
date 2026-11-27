@@ -688,6 +688,7 @@ impl PianoRollState {
                     notes: &clip.notes,
                     selected: &acting,
                     length: clip.length,
+                    bar_beats: clip.bar_beats,
                     nothing,
                 };
                 let mut params = tools.params();

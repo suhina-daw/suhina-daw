@@ -920,6 +920,7 @@ impl App {
                     notes: &piano.notes,
                     selected: &selected,
                     length: piano.length,
+                    bar_beats: piano.bar_beats,
                     nothing,
                 };
                 let show_tools = piano_roll.tools_open;
