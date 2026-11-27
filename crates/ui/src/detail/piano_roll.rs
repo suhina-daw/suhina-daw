@@ -69,6 +69,8 @@ pub use gestures::start_by;
 /// Height of the toolbar, widths of the scale strip and the key column, height of the ruler and
 /// the default height of the velocity lane.
 const TOOLBAR: f32 = 22.0;
+/// The room below the notes while MPE is on and no height was chosen: its lanes share it.
+const MPE_LANES: f32 = 160.0;
 const SCALE_STRIP: f32 = 26.0;
 const KEYS: f32 = 60.0;
 const RULER: f32 = 36.0;
@@ -300,7 +302,9 @@ pub fn show(
         )
     });
     let area = clip_row.map_or(area, |row| Rect::from_min_max(Pos2::new(area.left(), row.bottom()), area.max));
-    let lane_height = velocity_lane_height(area.height() - RULER, state.key_height, state.lane_wanted);
+    // MPE shares the room below the notes among its lanes: it starts taller (› MPE).
+    let wanted = if state.expression.is_some() { state.lane_wanted.or(Some(MPE_LANES)) } else { state.lane_wanted };
+    let lane_height = velocity_lane_height(area.height() - RULER, state.key_height, wanted);
     let strip = Rect::from_min_max(
         Pos2::new(area.left(), area.top() + RULER),
         Pos2::new(area.left() + SCALE_STRIP, area.bottom() - lane_height),
@@ -309,7 +313,8 @@ pub fn show(
         Rect::from_min_max(Pos2::new(strip.right(), strip.top()), Pos2::new(strip.right() + KEYS, strip.bottom()));
     let ruler = Rect::from_min_max(Pos2::new(keys.right(), area.top()), Pos2::new(area.right(), keys.top()));
     let grid_rect = Rect::from_min_max(Pos2::new(keys.right(), keys.top()), Pos2::new(area.right(), keys.bottom()));
-    let lane = Rect::from_min_max(Pos2::new(keys.right(), keys.bottom()), area.max);
+    let lanes_room = Rect::from_min_max(Pos2::new(keys.right(), keys.bottom()), area.max);
+    let lane = expression::split_lanes(state, lanes_room);
     toolbar(ui, toolbar_rect, ToolbarCx { clip, keymap, copied, scale, size: options.toolbar_size }, state, actions);
     if grid_rect.width() <= 1.0 || grid_rect.height() <= 1.0 {
         state.remember_selection(&clip.notes, selecting_new || sent_edit(&actions[sent_from..]));
@@ -451,7 +456,7 @@ pub fn show(
         (lane.height() > 4.0).then(|| ui.interact(lane, Id::unique("piano-roll-velocity"), Sense::click_and_drag()));
     // The lane's top edge: dragging it makes the lane taller or shorter (› Layout).
     let room = area.height() - RULER;
-    gestures::lane_edge(ui, &layout, room, state);
+    gestures::lane_edge(ui, &layout, lanes_room, room, state);
     // MPE: the selected notes' curve points are handles over the grid, and a click on the empty
     // grid in a selected note's time is the curve's, a double-click adding a point (› MPE). A
     // press on a handle is the handle's alone: it selects, draws and sounds no note under it.
@@ -468,7 +473,7 @@ pub fn show(
         && let Some(pos) = pointer
         && let Some(index) = expression::note_for_point(&layout, clip, state, pos)
     {
-        let point = (index, suhina_engine::model::ExpressionKind::Pitch);
+        let point = (index, suhina_engine::model::ExpressionKind::Pitch, layout.grid);
         actions.extend(expression::add_point(&layout, clip, grid, inputs.alt, point, pos));
     }
     // The click that lets go of a note the second press of a double-click is drawing adds nothing
@@ -720,19 +725,7 @@ pub fn show(
     }
 
     // The velocity lane's gestures.
-    // MPE: while the lane shows pressure or slide, a double-click in a selected note's time adds
-    // a point there and the velocity gestures rest (› MPE).
-    let lane_kind = expression::lane_kind(state);
-    expression::lane_switch(ui, &layout, state);
-    if let (Some(kind), Some(lane_response)) = (lane_kind, &lane_response)
-        && !mpe_busy
-        && lane_response.double_clicked()
-        && let Some(pos) = lane_response.interact_pointer_pos()
-        && let Some(index) = expression::lane_note(&layout, clip, state, pos)
-    {
-        actions.extend(expression::add_point(&layout, clip, grid, inputs.alt, (index, kind), pos));
-    }
-    if let Some(lane_response) = lane_response.as_ref().filter(|_| lane_kind.is_none()) {
+    if let Some(lane_response) = lane_response.as_ref().filter(|_| !mpe_busy) {
         let at = lane_response.interact_pointer_pos();
         if lane_response.clicked()
             && let Some(pos) = at

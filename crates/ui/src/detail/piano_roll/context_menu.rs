@@ -119,6 +119,10 @@ pub(super) enum Pick {
     /// MPE on or off: the notes' own curves shown and edited (› MPE), as the toolbar's toggle,
     /// which a narrow toolbar hides.
     Expression,
+    /// The key each bend ends on named beside it, or not.
+    BendTargets,
+    /// Every curve of the notes acted on removed (`note.clearExpression`).
+    ClearExpression,
 }
 
 /// What the menu needs for one frame besides the state.
@@ -244,6 +248,12 @@ impl MenuCx<'_> {
         crate::kit::menu::separator(ui);
         let mpe = if state.expression.is_some() { "Hide MPE" } else { "Show MPE" };
         item(ui, mpe, None, true, Pick::Expression);
+        if state.expression.is_some() {
+            let targets = if state.mpe.bend_targets { "Hide bend targets" } else { "Show bend targets" };
+            item(ui, targets, None, true, Pick::BendTargets);
+            let curved = state.acting().iter().any(|i| clip.notes.get(*i).is_some_and(|n| n.expression().is_some()));
+            item(ui, "Clear expression", None, curved, Pick::ClearExpression);
+        }
         // No zoom items: Z and Shift+Z are quicker than the menu, which the grid already makes long.
         crate::kit::menu::separator(ui);
         // The grid's entries right in the menu, as the toolbar's grid menu holds them: no submenu
@@ -335,6 +345,15 @@ impl MenuCx<'_> {
             Pick::InvertSelection => {
                 state.invert_selection(clip);
                 None
+            }
+            Pick::BendTargets => {
+                state.mpe.bend_targets = !state.mpe.bend_targets;
+                None
+            }
+            Pick::ClearExpression => {
+                let mut params = clip.address.clone();
+                params["notes"] = json!(state.acting().iter().collect::<Vec<_>>());
+                Some(Action::new("note.clearExpression", params))
             }
             Pick::Expression => {
                 state.expression = match state.expression {

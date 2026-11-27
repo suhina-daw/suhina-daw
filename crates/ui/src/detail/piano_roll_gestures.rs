@@ -122,8 +122,7 @@ pub(super) fn velocity_line(layout: &Layout, notes: &[Note], from: Pos2, now: Po
 /// The velocity lane's top edge: dragging it makes the lane taller or shorter, within
 /// [`LANE_RANGE`] and never so tall that fewer than five key rows are left in `room` (the height
 /// under the ruler). Window state, kept until Suhina closes.
-pub(super) fn lane_edge(ui: &Ui, layout: &Layout, room: f32, state: &mut PianoRollState) {
-    let lane = layout.lane;
+pub(super) fn lane_edge(ui: &Ui, layout: &Layout, lane: Rect, room: f32, state: &mut PianoRollState) {
     if lane.height() <= 4.0 {
         return;
     }

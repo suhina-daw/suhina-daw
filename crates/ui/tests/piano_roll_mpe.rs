@@ -135,10 +135,8 @@ fn a_pitch_handle_over_another_note_is_dragged_and_selects_nothing() {
 #[test]
 fn a_pressure_handle_in_the_lane_is_dragged() {
     let mut h = mpe_app();
-    h.state_mut().piano_roll_mut().expression = Some(ExpressionKind::Pressure);
-    h.run();
     let (x, _) = beat_one(&h);
-    let lane = h.query_all_by_label_contains("Velocity of note").next().unwrap().rect();
+    let lane = rect(&h, "Pressure lane");
     let y = |value: f32| lane.bottom() - 2.0 - (lane.height() - 4.0) * value;
     drag(&mut h, pos2(x, y(0.5)), pos2(x, y(0.8)));
     let pressure = curve(&h, ExpressionKind::Pressure);

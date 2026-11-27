@@ -198,6 +198,8 @@ pub struct PianoRollState {
     pub expression: Option<ExpressionKind>,
     /// A curve point being dragged, and where it is now.
     pub(crate) expression_drag: Option<super::expression::PointDrag>,
+    /// The MPE editor's lanes, point selection, menu and settings.
+    pub(crate) mpe: super::expression::MpeState,
     /// The selected notes as the last frame left them, each index with its note's id, so the
     /// selection follows its notes when another writer (an agent, a script, undo) adds, deletes or
     /// moves notes between frames (#1182); `None` when the last frame's own edit set the selection
@@ -371,6 +373,7 @@ impl Default for PianoRollState {
             selected: BTreeSet::new(),
             expression: None,
             expression_drag: None,
+            mpe: super::expression::MpeState::default(),
             selected_ids: None,
             span: None,
             live_span: None,
@@ -606,7 +609,10 @@ impl PianoRollState {
         }
         match action {
             "pianoRoll.selectAll" => {
-                self.selected = (0..count).collect();
+                // While MPE is on with one note selected, its curve's points (› MPE).
+                if !super::expression::select_all_points(clip, self) {
+                    self.selected = (0..count).collect();
+                }
                 return None;
             }
             "pianoRoll.deselect" => {
