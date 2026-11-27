@@ -19,7 +19,7 @@ use suhina_model::{Note, Notes, Scale, ScaleMode};
 use crate::commands::Args;
 use crate::notes::{
     MAX_BEAT, MAX_NOTES_PER_COMMAND, after_removal, covered_go, edit_notes, indices, midi_velocity, notes_of,
-    replace_under, replaces, velocity_of, with_replaced,
+    replace_under, replaces, set_duration_cropping, velocity_of, with_replaced,
 };
 use crate::{CommandError, Session};
 
@@ -384,7 +384,7 @@ fn keep_off_the_next(notes: &mut Notes, touched: &[usize]) {
             continue;
         }
         if let Some(slot) = notes.get_mut(a) {
-            slot.duration = (next.time - first.time).max(MIN_LENGTH);
+            set_duration_cropping(slot, (next.time - first.time).max(MIN_LENGTH));
         }
     }
 }
@@ -506,7 +506,8 @@ pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, Com
             }
             let note = notes.get_mut(index).ok_or("a note is missing")?;
             if length != note.duration {
-                note.duration = length;
+                // The note's end moves: a shorter one crops its curves, a longer one holds them.
+                set_duration_cropping(note, length);
                 lengthened.push(index);
             }
         }
@@ -554,6 +555,9 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
         }
         for (index, time, length) in stretched {
             if let Some(note) = notes.get_mut(index) {
+                if note.expression().is_some() {
+                    note.expression_mut().stretch(factor);
+                }
                 note.time = time;
                 note.duration = length;
             }

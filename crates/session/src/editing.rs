@@ -261,7 +261,9 @@ fn joined_notes(p: &Project, clips: &[Clip], start: f64, end: f64) -> Vec<Note> 
                     continue;
                 }
                 let stop = (at + note.duration.max(0.0)).min(clip.start + clip.length).min(end);
-                joined.push(Note { time: at - start, duration: stop - at, ..note });
+                let mut piece = Note { time: at - start, ..note };
+                crate::notes::set_duration_cropping(&mut piece, stop - at);
+                joined.push(piece);
             }
         }
     }

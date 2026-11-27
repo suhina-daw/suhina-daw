@@ -13,7 +13,10 @@ use suhina_model::{
     TrackId,
 };
 
-use crate::{CommandError, Session, device_groups, devices, editing, files, follow, launch, meters, note_tools, notes};
+use crate::{
+    CommandError, Session, device_groups, devices, editing, files, follow, launch, meters, note_expression, note_tools,
+    notes,
+};
 
 mod args;
 mod automation;
@@ -111,6 +114,7 @@ impl ParamType {
             Self::AutomationValue => "automation value",
             Self::Curve => "curve",
             Self::Curves => "curves",
+            Self::Points => "points",
             Self::Text => "text",
             Self::Tracks => "tracks",
             Self::Texts => "texts",
@@ -148,6 +152,7 @@ impl ParamType {
             Self::AutomationValue => "a number, \"-inf\", or true or false",
             Self::Curve => "four numbers from -0.5 to 1.5 or one number from -1 to 1",
             Self::Curves => "a list of curves, each like curve or null",
+            Self::Points => "a list of [offset, value] pairs",
             Self::Text => "a text",
             Self::Tracks => "a list of track ids or names",
             Self::Texts | Self::Path(PathKind::Files) => "a list of texts",
@@ -189,6 +194,9 @@ impl ParamType {
             | Self::Path(PathKind::WriteFolder | PathKind::LibraryItem | PathKind::Place) => value.is_string(),
             Self::Tracks | Self::Texts | Self::Integers | Self::Notes | Self::Numbers | Self::Clips => value.is_array(),
             Self::Curves => value.is_array(),
+            Self::Points => {
+                value.as_array().is_some_and(|l| l.iter().all(|p| p.as_array().is_some_and(|p| p.len() == 2)))
+            }
             Self::Items => value.is_array(),
             Self::Path(PathKind::Files) => value.is_array(),
             Self::Range | Self::MappingTarget => value.is_object(),
@@ -250,6 +258,8 @@ pub enum ParamType {
     Notes,
     /// A list of numbers.
     Numbers,
+    /// A list of curve points, each `[offset, value]` (`note.setExpression`).
+    Points,
     /// A list of arrangement clips, each `{ "clip": id }` or (deprecated) `{ "track": …, "index": n }`.
     Clips,
     /// A range of beats, `{start, end}` from the arrangement's start.
@@ -562,6 +572,7 @@ impl<T> CommandSpec<T> {
                     | ParamType::Integers
                     | ParamType::Notes
                     | ParamType::Numbers
+                    | ParamType::Points
                     | ParamType::Clips
                     | ParamType::Path(PathKind::Files)
             ) {
@@ -580,6 +591,12 @@ impl<T> CommandSpec<T> {
                         "additionalProperties": false,
                     }),
                     ParamType::Numbers => json!({ "type": "number" }),
+                    ParamType::Points => json!({
+                        "type": "array",
+                        "items": { "type": "number" },
+                        "minItems": 2,
+                        "maxItems": 2,
+                    }),
                     ParamType::Clips => json!({
                         "type": "object",
                         "properties": {
@@ -600,6 +617,7 @@ impl<T> CommandSpec<T> {
                 | ParamType::Integers
                 | ParamType::Notes
                 | ParamType::Numbers
+                | ParamType::Points
                 | ParamType::Clips
                 | ParamType::Items
                 | ParamType::Curves

@@ -62,6 +62,7 @@ mod meters;
 mod metronome_sounds;
 mod midi;
 mod named;
+mod note_expression;
 mod note_tools;
 mod notes;
 mod player;
