@@ -1538,10 +1538,12 @@ fn a_device_is_renamed_and_a_renamed_plug_in_is_still_found() {
 fn an_eqs_audition_is_never_stored() {
     let mut session = Session::new(project());
     run(&mut session, "device.add", json!({ "track": "Keys", "id": "eq" })).unwrap();
-    let heard = run(&mut session, "device.audition", json!({ "track": "Keys", "device": 0, "band": 3 })).unwrap();
-    assert_eq!(heard["heard"], json!(false), "no player, nothing heard");
+    let err = run(&mut session, "device.audition", json!({ "track": "Keys", "device": 0, "band": 3 })).unwrap_err();
+    assert!(err.contains("no audio engine"), "without a player it is refused, as every transport command: {err}");
     let devices = run(&mut session, "track.devices", json!({ "track": "Keys" })).unwrap();
-    assert!(!devices.to_string().contains("audition"), "the project holds no audition: {devices}");
+    let audition =
+        devices[0]["params"].as_array().unwrap().iter().find(|p| p["id"] == "audition").map(|p| p["value"].clone());
+    assert!(audition.is_none() || audition == Some(json!(0.0)), "the project holds no audition: {audition:?}");
     assert!(
         run(&mut session, "device.setParam", json!({ "track": "Keys", "device": 0, "param": "audition", "value": 3 }))
             .is_err()

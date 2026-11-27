@@ -393,7 +393,7 @@ pub(crate) fn show(
     let strip = ui.layer_id().order == egui::Order::Foreground;
     let strip_open = !strip && super::detail_view::expanded(ui.ctx()).is_some_and(|(t, a)| t == track && a == *at);
     let analyser = if panel.state.analyser || !strip {
-        watch_key(at).and_then(|device| analyser_bands(ui, track, device, panel.state.spectrum))
+        watch_key(at).and_then(|device| analyser_bands(ui, track, device, panel.state.spectrum, panel.state.analyser))
     } else {
         None
     };
@@ -687,6 +687,7 @@ fn analyser_bands(
     track: TrackId,
     device: usize,
     settings: SpectrumSettings,
+    spectrum_shown: bool,
 ) -> Option<([f32; ANALYSER_BANDS], f32)> {
     let monitor = ui.ctx().data(|d| d.get_temp::<Arc<MeterMonitor>>(egui::Id::unique("eq-spectrum")))?;
     let spectrum = monitor.spectrum();
@@ -700,6 +701,14 @@ fn analyser_bands(
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(30));
     }
     ui.ctx().data_mut(|d| d.insert_temp(cursor_id, cursor));
+    // The meter reads the newest tenth of the ring: its peak, in dB.
+    let recent = samples.len().saturating_sub(RING / 10);
+    let peak = samples.get(recent..).unwrap_or_default().iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let peak_db = (20.0 * f64::from(peak).max(1e-6).log10()) as f32;
+    // With the analyser off only the meter is drawn: no transform, no fold.
+    if !spectrum_shown {
+        return Some(([ANALYSER_DB.1 as f32 * 2.0; ANALYSER_BANDS], peak_db));
+    }
     let cache = egui::Id::unique("eq-spectrum-analyser");
     let (window, plan) = ui.ctx().data_mut(|d| {
         if d.get_temp::<(Arc<[f32; RING]>, Arc<dyn rustfft::Fft<f32>>)>(cache).is_none() {
@@ -708,10 +717,6 @@ fn analyser_bands(
         }
         d.get_temp::<(Arc<[f32; RING]>, Arc<dyn rustfft::Fft<f32>>)>(cache)
     })?;
-    // The meter reads the newest tenth of the ring: its peak, in dB.
-    let recent = samples.len().saturating_sub(RING / 10);
-    let peak = samples.get(recent..).unwrap_or_default().iter().fold(0.0f32, |m, s| m.max(s.abs()));
-    let peak_db = (20.0 * f64::from(peak).max(1e-6).log10()) as f32;
     let mut bins: Vec<rustfft::num_complex::Complex<f32>> = samples
         .iter()
         .zip(window.iter())
@@ -1632,9 +1637,13 @@ fn draw_display(
         ),
     );
     let background = ui
-        .interact(display, panel.address.ids.with("eq-display"), Sense::click_and_drag())
+        .interact(display, panel.address.ids.with("eq-display"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::Crosshair);
     background.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, "EQ response display"));
+    // A press on the background itself (not on a dot or a button over it) starts a box or a drawn
+    // stroke; both follow the pointer's own state, so the background stays a click target and
+    // its double-click makes a band.
+    let pressed_here = background.hovered() && ui.input(|i| i.pointer.primary_pressed());
     painter.rect_filled(display, 3.0, colors.window_background);
     // The frequency grid: a line at every decade and a fainter one between.
     for decade in 1..=4 {
@@ -1867,14 +1876,14 @@ fn draw_display(
     // In draw mode a drag on the background draws a curve, and its release makes bands that
     // follow it (docs/spec/eq.md › The panel › Draw mode).
     if panel.state.draw {
-        draw_stroke(ui, panel, &background, &painter, display, plot);
+        draw_stroke(ui, panel, pressed_here, &painter, display, plot);
     }
     // Otherwise a drag on the background draws a box; the bands whose dots it holds become the
     // selection (with Ctrl or Shift, they join it).
     let box_id = panel.address.ids.with("eq-box");
-    if background.drag_started()
+    if pressed_here
         && !panel.state.draw
-        && let Some(from) = background.interact_pointer_pos()
+        && let Some(from) = ui.input(|i| i.pointer.press_origin())
     {
         ui.ctx().data_mut(|d| d.insert_temp(box_id, from));
     }
@@ -1883,9 +1892,10 @@ fn draw_display(
         let area = Rect::from_two_pos(from, to);
         painter.rect_filled(area, 0.0, colors.accent.gamma_multiply(0.08));
         painter.rect_stroke(area, 0.0, Stroke::new(1.0, colors.accent.gamma_multiply(0.6)), egui::StrokeKind::Inside);
-        if background.drag_stopped() || !ui.input(|i| i.pointer.primary_down()) {
+        // A press and release in place is a click, not a box: the selection is the click's.
+        if !ui.input(|i| i.pointer.primary_down()) && area.width() + area.height() > 4.0 {
             ui.ctx().data_mut(|d| d.remove::<Pos2>(box_id));
-            let adding = ui.input(|i| i.modifiers.command || i.modifiers.shift);
+            let adding = adds_to_selection(ui);
             let mut group = if adding { panel.state.group } else { 0 };
             let scale = value(panel.parameters, "scale");
             let mut first = None;
@@ -1899,6 +1909,8 @@ fn draw_display(
             if !adding || panel.state.selected.is_none() {
                 panel.state.selected = first;
             }
+        } else if !ui.input(|i| i.pointer.primary_down()) {
+            ui.ctx().data_mut(|d| d.remove::<Pos2>(box_id));
         }
     }
 
@@ -2007,25 +2019,26 @@ fn column_frequency(column: usize) -> f64 {
 fn draw_stroke(
     ui: &mut egui::Ui,
     panel: &mut Panel<'_>,
-    background: &Response,
+    started: bool,
     painter: &egui::Painter,
     display: Rect,
     plot: Rect,
 ) {
     let stroke_id = panel.address.ids.with("eq-stroke");
     let range = panel.state.db_range;
-    if background.drag_started() {
+    if started {
         ui.ctx().data_mut(|d| d.insert_temp(stroke_id, vec![None::<f64>; STROKE_COLUMNS]));
     }
     let Some(mut columns) = ui.ctx().data(|d| d.get_temp::<Vec<Option<f64>>>(stroke_id)) else { return };
-    if let Some(pointer) = ui.input(|i| i.pointer.interact_pos()).filter(|_| background.dragged()) {
+    let down = ui.input(|i| i.pointer.primary_down());
+    if let Some(pointer) = ui.input(|i| i.pointer.interact_pos()).filter(|_| down) {
         let along = ((pointer.x - display.left()) / display.width()).clamp(0.0, 0.999);
         let column = (along * STROKE_COLUMNS as f32) as usize;
         let gain = y_db(pointer.y, plot, range);
         // A fast drag skips columns between frames: every column from the last one to this one
         // takes the line between their gains.
         let last_id = stroke_id.with("last");
-        let last = ui.ctx().data(|d| d.get_temp::<(usize, f64)>(last_id)).filter(|_| !background.drag_started());
+        let last = ui.ctx().data(|d| d.get_temp::<(usize, f64)>(last_id)).filter(|_| !started);
         let (from, from_gain) = last.unwrap_or((column, gain));
         let (low, high) = (from.min(column), from.max(column));
         for c in low..=high {
@@ -2045,7 +2058,7 @@ fn draw_stroke(
         })
         .collect();
     painter.add(egui::Shape::line(points, Stroke::new(1.5, Color32::from_rgb(0xF2, 0xA6, 0x5A))));
-    if background.drag_stopped() || !ui.input(|i| i.pointer.primary_down()) {
+    if !down {
         ui.ctx().data_mut(|d| d.remove::<Vec<Option<f64>>>(stroke_id));
         let free: Vec<usize> = panel.bands.iter().enumerate().filter(|(_, b)| !b.in_use).map(|(s, _)| s).collect();
         let mut edits: Vec<(usize, &str, f64)> = Vec::new();
@@ -2128,6 +2141,19 @@ fn stroke_bands(columns: &[Option<f64>]) -> Vec<(usize, f64, f64, f64)> {
         }
     }
     bands
+}
+
+/// Whether this frame's click adds to the selection: Ctrl (Cmd) or Shift held, as the window's
+/// modifiers say or as the press itself carried them (a press and its release can come in one
+/// frame with the keys already let go).
+fn adds_to_selection(ui: &egui::Ui) -> bool {
+    ui.input(|i| {
+        i.modifiers.command
+            || i.modifiers.shift
+            || i.events.iter().any(|event| {
+                matches!(event, egui::Event::PointerButton { modifiers, .. } if modifiers.command || modifiers.shift)
+            })
+    })
 }
 
 /// Where a band's dot is drawn: at its frequency and its gain after Scale (on the 0 dB line for a
@@ -2287,7 +2313,7 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
         }
         // A click selects the band alone; with Ctrl or Shift it joins the selection or leaves it.
         // A drag on a band already selected keeps the others, so they move together.
-        let adding = ui.input(|i| i.modifiers.command || i.modifiers.shift);
+        let adding = adds_to_selection(ui);
         if response.clicked() && adding {
             panel.state.group ^= 1 << slot;
             panel.state.selected = if panel.in_group(slot) { Some(slot) } else { panel.group().first().copied() };

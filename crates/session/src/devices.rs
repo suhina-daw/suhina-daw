@@ -1657,6 +1657,8 @@ pub(crate) fn audition(session: &mut Session, params: &Value) -> Result<Value, C
     if !(0.0..=24.0).contains(&band) || band.fract() != 0.0 {
         return Err("band must be a whole number from 0 to 24".into());
     }
+    // Like every transport command, it is for a playing engine.
+    session.player_mut()?;
     let track = track_or_main_id(&session.project, params)?;
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
@@ -1671,11 +1673,8 @@ pub(crate) fn audition(session: &mut Session, params: &Value) -> Result<Value, C
     let param = suhina_device_registry::info("eq")
         .and_then(|info| info.param_index("audition"))
         .ok_or("the EQ has no audition")?;
-    let heard =
-        session.sync.player.as_mut().is_some_and(|player| {
-            player.set_device_param(ParamEdit { track, device: index, param, value: band }).is_ok()
-        });
-    Ok(json!({ "device": path_value(&path), "band": band, "heard": heard }))
+    session.player_mut()?.set_device_param(ParamEdit { track, device: index, param, value: band })?;
+    Ok(json!({ "device": path_value(&path), "band": band }))
 }
 
 /// `device.randomize`: new values for a device with a randomizer, as one edit.
