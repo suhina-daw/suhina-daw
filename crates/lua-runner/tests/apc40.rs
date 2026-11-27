@@ -433,11 +433,6 @@ impl Fake {
         self.launcher_grid_slots(scenes, color, true);
     }
 
-    /// A grid whose slots are empty, for the Session Record pad.
-    fn launcher_grid_empty(&self, scenes: &[(u64, &str)]) {
-        self.launcher_grid_slots(scenes, None, false);
-    }
-
     fn launcher_grid_slots(&self, scenes: &[(u64, &str)], color: Option<&str>, clips: bool) {
         self.launcher_grid_tracks(scenes, color, clips, 8);
     }
@@ -495,6 +490,31 @@ impl Fake {
             }
             column.set("slots", slots).unwrap();
             tracks.set(track + 1, column).unwrap();
+        }
+        grid.set("tracks", tracks).unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((1u64, grid)).unwrap();
+    }
+
+    /// A Launcher grid with explicit track ids, in Launcher-column order.
+    fn launcher_grid_ids(&self, track_ids: &[u32]) {
+        let grid = self.lua.create_table().unwrap();
+        let scenes = self.lua.create_table().unwrap();
+        let scene = self.lua.create_table().unwrap();
+        scene.set("scene_id", 10_u64).unwrap();
+        scene.set("name", "Scene").unwrap();
+        scenes.set(1, scene).unwrap();
+        grid.set("scenes", scenes).unwrap();
+        let tracks = self.lua.create_table().unwrap();
+        for (index, track) in track_ids.iter().enumerate() {
+            let column = self.lua.create_table().unwrap();
+            column.set("track", *track).unwrap();
+            let slots = self.lua.create_table().unwrap();
+            let slot = self.lua.create_table().unwrap();
+            slot.set("stop_button", true).unwrap();
+            slots.set(1, slot).unwrap();
+            column.set("slots", slots).unwrap();
+            tracks.set(index + 1, column).unwrap();
         }
         grid.set("tracks", tracks).unwrap();
         let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
@@ -745,6 +765,25 @@ fn the_device_arrows_select_the_previous_and_next_device() {
     assert_eq!(fake.last_command().id, "device.selectPrevious", "{:?}", fake.commands());
 }
 
+/// A strip past the Launcher columns is empty: the project's track list has groups, so its
+/// index cannot stand in for a missing Launcher column and pick another track.
+#[test]
+fn a_strip_past_the_launcher_columns_controls_no_track() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.strips(&[10, 2, 3]);
+    fake.launcher_grid_ids(&[2, 3]);
+    // The two columns map by id past the group at the head of the project's track list.
+    fake.message(&[0x90, 51, 127]);
+    assert_eq!(fake.last_command().track, Some(2), "{:?}", fake.last_command());
+    fake.message(&[0x91, 51, 127]);
+    assert_eq!(fake.last_command().track, Some(3), "{:?}", fake.last_command());
+    // The third strip has no Launcher column, so it selects nothing.
+    let before = fake.commands().len();
+    fake.message(&[0x92, 51, 127]);
+    assert_eq!(fake.commands().len(), before, "the empty strip sent a command: {:?}", fake.commands());
+}
+
 #[test]
 fn the_track_and_master_select_buttons_set_the_selection() {
     let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
@@ -943,7 +982,7 @@ fn the_record_and_session_buttons_toggle_their_lights() {
         fake.sends.borrow()
     );
     // An empty pad on the armed first track records instead of launching.
-    fake.launcher_grid_empty(&[(10, "Intro")]);
+    fake.launcher_grid_ids(&[7]);
     fake.press(32);
     let command = fake.last_command();
     assert_eq!(command.id, "clip.record", "{command:?}");

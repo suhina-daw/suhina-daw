@@ -311,13 +311,17 @@ local function strip_of(track)
     end
     if not is_nil(grid) then
         local column = grid.tracks[window_track(track) + 1]
-        if column ~= nil then
-            for index = 1, #strips do
-                if strips[index].id == column.track then
-                    return strips[index]
-                end
+        if column == nil then
+            -- The Launcher columns end here: the project's track list has groups and other
+            -- columns the surface does not show, so its index cannot stand in for this one.
+            return nil
+        end
+        for index = 1, #strips do
+            if strips[index].id == column.track then
+                return strips[index]
             end
         end
+        return nil
     end
     return strips[window_track(track) + 1]
 end

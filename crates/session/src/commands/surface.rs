@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The Launcher window a control surface shows. A surface program reports it, and the window
-//! draws its outline over the slots, as a controller's session ring does.
+//! draws an outline over the slots that window covers.
 
 use super::*;
 use crate::ControlSurfaceWindow;
