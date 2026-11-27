@@ -328,6 +328,10 @@ pub struct Generator {
     phase: f64,
     deviation: f64,
     active: bool,
+    /// Without its gains (the fit's trial renders), and each partial's dB level statistics from
+    /// its first second on (sum, sum of squares, count), before the spread and the bound.
+    raw: bool,
+    statistics: Box<[(f64, f64, u64)]>,
 }
 
 impl Generator {
@@ -416,6 +420,8 @@ impl Generator {
             phase: 0.0,
             deviation: 0.0,
             active: false,
+            raw: false,
+            statistics: vec![(0.0, 0.0, 0); MAX_PARTIALS].into_boxed_slice(),
         }
     }
 
@@ -460,6 +466,9 @@ impl Generator {
             voice.matched = 1.0;
         }
         self.jitter_variance = jitter_variance(model);
+        for entry in self.statistics.iter_mut() {
+            *entry = (0.0, 0.0, 0);
+        }
         for pitch in self.pitches.iter_mut() {
             *pitch = Pitch::default();
         }
@@ -507,6 +516,30 @@ impl Generator {
 
     pub fn is_active(&self) -> bool {
         self.active
+    }
+
+    /// Renders without the level shaping, level gain and event limit (the fit's trial renders).
+    pub fn set_raw(&mut self, raw: bool) {
+        self.raw = raw;
+    }
+
+    /// The standard deviation of partial `k`'s dB level from its first second on, before the
+    /// spread and the bound; 0 before anything is measured.
+    pub fn level_spread_db(&self, k: usize) -> f64 {
+        let Some(&(sum, squares, count)) = self.statistics.get(k) else { return 0.0 };
+        if count < 2 {
+            return 0.0;
+        }
+        let n = count as f64;
+        let mean = sum / n;
+        (squares / n - mean * mean).max(0.0).sqrt()
+    }
+
+    /// The pitch deviation (cents) and the vibrato's normalized velocity at model sample
+    /// `sample`, from its control frame (frames kept: about 1.7 s behind the newest).
+    pub fn pitch_of(&self, sample: i64) -> (f64, f64) {
+        let frame = (sample.max(0) / self.control.max(1) as i64) as usize;
+        self.pitches.get(frame % PITCH_FRAMES).map_or((0.0, 0.0), |p| (p.cents, p.velocity))
     }
 
     /// How many samples of raw model are ready beyond what has been heard.
@@ -559,7 +592,7 @@ impl Generator {
         }
         let ramp = (m as f64 / (0.1 * self.sample_rate)).min(1.0);
         let gain_db = self.sum_event / self.smooth as f64 * ramp;
-        let gain = db(gain_db);
+        let gain = if self.raw { 1.0 } else { db(gain_db) };
         let mid = f64::from(self.mid.get(m)) * gain;
         let side = if self.stereo { f64::from(self.side.get(m)) * gain } else { 0.0 };
         self.out += 1;
@@ -594,6 +627,12 @@ impl Generator {
             let Some(partial) = self.model.partials.get(k) else { break };
             let diffuse = voice.mid.next(&mut self.rng, t);
             let mut level = C::from_pair(partial.carrier) + diffuse;
+            if t >= 1.0
+                && let Some(entry) = self.statistics.get_mut(k)
+            {
+                let value = 20.0 * level.abs().max(1e-9).log10();
+                *entry = (entry.0 + value, entry.1 + value * value, entry.2 + 1);
+            }
             let mean = f64::from(partial.mean_log);
             let spread = f64::from(partial.spread);
             if spread < 1.0 {
@@ -847,7 +886,7 @@ impl Generator {
             if offset < 0 { 0.0 } else { ((offset - i0 * self.hop) as f64 / self.hop as f64).clamp(0.0, 1.0) };
         let shaping = (g0 + (g1 - g0) * fraction) * (m as f64 / (0.1 * self.sample_rate)).min(1.0);
         let level = self.model.level_db * (m as f64 / (0.3 * self.sample_rate)).min(1.0);
-        let gain = ((shaping + level) * LN_10 / 20.0).exp();
+        let gain = if self.raw { 1.0 } else { ((shaping + level) * LN_10 / 20.0).exp() };
         self.mid.set(m, (f64::from(self.mid.get(m)) * gain) as f32);
         self.side.set(m, (f64::from(self.side.get(m)) * gain) as f32);
         self.shaped += 1;

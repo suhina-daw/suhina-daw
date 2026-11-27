@@ -9,6 +9,7 @@ use std::ops::Range;
 use suhina_dsp::{Resampler, pitch::Yin};
 
 pub mod compare;
+pub mod continuation;
 mod key;
 pub mod modal;
 mod notes;
