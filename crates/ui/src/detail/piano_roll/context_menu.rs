@@ -116,6 +116,9 @@ pub(super) enum Pick {
     SplitClipSpan,
     /// Set the clip's first beat here (`clip.setOrigin`).
     Origin,
+    /// MPE on or off: the notes' own curves shown and edited (› MPE), as the toolbar's toggle,
+    /// which a narrow toolbar hides.
+    Expression,
 }
 
 /// What the menu needs for one frame besides the state.
@@ -238,6 +241,9 @@ impl MenuCx<'_> {
         let splits = arranged && (span || self.split_here(at).is_some());
         item(ui, name, None, splits, pick);
         item(ui, "Set the clip's first beat here", None, self.origin_ok(at), Pick::Origin);
+        crate::kit::menu::separator(ui);
+        let mpe = if state.expression.is_some() { "Hide MPE" } else { "Show MPE" };
+        item(ui, mpe, None, true, Pick::Expression);
         // No zoom items: Z and Shift+Z are quicker than the menu, which the grid already makes long.
         crate::kit::menu::separator(ui);
         // The grid's entries right in the menu, as the toolbar's grid menu holds them: no submenu
@@ -328,6 +334,14 @@ impl MenuCx<'_> {
             }
             Pick::InvertSelection => {
                 state.invert_selection(clip);
+                None
+            }
+            Pick::Expression => {
+                state.expression = match state.expression {
+                    Some(_) => None,
+                    None => Some(suhina_engine::model::ExpressionKind::Pitch),
+                };
+                state.expression_drag = None;
                 None
             }
             Pick::QuantizeSettings => {

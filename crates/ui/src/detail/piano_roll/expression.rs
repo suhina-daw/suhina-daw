@@ -215,6 +215,7 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
     let accent = crate::kit::element::PIANO_NOTE.attr(crate::kit::element::Attr::Selected, true).look().accent();
     let ink = if ink == Color32::TRANSPARENT { ui.visuals().strong_text_color() } else { ink };
     let accent = if accent == Color32::TRANSPARENT { ink } else { accent };
+    let hover = ui.ctx().pointer_hover_pos();
     for (index, note) in clip.notes.iter().enumerate() {
         let curve = shown_curve(state, clip.notes.id(index), note, ExpressionKind::Pitch);
         if curve.is_empty() {
@@ -222,7 +223,12 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
         }
         let selected = state.selected.contains(&index);
         let line = pitch_line(layout, note, curve);
-        let color = if selected { accent } else { ink.gamma_multiply(0.45) };
+        // A curve shows while the pointer is over its note or the curve, while the note is
+        // selected and while one of its points is dragged; the others stay out of the way.
+        if !(selected || dragged(state, clip, index) || hovered(layout, note, &line, hover)) {
+            continue;
+        }
+        let color = if selected { accent } else { ink.gamma_multiply(0.7) };
         painter.add(Shape::line(line, Stroke::new(if selected { 1.5 } else { 1.0 }, color)));
         if let Some(last) = curve.last().filter(|last| last.value.abs() >= 0.5)
             && let Some(end) = pitch_y(layout, f64::from(note.key) + last.value)
@@ -244,6 +250,7 @@ pub(super) fn draw(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRoll
 /// The lane while it shows pressure or slide: the velocity stems veiled, every note's curve over
 /// its time, the selected notes' bright with handles; and the lane's name at its left.
 fn draw_lane(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState, (ink, accent): (Color32, Color32)) {
+    let hover = ui.ctx().pointer_hover_pos();
     let kind = lane_kind(state);
     if let Some(name) = lane_name_rect(layout) {
         let hint = crate::kit::element::LABEL.attribute("kind", "hint").look().color();
@@ -265,10 +272,13 @@ fn draw_lane(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRollState,
         let selected = state.selected.contains(&index);
         let color = if selected { accent } else { ink.gamma_multiply(0.45) };
         let (start, end) = (layout.x_of(note.time), layout.x_of(note.time + note.duration));
-        // A note without a curve holds the neutral value: a faint line where it plays.
-        if curve.is_empty() {
-            let y = lane_y(layout.lane, kind.neutral());
-            painter.line_segment([Pos2::new(start, y), Pos2::new(end, y)], Stroke::new(1.0, color.gamma_multiply(0.5)));
+        // A note without a curve draws nothing; one with a curve shows while the pointer is in
+        // its time or over the note, or while it is selected or dragged.
+        let over = hover.is_some_and(|p| {
+            (layout.lane.contains(p) && p.x >= start - HANDLE && p.x <= end + HANDLE)
+                || layout.note_rect(note).expand(HANDLE).contains(p)
+        });
+        if curve.is_empty() || !(selected || over || dragged(state, clip, index)) {
             continue;
         }
         let mut line = Vec::with_capacity(curve.len() + 2);
@@ -482,3 +492,25 @@ pub(super) fn set_action(clip: &PianoClip, index: usize, kind: ExpressionKind, c
 #[cfg(test)]
 #[path = "expression_tests.rs"]
 mod tests;
+
+/// Whether the pointer is over `note` or near its pitch `line`.
+fn hovered(layout: &Layout, note: &Note, line: &[Pos2], hover: Option<Pos2>) -> bool {
+    let Some(pos) = hover else { return false };
+    if layout.note_rect(note).expand(HANDLE).contains(pos) {
+        return true;
+    }
+    line.windows(2).any(|w| distance_to_segment(pos, w[0], w[1]) <= HANDLE * 1.5)
+}
+
+/// How far `p` is from the segment `a`–`b`.
+fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
+    let ab = b - a;
+    let length = ab.length_sq();
+    let t = if length > 0.0 { ((p - a).dot(ab) / length).clamp(0.0, 1.0) } else { 0.0 };
+    p.distance(a + ab * t)
+}
+
+/// Whether one of note `index`'s points is being dragged.
+fn dragged(state: &PianoRollState, clip: &PianoClip, index: usize) -> bool {
+    state.expression_drag.as_ref().is_some_and(|drag| Some(drag.note) == clip.notes.id(index))
+}
