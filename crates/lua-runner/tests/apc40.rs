@@ -322,16 +322,16 @@ fn the_track_and_master_select_buttons_set_the_selection() {
     assert_eq!(command.track_name.as_deref(), Some("main"), "{command:?}");
 }
 
-/// The alternate Live mode hands every LED to the host, so a knob's ring follows its parameter
-/// without the device's own ring updates fighting it.
+/// The Application/Configuration mode hands every LED to the host, so a knob's ring follows its
+/// parameter without the device's own ring updates fighting it.
 #[test]
-fn the_program_uses_the_live_mode() {
+fn the_program_uses_the_application_configuration_mode() {
     let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
     fake.ports();
     let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
     assert!(
         fake.sends.borrow().iter().any(|(_, bytes)| bytes.starts_with(&mode)),
-        "the alternate Live mode is sent: {:?}",
+        "the Application/Configuration mode is sent: {:?}",
         fake.sends.borrow()
     );
 }

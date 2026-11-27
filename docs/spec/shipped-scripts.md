@@ -26,7 +26,8 @@ covers:
   updated. The script's device control section is tested against a stand-in Suhina
   (`crates/lua-runner/tests/apc40.rs`): the dials, the bank pages, the switches left out and the
   device arrows change the selected device (#1679). The whole script's run through the supervisor — the mode
-  message, a press of each strip button, the LEDs — follows.
+  message, a press of each strip button, the LEDs — follows in
+  [#1728](https://github.com/suhina-daw/suhina-daw/issues/1728).
 
 ## What ships
 
@@ -87,7 +88,8 @@ one; ADR 0019 › 10).
   arrows are driven and the commands and rings they send are checked (#1679).
 - The whole shipped script, end to end (`crates/lua-runner/tests/programs.rs`), run against the
   pack's files: the mode message goes out when the ports open, a press of each strip button sends
-  its command, and the LEDs follow the project.
+  its command, and the LEDs follow the project (planned in
+  [#1728](https://github.com/suhina-daw/suhina-daw/issues/1728)).
 - The start: a fresh library gets the `Scripts/MIDI/` folder and the store entry, and a removed
   shipped script stays removed on the next start.
 

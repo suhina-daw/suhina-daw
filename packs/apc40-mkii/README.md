@@ -8,9 +8,10 @@ the
 mixer, the eight track faders, the master fader and the pan encoders with their LED rings, with
 feedback on every button.
 
-Suhina ships it: the files ride inside the executable and unpack into the library's
-`Scripts/MIDI/apc40-mkii/` folder, and the app installs the program into its extensions store so
-the port scan starts it for the device it names (`docs/spec/shipped-scripts.md`).
+Suhina ships it: the manifest, the script, this README and `LICENSE-CC0.txt` ride inside the
+executable and unpack into the library's `Scripts/MIDI/apc40-mkii/` folder, and the app installs
+the program into its extensions store so the port scan starts it for the device it names
+(`docs/spec/shipped-scripts.md`).
 
 ## Where the knowledge comes from
 
@@ -20,8 +21,8 @@ Suhina's own, written from public documentation alone — the repository's clean
   of note numbers and controller numbers to the controls and LEDs, the RGB colours by velocity,
   the place of the per-track buttons (notes 48–52 on the track's own MIDI channel), and the
   **Application/Configuration message** the script sends when its ports open — the one that puts
-  the device in the mode the document names Ableton Live (0x41): every button momentary, a
-  press always note-on 127 with note-off on release, and the buttons' LEDs the host's. The
+  the device in the mode the document names (0x41): every button momentary, a press always
+  note-on 127 with note-off on release, and the buttons' LEDs the host's. The
   knobs' rings ride the hardware; the script writes a ring only for a value the knob did not
   just report, so a session value trailing a turn cannot yank it back. The device wakes in its
   Generic mode, where the activator, solo and record-arm buttons latch and drive their own
@@ -29,8 +30,9 @@ Suhina's own, written from public documentation alone — the repository's clean
 - **Akai's public APC40 MkII MIDI implementation chart**: the control map the notation follows.
 
 No part of it comes from another product's code, content or script. Suhina's own content:
-**CC0-1.0** (the SPDX line in `script.lua`; `license` in `extension.json`). Suhina has no
-affiliation with Akai, and the name says what hardware the script is for — no endorsement.
+**CC0-1.0** (the SPDX line in `script.lua`; `license` in `extension.json`; the full text in
+`LICENSE-CC0.txt`). Suhina has no affiliation with Akai, and the name says what hardware the
+script is for — no endorsement.
 
 ## What it wires, and what it does not yet
 
