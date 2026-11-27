@@ -399,6 +399,8 @@ device-canvas[kind="inverse"] { color: var(--text-inverse); }
 device-canvas[kind="panel"] { background-color: var(--panel-background); }
 device-canvas[kind="window"] { background-color: var(--window-background); }
 device-canvas[kind="active"] { background-color: var(--control-activeBackground); }
+/* The dots of an EQ's selected bands. */
+eq-band[selected] { accent-color: var(--selection); }
 
 /* The piano roll: its grid's lines and rows, its notes' inks, its ruler and loop bar, its keys and
    the strip naming them, what a drag marks and its toolbar's tools and menus. */

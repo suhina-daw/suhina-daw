@@ -521,6 +521,8 @@ pub const ELEMENTS: &[Element] = &[
     element("device-control", Control, "A control of a device panel, by its id; where the device gives no colors, a parameter's name is `device-control[kind=\"name\"]`, its value `[kind=\"value\"]` and a knob `[kind=\"knob\"]` (its disc the `background-color`, its ring the `color`, its pointer the `accent-color`).")
         .ids(Ids::Any)
         .attributes(&["kind"]),
+    element("eq-band", Drawn, "A band's dot on an EQ's response display; `[selected]` while the band is among the selected ones, whose dots are filled and ringed in its `accent-color` (the selection's color, `--selection`, unless a rule gives another).")
+        .attributes(&["selected"]),
     element("xy-control", Control, "A two-dimensional control of a device panel."),
     element("envelope", Drawn, "An envelope a device panel shows."),
     element("waveform", Drawn, "A waveform a panel shows."),

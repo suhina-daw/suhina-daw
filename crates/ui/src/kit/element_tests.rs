@@ -925,6 +925,15 @@ fn accent_or_reads_the_accent_color() {
     assert_eq!((entered, look, unstyled), (rgb(0x10, 0x20, 0x30), rgb(0x10, 0x20, 0x30), token));
 }
 
+/// An EQ's selected bands' dots take the selection's color unless a theme gives its own.
+#[test]
+fn an_eqs_selected_bands_take_the_selection_color_or_the_themes() {
+    let rgb = egui::Color32::from_rgb;
+    let selected = || EQ_BAND.attr(Selected, true).look().accent();
+    assert_eq!(frames("", selected), super::super::theme::studio("selection"));
+    assert_eq!(frames("eq-band[selected] { accent-color: #102030; }", selected), rgb(0x10, 0x20, 0x30));
+}
+
 /// A toggle's background image: the plain button's fades out under the lit fill, a lit state's own
 /// stays; [`Entered::paint_over`] paints none of it at 0 (#1435 review).
 #[test]

@@ -2796,6 +2796,9 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
     let range = panel.state.db_range;
     let radius = if big { 7.5 } else { 5.8 };
     let mut hovered = None;
+    // The selected bands' dots take the theme's color for them (`eq-band[selected]`).
+    let chosen = crate::kit::element::EQ_BAND.attr(crate::kit::element::Selected, true).look().accent();
+    let chosen_ink = super::device_canvas::ink_on(chosen);
     // Drawn bottom to top: the bands that are off, then those that are on, the selected band last.
     // The dot drawn on top takes the click, so of two dots in one place (two bands at the same
     // frequency and gain) the one that is heard, or selected, is the one a click picks.
@@ -2819,8 +2822,8 @@ fn draw_dots(ui: &mut egui::Ui, panel: &mut Panel<'_>, display: Rect, plot: Rect
         let selected = panel.in_group(slot);
         let color = band_color(slot);
         let (fill, ring, ink) = match (selected, band.on) {
-            (true, true) => (color, color, colors.text_inverse),
-            (true, false) => (colors.control_active, colors.text_secondary, colors.text_secondary),
+            (true, true) => (chosen, chosen, chosen_ink),
+            (true, false) => (colors.control_active, chosen, colors.text_secondary),
             (false, true) => (colors.panel_background, color, color),
             (false, false) => (colors.panel_background, colors.text_secondary, colors.text_secondary),
         };

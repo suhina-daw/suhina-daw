@@ -1145,6 +1145,7 @@ names! {
     DEVICE_HEADER = "device-header";
     DEVICE_SECTION = "device-section";
     DEVICE_CONTROL = "device-control";
+    EQ_BAND = "eq-band";
     XY_CONTROL = "xy-control";
     ENVELOPE = "envelope";
     WAVEFORM = "waveform";

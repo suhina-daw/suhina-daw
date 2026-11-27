@@ -331,7 +331,10 @@ Measurements in canvas px, `[x, y, w, h]`:
 - **Dots.** One numbered dot per band in use, in the band's own colour (hues spread around the wheel
   slot by slot, `band_color`), at its frequency and gain
   (after Scale) — for the cuts and the notch on the 0 dB line; a band that is off has a dashed
-  ring. The dots are drawn bands that are off first, then those that are on, the selected band
+  ring. The selected bands' dots are filled and ringed in one colour of the theme's,
+  `eq-band[selected]`'s `accent-color` (by default the selection's, `--selection`), the band's
+  number in the ink that reads on it; a selected band that is off keeps its dim fill with a dashed
+  ring of that colour. The dots are drawn bands that are off first, then those that are on, the selected band
   last, and the dot on top takes a click: of two dots in one place (a new EQ's bands 4 and 7 both
   sit at 5 kHz and 0 dB) a click picks the band that is heard, or selected. Dragging moves the frequency, and the gain where the type has one (Shift for precision);
   dragging a band that is off turns it on. A click or a drag start selects the band; a
