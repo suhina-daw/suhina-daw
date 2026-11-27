@@ -42,12 +42,26 @@ pub(crate) struct PointDrag {
     pub(crate) index: usize,
     pub(crate) curve: Vec<ExpressionPoint>,
     pub(crate) from: Vec<ExpressionPoint>,
+    /// Set when the drag bends the segment after point `index` rather than moving a point.
+    pub(crate) bend: Option<Bend>,
 }
+
+/// A segment being bent: the curve as it was, and the height the drag started at.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Bend {
+    pub(crate) base: Vec<ExpressionPoint>,
+    pub(crate) start_y: f32,
+}
+
+/// The points a bent segment is drawn with between its two ends.
+const BEND_STEPS: usize = 16;
+/// The drag, in points, that bends a segment all the way.
+const BEND_REACH: f32 = 80.0;
 
 impl PointDrag {
     /// Whether this drag is of point `point` of note `id`'s `kind` curve.
     fn is(&self, id: Option<NoteId>, kind: ExpressionKind, point: usize) -> bool {
-        self.of(id, kind) && self.index == point
+        self.of(id, kind) && self.index == point && self.bend.is_none()
     }
 
     /// Whether this drag is on note `id`'s `kind` curve.
@@ -397,7 +411,8 @@ fn handle_note(
                 && let Some(id) = id
             {
                 let from = own_curve(note, kind).to_vec();
-                state.expression_drag = Some(PointDrag { note: id, kind, index: point, curve: curve.clone(), from });
+                state.expression_drag =
+                    Some(PointDrag { note: id, kind, index: point, curve: curve.clone(), from, bend: None });
             }
             if response.dragged()
                 && let Some(pos) = ui.ctx().pointer_latest_pos()
@@ -412,8 +427,112 @@ fn handle_note(
                 return true;
             }
         }
+        if bend_segments(ui, layout, (clip, index, note), (kind, area), state, actions, busy) {
+            return true;
+        }
     }
     false
+}
+
+/// Alt and a drag on the line between two of a selected note's points bends that segment:
+/// up bulges it upward, down downward, as far as [`BEND_REACH`] takes it. The bend is kept as
+/// [`BEND_STEPS`] points along it, so the curve stays one of straight segments (ADR 0039 › 6).
+/// True when an edit was sent.
+fn bend_segments(
+    ui: &Ui,
+    layout: &Layout,
+    (clip, index, note): (&PianoClip, usize, &Note),
+    (kind, area): (ExpressionKind, Rect),
+    state: &mut PianoRollState,
+    actions: &mut Vec<Action>,
+    busy: &mut bool,
+) -> bool {
+    let id = clip.notes.id(index);
+    let bending = state.expression_drag.as_ref().filter(|d| d.of(id, kind) && d.bend.is_some()).cloned();
+    let base = match &bending {
+        Some(drag) => drag.bend.as_ref().map(|b| b.base.clone()).unwrap_or_default(),
+        None => own_curve(note, kind).to_vec(),
+    };
+    let alt = ui.input(|i| i.modifiers.alt);
+    let hover = ui.ctx().pointer_hover_pos();
+    let at: Vec<Option<Pos2>> = base.iter().map(|p| point_pos(layout, note, kind, *p)).collect();
+    for segment in 0..base.len().saturating_sub(1) {
+        let (Some(Some(a)), Some(Some(b))) = (at.get(segment), at.get(segment + 1)) else { continue };
+        let active = bending.as_ref().is_some_and(|d| d.index == segment);
+        let near = hover.is_some_and(|p| area.contains(p) && distance_to_segment(p, *a, *b) <= HANDLE);
+        if !active && !(alt && near) {
+            continue;
+        }
+        let rect = Rect::from_two_pos(*a, *b).expand(HANDLE);
+        let response = ui.interact(rect, Id::unique(("piano-mpe-bend", kind.name(), id, segment)), Sense::drag());
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        *busy = true;
+        if response.drag_started()
+            && let Some(id) = id
+        {
+            let start_y = ui.input(|i| i.pointer.press_origin()).or(hover).map_or(a.y, |p| p.y);
+            state.expression_drag = Some(PointDrag {
+                note: id,
+                kind,
+                index: segment,
+                curve: base.clone(),
+                from: own_curve(note, kind).to_vec(),
+                bend: Some(Bend { base: base.clone(), start_y }),
+            });
+        }
+        if response.dragged()
+            && let Some(pos) = ui.ctx().pointer_latest_pos()
+            && let Some(drag) = state.expression_drag.as_mut().filter(|d| d.of(id, kind) && d.index == segment)
+            && let Some(bend) = &drag.bend
+        {
+            let amount = f64::from(((bend.start_y - pos.y) / BEND_REACH).clamp(-1.0, 1.0));
+            drag.curve = bent(&bend.base, segment, amount, kind);
+        }
+        if response.drag_stopped()
+            && let Some(drag) = state.expression_drag.take_if(|d| d.of(id, kind) && d.bend.is_some())
+        {
+            if drag.bend.as_ref().is_some_and(|b| b.base != drag.curve) {
+                actions.push(set_action(clip, index, kind, &drag.curve));
+            }
+            return true;
+        }
+    }
+    false
+}
+
+/// `base` with its segment after point `segment` bent by `amount`, -1 to 1: positive bulges
+/// upward (towards higher values), negative downward. A flat segment, a bend too small to see,
+/// a segment too short for the points or a curve with no room for them stays as it is.
+pub(super) fn bent(
+    base: &[ExpressionPoint],
+    segment: usize,
+    amount: f64,
+    kind: ExpressionKind,
+) -> Vec<ExpressionPoint> {
+    let (Some(a), Some(b)) = (base.get(segment).copied(), base.get(segment + 1).copied()) else {
+        return base.to_vec();
+    };
+    let rise = b.value - a.value;
+    let span = b.offset - a.offset;
+    if amount.abs() < 0.02
+        || rise == 0.0
+        || span <= GAP * BEND_STEPS as f64
+        || base.len() + BEND_STEPS - 1 > suhina_engine::model::MAX_CURVE_POINTS
+    {
+        return base.to_vec();
+    }
+    // An exponent under 1 rises early, over 1 late; which of them bulges up depends on whether
+    // the segment rises or falls.
+    let exponent = 2f64.powf(-3.0 * amount * rise.signum());
+    let mut out = Vec::with_capacity(base.len() + BEND_STEPS - 1);
+    out.extend_from_slice(base.get(..=segment).unwrap_or_default());
+    for step in 1..BEND_STEPS {
+        let t = step as f64 / BEND_STEPS as f64;
+        let value = kind.clamp(a.value + rise * t.powf(exponent)).unwrap_or(a.value);
+        out.push(ExpressionPoint::new(a.offset + span * t, value));
+    }
+    out.extend_from_slice(base.get(segment + 1..).unwrap_or_default());
+    out
 }
 
 /// Moves a dragged point to `pos`: its beat on the grid unless `free`, kept between its

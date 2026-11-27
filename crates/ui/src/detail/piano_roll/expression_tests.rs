@@ -68,8 +68,14 @@ fn a_dragged_point_stays_between_its_neighbours_on_whole_semitones() {
     let grid = TimelineGrid::new(0.25, layout.beat_width, 4.0, 6.0);
     let note = &clip.notes[0];
     let curve = note.expression().unwrap().pitch.clone();
-    let mut drag =
-        PointDrag { note: NoteId(0), kind: ExpressionKind::Pitch, index: 1, curve: curve.clone(), from: curve };
+    let mut drag = PointDrag {
+        bend: None,
+        note: NoteId(0),
+        kind: ExpressionKind::Pitch,
+        index: 1,
+        curve: curve.clone(),
+        from: curve,
+    };
     // Past the next point and between rows: held before it, on a whole semitone.
     let pos = Pos2::new(layout.x_of(3.0), pitch_y(&layout, 63.4).unwrap());
     drag_point(&layout, note, grid, false, &mut drag, pos);
@@ -128,8 +134,14 @@ fn a_point_too_close_to_its_neighbours_keeps_its_beat() {
     let grid = TimelineGrid::new(0.25, layout.beat_width, 4.0, 6.0);
     let note = &clip.notes[0];
     let curve = note.expression().unwrap().pitch.clone();
-    let mut drag =
-        PointDrag { note: NoteId(0), kind: ExpressionKind::Pitch, index: 1, curve: curve.clone(), from: curve };
+    let mut drag = PointDrag {
+        bend: None,
+        note: NoteId(0),
+        kind: ExpressionKind::Pitch,
+        index: 1,
+        curve: curve.clone(),
+        from: curve,
+    };
     drag_point(&layout, note, grid, false, &mut drag, Pos2::new(layout.x_of(1.0), pitch_y(&layout, 65.0).unwrap()));
     assert_eq!(drag.curve[1], ExpressionPoint::new(0.00001, 5.0));
     assert_eq!(suhina_engine::model::expression::validate_curve(ExpressionKind::Pitch, &drag.curve, 4.0), Ok(()));
@@ -144,7 +156,8 @@ fn a_point_drag_follows_its_note_and_ends_when_the_note_or_curve_changes() {
     let curve = clip.notes[1].expression().unwrap().pitch.clone();
     let mut dragged = curve.clone();
     dragged[1].value = 7.0;
-    let drag = PointDrag { note: id, kind: ExpressionKind::Pitch, index: 1, curve: dragged.clone(), from: curve };
+    let drag =
+        PointDrag { bend: None, note: id, kind: ExpressionKind::Pitch, index: 1, curve: dragged.clone(), from: curve };
     let mut state = PianoRollState { expression_drag: Some(drag.clone()), ..PianoRollState::default() };
 
     // Another writer removes the first note: the dragged one is now at index 0, and only it shows
@@ -164,4 +177,28 @@ fn a_point_drag_follows_its_note_and_ends_when_the_note_or_curve_changes() {
     clip.notes.remove(0);
     settle_drag(&clip, &mut state);
     assert_eq!(state.expression_drag, None);
+}
+
+#[test]
+fn a_bent_segment_bulges_the_way_it_is_dragged_and_keeps_its_ends() {
+    let base = vec![ExpressionPoint::new(0.0, 0.0), ExpressionPoint::new(1.0, 4.0), ExpressionPoint::new(2.0, 4.0)];
+    let up = super::bent(&base, 0, 1.0, ExpressionKind::Pitch);
+    assert_eq!(up.len(), base.len() + BEND_STEPS - 1);
+    assert_eq!(up.first(), base.first());
+    assert_eq!(up.last(), base.last());
+    assert!(up.windows(2).all(|w| w[1].offset > w[0].offset), "offsets increase");
+    let middle = |curve: &[ExpressionPoint]| curve.iter().find(|p| (p.offset - 0.5).abs() < 1e-9).map(|p| p.value);
+    assert!(middle(&up).unwrap() > 2.0, "up rises early");
+    let down = super::bent(&base, 0, -1.0, ExpressionKind::Pitch);
+    assert!(middle(&down).unwrap() < 2.0, "down rises late");
+    // A falling segment bent up still bulges up: it stays high longer.
+    let fall = vec![ExpressionPoint::new(0.0, 4.0), ExpressionPoint::new(1.0, 0.0)];
+    assert!(middle(&super::bent(&fall, 0, 1.0, ExpressionKind::Pitch)).unwrap() > 2.0);
+    // Flat, tiny or missing segments stay.
+    assert_eq!(super::bent(&base, 1, 1.0, ExpressionKind::Pitch), base);
+    assert_eq!(super::bent(&base, 0, 0.01, ExpressionKind::Pitch), base);
+    assert_eq!(super::bent(&base, 5, 1.0, ExpressionKind::Pitch), base);
+    // Lane values stay in their range.
+    let lane = vec![ExpressionPoint::new(0.0, 0.0), ExpressionPoint::new(1.0, 1.0)];
+    assert!(super::bent(&lane, 0, 1.0, ExpressionKind::Pressure).iter().all(|p| (0.0..=1.0).contains(&p.value)));
 }

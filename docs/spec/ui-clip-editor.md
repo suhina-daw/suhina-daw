@@ -1511,6 +1511,9 @@ slide the same way, and a note without a curve draws nothing there.
   does the same as the toggle, which a narrow toolbar hides.
 - **Dragging a handle** moves its point, on the grid and on whole semitones (Alt frees both), kept
   between its neighbours and inside the note.
+- **Alt and a drag on the line between two points** bends that segment: up bulges it upward, down
+  downward (a flat segment does not bend). The bend is kept as points along it, so playback,
+  export and the file see an ordinary curve.
 - **Double-clicking a handle** removes the point; a curve left with only points at the note's own
   pitch goes.
 
