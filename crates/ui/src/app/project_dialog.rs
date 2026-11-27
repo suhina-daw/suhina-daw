@@ -423,18 +423,28 @@ fn draw_unsaved(
     doing: &str,
 ) -> Option<UnsavedChoice> {
     let mut closed: Option<UnsavedChoice> = None;
+    // The question wraps over as many lines as it needs (a long project name, a long action),
+    // never cut short; the dialog grows with it, two lines at least.
+    let message = format!("Save the changes to {name} before {doing}?");
+    let font = theme::ui_font(theme::TEXT);
+    let galley = ui.painter().layout(message.clone(), font, name_ink(), SAVE_WIDTH);
+    let text_height = galley.size().y.max(2.0 * LINE);
     let panel = panel(
         ui,
         dialog,
         area,
-        Vec2::new(SAVE_WIDTH, 2.0 * LINE + PAD + dialog::BUTTON_HEIGHT),
+        Vec2::new(SAVE_WIDTH, text_height + PAD + dialog::BUTTON_HEIGHT),
         "Unsaved changes",
         &mut closed,
     );
     let painter = ui.painter_at(area);
-    let text = Rect::from_min_size(Pos2::new(panel.left(), panel.top()), Vec2::new(panel.width(), LINE));
-    let message = format!("Save the changes to {name} before {doing}?");
-    widgets::text_in(&painter, text, Align2::LEFT_CENTER, &message, theme::ui_font(theme::TEXT), name_ink());
+    let text = Rect::from_min_size(panel.min, Vec2::new(panel.width(), text_height));
+    let galley = painter.layout(message.clone(), theme::ui_font(theme::TEXT), name_ink(), text.width());
+    let at = Pos2::new(text.left(), text.center().y - galley.size().y / 2.0);
+    widgets::paint_text(&painter, at, galley, name_ink());
+    // Read whole by a screen reader and the tests, as the line it was.
+    let label = ui.interact(text, Id::unique("unsaved-changes-question"), Sense::hover());
+    label.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &message));
     let clicked = dialog::actions(
         ui,
         &painter,

@@ -252,6 +252,14 @@ pub(crate) static ROWS: &[Entry] = &[
         },
     ),
     row(
+        Page::Plugins,
+        "Editors",
+        "Open editor when added",
+        "Whether a plug-in's editor opens by itself once the plug-in is added to a track",
+        &["plugin_editor_on_add"],
+        |cx, r| cx.on_off(r, |s| &mut s.plugin_editor_on_add),
+    ),
+    row(
         Page::Devices,
         "NAM",
         "Amp models folder",

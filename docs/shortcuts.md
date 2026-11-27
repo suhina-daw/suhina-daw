@@ -131,7 +131,7 @@ Arrangement or the Launcher (the clip and slot keys below, the Arrangement's too
 | Copy, cut, paste the selected clips (`selection.copy`, `.cut`, `.paste`) | Ctrl+C, Ctrl+X, Ctrl+V |
 | Duplicate, delete the selected clips (`selection.duplicate`, `.delete`); in the piano roll, after a click in it, Delete deletes the selected notes instead. The duplicate key is Ctrl+D, or Ctrl+B with the Draw-first preset | Ctrl+D; Delete, Backspace |
 | Mute or unmute the selected clips, or with a range painted in the Arrangement the clips under it, or in the piano roll the selected notes (`selection.mute`) | 0 |
-| Select every clip in the arrangement (`selection.selectAll`); in the piano roll, after a click in it, every note instead | Ctrl+A |
+| Select every clip in the arrangement (`selection.selectAll`); with a track header selected, every track (the returns left out); in the piano roll, after a click in it, every note instead | Ctrl+A |
 | In the piano roll, after a click in it: copy, cut, paste, duplicate the selected notes (the same `selection.*` keys; with no note selected, or nothing copied for a paste, they act on the clip) | Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D (Ctrl+B with Draw-first) |
 | In the piano roll: choose the Select, Draw, Paint, Erase, Slice, Mute tool (`pianoRoll.tool1` … `.tool6`, [spec](spec/ui-clip-editor.md) › Drawing notes, › Muting) | 1, 2, 3, 4, 5, 6 |
 | In the piano roll: select every note, clear the selection (`pianoRoll.selectAll`, `.deselect`) | Ctrl+A; Escape |

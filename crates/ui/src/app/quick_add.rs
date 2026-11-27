@@ -177,6 +177,12 @@ pub(super) fn place_label(beat: f64, bar_beats: f64) -> String {
     if within < 1.0 { format!("Bar {}", bar + 1.0) } else { format!("Bar {}.{}", bar + 1.0, within + 1.0) }
 }
 
+/// Whether the palette can add to `track`: a track of the project, or Main when the project has
+/// one (an effect goes on its chain; a sample or MIDI file goes on a new track).
+fn takes_quick_add(project: &suhina_engine::model::Project, track: TrackId) -> bool {
+    if track == TrackId::MAIN { project.main_channel().is_some() } else { project.track(track).is_some() }
+}
+
 /// Why `found` cannot go on a track that plays no notes, or `None` when it can.
 fn refused(found: &Found, notes: Option<bool>) -> Option<String> {
     if offered(found.kind, notes) {
@@ -242,12 +248,16 @@ impl App {
         self.quick_add.as_ref().map(|p| (p.track, p.beat))
     }
 
-    /// Opens the palette for the selected track and the place: the beat under the pointer over
-    /// the Arrangement, the play start marker elsewhere.
+    /// Opens the palette for the track worked on and the place: the beat under the pointer over
+    /// the Arrangement, the play start marker elsewhere. The track worked on is the one copied
+    /// devices are pasted on (`App::paste_track`): the clip's or slot's clicked last, so a clip
+    /// shown in the piano roll takes what is added, else the selected header's (#1356).
     pub(super) fn open_quick_add(&mut self) {
+        let track = self.paste_track();
         let Some(session) = self.session() else { return };
         let project = session.project();
-        let track = self.selected_track().filter(|t| *t != TrackId::MAIN && project.track(*t).is_some());
+        // Main takes effects as any track does (#1356's feedback): it plays no notes.
+        let track = track.filter(|t| takes_quick_add(project, *t));
         let pointer = if self.shown == View::Arrangement { self.arrangement.pointer_beat } else { None };
         let beat = pointer.unwrap_or_else(|| session.player().map_or(0.0, |p| p.monitor().start_beat())).max(0.0);
         self.quick_add = Some(QuickAdd {
@@ -263,10 +273,13 @@ impl App {
         });
     }
 
-    /// Whether the palette's track plays notes; `None` without a track.
-    fn quick_add_notes(&self, track: Option<TrackId>) -> Option<bool> {
+    /// Whether the palette's track plays notes; `None` without a track. Main plays none.
+    pub(super) fn quick_add_notes(&self, track: Option<TrackId>) -> Option<bool> {
         let track = track?;
         let project = self.session()?.project();
+        if track == TrackId::MAIN {
+            return project.main_channel().map(|_| false);
+        }
         Some(project.track(track)?.content.notes)
     }
 
@@ -470,7 +483,7 @@ impl App {
     /// selected one), a sample or MIDI file as a clip on `track` starting at `beat` (on a new
     /// track after it when it cannot hold the file, or with no track).
     fn quick_add_choose(&mut self, found: &Found, track: Option<TrackId>, beat: f64) {
-        let track = track.filter(|t| self.session().is_some_and(|s| s.project().track(*t).is_some()));
+        let track = track.filter(|t| self.session().is_some_and(|s| takes_quick_add(s.project(), *t)));
         let notes = self.quick_add_notes(track);
         if let Some(why) = refused(found, notes) {
             self.status = Status::Hint(why);
@@ -587,6 +600,7 @@ impl App {
         suhina_plugins::trace!("action {id} {params}");
         match self.projects.execute(id, params) {
             Ok(result) => {
+                self.note_added_plugin(id, params, &result);
                 self.revision += 1;
                 self.timeline = None;
                 Some(result)

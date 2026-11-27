@@ -802,7 +802,7 @@ pub(crate) fn add(session: &mut Session, params: &Value) -> Result<Value, Comman
     let preset_file = preset.as_ref().and_then(|p| p.file.clone());
     let state = match Args::new(params).value("file") {
         None | Some(Value::Null) => {
-            preset_file.as_ref().and_then(|given| match session.load_device_file(&info.id, given) {
+            preset_file.as_ref().and_then(|given| match session.load_preset_device_file(&info.id, given) {
                 Ok(_) => Some(given.clone()),
                 Err(error) => {
                     file_missing = Some(error);
@@ -1308,12 +1308,14 @@ pub(crate) fn device_file_state(session: &Session, kind: &str, path: &str) -> St
     // the load reads the pack's file of that name when the disk copy is missing — a caller
     // that read `device.file` of a project opened elsewhere keeps the same reference, where
     // the working-folder absolute this would otherwise store is a load that fails off this
-    // machine. A relative path that is neither is a working-folder path: its absolute text is
-    // the state.
+    // machine. Only when the pack carries the name and the text names no file from the
+    // working folder: a file of the user's own in a folder shaped like the pack's place is
+    // theirs, stored by its absolute path, or it would load from nowhere (#1369). A relative
+    // path that is neither is a working-folder path: its absolute text is the state.
     let given = std::path::Path::new(path);
     if !given.is_absolute()
         && (session.library_base().is_some_and(|base| base.join(path).exists())
-            || Session::pack_standin(kind, path).is_some())
+            || (Session::pack_file(kind, path).is_some() && !crate::files::absolute(given).is_file()))
     {
         // The relative form carries forward slashes on every platform, whatever separators
         // the caller's text had ([ADR 0036] › 4, the review): the same component join the

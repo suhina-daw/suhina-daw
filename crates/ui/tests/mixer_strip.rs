@@ -923,3 +923,34 @@ fn x_on_one_of_several_picked_devices_removes_them_all() {
     assert_eq!(main_chain(&harness), ["Utility"]);
     assert_eq!(chain_of(&harness, "Drums"), before, "Drums keeps its devices");
 }
+
+/// A device picked in a strip's device list takes the duplicate key of either keymap preset
+/// (Ctrl+D with Select first, Ctrl+B with Draw first): a copy after it, one undo step (#1355).
+#[test]
+fn ctrl_d_duplicates_a_device_picked_in_a_strips_list() {
+    use suhina_ui::settings::keymap::{Keymap, Preset};
+    let devices = |h: &Harness<'static, App>| {
+        h.state().session().map(|s| s.project().channels[0].devices.iter().map(|d| d.name.clone()).collect::<Vec<_>>())
+    };
+    for (preset, key) in [(Preset::SelectFirst, Key::D), (Preset::DrawFirst, Key::B)] {
+        let mut harness = window_at(DEVICES_AT + 40.0);
+        let mut keymap = Keymap::default();
+        keymap.set_preset(preset);
+        harness.state_mut().set_keymap(keymap);
+        harness.run();
+        harness.get_by_label("Show Utility on Drums").click();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, key);
+        harness.run();
+        let after = devices(&harness).unwrap_or_default();
+        assert_eq!(after.len(), 3, "{preset:?}: {after:?}");
+        assert_eq!(after.first().map(String::as_str), Some("Utility"), "{preset:?}");
+        assert!(
+            after.get(1).is_some_and(|name| name.starts_with("Utility")),
+            "{preset:?}: the copy after it: {after:?}"
+        );
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+        harness.run();
+        assert_eq!(devices(&harness).map(|d| d.len()), Some(2), "{preset:?}: one undo step");
+    }
+}

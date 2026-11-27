@@ -469,13 +469,34 @@ pub(super) fn knob(
     if response.double_clicked() {
         *value = parameter.default;
     }
-    if response.has_focus() {
-        let direction = ui.input(|i| {
-            i32::from(i.key_pressed(egui::Key::ArrowUp) || i.key_pressed(egui::Key::ArrowRight))
-                - i32::from(i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowLeft))
-        });
-        let step = if style.step > 0.0 { style.step } else { (max - min) * 0.01 };
+    // Clicked, it takes the arrows and a typed number as every value control does, until a click
+    // elsewhere (`widgets::value_keys`): in a docked panel the window takes egui's focus from all
+    // but text fields, so the focus alone never brought it the keys there. A device's own window
+    // keeps the focus, which brings it Left and Right too.
+    let (steps, shift_keys, typed) = widgets::value_keys(ui, &response);
+    let sideways = if response.has_focus() {
+        ui.input(|i| i32::from(i.key_pressed(egui::Key::ArrowRight)) - i32::from(i.key_pressed(egui::Key::ArrowLeft)))
+    } else {
+        0
+    };
+    let direction = steps + sideways;
+    if direction != 0 {
+        // A parameter in semitones (a pitch, a range) steps a semitone, and with Shift an octave,
+        // as the clip panel's pitch and a canvas's semitone dial do.
+        let shift = shift_keys || ui.input(|i| i.modifiers.shift);
+        let step = if parameter.unit == "st" {
+            if shift { widgets::OCTAVE } else { 1.0 }
+        } else if style.step > 0.0 {
+            style.step
+        } else {
+            (max - min) * 0.01
+        };
         *value = (*value + f64::from(direction) * step).clamp(min, max);
+        response.mark_changed();
+    }
+    if let Some(number) = typed.and_then(|t| t.trim().replace(',', ".").parse::<f64>().ok()).filter(|v| v.is_finite()) {
+        *value = number.clamp(min, max);
+        response.mark_changed();
     }
     let mut position = if logarithmic { (*value / min).ln() / (max / min).ln() } else { (*value - min) / (max - min) };
     if response.dragged() {

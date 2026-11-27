@@ -86,6 +86,73 @@ fn an_old_folder_a_setting_names_stays() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A setting that names a folder inside an old folder keeps the whole old folder: the move would
+/// carry the subfolder into the library and remove the folder the setting names, and the panels
+/// would list nothing (#1369). The case of the setting's text does not matter.
+#[test]
+fn an_old_folder_holding_a_folder_a_setting_names_stays() {
+    let dir = std::env::temp_dir().join(format!("suhina-pack-migrate-keep-inside-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let captures = dir.join("NAM models").join("My captures");
+    std::fs::create_dir_all(&captures).unwrap();
+    std::fs::write(captures.join("Mine.nam"), b"mine").unwrap();
+    std::fs::write(dir.join("NAM models").join("Loose.nam"), b"loose").unwrap();
+
+    for keep in [dir.join("NAM models").join("My captures"), dir.join("nam MODELS").join("my CAPTURES")] {
+        let warnings = migrate_old_folders(&dir, &dir, &[keep]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(std::fs::read(captures.join("Mine.nam")).unwrap(), b"mine", "the setting's folder keeps its file");
+        assert_eq!(
+            std::fs::read(dir.join("NAM models").join("Loose.nam")).unwrap(),
+            b"loose",
+            "the old folder stays whole"
+        );
+        assert!(!dir.join("Amp models").join("My captures").exists(), "nothing moved out of it");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A setting typed relative (`NAM models/My captures`) names its folder from the working
+/// folder, as the panels read it, so it keeps the old folder holding it there and only there.
+#[test]
+fn a_relative_setting_keeps_the_old_folder_from_the_working_folder() {
+    let base = std::env::temp_dir().join("suhina-library");
+    let old = base.join("NAM models");
+    for setting in ["NAM models/My captures", "nam models/MY CAPTURES", "NAM models"] {
+        assert!(is_kept(&old, &[PathBuf::from(setting)], &base), "{setting} from the library's folder");
+    }
+    let elsewhere = std::env::temp_dir().join("somewhere-else");
+    assert!(!is_kept(&old, &[PathBuf::from("NAM models/My captures")], &elsewhere), "read from another folder");
+    assert!(!is_kept(&old, &[PathBuf::from("My captures")], &base), "a folder beside the old one");
+    // `.` and `..` read as the system reads them: from a working folder inside the library, a
+    // setting that climbs out of it still names the old folder's subfolder.
+    let work = base.join("work");
+    for setting in ["../NAM models/My captures", "./../NAM models/./My captures"] {
+        assert!(is_kept(&old, &[PathBuf::from(setting)], &work), "{setting} from a folder inside the library");
+    }
+    assert!(!is_kept(&old, &[PathBuf::from("NAM models/My captures")], &work), "no climb, another folder");
+    assert!(is_kept(&old, &[base.join("other").join("..").join("NAM models")], &work), "an absolute setting with `..`");
+}
+
+/// A setting that climbs out of a link (`link/../My captures`) names the folder the disk
+/// resolves, the link's real parent: when that is inside the old folder, the old folder stays,
+/// though the text alone reads it as a folder beside the working one.
+#[cfg(unix)]
+#[test]
+fn a_setting_through_a_link_keeps_the_old_folder_it_resolves_into() {
+    let dir = std::env::temp_dir().join(format!("suhina-pack-keep-link-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let old = dir.join("NAM models");
+    std::fs::create_dir_all(old.join("nested")).unwrap();
+    std::fs::create_dir_all(old.join("My captures")).unwrap();
+    let work = dir.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    std::os::unix::fs::symlink(old.join("nested"), work.join("link")).unwrap();
+    assert!(is_kept(&old, &[PathBuf::from("link/../My captures")], &work), "resolved through the link");
+    assert!(!is_kept(&old, &[PathBuf::from("My captures")], &work), "a folder beside the working one");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// A name the new tree already holds is never overwritten: that file stays in the old
 /// folder, the old folder stays, and the warning says what was kept — once. A folder whose
 /// names the new tree holds never empties, so its warning is a start-up record, not a nag

@@ -1339,6 +1339,12 @@ impl Session {
     /// the session and the importer's warnings. Any other file is refused by its extension.
     /// The NAM devices' files are read here, so the session is ready for the planned audio
     /// before a player is attached.
+    ///
+    /// The session has no library root ([`Session::set_library_base`]), so a device file the
+    /// project names relative to the library does not load. Callers that play or render the
+    /// project open it through `Projects` with the root set, as the window, `suhina-cli render`
+    /// and `suhina-cli mcp` do; the remaining caller, `suhina-cli plugins check`, only lists the
+    /// plug-ins a project uses and runs no device files (#1368).
     pub fn open(path: &Path) -> Result<(Self, Vec<String>), CommandError> {
         Self::open_with_base(path, None)
     }
@@ -1805,6 +1811,27 @@ impl Session {
         self.load_device_file_at(kind, path, self.device_file_rate())
     }
 
+    /// Loads the file a preset names, as `device.add {preset}` does. A preset names its file as
+    /// it was saved, and one saved from a file kept in an old default folder (`NAM models/…`,
+    /// its name taken in the library, ADR 0036 › 4) names that old place. Once that copy is
+    /// gone, the old-folder mapping a project's state goes through would load the library's
+    /// other file of that name with no note, so a preset's file is read only where it names
+    /// and the add says it is missing instead (#1369).
+    pub(crate) fn load_preset_device_file(
+        &self,
+        kind: &str,
+        path: &str,
+    ) -> Result<suhina_device_registry::DeviceAsset, String> {
+        if self.legacy_device_file(kind, path).is_some()
+            && !self.resolve_device_file(path).is_some_and(|file| file.is_file())
+        {
+            return Err(format!(
+                "{path} is gone: the preset names a file in an old default folder, so choose the file again"
+            ));
+        }
+        self.load_device_file(kind, path)
+    }
+
     fn load_device_file_at(
         &self,
         kind: &str,
@@ -1848,16 +1875,8 @@ impl Session {
         // open elsewhere on the pack's different file with no missing-file note. An absolute
         // path is the file's own, and a missing one is a missing file, not a sound of the
         // same name.
-        let shipped = if std::path::Path::new(path).is_absolute() {
-            None
-        } else {
-            Self::pack_standin(kind, path).and_then(|name| {
-                suhina_device_registry::pack_files(kind)
-                    .into_iter()
-                    .find(|(packed, _)| packed.eq_ignore_ascii_case(&name))
-            })
-        };
-        if let Some((packed_name, _)) = shipped {
+        let shipped = if std::path::Path::new(path).is_absolute() { None } else { Self::pack_file(kind, path) };
+        if let Some(packed_name) = shipped {
             return suhina_device_registry::load_builtin_file(kind, packed_name, rate);
         }
         // There but not a plain file (a folder, or a named pipe that would block the session).
@@ -1871,8 +1890,8 @@ impl Session {
     /// pack's place: the state's last components must be `<library folder>/Suhina/<name>`
     /// ([ADR 0036] › 7, the review) — a file of the same name in the user's own folder proves
     /// nothing about the pack, and it would open elsewhere on the pack's different file with
-    /// no missing-file note. The one rule the load's stand-in and the state's store share, so
-    /// the two cannot drift apart; whether the pack carries the name is the caller's check.
+    /// no missing-file note. Whether the pack carries the name is [`Session::pack_file`]'s
+    /// check.
     pub(crate) fn pack_standin(kind: &str, path: &str) -> Option<String> {
         let library = suhina_device_registry::library_folder(kind)?;
         let mut components = std::path::Path::new(path)
@@ -1884,6 +1903,17 @@ impl Session {
         let folder = components.pop()?;
         (pack.eq_ignore_ascii_case(suhina_device_registry::SHIPPED_PACK) && folder.eq_ignore_ascii_case(library))
             .then_some(name)
+    }
+
+    /// The shipped pack's file a relative state stands for: its place names the pack's
+    /// ([`Session::pack_standin`]) and the pack carries that name. The one rule the load's
+    /// stand-in and the state's store share, so the two cannot drift apart (#1369).
+    pub(crate) fn pack_file(kind: &str, path: &str) -> Option<&'static str> {
+        let name = Self::pack_standin(kind, path)?;
+        suhina_device_registry::pack_files(kind)
+            .into_iter()
+            .map(|(packed, _)| packed)
+            .find(|packed| packed.eq_ignore_ascii_case(&name))
     }
 
     /// The file a state's old-form text points at since the library's move: the old defaults

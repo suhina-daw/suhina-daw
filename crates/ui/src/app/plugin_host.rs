@@ -4,6 +4,22 @@
 //! The window's side of plug-in hosting: scans, the plug-in manager's requests, and where editors open.
 
 use super::*;
+use std::time::{Duration, Instant};
+
+/// How long an added plug-in may take to start before its editor is no longer opened for it.
+pub(super) const EDITOR_WAIT: Duration = Duration::from_secs(10);
+
+/// A plug-in just added whose editor opens once it runs (Settings › Plug-ins › Open editor when
+/// added): its project, its track and place in the chain, and when it is let go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct PendingEditor {
+    pub(super) project: Option<ProjectId>,
+    pub(super) track: TrackId,
+    pub(super) device: usize,
+    /// The add's moment and [`EDITOR_WAIT`]: a deadline in time, not in window frames, which come
+    /// many times a second while the transport runs and a few times when it does not.
+    pub(super) until: Instant,
+}
 
 impl App {
     /// The shown track's plug-in: the panel's pick when it is one of the track's plug-ins, else
@@ -37,6 +53,49 @@ impl App {
         self.run(&Action::new(command, json!({ "track": track.0, "device": index })));
     }
 
+    /// Remembers a plug-in a command just added, when Settings say its editor opens by itself:
+    /// `device.addPlugin` on a track (or Main), or `track.add` with a plug-in as its device. The
+    /// editor opens once the plug-in runs ([`App::open_pending_editors`]), since the plug-in
+    /// loads in its host after the command.
+    pub(super) fn note_added_plugin(&mut self, id: &str, params: &serde_json::Value, result: &serde_json::Value) {
+        if self.settings.plugin_editor_on_add
+            && let Some(added) = pending_editor(self.projects.active(), id, params, result, Instant::now())
+        {
+            self.pending_editors.push(added);
+        }
+    }
+
+    /// Opens the editor of each plug-in [`App::note_added_plugin`] remembered, once it runs in
+    /// the project shown, the one it was added to; one that fails or is removed, or does not
+    /// start by its deadline, is let go.
+    pub(super) fn open_pending_editors(&mut self) {
+        self.open_pending_editors_at(Instant::now());
+    }
+
+    /// [`App::open_pending_editors`] at `now`, which a test gives.
+    pub(super) fn open_pending_editors_at(&mut self, now: Instant) {
+        if self.pending_editors.is_empty() {
+            return;
+        }
+        let active = self.projects.active();
+        let pending = std::mem::take(&mut self.pending_editors);
+        let mut open = Vec::new();
+        for entry in pending {
+            // Read in the project it was added to, never in another that holds a device there.
+            let report =
+                self.projects.session_mut(entry.project).ok().and_then(|s| s.plugin_report(entry.track, entry.device));
+            let state = report.map(|r| (r.status, r.editor_open));
+            match pending_step(state, entry.project == active, now < entry.until) {
+                PendingStep::Open => open.push(entry),
+                PendingStep::Wait => self.pending_editors.push(entry),
+                PendingStep::LetGo => {}
+            }
+        }
+        for entry in open {
+            self.run(&Action::new("device.openEditor", json!({ "track": entry.track.0, "device": entry.device })));
+        }
+    }
+
     /// How many devices `track`'s chain holds (Main's for [`TrackId::MAIN`]), if the track is in
     /// the project.
     pub(super) fn device_count(&self, track: TrackId) -> Option<usize> {
@@ -64,6 +123,7 @@ impl App {
         let changes = self.session().map(suhina_session::Session::change_count);
         let was_preparing = self.session().is_some_and(Session::audio_preparing);
         let notices = self.projects.poll_plugins();
+        self.open_pending_editors();
         if was_preparing && self.session().is_some_and(|s| s.player().is_some()) && notices.is_empty() {
             self.status = Status::Hint("Audio ready. Press Play to start playback.".into());
         }
@@ -448,5 +508,54 @@ impl App {
         } else {
             self.show_editor();
         }
+    }
+}
+
+/// The plug-in a command just added in `project`, as a pending editor let go [`EDITOR_WAIT`]
+/// after `now`, or `None` when the command added none. A free function so a caller that holds
+/// the session can still record it ([`App::note_added_plugin`]).
+pub(super) fn pending_editor(
+    project: Option<ProjectId>,
+    id: &str,
+    params: &serde_json::Value,
+    result: &serde_json::Value,
+    now: Instant,
+) -> Option<PendingEditor> {
+    let index = |v: &serde_json::Value| v.as_u64().and_then(|i| usize::try_from(i).ok());
+    let track = |v: &serde_json::Value| v.as_u64().and_then(|t| u32::try_from(t).ok()).map(TrackId);
+    let added = match id {
+        "device.addPlugin" => track(&params["track"]).zip(index(&result["device"])),
+        "track.add" if params["device"].is_string() => {
+            // A plug-in's spec, not a built-in device's id: the new track's device runs in a host.
+            let builtin = params["device"].as_str().is_some_and(|d| suhina_device_registry::info(d).is_some());
+            (!builtin).then(|| track(&result["track"]).zip(index(&result["device"]["device"]))).flatten()
+        }
+        _ => None,
+    };
+    added.map(|(track, device)| PendingEditor { project, track, device, until: now + EDITOR_WAIT })
+}
+
+/// What a pending editor does at a poll ([`App::open_pending_editors`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PendingStep {
+    Open,
+    Wait,
+    LetGo,
+}
+
+/// The step for a pending editor whose plug-in reports `state` (its status and whether its editor
+/// is open; `None` when nothing is reported yet), in the project shown or not, before its
+/// deadline or not. Nothing opens once the deadline has passed, a plug-in that starts at that
+/// very poll included: the setting promises about ten seconds, not an editor later on.
+pub(super) fn pending_step(state: Option<(PluginStatus, bool)>, shown: bool, waiting: bool) -> PendingStep {
+    if !waiting {
+        return PendingStep::LetGo;
+    }
+    match state {
+        Some((PluginStatus::Running, false)) if shown => PendingStep::Open,
+        // Still starting, not reported yet, or its project not shown: wait while there is time.
+        Some((PluginStatus::Running, false) | (PluginStatus::Loading, _)) | None => PendingStep::Wait,
+        // Failed, removed, or its editor opened already.
+        _ => PendingStep::LetGo,
     }
 }

@@ -247,6 +247,83 @@ fn the_arrangement_records_after_the_count_in() {
     assert!(rig.session.project().arrangement.lanes.iter().all(|l| l.clips.is_empty()));
 }
 
+/// A recording into the arrangement whose end cannot reach the engine at once, its command queue
+/// full, still ends there: the session sends the recorder off again until it gets through, and
+/// the track plays its arrangement again without a Stop.
+#[test]
+fn a_full_command_queue_does_not_leave_the_arrangement_silent() {
+    let mut built = project_built();
+    let note = Note {
+        time: 0.0,
+        duration: 0.25,
+        key: 60,
+        velocity: 1.0,
+        release_velocity: 0.5,
+        channel: 0,
+        muted: false,
+        velocity_range: 0,
+    };
+    built.contents.push(ClipContent {
+        linked: false,
+        id: ContentId(1),
+        name: "loop".into(),
+        length: 1.0,
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note].into()) }].into(),
+        extensions: Extensions::default(),
+        scale: None,
+    });
+    built.arrangement.lanes.push(ArrangementLane {
+        id: Default::default(),
+        name: String::new(),
+        track: Some(TrackId(1)),
+        clips: vec![Clip {
+            id: Default::default(),
+            content: ContentId(1),
+            start: 0.0,
+            length: 64.0,
+            offset: 0.0,
+            loop_range: Some(LoopRange { start: 0.0, end: 1.0 }),
+            enabled: true,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            fade_in_curve: Default::default(),
+            fade_out_curve: Default::default(),
+            follow_action: Default::default(),
+            launch: Default::default(),
+            color: None,
+            ara: false,
+            audio: Default::default(),
+            swing: Default::default(),
+            extensions: Extensions::default(),
+        }],
+    });
+    let mut rig = rig(suhina_test_support::with_ids(built));
+    rig.session.set_implicit_tones(true);
+    rig.run("track.setArm", json!({ "track": 1, "armed": true })).unwrap();
+    rig.run("transport.record", json!({ "on": true })).unwrap();
+    rig.render_to(BEAT * 2, 0.0);
+
+    // The queue fills with harmless commands, so the end of the take cannot be sent.
+    let mut queued = 0;
+    while rig.run("launcher.setQuantization", json!({ "value": "1 bar" })).is_ok() {
+        queued += 1;
+        assert!(queued < 10_000, "the command queue never filled");
+    }
+    let _ = rig.run("transport.record", json!({ "on": false }));
+    assert!(!rig.session.records_arrangement());
+    rig.settle();
+
+    // The engine drains the queue; the session sends the recorder off again meanwhile.
+    rig.render_to(BEAT * 4, 0.0);
+    let mut out = vec![0.0f32; BEAT * 2 * 2];
+    for block in out.chunks_mut(BLOCK * 2) {
+        rig.renderer.process(block);
+        let notices = rig.session.sync_recording(false);
+        rig.notices.extend(notices);
+    }
+    assert!(out.iter().any(|s| s.abs() > 1e-3), "the arrangement plays again without a Stop");
+}
+
 #[test]
 fn stopping_the_transport_ends_the_take_where_it_stopped() {
     let mut rig = rig(project());

@@ -984,19 +984,23 @@ impl App {
         // the panel's box is closed first and its `overflow` does not cut the column (#1336).
         panel_style.close_box();
         self.audio_reset_shown = reset_shown;
-        let side_clicked = match (side, &shown) {
+        let (side_clicked, side_pressed) = match (side, &shown) {
             (Some(side), detail_view::Detail::Clip(_, chain)) => {
                 let devices = detail_view::Detail::Devices(chain.clone());
-                ui.scope_builder(egui::UiBuilder::new().max_rect(side), |ui| {
-                    detail_view::show_stack(ui, &devices, &picks, actions, &mut places)
-                })
-                .inner
-                .clicked
+                let side = ui
+                    .scope_builder(egui::UiBuilder::new().max_rect(side), |ui| {
+                        detail_view::show_stack(ui, &devices, &picks, actions, &mut places)
+                    })
+                    .inner;
+                (side.clicked, side.pressed)
             }
-            _ => None,
+            _ => (None, None),
         };
         if let Some(showing) = picked.inner.showing {
             self.detail_showing = showing;
+        }
+        if let Some((track, at)) = picked.inner.pressed.clone().or(side_pressed) {
+            self.press_device(track, at, &picks, ui.input(|i| i.modifiers.command || i.modifiers.shift));
         }
         if let Some((track, at)) = picked.inner.clicked.or(side_clicked) {
             let (add, run) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));

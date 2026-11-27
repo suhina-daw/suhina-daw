@@ -475,6 +475,19 @@ pub fn show(ui: &mut Ui, area: Rect, state: &mut BrowserState, cx: Context<'_>) 
     out
 }
 
+/// The search field's egui id.
+const SEARCH_ID: &str = "browser-search";
+
+/// The search field lets go of the keyboard and the list takes the arrow keys: once something is
+/// added from the results (Enter), or a row is pressed (a click, or the start of a drag onto a
+/// track, which egui does not count as a click). Otherwise the field keeps the keyboard, and the
+/// next Ctrl+Z undoes its text instead of the change just made (#1357).
+fn leave_search(ctx: &egui::Context, state: &mut BrowserState) {
+    ctx.memory_mut(|m| m.surrender_focus(Id::unique(SEARCH_ID)));
+    state.search_focused = false;
+    state.list_focused = true;
+}
+
 fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, out: &mut BrowserOut) {
     let tier = inks();
     let painter = ui.painter_at(rect);
@@ -494,7 +507,7 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
         Pos2::new(rect.left() + PAD + 14.0, rect.top() + 4.0),
         Pos2::new(rect.right() - PAD - key_width - 6.0, rect.bottom() - 4.0),
     );
-    let id = Id::unique("browser-search");
+    let id = Id::unique(SEARCH_ID);
     // egui lets go of a field's focus on Escape before the field is drawn, so whether the
     // field had the keyboard is remembered from the frame before.
     let focused = ui.ctx().memory(|m| m.has_focus(id)) || state.search_focused;
@@ -513,6 +526,7 @@ fn search_field(ui: &mut Ui, rect: Rect, state: &mut BrowserState, key: &str, ou
         }
         if enter && !state.selected.is_empty() {
             out.add = state.selected.clone();
+            leave_search(ui.ctx(), state);
         }
         if escape {
             state.stop_preview = true;
@@ -1261,7 +1275,7 @@ fn results_view(
             click_row(state, &rows, index, modifiers);
             state.handled_press = Some(row.item.key.clone());
         }
-        state.list_focused = true;
+        leave_search(ui.ctx(), state);
     }
     if let Some((index, modifiers)) = clicked {
         let key = rows.get(index).map(|r| r.item.key.clone());

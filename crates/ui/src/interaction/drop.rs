@@ -183,13 +183,109 @@ pub struct DropProbe {
     /// The files go onto one track each (Ctrl held, or the setting): the new tracks after the
     /// first are shown too, below the tracks.
     pub separate: bool,
+    /// The samples and MIDI files carried, in their order, with their lengths where known: the
+    /// Arrangement draws each where it will land, at its length (› [`ghost_layout`]).
+    pub dropped: Vec<DroppedFile>,
+}
+
+/// A sample or MIDI file carried onto the Arrangement: its kind, its name and its length in
+/// beats as the clip it becomes will have it (`None` until the browser has read the file).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DroppedFile {
+    pub audio: bool,
+    pub name: String,
+    pub beats: Option<f64>,
+}
+
+impl DroppedFile {
+    /// The clip length `clip.addFiles` gives the file: a sample over its tempo (the file's own
+    /// when known, else the project's), a MIDI file whole bars of its notes.
+    pub fn new(
+        audio: bool,
+        name: String,
+        seconds: Option<f64>,
+        file_bpm: Option<f64>,
+        beats: f64,
+        project: (f64, f64),
+    ) -> Self {
+        let (project_bpm, bar) = project;
+        let beats = if audio {
+            seconds.map(|s| s * file_bpm.unwrap_or(project_bpm) / 60.0)
+        } else {
+            (beats > 0.0).then(|| (beats / bar).ceil().max(1.0) * bar)
+        };
+        Self { audio, name, beats: beats.filter(|b| b.is_finite() && *b > 0.0) }
+    }
+}
+
+/// Where a carried file lands: `row` 0 is the track it is dropped on, 1 and on the new tracks
+/// after it; from `start`, for `length` beats.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GhostClip {
+    pub row: usize,
+    pub start: f64,
+    pub length: f64,
+    pub audio: bool,
+    pub name: String,
+}
+
+/// The clips a drop of `files` at `start` makes, laid out as `clip.addFiles` lays them out:
+/// `target` is the kind of the track dropped on (`Some(true)` audio), `None` for the empty space
+/// under the tracks. The files of the track's kind go on it, end to end, or with `separate` the
+/// first on it and each of the others on a new track; the rest go on new tracks, one each with
+/// `separate`, else one for each kind, end to end. A file whose length is not known yet takes
+/// `fallback` beats.
+pub fn ghost_layout(
+    files: &[DroppedFile],
+    target: Option<bool>,
+    separate: bool,
+    start: f64,
+    fallback: f64,
+) -> Vec<GhostClip> {
+    let (fits, rest): (Vec<&DroppedFile>, Vec<&DroppedFile>) =
+        files.iter().partition(|f| target.is_some_and(|audio| audio == f.audio));
+    let mut groups: Vec<Vec<&DroppedFile>> = Vec::new();
+    let mut on_target: Vec<&DroppedFile> = Vec::new();
+    if separate {
+        let mut fits = fits.into_iter();
+        on_target.extend(fits.next());
+        groups.extend(fits.map(|f| vec![f]));
+        groups.extend(rest.into_iter().map(|f| vec![f]));
+    } else {
+        on_target = fits;
+        let (audio, midi): (Vec<&DroppedFile>, Vec<&DroppedFile>) = rest.into_iter().partition(|f| f.audio);
+        groups.extend([audio, midi].into_iter().filter(|g| !g.is_empty()));
+    }
+    let lay = |row: usize, list: &[&DroppedFile], out: &mut Vec<GhostClip>| {
+        let mut at = start;
+        for file in list {
+            let length = file.beats.unwrap_or(fallback).max(0.0);
+            out.push(GhostClip { row, start: at, length, audio: file.audio, name: file.name.clone() });
+            at += length;
+        }
+    };
+    let mut ghosts = Vec::new();
+    lay(0, &on_target, &mut ghosts);
+    for (i, group) in groups.iter().enumerate() {
+        lay(i + 1, group, &mut ghosts);
+    }
+    ghosts
 }
 
 impl DropProbe {
     /// A device carried from a chain or a strip's list onto another track (#688): it lands on a
     /// track as a dropped device does.
     pub fn for_device(pointer: egui::Pos2) -> Self {
-        Self { pointer, files: false, devices: true, clip: false, target: None, area: None, separate: false }
+        Self {
+            pointer,
+            files: false,
+            devices: true,
+            clip: false,
+            target: None,
+            area: None,
+            separate: false,
+            dropped: Vec::new(),
+        }
     }
 
     pub fn new(pointer: egui::Pos2, items: &[BrowserItem]) -> Self {
@@ -201,12 +297,22 @@ impl DropProbe {
             target: None,
             area: None,
             separate: false,
+            dropped: Vec::new(),
         }
     }
 
     /// A probe for a clip carried between the views.
     pub fn for_clip(pointer: egui::Pos2) -> Self {
-        Self { pointer, files: true, devices: false, clip: true, target: None, area: None, separate: false }
+        Self {
+            pointer,
+            files: true,
+            devices: false,
+            clip: true,
+            target: None,
+            area: None,
+            separate: false,
+            dropped: Vec::new(),
+        }
     }
 
     /// Takes `target` when the pointer is in `area` and nothing took it yet.

@@ -405,6 +405,27 @@
       "docs/decisions/0006-plug-in-hosting.md"
     ]
   },
+  "Plugins/Editors/plugin_editor_on_add": {
+    "sourceFingerprint": "8174d7c3343cbd373c86419a6f860400ea8174acbdf66fecbc979c1f348ad503",
+    "summary": "Open a plug-in’s editor as soon as you add the plug-in.",
+    "description": "When this is on, adding a plug-in to a track (from the browser, the quick-add palette or a drop) opens its editor by itself once the plug-in has loaded, where Plug-in editors open in says. Built-in devices are not affected.\n\nA plug-in that fails to load, or takes more than about ten seconds, opens no editor; open it with the P key or the device panel's button.",
+    "options": [
+      {
+        "name": "On",
+        "description": "A plug-in’s editor opens when the plug-in is added."
+      },
+      {
+        "name": "Off",
+        "description": "Editors open only when you ask. This is the default."
+      }
+    ],
+    "whenToChange": "Turn it on when you usually start editing a plug-in right after adding it, such as a synth you want to play with at once.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/app/plugin_host.rs"
+    ]
+  },
   "Devices/NAM/nam_models_folder": {
     "sourceFingerprint": "8628f29ba5a6dd692d2cf31aff7b4e59f68c2e5815693437fbd17c8c16f62131",
     "summary": "Choose the folder supplying the NAM Amp Modeler model list.",

@@ -169,12 +169,21 @@ pub(super) fn curve_handle(rect: Rect, edge: FadeEdge, fade: f32, curve: FadeCur
     Pos2::new(x, bottom - curve.gain(0.5) as f32 * (bottom - top))
 }
 
-/// The part of a lane a clip in sub-row `row` of `rows` is drawn in.
+/// The least height a stacked clip's row is drawn and hit at: on a lane too low for every row,
+/// the rows overlap rather than shrink to nothing, so no clip ever leaves the lane.
+pub(super) const LEAST_SUB_ROW: f32 = 2.0;
+
+/// The part of a lane a clip in sub-row `row` of `rows` is drawn in: a share of the lane, at
+/// least [`LEAST_SUB_ROW`] tall and inside the lane.
 pub(super) fn sub_row(lane_time: Rect, row: usize, rows: usize) -> Rect {
     let rows = rows.max(1) as f32;
     let height = lane_time.height() / rows;
+    let least = LEAST_SUB_ROW.min(lane_time.height().max(0.0));
     let top = lane_time.top() + height * row as f32;
-    Rect::from_x_y_ranges(lane_time.x_range(), egui::Rangef::new(top.round(), (top + height).round() - 1.0))
+    let last_top = (lane_time.bottom() - least).max(lane_time.top());
+    let shown_top = top.round().clamp(lane_time.top(), last_top);
+    let bottom = ((top + height).round() - 1.0).max(shown_top + least);
+    Rect::from_x_y_ranges(lane_time.x_range(), egui::Rangef::new(shown_top, bottom))
 }
 
 pub(super) fn clip_rect(lane_time: Rect, start: f64, length: f64, x_of: &dyn Fn(f64) -> f32) -> Rect {

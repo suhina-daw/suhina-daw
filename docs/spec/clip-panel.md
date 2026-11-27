@@ -122,8 +122,8 @@ Every number in the column is a field that:
   ignored. A double-click was needed before, and a click that only took the keys showed nothing.
 
 The fader and the knob follow a drag as the fields do, and take keys the same way: clicked, a
-number typed and Enter set them and the arrows step them (the fader 1 dB, Shift 0.1; the knob a
-semitone). A double-click on them puts them back to 0 (0 dB, 0 semitones). A marker typed as
+number typed and Enter set them and the arrows step them (the fader 1 dB, Shift 0.1; the knob
+and the Semitones field a semitone, Shift an octave). A double-click on them puts them back to 0 (0 dB, 0 semitones). A marker typed as
 `3.2` is bar 3, beat 2; `3` alone is bar 3's start.
 
 | Value | Range | Steps (drag, arrows) | Shown |

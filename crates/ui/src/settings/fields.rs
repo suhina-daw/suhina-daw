@@ -189,6 +189,7 @@ pub(super) const FIELDS: &[Field] = &[
         EditorPlacement::Window => "window",
         EditorPlacement::DeviceView => "device",
     }),
+    switch!("plugin_editor_on_add", plugin_editor_on_add),
     Field {
         key: "theme",
         write: |s| s.theme.clone(),

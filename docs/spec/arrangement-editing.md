@@ -125,8 +125,8 @@ the drag; the clip is drawn where it will land while it is dragged).
 
 ## The grid
 
-The Arrangement view has one grid, drawn as vertical lines across the lanes and used by
-everything that snaps. It is the Arrangement's own, apart from the control bar's **Quantize**
+The Arrangement view has one grid, drawn as vertical lines across the lanes, and on through the
+empty space under the last track, where files are dropped, and used by everything that snaps. It is the Arrangement's own, apart from the control bar's **Quantize**
 box, which only sets when launched clips start ([clip launching](clip-launching.md) › Launch
 quantisation). It works as the piano roll's grid does ([clip editor](ui-clip-editor.md) › Grid
 and snapping) and is chosen from the same menu, at the right end of the Arrangement's toolbar,
@@ -175,7 +175,7 @@ A click on a clip selects it alone; **Ctrl** (Cmd) adds a clip to the selection 
 and **Shift** takes the rectangle from the clip clicked last to this one: the lanes between them,
 as the view draws them, by the time from the earlier start to the later end, every clip that
 touches it (#694). Ctrl+A selects every clip
-in the arrangement and the time from the first clip's start to the last clip's end over all the tracks. Pressing a clip that is part of the selection keeps the selection, so a drag can
+in the arrangement and the time from the first clip's start to the last clip's end over all the tracks; with a track header clicked last (the headers have the keys), it selects every track instead, the return tracks left out, in the Launcher view too, and the view does not scroll. Pressing a clip that is part of the selection keeps the selection, so a drag can
 start there; pressing one that is not selects that clip alone. A dragged clip keeps its exact start until it has moved half a grid step sideways, so one off the grid keeps its place going to another track; from there on it lands on the grid (Alt: free). Dragging a clip of the selection
 moves all of it by the same beats, at once (`clip.moveMany {clips, beats, toTrack?, tracksBy?,
 toNewTrack?, stack?}`, one undo step, so no moved clip replaces another on the way). Dragged up
@@ -1142,12 +1142,13 @@ lays the control out horizontally (`direction: horizontal`).
 
 In the Arrangement view a header's volume and pan fields and its track-on and solo buttons act on
 the whole selection while the track they belong to is part of one of two or more tracks: dragging
-one field moves every selected track's by the same amount (the others follow it as it is dragged,
-and the commands land when it is let go; a number typed or a double-click sets them all to that
-value), one click on a track-on or a solo button turns them all
-off or on, and the whole list is one undo step. With one track selected, or with a click outside
-the selection, they act on that track alone, and it is heard while it is dragged: each frame sets
-the value in one `gesture`, so the drag is one undo step.
+one field moves every selected track's by the same amount from where the drag started, each
+kept within its range (a pan within -1 to 1) and heard as it is dragged: each frame sets them all
+(`track.setMixerValues`) in one `gesture`, so the drag is one undo step, as in the Launcher
+view's strips. A number typed or a double-click sets them all to that value, one click on a
+track-on or a solo button turns them all off or on, and the whole list is one undo step. With
+one track selected, or with a click outside the selection, they act on that track alone, and it
+is heard while it is dragged the same way.
 
 **Ctrl (Cmd on macOS) and the wheel over a field** change its value instead of scrolling the view: one tick of a
 wheel is one step (1 dB, or 0.02 of pan), Shift as well makes it ten times finer, and the view
@@ -1190,7 +1191,9 @@ first sub-row free at its start), so every clip stays visible and can be grabbed
 only where clips overlap: the clips that overlap one another, directly or through others, share
 the lane in as many rows as they use, and a clip that overlaps none fills the lane (#697). A thin
 line between the rows runs along the whole lane, under the clips, so each row reads as one in the
-empty stretches too.
+empty stretches too. However low the lane is made (the tracks zoomed out in height), a row keeps
+at least 2 points: on a lane lower than its rows need, they overlap, each clip still drawn and
+grabbed as at least a thin bar, never left out. So does each track's row in a folded group's lane.
 
 ## Folded groups
 

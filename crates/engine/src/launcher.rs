@@ -217,6 +217,14 @@ pub enum LaunchCommand {
     SetRecording {
         on: bool,
     },
+    /// The track behind `column` records into the arrangement (`on`), or no longer does: while it
+    /// records, its arrangement clips are silent, as the take will replace what it covers, and
+    /// the notes they sound are released (`docs/spec/recording.md`). A stop ends it for every
+    /// column. Out of range is ignored.
+    RecordArrangement {
+        column: usize,
+        on: bool,
+    },
     /// With the transport stopped, counts `beats` beats (up to 64, bars of `bar_beats`) with
     /// the metronome's click, then starts the transport; with nothing to count, starts it at
     /// once. Ignored while running. A stop cancels the count and leaves the transport stopped.
@@ -756,6 +764,9 @@ pub(crate) struct Pending {
 }
 
 pub(crate) struct Column {
+    /// The track the column belongs to, which a graph swap follows for what belongs to the
+    /// track rather than to the column's place ([`ClipLauncher::adopt`]).
+    track: suhina_model::TrackId,
     slots: Vec<SlotPlan>,
     pub(crate) playing: Option<Playing>,
     pub(crate) fading: Option<Playing>,
@@ -765,6 +776,9 @@ pub(crate) struct Column {
     held: Option<usize>,
     /// The frame from which the track plays launched clips instead of its arrangement.
     overrides_since: Option<u64>,
+    /// The frame from which the track records into the arrangement, its arrangement silent
+    /// meanwhile ([`LaunchCommand::RecordArrangement`]).
+    recording_since: Option<u64>,
 }
 
 pub(crate) struct ClipLauncher {
@@ -806,6 +820,7 @@ impl ClipLauncher {
             .columns
             .iter()
             .map(|column| Column {
+                track: column.track,
                 slots: column
                     .slots
                     .iter()
@@ -823,6 +838,7 @@ impl ClipLauncher {
                 pending: None,
                 held: None,
                 overrides_since: None,
+                recording_since: None,
             })
             .collect();
         // Every stretch voice gets its number; they are built later, off the audio thread.
@@ -891,6 +907,11 @@ impl ClipLauncher {
         let map = |slot: usize| shift.map_or(Some(slot), |s| s.map(slot));
         self.take_voices(old, map);
         let voices = &self.voices;
+        // A track records into the arrangement whatever place its column moves to: a track
+        // deleted or added before it while it records does not hand its silence to another.
+        for new in self.columns.iter_mut() {
+            new.recording_since = old.columns.iter().find(|c| c.track == new.track).and_then(|c| c.recording_since);
+        }
         for (new, old) in self.columns.iter_mut().zip(old.columns.iter_mut()) {
             new.overrides_since = old.overrides_since;
             new.held = old.held;
@@ -907,14 +928,24 @@ impl ClipLauncher {
         self.publish();
     }
 
-    /// Whether the track behind `column` plays launched clips instead of its arrangement.
+    /// Whether the track behind `column` does not play its arrangement: it plays launched clips
+    /// instead, or it records into the arrangement.
     pub(crate) fn overrides(&self, column: u32) -> bool {
-        self.columns.get(column as usize).is_some_and(|c| c.overrides_since.is_some())
+        self.columns.get(column as usize).is_some_and(|c| c.overrides_since.is_some() || c.recording_since.is_some())
     }
 
     /// Like [`ClipLauncher::overrides`], at frame `position` of the block just rendered.
     pub(crate) fn overrides_at(&self, column: u32, position: u64) -> bool {
-        self.columns.get(column as usize).and_then(|c| c.overrides_since).is_some_and(|since| since <= position)
+        self.columns.get(column as usize).is_some_and(|c| {
+            [c.overrides_since, c.recording_since].into_iter().flatten().any(|since| since <= position)
+        })
+    }
+
+    /// Ends every column's recording into the arrangement: their arrangements play again.
+    pub(crate) fn end_arrangement_recording(&mut self) {
+        for column in &mut self.columns {
+            column.recording_since = None;
+        }
     }
 
     /// The tempo playing now.
@@ -1267,9 +1298,11 @@ impl Renderer {
                 }
             }
             // A stop during the count-in only ends the count: the transport never started, so
-            // the play start marker stays where it is.
+            // the play start marker stays where it is. The take it counted in for ends with it,
+            // so its tracks play their arrangements at the next start.
             LaunchCommand::Stop | LaunchCommand::StopHere if self.transport.count_in.is_some() => {
-                self.cancel_count_in()
+                self.cancel_count_in();
+                self.graph.launcher.end_arrangement_recording();
             }
             // A stop before the waiting start rolled: it never did.
             LaunchCommand::Stop | LaunchCommand::StopHere if self.transport.start_waiting.is_some() => {
@@ -1288,7 +1321,31 @@ impl Renderer {
                 self.pending_jump = None;
                 self.stop_transport(true);
             }
-            LaunchCommand::SetRecording { on } => self.recorder.set(on),
+            LaunchCommand::SetRecording { on } => {
+                self.recorder.set(on);
+                // Nothing records any more: no track records into the arrangement either, even
+                // when the command that said so for its column did not reach the engine.
+                if !on {
+                    self.graph.launcher.end_arrangement_recording();
+                }
+            }
+            LaunchCommand::RecordArrangement { column, on } => {
+                let position = self.transport.position;
+                let Some(target) = self.graph.launcher.columns.get_mut(column) else { return };
+                if on {
+                    if target.recording_since.is_none() {
+                        target.recording_since = Some(position);
+                        // The arrangement's notes stop; a launched clip playing instead keeps its
+                        // own, since it is not affected.
+                        let arrangement_sounding = target.overrides_since.is_none_or(|since| since > position);
+                        if arrangement_sounding {
+                            self.release_column(column);
+                        }
+                    }
+                } else {
+                    target.recording_since = None;
+                }
+            }
             LaunchCommand::CountIn { beats, bar_beats } => self.start_count_in(beats, bar_beats),
             LaunchCommand::SetPosition { beat } => {
                 self.pending_jump = None;

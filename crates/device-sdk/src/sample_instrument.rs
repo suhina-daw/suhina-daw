@@ -37,7 +37,8 @@ pub const PARAMS: &[ParamInfo] = &[
     continuous("end", "End", 0., 1., 1., Unit::Percent),
     continuous("loop_start", "Loop start", 0., 1., 0., Unit::Percent),
     continuous("loop_end", "Loop end", 0., 1., 1., Unit::Percent),
-    continuous("pitch", "Semitones", -48., 48., 0., Unit::None),
+    // In semitones, so the panel's arrow keys step one and Shift an octave.
+    continuous("pitch", "Semitones", -48., 48., 0., Unit::Semitones),
     continuous("cents", "Cents", -100., 100., 0., Unit::None),
     ParamInfo::integer("poly", "Poly", (1, 32), 8, Unit::None),
     ParamInfo::choice("playback", "Playback", &["Gate", "One shot", "Loop", "Slices"], 0),

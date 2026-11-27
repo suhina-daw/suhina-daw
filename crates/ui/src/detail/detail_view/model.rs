@@ -425,6 +425,10 @@ pub struct Picked {
     /// A device panel was clicked: the track and where the device is, to select (one inside a
     /// group too).
     pub clicked: Option<(TrackId, DeviceAt)>,
+    /// A device panel was pressed this frame anywhere in it, its controls included (a knob, the
+    /// header's buttons, a display): the device takes the edit keys, as a click on its
+    /// background does (#1355). The press of a click, or of a drag, a control keeps for itself.
+    pub pressed: Option<(TrackId, DeviceAt)>,
     /// How tall the device chain's panels are, in points, when the area shows only the chain:
     /// the detail area is kept no taller.
     pub content_height: Option<u32>,

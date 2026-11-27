@@ -740,6 +740,9 @@ impl App {
 
     /// A track's name, or its id when the project has none by that id.
     pub(super) fn track_name(&self, track: TrackId) -> String {
+        if track == TrackId::MAIN {
+            return "Main".to_string();
+        }
         self.session()
             .and_then(|s| s.project().track(track).map(|_| s.project().shown_track_name(track)))
             .unwrap_or_else(|| track.0.to_string())
@@ -1027,6 +1030,7 @@ impl App {
         for (id, params) in commands {
             match self.projects.execute(id, &params) {
                 Ok(result) => {
+                    self.note_added_plugin(id, &params, &result);
                     self.revision += 1;
                     self.timeline = None;
                     // A Stems file arrives as one group: it opens folded, so the drop reads as a

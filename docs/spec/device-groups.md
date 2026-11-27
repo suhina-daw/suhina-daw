@@ -229,7 +229,10 @@ The group shows in a track's device panel ([ADR 0009](../decisions/0009-ui-toolk
 A click on a device's panel picks it, inside a group too: Ctrl (Cmd) adds one or takes it out,
 Shift takes the run from the one picked last in the same chain or branch, and **Ctrl+A** picks
 every device of the chain or branch of the one clicked last. Copy, cut, duplicate, Delete, the
-on/off key and grouping act on the picks, by their paths through the groups.
+on/off key and grouping act on the picks, by their paths through the groups. A press anywhere on
+a panel, its knobs, buttons and displays included, gives those keys to the devices: a device not
+picked yet is picked alone, and picks that already hold it (or a device inside it) stay as they
+are; with Ctrl or Shift held, the click picks as above.
 Selecting devices and pressing **Ctrl+G** (Cmd+G on macOS) groups them (those of one chain or
 branch, next to each other); **Ctrl+Shift+G**
 ungroups a group of one branch. The context menu of a device has **Group**, and of a group

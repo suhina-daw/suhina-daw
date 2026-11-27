@@ -183,6 +183,32 @@ impl App {
         }
     }
 
+    /// The samples and MIDI files among `items`, each with the length its clip will have, from
+    /// what the browser has read of it (asked for here when it has not, so it comes in a few
+    /// frames into the drag) and the project's tempo and bar.
+    pub(super) fn carried_files(&mut self, items: &[BrowserItem]) -> Vec<drop::DroppedFile> {
+        let project = self.session().map_or((120.0, 4.0), |s| {
+            let transport = &s.project().transport;
+            (transport.tempo_bpm, transport.meter().position(0.0).bar_beats)
+        });
+        items
+            .iter()
+            .filter(|item| item.kind.is_file_clip())
+            .map(|item| {
+                let audio = item.kind == drop::ItemKind::Sample;
+                let info = item.path().and_then(|path| self.browser.info(&path, false).cloned());
+                drop::DroppedFile::new(
+                    audio,
+                    item.name.clone(),
+                    info.as_ref().and_then(|f| f.seconds),
+                    info.as_ref().and_then(|f| f.tempo.map(|t| t.bpm)),
+                    info.as_ref().map_or(0.0, |f| f.beats),
+                    project,
+                )
+            })
+            .collect()
+    }
+
     /// Where a drag from the browser or the map is, in the main window: the pointer, or for a
     /// drag that started in the map's own window, that window's pointer moved onto this one.
     pub(super) fn drag_pointer(&self, ctx: &egui::Context) -> Option<Pos2> {

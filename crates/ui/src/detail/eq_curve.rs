@@ -714,10 +714,15 @@ fn draw_strip(
         f32::from(focused && i.key_pressed(egui::Key::ArrowUp))
             - f32::from(focused && i.key_pressed(egui::Key::ArrowDown))
     });
-    let mut next = start.unwrap_or(at);
+    // While dragged, from where the press began by the whole drag; otherwise, the frame the drag
+    // ends included, the value as it is: egui no longer reports the release frame as dragged, and
+    // starting from the press there sent the starting value as the gesture's last, so the dial
+    // went back to it on every release.
+    let mut next = at;
     if response.dragged() {
         let total = response.total_drag_delta().unwrap_or_default();
-        next = (next - f64::from(total.y) * fine / crate::kit::widgets::PARAMETER_DRAG_PIXELS).clamp(0.0, 1.0);
+        let from = start.unwrap_or(at);
+        next = (from - f64::from(total.y) * fine / crate::kit::widgets::PARAMETER_DRAG_PIXELS).clamp(0.0, 1.0);
     }
     next = (next + f64::from(keys) * 0.01 * fine).clamp(0.0, 1.0);
     if next != at || response.double_clicked() || response.drag_stopped() {

@@ -93,7 +93,12 @@ MIDI/audio creation color without recoloring earlier clips.
 2. `transport.record` with `on: false` or `transport.stop` ends it at the playhead.
 3. Each take becomes a clip on its track from the beat recording started to the beat it ended,
    replacing what it covers, like a clip pasted there, as soon as it has ended: the arm, Play or
-   Stop make no difference (#909).
+   Stop make no difference (#909). While a track records into the arrangement, its arrangement
+   clips are silent, so an old clip the take will replace is not heard under what is being
+   played; they play again when the recording ends (`transport.record` off, or Stop, also a Stop
+   during the count-in). Clips launched from its slots are not affected, their sounding notes
+   included. The silence belongs to the track, not to its place, so a track added or deleted
+   before it meanwhile does not move it to another.
 4. **Every pass over the beats is a take of its own.** When the playhead jumps while recording
    (the loop wrapping at its end, or a click on the ruler), the pass so far ends where the
    playhead was and a new one begins where it went. Each pass becomes a clip on the track, the

@@ -359,6 +359,9 @@ fn closing_or_quitting_with_unsaved_changes_asks_first() {
     }
     harness.run();
     assert!(harness.query_by_label("Don't save the changes").is_some());
+    // The question is there whole, to its question mark, on as many lines as it takes.
+    let question = harness.query_by_label_contains("Save the changes to").map(|q| q.rect());
+    assert!(question.is_some_and(|r| r.height() >= 40.0), "the whole question, two lines at least: {question:?}");
     harness.get_by_label("Cancel and keep the project open").click();
     harness.run();
     assert_eq!(open(&harness), 2);

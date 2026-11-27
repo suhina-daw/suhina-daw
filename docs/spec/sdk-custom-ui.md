@@ -233,7 +233,11 @@ starts at the press and moves the value as far as the pointer moves, Shift for p
 the pointer hidden and held still as a slider's handle does, and back on the value's place on
 release), toggle, momentary.
 Bindings map normalized coordinates to parameter units with optional logarithmic mapping.
-Keyboard arrows edit axes, Shift provides fine adjustment, double click resets defaults;
+Keyboard arrows edit axes, Shift provides fine adjustment, double click resets defaults; on a
+parameter in semitones (unit `st`, a pitch or a transpose) an arrow steps one semitone and Shift
+with it an octave. A value control takes the keys once clicked, as every value control in the
+window does, until a click elsewhere: in a docked panel too, where the window keeps egui's focus
+for its shortcuts. A number typed then and Enter sets its value;
 Space/Enter activate buttons. A gesture `{"set": 3}` sets the X parameter to the literal integer 3; its value must be inside the declared range. The control name and values are exposed to accessibility.
 A `{"tab": 2}` gesture selects value 2, or returns to zero when already selected. A segmented `set` or `tab` button is drawn on while its parameter holds that value.
 A `graphic` widget (`{"kind": "graphic", "drawing": [...]}`) draws its own drawings and takes no

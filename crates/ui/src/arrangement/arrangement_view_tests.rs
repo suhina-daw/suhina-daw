@@ -1327,3 +1327,24 @@ fn a_loop_bars_ends_take_a_press_ten_points_out_and_in_and_a_short_bar_keeps_a_m
     let short = |x| loop_bar_part(x, 100.0, 115.0);
     assert_eq!([short(105.0), short(107.5), short(110.0)], [Some(Start), Some(Body), Some(End)]);
 }
+
+/// A stacked clip's row keeps a least height however low the lane is zoomed: on a lane with
+/// more rows than points every row is still drawn, inside the lane, overlapping its neighbors
+/// rather than shrinking to nothing. A lane with room keeps its even rows.
+#[test]
+fn a_stacked_clips_row_never_shrinks_to_nothing_on_a_low_lane() {
+    let lane = Rect::from_min_max(Pos2::new(0.0, 100.0), Pos2::new(500.0, 160.0));
+    // Room for three rows: an even share each, a point between them.
+    let rows: Vec<(f32, f32)> = (0..3).map(|r| (sub_row(lane, r, 3).top(), sub_row(lane, r, 3).bottom())).collect();
+    assert_eq!(rows, [(100.0, 119.0), (120.0, 139.0), (140.0, 159.0)]);
+
+    for (height, count) in [(14.0, 5), (14.0, 12), (8.0, 40), (3.0, 10), (1.0, 3)] {
+        let low = Rect::from_min_max(Pos2::new(0.0, 100.0), Pos2::new(500.0, 100.0 + height));
+        for row in 0..count {
+            let drawn = sub_row(low, row, count);
+            assert!(drawn.height() > 0.0, "{height} high, row {row} of {count}: {drawn:?}");
+            assert!(drawn.height() >= LEAST_SUB_ROW.min(height), "{height} high, row {row} of {count}: {drawn:?}");
+            assert!(drawn.top() >= low.top() && drawn.bottom() <= low.bottom() + 1e-3, "inside the lane: {drawn:?}");
+        }
+    }
+}

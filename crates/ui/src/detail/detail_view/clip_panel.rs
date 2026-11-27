@@ -177,6 +177,9 @@ pub(super) struct Field {
     pub align: Align2,
     /// Drawn faint: a value that does not apply now (the loop's, while the loop is off).
     pub dim: bool,
+    /// In whole semitones: Shift with an arrow key steps an octave, not a tenth
+    /// ([`widgets::drag_semitones`]).
+    pub semitones: bool,
 }
 
 fn tenth(v: f64) -> f64 {
@@ -280,7 +283,20 @@ pub(super) fn number_field(
     field: Field,
 ) -> Option<Change> {
     let edit_id = id.with("typing");
+    // The text the field itself last put in the box: while the box still holds it, it is the
+    // value's, not the user's, and follows the value as it is applied.
+    let written_id = id.with("written");
+    let short =
+        |v: f64| (text.shown)(v).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
     if let Some(mut typed) = ui.data(|d| d.get_temp::<String>(edit_id)) {
+        let unedited = ui.data(|d| d.get_temp::<String>(written_id)).is_some_and(|w| w == typed);
+        if unedited && typed != short(value) {
+            typed = short(value);
+            ui.data_mut(|d| {
+                d.insert_temp(edit_id, typed.clone());
+                d.insert_temp(written_id, typed.clone());
+            });
+        }
         // The arrows step the value while the text field is open, as they step every value
         // control (#707): taken before the field moves its cursor with them.
         let steps = ui.input_mut(|i| {
@@ -290,15 +306,24 @@ pub(super) fn number_field(
                 || i.consume_key(egui::Modifiers::SHIFT, egui::Key::ArrowDown);
             i32::from(up) - i32::from(down)
         });
+        // A step keeps the box drawn this frame, so it keeps the keyboard: a widget with the focus
+        // that is not drawn for a frame loses it, and the box would close after one step.
+        let mut stepped = None;
         if steps != 0 {
-            let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
-            let from = (text.parse)(&typed).unwrap_or(value);
-            let next =
-                (field.snap)(from + f64::from(steps) * field.per_tick * fine).clamp(field.range.0, field.range.1);
-            let shown =
-                (text.shown)(next).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
-            ui.data_mut(|d| d.insert_temp(edit_id, shown));
-            return Some(Change { value: next, more: false });
+            // Shift steps finer, except in whole semitones, where it steps an octave as the
+            // field does when it is not open (`widgets::drag_semitones`).
+            let step = match (ui.input(|i| i.modifiers.shift), field.semitones) {
+                (true, true) => widgets::OCTAVE,
+                (true, false) => field.per_tick * 0.1,
+                (false, _) => field.per_tick,
+            };
+            // From the value as applied while the box holds the field's own text, so a step adds
+            // exactly its interval; from the number typed when the user typed one.
+            let from = if unedited { value } else { (text.parse)(&typed).unwrap_or(value) };
+            let next = (field.snap)(from + f64::from(steps) * step).clamp(field.range.0, field.range.1);
+            typed = short(next);
+            ui.data_mut(|d| d.insert_temp(written_id, typed.clone()));
+            stepped = Some(Change { value: next, more: false });
         }
         let edit = egui::TextEdit::singleline(&mut typed)
             .id(id.with("text"))
@@ -324,6 +349,7 @@ pub(super) fn number_field(
         if response.lost_focus() || entered || escaped {
             ui.data_mut(|d| {
                 d.remove::<String>(edit_id);
+                d.remove::<String>(written_id);
                 d.remove::<bool>(id.with("started"));
             });
             if entered && !escaped {
@@ -333,7 +359,7 @@ pub(super) fn number_field(
             return None;
         }
         ui.data_mut(|d| d.insert_temp(edit_id, typed));
-        return None;
+        return stepped;
     }
     let preview_id = id.with("preview");
     let grab_id = id.with("grab");
@@ -360,9 +386,9 @@ pub(super) fn number_field(
     // One click opens the text field (a drag moves the value instead): a double-click was
     // needed before, and a click that only took the keys was easy to miss.
     if response.clicked() {
-        let start =
-            (text.shown)(value).split_whitespace().next().unwrap_or_default().trim_start_matches('+').to_string();
+        let start = short(value);
         ui.data_mut(|d| {
+            d.insert_temp(written_id, start.clone());
             d.insert_temp(edit_id, start);
             d.remove::<f64>(preview_id);
             d.remove::<(f64, f64)>(grab_id);
@@ -408,7 +434,11 @@ pub(super) fn number_field(
         Some(step) if !places.is_empty() => (step / 4.0, step),
         _ => (field.per_point, field.per_tick),
     };
-    let drag = widgets::drag_value(ui, &response, &mut preview, value, per_point, per_tick, field.range, value);
+    let drag = if field.semitones && places.is_empty() {
+        widgets::drag_semitones(ui, &response, &mut preview, value, per_point, field.range, value)
+    } else {
+        widgets::drag_value(ui, &response, &mut preview, value, per_point, per_tick, field.range, value)
+    };
     match drag {
         Drag::Moving(v) => {
             ui.data_mut(|d| d.insert_temp(preview_id, v));
@@ -962,6 +992,7 @@ pub(super) fn clip_part(
         snap: |v| (v * 4.0).round() / 4.0,
         align: Align2::RIGHT_CENTER,
         dim: false,
+        semitones: false,
     };
     let position = |v: f64| bars_text(v, bar, true);
     let parse_position = |t: &str| bars_parse(t, bar, true);
@@ -1240,6 +1271,7 @@ fn audio_part(
         snap: thousandth,
         align: Align2::RIGHT_CENTER,
         dim: false,
+        semitones: false,
     };
     let id = Id::unique(("clip-panel-field", "Tempo", clip.0));
     let value = panel.tempo.unwrap_or(f64::NAN);
@@ -1366,8 +1398,15 @@ fn warp_part(
     let number = |ui: &mut Ui, y: &mut f32, name: &str, value: f64, range: (f64, f64), unit: &'static str| {
         name_over(painter, row(*y, NAME), name, Align2::LEFT_BOTTOM);
         *y += NAME;
-        let field =
-            Field { range, per_point: 0.5, per_tick: 1.0, snap: whole, align: Align2::RIGHT_CENTER, dim: false };
+        let field = Field {
+            range,
+            per_point: 0.5,
+            per_tick: 1.0,
+            snap: whole,
+            align: Align2::RIGHT_CENTER,
+            dim: false,
+            semitones: false,
+        };
         let shown = move |v: f64| format!("{v:.0} {unit}");
         let text = Text { shown: &shown, parse: &plain_number, places: None };
         let id = Id::unique(("clip-panel-field", name, clip));
@@ -1545,6 +1584,7 @@ fn gain_part(
         snap: tenth,
         align: Align2::CENTER_CENTER,
         dim: false,
+        semitones: false,
     };
     let text = Text { shown: &gain_text, parse: &plain_number, places: None };
     if let Some(change) =
@@ -1615,7 +1655,8 @@ fn pitch_part(
     let mut set_semitones: Option<Change> = None;
     let mut set_cents: Option<Change> = None;
     let mut sent: Option<f64> = None;
-    match widgets::drag_value(ui, &response, &mut preview, semitones, 0.25, 1.0, SEMITONES, 0.0) {
+    // Shift with an arrow key steps an octave.
+    match widgets::drag_semitones(ui, &response, &mut preview, semitones, 0.25, SEMITONES, 0.0) {
         Drag::Moving(v) => {
             ui.data_mut(|d| d.insert_temp(preview_id, v));
             widgets::value_drag_returns_to(ui.ctx(), center);
@@ -1638,22 +1679,25 @@ fn pitch_part(
         let under = Rect::from_min_size(Pos2::new(rect.left(), rect.bottom() + 1.0), Vec2::new(rect.width(), 11.0));
         widgets::text_in(painter, under, Align2::CENTER_TOP, unit, theme::ui_font(theme::TEXT_TINY), super::hint_ink());
     }
-    let centered = |range, per_point| Field {
+    let centered = |range, per_point, semitones| Field {
         range,
         per_point,
         per_tick: 1.0,
         snap: whole,
         align: Align2::CENTER_CENTER,
         dim: false,
+        semitones,
     };
     let text = Text { shown: &signed, parse: &plain_number, places: None };
     let id = Id::unique(("clip-panel-field", "Semitones", clip.0));
-    if let Some(change) = number_field(ui, painter, st, id, "Semitones", semitones, text, centered(SEMITONES, 0.25)) {
+    if let Some(change) =
+        number_field(ui, painter, st, id, "Semitones", semitones, text, centered(SEMITONES, 0.25, true))
+    {
         set_semitones = Some(change);
     }
     let text = Text { shown: &signed, parse: &plain_number, places: None };
     let id = Id::unique(("clip-panel-field", "Cents", clip.0));
-    if let Some(change) = number_field(ui, painter, ct, id, "Cents", cents, text, centered(CENTS, 0.5)) {
+    if let Some(change) = number_field(ui, painter, ct, id, "Cents", cents, text, centered(CENTS, 0.5, false)) {
         set_cents = Some(change);
     }
     if let Some(change) = set_semitones.or(set_cents) {

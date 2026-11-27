@@ -771,6 +771,26 @@ impl App {
                     self.selected_device = self.device_picks.last().cloned();
                 }
             }
+            // A track header clicked last (the headers have the keys): Ctrl+A picks every track,
+            // as Shift-clicking from the first header to the last would, the returns left out.
+            "selection.selectAll" if self.headers_have_keys() => {
+                let tracks: Vec<TrackId> = self
+                    .session()
+                    .map(|session| {
+                        let project = session.project();
+                        let is_return = |t: TrackId| {
+                            project
+                                .channel_of_track(t)
+                                .is_some_and(|c| c.role == suhina_engine::model::ChannelRole::Effect)
+                        };
+                        project.tracks.iter().map(|t| t.id).filter(|t| !is_return(*t)).collect()
+                    })
+                    .unwrap_or_default();
+                // The view stays where it is: the selection grows around the header clicked.
+                let (arrangement_reveal, view_reveal) = (self.arrangement.reveal, self.view.reveal);
+                self.select_tracks(tracks);
+                (self.arrangement.reveal, self.view.reveal) = (arrangement_reveal, view_reveal);
+            }
             "selection.selectAll" => {
                 let lanes: Vec<arrangement_view::LaneClips> = self
                     .session()
@@ -1360,6 +1380,15 @@ impl App {
         }
     }
 
+    /// Whether the view shown has a track header selected and the keys on the headers (a header
+    /// was clicked last, not a clip, a slot or a lane).
+    pub(super) fn headers_have_keys(&self) -> bool {
+        match self.shown {
+            View::Arrangement => self.arrangement.track_focus && !self.arrangement.selected_tracks.is_empty(),
+            View::Session => self.view.track_focus && self.view.selected.is_some(),
+        }
+    }
+
     /// Selects `tracks` in both views as a header click would, the first one shown in the
     /// detail area and scrolled into view (#918); nothing for none.
     pub(super) fn select_tracks(&mut self, tracks: Vec<TrackId>) {
@@ -1411,8 +1440,8 @@ impl App {
         }
     }
 
-    /// The track copied devices are pasted on: the track of the clip or slot clicked last, else
-    /// the selected track.
+    /// The track worked on, which copied devices are pasted on and the quick-add palette adds
+    /// to: the track of the clip or slot clicked last, else the selected track.
     pub(super) fn paste_track(&self) -> Option<TrackId> {
         match self.shown {
             View::Session if !self.view.track_focus => {

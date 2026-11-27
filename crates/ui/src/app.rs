@@ -585,6 +585,9 @@ pub struct App {
     tab_switcher: Option<usize>,
     /// The quick-add palette while it is open (`quick_add.rs`).
     quick_add: Option<quick_add::QuickAdd>,
+    /// Plug-ins just added whose editors open once they run (Settings › Plug-ins › Open editor
+    /// when added).
+    pending_editors: Vec<plugin_host::PendingEditor>,
     /// What the palette's buttons narrow it to, kept from one palette to the next.
     quick_add_filter: quick_add::Filter,
     /// What the palette's field said when it was closed without adding, for the next one.
@@ -885,6 +888,7 @@ impl App {
             rename: None,
             tab_switcher: None,
             quick_add: None,
+            pending_editors: Vec::new(),
             quick_add_filter: quick_add::Filter::default(),
             quick_add_kept: String::new(),
             clips_before: Vec::new(),
@@ -2891,6 +2895,29 @@ impl App {
         self.device_picks().iter().map(|(_, at)| at.value()).collect()
     }
 
+    /// A press anywhere in a device panel, its knobs and buttons included: the panel's device
+    /// takes the edit keys (Ctrl+D, Delete, Ctrl+C), as a click on its background does, so a
+    /// device the user is working on is the one they act on (#1355). A device not picked yet is
+    /// picked alone; one already among the picks (a group holding one included) keeps them. With
+    /// Ctrl or Shift held, the click that follows picks, adding or ranging as it does, and a
+    /// press on a control alone changes nothing.
+    fn press_device(
+        &mut self,
+        track: TrackId,
+        at: detail_view::DeviceAt,
+        picks: &[(TrackId, detail_view::DeviceAt)],
+        modifiers: bool,
+    ) {
+        let picked = picks.iter().any(|(t, p)| *t == track && p.0.starts_with(&at.0));
+        if picked {
+            self.device_focus = true;
+            self.arrangement.automation.let_go();
+        } else if !modifiers {
+            self.pick_device(track, at, false, false);
+            self.pending_device_remove = None;
+        }
+    }
+
     /// A device clicked in a strip's list or the chain, on the track or inside a group: picked
     /// alone, added or taken out with Ctrl (Cmd), or with Shift the run from the device picked
     /// last, in the same chain or branch of the same track.
@@ -3040,6 +3067,14 @@ impl App {
             if let Some(line) = clipboard_line(action.id) {
                 self.clipboard_write = Some(line);
             }
+        }
+        // The fields themselves, not `note_added_plugin`: `session` still borrows the projects.
+        if let Ok(result) = &ran
+            && self.settings.plugin_editor_on_add
+            && let Some(added) =
+                plugin_host::pending_editor(active_project, action.id, params, result, std::time::Instant::now())
+        {
+            self.pending_editors.push(added);
         }
         match ran {
             Ok(result) if result["no_input"].as_bool() == Some(true) => {
@@ -3790,11 +3825,13 @@ impl App {
             self.begin_clip_carry(ui.ctx());
             // A drag from the browser, or files from the system: the views say what is under the
             // pointer.
-            let dragged = self.browser.drag.as_ref().or(system.as_ref().map(|(items, _)| items));
-            let probe = dragged.and_then(|items| {
+            let dragged = self.browser.drag.clone().or_else(|| system.as_ref().map(|(items, _)| items.clone()));
+            let dropped = dragged.as_deref().map(|items| self.carried_files(items)).unwrap_or_default();
+            let probe = dragged.as_ref().and_then(|items| {
                 self.drag_pointer(ui.ctx()).map(|pointer| DropProbe {
                     separate: items.iter().filter(|i| i.kind.is_file_clip()).count() > 1
                         && ui.input(|i| i.modifiers.command) != self.settings.drop_separate,
+                    dropped,
                     ..DropProbe::new(pointer, items)
                 })
             });

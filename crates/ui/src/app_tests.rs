@@ -705,6 +705,196 @@ fn a_header_click_lets_go_of_a_clip_on_another_track() {
     }
 }
 
+/// The quick-add palette adds to the track worked on: a clip picked on another track after a
+/// header click (the clip the piano roll shows) is that track, a header clicked after it its own
+/// (#1356).
+#[test]
+fn the_quick_add_palette_targets_the_track_of_the_clip_worked_on() {
+    use egui_kittest::kittest::Queryable;
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let project = app.session().unwrap().project().clone();
+    let keys = project.tracks.iter().find(|t| t.name == "Keys").map(|t| t.id).expect("the demo has Keys");
+    let other = project
+        .arrangement
+        .lanes
+        .iter()
+        .filter_map(|l| Some((l.track?, l.clips.first()?.id)))
+        .find(|(t, _)| *t != keys)
+        .expect("a clip on another track");
+    app.shown = View::Arrangement;
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(Vec2::new(1280.0, 800.0))
+        .build_ui_state(|ui, app: &mut App| app.ui(ui), app);
+    harness.run();
+    harness.get_by_label("Track Keys").click();
+    harness.run();
+    harness.state_mut().arrangement.select_clip(other.0, other.1);
+    harness.run();
+    assert_eq!(harness.state().arrangement.selected_tracks, vec![keys], "the header stays selected");
+    harness.state_mut().do_action("view.quickAdd", &mut Vec::new());
+    harness.run();
+    assert_eq!(
+        harness.state().quick_add_target().and_then(|(track, _)| track),
+        Some(other.0),
+        "the clip's track, not the selected header's"
+    );
+
+    // A lane clicked last, after that clip: the lane's track.
+    harness.state_mut().quick_add = None;
+    harness.run();
+    let lane = harness.get_by_label("Lane Keys").rect();
+    let clips: Vec<Rect> = harness.query_all_by_label_contains(" on Keys at bar ").map(|n| n.rect()).collect();
+    let empty = (0..200)
+        .map(|i| egui::pos2(lane.right() - 12.0 - i as f32 * 8.0, lane.center().y))
+        .find(|p| lane.contains(*p) && !clips.iter().any(|c| c.expand(2.0).contains(*p)))
+        .expect("a spot of Keys' lane no clip covers");
+    harness.hover_at(empty);
+    harness.run();
+    harness.drag_at(empty);
+    harness.step();
+    harness.drop_at(empty);
+    harness.step();
+    harness.run();
+    assert_eq!(harness.state().arrangement.selected_clip(), None, "the lane took the click");
+    harness.state_mut().do_action("view.quickAdd", &mut Vec::new());
+    harness.run();
+    assert_eq!(harness.state().quick_add_target().and_then(|(track, _)| track), Some(keys), "the lane's track");
+
+    harness.state_mut().quick_add = None;
+    harness.run();
+    harness.get_by_label("Track Keys").click();
+    harness.run();
+    harness.state_mut().do_action("view.quickAdd", &mut Vec::new());
+    harness.run();
+    assert_eq!(harness.state().quick_add_target().and_then(|(track, _)| track), Some(keys), "a header clicked last");
+
+    // In the Launcher view, the slot clicked last.
+    harness.state_mut().quick_add = None;
+    harness.state_mut().shown = View::Session;
+    harness.state_mut().view.selected = Some(keys);
+    harness.state_mut().view.selected_slot = Some((other.0, 0));
+    harness.state_mut().view.track_focus = false;
+    harness.state_mut().do_action("view.quickAdd", &mut Vec::new());
+    assert_eq!(harness.state().quick_add_target().and_then(|(track, _)| track), Some(other.0), "the slot's track");
+}
+
+/// Main takes the quick-add palette's effects as a track does: with Main's header selected the
+/// palette targets Main, offers effects and no instrument, and names it "Main".
+#[test]
+fn the_quick_add_palette_adds_effects_to_main() {
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    assert!(app.session().unwrap().project().main_channel().is_some(), "the demo has Main");
+    app.shown = View::Arrangement;
+    app.arrangement.selected_tracks = vec![TrackId::MAIN];
+    app.arrangement.track_focus = true;
+    app.do_action("view.quickAdd", &mut Vec::new());
+    assert_eq!(app.quick_add_target().and_then(|(track, _)| track), Some(TrackId::MAIN));
+    assert_eq!(app.quick_add_notes(Some(TrackId::MAIN)), Some(false), "Main plays no notes");
+    assert!(quick_add::offered("effect", Some(false)) && !quick_add::offered("instrument", Some(false)));
+    assert_eq!(app.track_name(TrackId::MAIN), "Main");
+}
+
+/// Ctrl+A with a track header clicked last selects every track but the returns, in both views,
+/// and leaves the clips and the scroll alone; with a clip or lane clicked last it still selects
+/// every clip.
+#[test]
+fn ctrl_a_on_a_track_header_selects_every_track() {
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let project = app.session().unwrap().project().clone();
+    let tracks: Vec<TrackId> = project
+        .tracks
+        .iter()
+        .map(|t| t.id)
+        .filter(|t| project.channel_of_track(*t).is_none_or(|c| c.role != suhina_engine::model::ChannelRole::Effect))
+        .collect();
+    assert!(tracks.len() > 1, "the demo has several tracks");
+    let first = tracks[0];
+    let last = *tracks.last().unwrap();
+
+    app.shown = View::Arrangement;
+    app.arrangement.selected_tracks = vec![last];
+    app.arrangement.track_focus = true;
+    app.arrangement.reveal = None;
+    app.do_action("selection.selectAll", &mut Vec::new());
+    assert_eq!(app.arrangement.selected_tracks, tracks, "every track, the returns left out");
+    assert_eq!(app.view.selected_tracks, tracks, "the Launcher view's selection too");
+    assert!(app.arrangement.selected_clips().is_empty(), "no clip picked");
+    assert_eq!(app.arrangement.reveal, None, "the view does not scroll");
+
+    // In the Launcher view, a header clicked last does the same.
+    app.shown = View::Session;
+    app.view.selected = Some(first);
+    app.view.selected_tracks = vec![first];
+    app.view.track_focus = true;
+    app.do_action("selection.selectAll", &mut Vec::new());
+    assert_eq!(app.view.selected_tracks, tracks);
+
+    // A lane or clip clicked last: the clips, as before.
+    app.shown = View::Arrangement;
+    app.arrangement.track_focus = false;
+    app.do_action("selection.selectAll", &mut Vec::new());
+    assert!(!app.arrangement.selected_clips().is_empty(), "every clip");
+}
+
+/// With Settings › Plug-ins › Open editor when added on, a plug-in a command adds is
+/// remembered with its project until it runs; built-in devices and the setting off remember
+/// nothing, and one that never reports running is let go at its deadline, however many frames
+/// come before it.
+#[test]
+fn an_added_plugin_waits_for_its_editor_only_with_the_setting_on() {
+    use plugin_host::{EDITOR_WAIT, PendingEditor};
+    let mut app = App::new();
+    app.set_session(suhina_session::Session::new(crate::demo::demo_project()), &[]);
+    let project = app.projects.active();
+    let added = json!({ "device": 2 });
+    app.note_added_plugin("device.addPlugin", &json!({ "track": 1, "plugin": "Nova" }), &added);
+    assert!(app.pending_editors.is_empty(), "off by default");
+
+    app.settings.plugin_editor_on_add = true;
+    app.note_added_plugin("device.addPlugin", &json!({ "track": 1, "plugin": "Nova" }), &added);
+    let first = app.pending_editors.first().map(|e| (e.project, e.track, e.device));
+    assert_eq!(first, Some((project, TrackId(1), 2)));
+    let new_track = json!({ "track": 9, "device": { "device": 0 } });
+    app.note_added_plugin("track.add", &json!({ "device": "fm-synth" }), &new_track);
+    assert_eq!(app.pending_editors.len(), 1, "a built-in device opens no editor");
+    app.note_added_plugin("track.add", &json!({ "device": "VST3:Nova" }), &new_track);
+    let last = app.pending_editors.last().map(|e| (e.track, e.device));
+    assert_eq!(last, Some((TrackId(9), 0)), "a plug-in on a new track");
+
+    // Nothing runs in the demo. The deadline is in time: any number of polls before it keeps an
+    // entry, a poll at it lets it go.
+    let now = std::time::Instant::now();
+    let entry = |until| PendingEditor { project, track: TrackId(1), device: 2, until };
+    app.pending_editors = vec![entry(now + EDITOR_WAIT), entry(now)];
+    for _ in 0..1000 {
+        app.open_pending_editors_at(now);
+    }
+    assert_eq!(app.pending_editors, vec![entry(now + EDITOR_WAIT)], "only the one at its deadline went");
+    app.open_pending_editors_at(now + EDITOR_WAIT);
+    assert!(app.pending_editors.is_empty(), "let go at its deadline");
+}
+
+/// A pending editor opens only for a running plug-in in the project shown and before its
+/// deadline; one that starts at the first poll after the deadline opens nothing.
+#[test]
+fn a_pending_editor_opens_only_before_its_deadline_in_its_project() {
+    use plugin_host::{PendingStep, pending_step};
+    use suhina_session::PluginStatus::{Failed, Loading, Running};
+    let running = Some((Running, false));
+    assert_eq!(pending_step(running.clone(), true, true), PendingStep::Open);
+    assert_eq!(pending_step(running.clone(), true, false), PendingStep::LetGo, "running, but past its deadline");
+    assert_eq!(pending_step(running, false, true), PendingStep::Wait, "its project not shown");
+    assert_eq!(pending_step(Some((Loading, false)), true, true), PendingStep::Wait);
+    assert_eq!(pending_step(None, true, true), PendingStep::Wait, "not reported yet");
+    assert_eq!(pending_step(None, true, false), PendingStep::LetGo);
+    assert_eq!(pending_step(Some((Running, true)), true, true), PendingStep::LetGo, "its editor opened already");
+    assert_eq!(pending_step(Some((Failed("no".into()), false)), true, true), PendingStep::LetGo);
+}
+
 /// The ARA edits prompt and the missing files panel are drawn over the window: plug-in
 /// editors hide, and the keys that edit the project wait until they close.
 #[test]

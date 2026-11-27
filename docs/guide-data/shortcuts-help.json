@@ -412,9 +412,9 @@
     ]
   },
   "selection.selectAll": {
-    "description": "Selects every clip in the Arrangement.",
-    "context": "Requires an open project. With piano-roll focus the same key selects notes instead.",
-    "whenToUse": "Select the Arrangement's clips before moving or copying them together.",
+    "description": "Selects every clip in the Arrangement. With a track header clicked last, it selects every track instead (the return tracks left out), in either view.",
+    "context": "Requires an open project. With piano-roll focus the same key selects notes instead; after a click on a device, every device of its chain.",
+    "whenToUse": "Select the Arrangement's clips before moving or copying them together, or every track before changing their volume, pan or color together.",
     "sourceFingerprint": "c32021ed5f189e3244e8dbf2710d5fa70a2800406767f4f8594461a1a0e79f92",
     "platformNotes": "Windows and Linux use Ctrl and Alt. On macOS those modifiers are Cmd and Option; the action and focus requirements are the same.",
     "references": [

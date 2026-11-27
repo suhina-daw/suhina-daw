@@ -8,7 +8,7 @@
 //! write failures stay failures wholly on the page: the pack still plays from the executable,
 //! and the next start can try again.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Writes every pack file when its target is missing, under the library's NAM `sounds`
 /// folder: `<device folder>/<pack folder>/<file name>` — the pack's own `Suhina` folder inside
@@ -111,15 +111,45 @@ fn migrate_reported(base: &Path, old_name: &str) -> PathBuf {
     base.join(format!(".suhina-migrate-{}-reported", old_name.to_lowercase().replace(' ', "-")))
 }
 
-/// Whether `folder` is one of `keep`, the folders the settings name: compared by their
-/// components, case-insensitively, so a settings text that names the folder in another
-/// spelling of its case still keeps it.
-fn is_kept(folder: &Path, keep: &[PathBuf]) -> bool {
+/// Whether `folder` is one of `keep`, the folders the settings name, or holds one of them: a
+/// setting that names a folder inside the old folder (`NAM models/My captures`) keeps the whole
+/// old folder, since the move would carry its subfolder away and remove the folder the setting
+/// names (#1369). Compared by their components, case-insensitively, so a settings text that
+/// names the folder in another spelling of its case still keeps it. A relative setting is read
+/// from `cwd`, the working folder, as the panels read it (`App::nam_models_folder` hands the
+/// text on as it is). Where both paths exist they are compared as the disk resolves them too
+/// (links followed, so `link/../My captures` is wherever the link's parent is); either way of
+/// reading that finds the folder keeps it, since keeping a folder only leaves it where it is.
+/// Without the disk, `.` and `..` are taken out by the text (`work/../NAM models` is
+/// `NAM models`).
+fn is_kept(folder: &Path, keep: &[PathBuf], cwd: &Path) -> bool {
     let components = |path: &Path| -> Vec<String> {
-        path.components().map(|component| component.as_os_str().to_string_lossy().to_lowercase()).collect()
+        // Each part, and whether `..` may take it away: a root or a drive stays.
+        let mut parts: Vec<(String, bool)> = Vec::new();
+        for component in path.components() {
+            match component {
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    if parts.last().is_some_and(|(_, normal)| *normal) {
+                        parts.pop();
+                    }
+                }
+                other => parts
+                    .push((other.as_os_str().to_string_lossy().to_lowercase(), matches!(other, Component::Normal(_)))),
+            }
+        }
+        parts.into_iter().map(|(part, _)| part).collect()
     };
+    let resolved_folder = std::fs::canonicalize(folder).ok().map(|f| components(&f));
     let folder = components(folder);
-    keep.iter().any(|kept| components(kept) == folder)
+    keep.iter().any(|kept| {
+        let kept = if kept.is_absolute() { kept.clone() } else { cwd.join(kept) };
+        let on_disk = resolved_folder
+            .as_ref()
+            .zip(std::fs::canonicalize(&kept).ok())
+            .is_some_and(|(folder, kept)| components(&kept).starts_with(folder));
+        on_disk || components(&kept).starts_with(&folder)
+    })
 }
 
 /// Moves the old defaults' contents into the library's device folders before the pack unpacks:
@@ -130,18 +160,20 @@ fn is_kept(folder: &Path, keep: &[PathBuf]) -> bool {
 /// A pack subfolder moves as a pack, a file moves by its name, and a name the new tree already
 /// holds stays where it is, so nothing is ever overwritten ([issue 1279]). Each moved-empty
 /// old folder is removed; the returned lines go to the start-up warnings. An old folder of
-/// `keep` — the folders the Settings name — is left alone: its files are where the user's
+/// `keep` — the folders the Settings name, or one holding such a folder — is left alone: its files are where the user's
 /// panels list them, and a move would empty and remove a folder the panels go on reading,
 /// their files gone from the lists.
 pub fn migrate_old_folders(base: &Path, sounds: &Path, keep: &[PathBuf]) -> Vec<String> {
     let debug = std::env::var("SUHINA_PACK_DEBUG").as_deref() == Ok("1");
     let mut warnings = Vec::new();
+    // No working folder leaves a relative setting relative, matching no old folder.
+    let cwd = std::env::current_dir().unwrap_or_default();
     for device in suhina_device_registry::DEVICES {
         let device = device.id.as_ref();
         let Some(old_name) = suhina_device_registry::legacy_folder(device) else { continue };
         let Some(library_folder) = suhina_device_registry::library_folder(device) else { continue };
         let old = base.join(old_name);
-        if is_kept(&old, keep) {
+        if is_kept(&old, keep, &cwd) {
             if debug {
                 eprintln!("pack migrate: the settings name {old:?}, so it stays as it is");
             }

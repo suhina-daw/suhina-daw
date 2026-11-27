@@ -1564,6 +1564,92 @@ fn the_pitch_knob_and_the_cents_field_set_the_transpose() {
     assert_eq!(typed, Some(json!(1.9)), "2 semitones less 10 cents");
 }
 
+/// The Pitch knob, clicked, steps a semitone with an arrow key and an octave with Shift, the
+/// cents kept; so does the Semitones field, opened by its click. Each key starts from +2: the
+/// harness sends the actions but does not apply them to the panel.
+#[test]
+fn shift_and_an_arrow_move_the_pitch_by_an_octave() {
+    use egui_kittest::kittest::Queryable;
+    for label in ["Pitch: +2 st", "Semitones: +2"] {
+        for (modifiers, key, wanted) in
+            [(egui::Modifiers::NONE, egui::Key::ArrowUp, 3.25), (egui::Modifiers::SHIFT, egui::Key::ArrowDown, -9.75)]
+        {
+            let (detail, _) = audio_detail(AudioPanel::default(), 0.0, 2.25);
+            let mut harness = panel_harness(detail);
+            harness.get_by_label(label).click();
+            harness.run();
+            harness.state_mut().clear();
+            harness.key_press_modifiers(modifiers, key);
+            harness.run();
+            let transpose = harness.state().last().and_then(|a| a.params["transpose"].as_f64());
+            assert_eq!(transpose, Some(wanted), "{label}: {modifiers:?} {key:?} from +2");
+        }
+    }
+}
+
+/// The open Semitones field steps from the value as applied, not from the text it put in the
+/// box: the harness never applies a step, so the box goes back to +2 and the next Up sends +3
+/// again, where a stale box would send +4. A number typed is stepped from as typed.
+#[test]
+fn the_open_semitones_field_steps_from_the_applied_value() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel::default(), 0.0, 2.25);
+    let mut harness = panel_harness(detail);
+    harness.get_by_label("Semitones: +2").click();
+    harness.run();
+    harness.state_mut().clear();
+    for _ in 0..2 {
+        harness.key_press(egui::Key::ArrowUp);
+        harness.run();
+    }
+    let sent: Vec<f64> = harness.state().iter().filter_map(|a| a.params["transpose"].as_f64()).collect();
+    assert_eq!(sent, [3.25, 3.25], "each step from the applied +2");
+
+    harness.state_mut().clear();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Semitones value").type_text("7");
+    harness.run();
+    harness.key_press(egui::Key::ArrowUp);
+    harness.run();
+    let sent = harness.state().last().and_then(|a| a.params["transpose"].as_f64());
+    assert_eq!(sent, Some(8.25), "from the 7 typed");
+}
+
+/// With each step applied to the clip as the window applies it, repeated Shift+Up in the open
+/// Semitones field adds exactly an octave each time on a fractional transpose: -0.5, then 11.5,
+/// then 23.5, the cents kept, though the field's whole number rounds the other way after the
+/// first step.
+#[test]
+fn shift_up_in_the_open_semitones_field_adds_an_octave_each_time_on_a_fractional_transpose() {
+    use egui_kittest::kittest::Queryable;
+    let (detail, _) = audio_detail(AudioPanel::default(), 0.0, -0.5);
+    let mut harness = egui_kittest::Harness::builder()
+        .allow_missing_glyphs()
+        .with_size(egui::vec2(1000.0, 260.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_max_steps(60)
+        .build_ui_state(
+            |ui, (detail, actions): &mut (Detail, Vec<Action>)| {
+                // The last transpose sent is the clip's, as the project would have it.
+                let sent = actions.iter().rev().find_map(|a| a.params["transpose"].as_f64());
+                if let (Some(transpose), Detail::Clip(info, _)) = (sent, &mut *detail) {
+                    info.transpose = transpose;
+                }
+                show_row(ui, detail, &[], actions, &mut Vec::new());
+            },
+            (detail, Vec::new()),
+        );
+    // -0.5 shows as -1 semitone and +50 cents.
+    harness.get_by_label("Semitones: -1").click();
+    harness.run();
+    for wanted in [11.5, 23.5] {
+        harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowUp);
+        harness.run();
+        let sent = harness.state().1.iter().rev().find_map(|a| a.params["transpose"].as_f64());
+        assert_eq!(sent, Some(wanted));
+    }
+}
+
 /// The tempo is typed into a text field opened by a double-click, halved and doubled, each a
 /// `clip.setTempo` set by hand; Escape leaves a typed tempo unset.
 #[test]
@@ -2370,6 +2456,47 @@ fn sidechain_to_searches_the_keyed_devices() {
     let set: Vec<_> = harness.state().iter().filter(|a| a.id == "device.setKey").cloned().collect();
     assert_eq!(set.len(), 1, "{:?}", harness.state());
     assert_eq!((&set[0].params["track"], &set[0].params["source"]), (&json!(17), &json!(1)));
+}
+
+/// A device's knob in semitones (the Pitch MIDI effect's Pitch and Range), clicked, steps a
+/// semitone with an arrow key and an octave with Shift; a knob in other units keeps its step.
+#[test]
+fn a_semitone_knob_steps_an_octave_with_shift() {
+    let knob_of = |unit: &str| GraphParameter {
+        text: String::new(),
+        default: 0.0,
+        control: suhina_device_sdk::ParameterControl::Knob,
+        unit: unit.into(),
+        id: "pitch".into(),
+        name: "Pitch".into(),
+        min: -128.0,
+        max: 128.0,
+        value: 0.0,
+        ui: suhina_device_sdk::ParameterUi::default(),
+    };
+    for (unit, wanted) in [("st", [1.0, 13.0]), ("", [2.56, 5.12])] {
+        let parameter = knob_of(unit);
+        let mut harness =
+            egui_kittest::Harness::builder().allow_missing_glyphs().with_size(egui::vec2(80.0, 80.0)).build_ui_state(
+                move |ui, value: &mut f64| {
+                    let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::splat(40.0));
+                    let _ = parameters::knob(ui, &parameter, rect, None, value);
+                },
+                0.0,
+            );
+        harness.run();
+        let center = Pos2::new(30.0, 30.0);
+        harness.hover_at(center);
+        harness.drag_at(center);
+        harness.drop_at(center);
+        harness.run();
+        harness.key_press(egui::Key::ArrowUp);
+        harness.run();
+        assert!((*harness.state() - wanted[0]).abs() < 1e-9, "{unit:?}: an arrow: {}", harness.state());
+        harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowUp);
+        harness.run();
+        assert!((*harness.state() - wanted[1]).abs() < 1e-9, "{unit:?}: Shift and an arrow: {}", harness.state());
+    }
 }
 
 /// A device's on/off parameter draws its tick box in the middle of its cell, as the device's
