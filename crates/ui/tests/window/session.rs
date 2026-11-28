@@ -1291,6 +1291,41 @@ fn clicking_main_selects_it_and_its_devices_show() {
     assert!(harness.query_all_by_label_contains("Utility").next().is_some());
 }
 
+/// A command from the CLI, MCP or a surface program moves the window: the track highlight and
+/// the device picked in the chain follow, and the chain shows the selected track's devices
+/// (#1679, `docs/spec/selection.md` › The window follows).
+#[test]
+fn a_command_set_selection_moves_the_window() {
+    let mut app = demo_app();
+    let bass = app.session().and_then(|s| s.project().tracks.iter().find(|t| t.name == "Bass").map(|t| t.id)).unwrap();
+    app.run(&Action::new("device.add", json!({ "track": bass.0, "id": "utility" })));
+    app.run(&Action::new("device.select", json!({ "track": bass.0, "device": 0 })));
+    let mut harness = window(app);
+    harness.run();
+    assert_eq!(harness.state().selected_tracks(), [bass], "the track highlight follows");
+    assert_eq!(
+        harness.state().picked_device().map(|(track, at)| (track, at.value())),
+        Some((bass, json!(0))),
+        "the chain's device follows"
+    );
+    assert!(harness.query_all_by_label_contains("Utility").next().is_some(), "the chain shows it");
+}
+
+/// A click that selects a track sets the same selection a command would: the reading answers
+/// with the track and its first device (#1679, `docs/spec/selection.md` › The window follows).
+#[test]
+fn a_header_click_sets_the_session_selection() {
+    let mut app = demo_app();
+    let bass = app.session().and_then(|s| s.project().tracks.iter().find(|t| t.name == "Bass").map(|t| t.id)).unwrap();
+    app.run(&Action::new("device.add", json!({ "track": bass.0, "id": "utility" })));
+    let mut harness = window(app);
+    harness.get_by_label("Track Bass").click();
+    harness.run();
+    let session = harness.state().session().unwrap();
+    assert_eq!(session.selected_track(), Some(bass));
+    assert_eq!(session.selected_device_path(), Some(vec![0]), "the track's first device");
+}
+
 /// Ctrl-click adds a header to the selection and Shift-click takes the run between, as in the
 /// Arrangement view; Ctrl+D copies the selected tracks as one block after the last and selects
 /// the copies (#208, #919).

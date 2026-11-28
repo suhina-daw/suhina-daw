@@ -942,13 +942,18 @@ impl Projects {
     /// was let go in time: a plug-in still busy then is left to its host, which ends when this
     /// process does.
     pub fn close_all(&mut self, timeout: std::time::Duration) -> bool {
+        // A controller keeps its last lights after the app closes its output: turn every claimed
+        // controller dark before the projects, and the app, go. The reset and the wait share
+        // one deadline, so quit is bounded by `timeout`, not by twice it.
+        let deadline = std::time::Instant::now() + timeout;
+        self.devices.midi.reset_outputs(deadline);
         let started = std::time::Instant::now();
         let going = self.let_go_all();
         if going.is_empty() {
             return true;
         }
         while going.iter().any(|(_, g)| !g.is_finished()) {
-            if started.elapsed() >= timeout {
+            if std::time::Instant::now() >= deadline {
                 suhina_plugins::trace!("quit: projects not let go after {timeout:?}; their plug-ins end with the app");
                 return false;
             }
@@ -986,6 +991,14 @@ impl Projects {
     /// folder at start-up; the CLI relies on [`Projects::new`]'s default.
     pub fn set_extensions_root(&mut self, root: &Path) {
         self.extensions.set_root(root);
+    }
+
+    /// Installs every shipped surface program into the extensions store when it is not there,
+    /// and updates the copies Suhina installed ([`crate::shipped_scripts`],
+    /// docs/spec/shipped-scripts.md); the store's port scan runs what it finds. The start
+    /// calls it once the store's root is set. Returns the lines a start-up failure should say.
+    pub fn install_shipped_scripts(&mut self) -> Vec<String> {
+        crate::shipped_scripts::install(&mut self.extensions).1
     }
 
     /// The one program running, for the tests: this slice's store starts none by itself, so

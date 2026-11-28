@@ -338,7 +338,7 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         id: "device.setParam",
-        label: "Set a parameter of a device on a track, heard from the next block; the value is limited to the parameter's range",
+        label: "Set a parameter of a device on a track, heard from the next block, by its value or a dial's normalized position; either is limited to the parameter's range",
         params: &[
             DEVICE_TRACK,
             DEVICE,
@@ -347,10 +347,15 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
                 ParamType::Text,
                 "parameter id: a built-in effect or instrument's from device.list, an .sd device's stable id, or a plug-in's number from device.pluginParams",
             ),
-            param(
+            optional(
                 "value",
                 ParamType::Number,
                 "value in the parameter's unit (dB, Hz, 0..1 for percentages, option index for choices); a plug-in's in its own range, from device.pluginParams",
+            ),
+            optional(
+                "normalized",
+                ParamType::Number,
+                "0 to 1, where the panel's dial sits, from the selection reading's normalized; it follows the parameter's curve (logarithmic, gain), so a controller's knob moves a time smoothly; not a plug-in's",
             ),
             GESTURE,
         ],

@@ -21,3 +21,4 @@ workspace = true
 [dev-dependencies]
 sha2 = "0.11"  # MIT OR Apache-2.0
 suhina-session.workspace = true
+mlua.workspace = true

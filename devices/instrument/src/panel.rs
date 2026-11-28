@@ -111,7 +111,13 @@ impl Canvas {
         };
         self.add(
             name,
-            Widget::Dial { label: name.into(), decimals: if id == "structure" { 4 } else { 2 }, format, image: None },
+            Widget::Dial {
+                label: name.into(),
+                decimals: if id == "structure" { 4 } else { 2 },
+                format,
+                image: None,
+                readout: None,
+            },
             bounds,
             Some(id),
             UiGesture::Drag,

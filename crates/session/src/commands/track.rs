@@ -59,6 +59,14 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "track.setCrossfadeAssign",
+        label: "Put tracks on side A or B of the mixer's crossfader, or off it so they are heard at every position; a group's assign governs its children until it is off",
+        params: &[TRACKS, param("assign", ParamType::Text, "a, b or off")],
+        kind: CommandKind::EDIT,
+        run: set_crossfade_assign,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "track.group",
         label: "Put tracks into a new group track, which plays into where they played",
         params: &[
@@ -594,6 +602,26 @@ fn set_mute(session: &mut Session, params: &Value) -> Result<Value, CommandError
         }
     }
     Ok(with_override(json!({ "tracks": track_ids(&channels), "mute": mute }), off))
+}
+
+fn set_crossfade_assign(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let assign = match Args::new(params).raw_str("assign") {
+        Some("a") => suhina_model::CrossfadeAssign::A,
+        Some("b") => suhina_model::CrossfadeAssign::B,
+        Some("off") => suhina_model::CrossfadeAssign::Off,
+        _ => return Err("assign must be \"a\", \"b\" or \"off\"".into()),
+    };
+    let tracks = track_list(&session.project, params)?;
+    for track in &tracks {
+        if let Some(t) = session.project.track_mut(*track) {
+            t.crossfade_assign = assign;
+        }
+    }
+    Ok(json!({ "tracks": tracks.iter().map(|t| t.0).collect::<Vec<_>>(), "assign": match assign {
+        suhina_model::CrossfadeAssign::A => "a",
+        suhina_model::CrossfadeAssign::B => "b",
+        suhina_model::CrossfadeAssign::Off => "off",
+    } }))
 }
 
 /// The mixer channel of every track `params.tracks` names, in that order, checked.

@@ -173,6 +173,7 @@ pub(crate) fn add_return(session: &mut Session, params: &Value) -> Result<Value,
     // Returns come after every other track, in the order they were added.
     p.tracks.push(Track {
         folder: false,
+        crossfade_assign: Default::default(),
         id,
         name: name.clone(),
         color: None,

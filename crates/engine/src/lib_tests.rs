@@ -16,6 +16,7 @@ fn project_with(lanes: Vec<ContentLane>, clips: Vec<Clip>, tracks: u32) -> Proje
         tracks: (1..=tracks)
             .map(|i| Track {
                 folder: false,
+                crossfade_assign: Default::default(),
                 id: TrackId(i),
                 name: format!("T{i}"),
                 color: None,

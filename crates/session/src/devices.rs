@@ -530,7 +530,40 @@ pub(crate) fn name_new_devices(
     }
 }
 
-fn device_json(path: &[usize], device: &Device) -> Value {
+/// The value at an `.sd` device's panel position `normalized`, 0 to 1, the inverse of
+/// [`sd_normalized`].
+fn sd_from_normalized(parameter: &suhina_device_sdk::Parameter, normalized: f64) -> f64 {
+    use suhina_device_sdk::ParameterControl;
+    let n = if normalized.is_finite() { normalized.clamp(0.0, 1.0) } else { 0.0 };
+    if parameter.max <= parameter.min {
+        return parameter.min;
+    }
+    if matches!(parameter.control, ParameterControl::LogSlider | ParameterControl::LogKnob) && parameter.min > 0.0 {
+        parameter.min * (parameter.max / parameter.min).powf(n)
+    } else {
+        parameter.min + n * (parameter.max - parameter.min)
+    }
+}
+
+/// Where an `.sd` device's parameter sits on its panel's slider or knob, 0 to 1, by its control:
+/// a log slider or knob follows its logarithmic scale, anything else its range.
+fn sd_normalized(parameter: &suhina_device_sdk::Parameter, value: f64) -> f64 {
+    use suhina_device_sdk::ParameterControl;
+    if parameter.max <= parameter.min {
+        return 0.0;
+    }
+    let value = value.clamp(parameter.min, parameter.max);
+    let position = if matches!(parameter.control, ParameterControl::LogSlider | ParameterControl::LogKnob)
+        && parameter.min > 0.0
+    {
+        (value / parameter.min).ln() / (parameter.max / parameter.min).ln()
+    } else {
+        (value - parameter.min) / (parameter.max - parameter.min)
+    };
+    position.clamp(0.0, 1.0)
+}
+
+pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
     let (kind, id) = match &device.kind {
         DeviceKind::Builtin(id) => ("builtin", Some(id.clone())),
         DeviceKind::Sd => ("sd", None),
@@ -555,9 +588,31 @@ fn device_json(path: &[usize], device: &Device) -> Value {
             .iter()
             .map(|p| {
                 // The engine takes the last value a duplicate parameter id carries (a project
-                // or preset file may name one twice), so the panel shows the same.
+                // or preset file may name one twice), so the panel shows the same. The name,
+                // range and unit ride along, like the `.sd` branch below: a controller's knob
+                // scales onto the unit and its ring draws the position (#1679).
                 let value = device.params.iter().rev().find(|v| v.id == p.id).map_or(p.default, |v| p.clamp(v.value));
-                json!({ "id": p.id, "value": value })
+                json!({
+                    "id": p.id,
+                    "value": value,
+                    // Where the panel's dial sits, 0 to 1: a controller's knob sends this back
+                    // as `normalized` instead of a linear value, so a logarithmic dial (an
+                    // envelope's attack) does not jump (#1718).
+                    "normalized": p.to_normalized(value),
+                    "name": p.name,
+                    "group": p.group,
+                    "min": p.min,
+                    "max": p.max,
+                    "unit": suhina_device_sdk::builtin::unit(p.unit),
+                    // What a controller's knob can turn: a continuous dial or a whole-number
+                    // one, not a switch or a choice (#1679).
+                    "kind": match p.kind {
+                        suhina_device_api::ParamKind::Continuous(_) => "continuous",
+                        suhina_device_api::ParamKind::Integer => "integer",
+                        suhina_device_api::ParamKind::Toggle => "toggle",
+                        suhina_device_api::ParamKind::Choice(_) => "choice",
+                    },
+                })
             })
             .collect::<Vec<_>>()
     });
@@ -567,9 +622,23 @@ fn device_json(path: &[usize], device: &Device) -> Value {
                 .parameters
                 .iter()
                 .map(|p| {
-                    let value =
-                        device.params.iter().find(|stored| stored.id == p.id).map_or(p.default, |stored| p.clamp(stored.value));
-                    json!({ "id": p.id, "name": p.name, "value": value, "min": p.min, "max": p.max, "control": p.control, "unit": p.unit, "ui": p.ui, "smoothing_ms": p.smoothing_ms })
+                    let value = device
+                        .params
+                        .iter()
+                        .find(|stored| stored.id == p.id)
+                        .map_or(p.default, |stored| p.clamp(stored.value));
+                    json!({
+                        "id": p.id,
+                        "name": p.name,
+                        "value": value,
+                        "normalized": sd_normalized(p, value),
+                        "min": p.min,
+                        "max": p.max,
+                        "control": p.control,
+                        "unit": p.unit,
+                        "ui": p.ui,
+                        "smoothing_ms": p.smoothing_ms,
+                    })
                 })
                 .collect::<Vec<_>>()
         })
@@ -584,9 +653,17 @@ fn device_json(path: &[usize], device: &Device) -> Value {
                 .collect::<Vec<_>>()
         })
     });
+    // The dials a controller's knobs take, in the device's compact panel, with the page and
+    // operator the panel shows (the hidden parameters) and the current model; a generated panel
+    // follows its parameter order.
+    let dials = info.map(|info| {
+        let values: Vec<(String, f64)> = device.params.iter().map(|p| (p.id.clone(), p.value)).collect();
+        suhina_device_registry::dials_with(&info.id, &values)
+    });
     let mut value = json!({
         "index": path.last().copied().unwrap_or(0),
         "path": path_value(path),
+        "dials": dials,
         // The device's own id (#763 › 1); `id` is what it is (a built-in's or a plug-in's).
         "device_id": device.id.0,
         "name": device.name,
@@ -1544,16 +1621,27 @@ pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value
 
 pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let param = Args::new(params).raw_str("param").ok_or("param must be a parameter id, from device.list")?;
-    let mut value = Args::new(params).f64("value")?;
-    let source_tempo =
-        if param == "warp" && value > 0. { initial_sampler_tempo(session, params, false)? } else { None };
-    if param == "source_bpm" && value == 0. {
-        value = initial_sampler_tempo(session, params, true)?.unwrap_or(0.);
+    let mut value = Args::new(params).opt_f64("value")?;
+    let normalized = Args::new(params).opt_f64("normalized")?;
+    match (value.is_some(), normalized.is_some()) {
+        (true, true) => return Err("give value or normalized, not both".into()),
+        (false, false) => return Err("give value or normalized".into()),
+        _ => {}
+    }
+    let source_tempo = match (param, value) {
+        ("warp", Some(value)) if value > 0. => initial_sampler_tempo(session, params, false)?,
+        _ => None,
+    };
+    if param == "source_bpm" && value == Some(0.) {
+        value = Some(initial_sampler_tempo(session, params, true)?.unwrap_or(0.));
     }
     let track = track_or_main_id(&session.project, params)?;
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     if device_at(&channel.devices, &path).is_some_and(|d| is_plugin(&d.kind)) {
+        let Some(value) = value else {
+            return Err("a plug-in's normalized position is not known; send value from device.pluginParams".into());
+        };
         return set_plugin_param(session, params, track, &path, param, value);
     }
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
@@ -1566,7 +1654,11 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
                 .param_index(param)
                 .ok_or_else(|| format!("{} has no parameter {param:?}; device.list lists them", info.name))?;
             let spec = info.params.get(index).ok_or("the parameter is missing")?;
-            (index, spec.clamp(value))
+            let value = match value {
+                Some(value) => spec.clamp(value),
+                None => spec.from_normalized(normalized.unwrap_or(0.)),
+            };
+            (index, value)
         }
         DeviceKind::Sd => {
             let bytes = device.state.as_deref().ok_or("the .sd graph is missing")?;
@@ -1578,6 +1670,10 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
                 .enumerate()
                 .find(|(_, p)| p.id == param)
                 .ok_or_else(|| format!("{} has no parameter {param:?}", graph.name))?;
+            let value = match value {
+                Some(value) => parameter.clamp(value),
+                None => sd_from_normalized(parameter, normalized.unwrap_or(0.)),
+            };
             edits = graph
                 .parameter_edits(param, value, |id| {
                     device.params.iter().find(|p| p.id == id).map_or_else(
@@ -1588,14 +1684,18 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
                 .into_iter()
                 .filter_map(|(i, value)| graph.parameters.get(i).map(|p| (i, p.id.clone(), value)))
                 .collect();
-            (index, parameter.clamp(value))
+            (index, value)
         }
         DeviceKind::Group(_) => {
             let index = suhina_engine::group_param_index(param).ok_or_else(|| {
                 format!("a device group has no parameter {param:?}; it has mix, gain and macro.1 to macro.8")
             })?;
             let &(_, min, max, _) = suhina_engine::GROUP_PARAMS.get(index).ok_or("the parameter is missing")?;
-            (index, value.clamp(min, max))
+            let value = match value {
+                Some(value) => value.clamp(min, max),
+                None => min + normalized.unwrap_or(0.).clamp(0., 1.) * (max - min),
+            };
+            (index, value)
         }
         _ => return Err("this device has no parameters Suhina can set (it is from another program)".into()),
     };

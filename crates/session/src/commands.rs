@@ -32,6 +32,7 @@ mod range;
 mod registry;
 mod returns;
 mod scene;
+mod selection;
 pub(crate) mod take;
 mod tempo;
 mod time_signature;
@@ -703,6 +704,7 @@ static NAMESPACES: &[&[CommandSpec]] = &[
     launcher::COMMANDS,
     mapping::COMMANDS,
     scene::COMMANDS,
+    selection::COMMANDS,
     device::COMMANDS,
     preview::COMMANDS,
     branch::COMMANDS,
@@ -743,6 +745,7 @@ fn info(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
         "markers": p.arrangement.markers.len(),
         "loop": loop_value(p),
         "default_scale": crate::scales::scale_value(p.default_scale),
+        "crossfader": p.crossfader.0,
         "can_undo": session.can_undo(),
         "can_redo": session.can_redo(),
     }))
@@ -766,6 +769,11 @@ fn tracks(session: &mut Session, _: &Value) -> Result<Value, CommandError> {
                     "pan": channel.map(|c| c.pan),
                     "mute": channel.map(|c| c.mute),
                     "solo": channel.map(|c| c.solo),
+                    "crossfade_assign": match t.crossfade_assign {
+                        suhina_model::CrossfadeAssign::A => "a",
+                        suhina_model::CrossfadeAssign::B => "b",
+                        suhina_model::CrossfadeAssign::Off => "off",
+                    },
                     "armed": session.is_armed(t.id),
                     "midi_input": midi_input_json(&t.midi_input),
                     "audio_input": audio_input_json(&t.audio_input),
@@ -946,6 +954,7 @@ pub(crate) fn group_tracks(session: &mut Session, params: &Value) -> Result<Valu
     let at = first.min(p.tracks.len());
     let group = Track {
         folder: false,
+        crossfade_assign: Default::default(),
         id,
         name,
         color: None,

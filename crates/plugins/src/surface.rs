@@ -13,8 +13,8 @@
 //! subscriptions — is the whole list, and every message here serves one item of it.
 //!
 //! Suhina → runner: `hello`, `ports`, `port_message`, `state`, `command_result`, `read_result`,
-//! `ping`, `quit`, `error`. Runner → Suhina: `hello`, `ready`, `send`, `command`, `read`,
-//! `subscribe`, `unsubscribe`, `script_error`, `pong`, `error`. The handshake is one `hello`
+//! `ping`, `quit`, `error`. Runner → Suhina: `hello`, `ready`, `send`, `quit_reset`, `command`,
+//! `read`, `subscribe`, `unsubscribe`, `script_error`, `pong`, `error`. The handshake is one `hello`
 //! each; a peer whose version is not spoken is refused with `error` and the connection closes.
 //! A send-back is never answered, and neither are `port_message`, `state`, the results, the
 //! reports, `unsubscribe` and `quit`; `quit`'s answer is the runner process exiting.
@@ -22,7 +22,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 1;
+pub const VERSION: u64 = 2;
 /// Most bytes one `port_message` or `send` carries (a system-exclusive block, generously).
 pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 /// Longest line either side accepts: a bytes field at its cap is twice that in hex, with the
@@ -30,6 +30,12 @@ pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 pub const MAX_LINE: usize = 2 * MAX_MESSAGE_BYTES + 64 * 1024;
 /// Most port names one `ports` message lists (the manifest's `ports` cap, extensions.md).
 pub const MAX_PORTS: usize = 64;
+/// Most messages one program's quit reset may carry: all 16 channels' notes and controllers,
+/// the APC40's own reset, is 4096.
+pub const MAX_QUIT_RESET_MESSAGES: usize = 4096;
+/// Most bytes a whole quit reset may hold: a storm of three-byte messages, bounded like a
+/// send-back burst.
+pub const MAX_QUIT_RESET_BYTES: usize = 64 * 1024;
 /// Longest one port name, command id or gesture id.
 pub const MAX_NAME: usize = 256;
 /// Most subscriptions one program may keep live; the runner refuses the rest.
@@ -89,6 +95,12 @@ pub enum Message {
     Send {
         port: String,
         bytes: Vec<u8>,
+    },
+    /// The messages the program's quit reset writes on its claimed outputs, in order: each
+    /// device's own way to leave its lights and its sound safe, which the session cannot know.
+    /// Never answered; the host sends them once at quit, before the outputs close.
+    QuitReset {
+        messages: Vec<Vec<u8>>,
     },
     /// Run a command — the same command the window, CLI and MCP dispatch, undo included.
     /// `gesture` groups the stream into one undo step, ended by `history.endGesture`.
@@ -153,6 +165,9 @@ impl Message {
             Self::Quit => json!({ "op": "quit" }),
             Self::Ready => json!({ "op": "ready" }),
             Self::Send { port, bytes } => json!({ "op": "send", "port": port, "bytes": hex(bytes) }),
+            Self::QuitReset { messages } => {
+                json!({ "op": "quit_reset", "messages": messages.iter().map(|bytes| hex(bytes)).collect::<Vec<_>>() })
+            }
             Self::Command { token, id, params, gesture } => {
                 json!({ "op": "command", "token": token, "id": id, "params": params, "gesture": gesture })
             }
@@ -233,6 +248,7 @@ impl Message {
             "quit" => Self::Quit,
             "ready" => Self::Ready,
             "send" => Self::Send { port: text("port", MAX_NAME)?, bytes: bytes("bytes")? },
+            "quit_reset" => Self::QuitReset { messages: quit_reset(value.get("messages")?)? },
             "command" => Self::Command {
                 token: number("token")?,
                 id: text("id", MAX_NAME)?,
@@ -261,6 +277,25 @@ fn ports(value: &Value) -> Option<Vec<String>> {
         return None;
     }
     list.iter().map(|v| v.as_str().filter(|s| !s.is_empty() && s.len() <= MAX_NAME).map(str::to_string)).collect()
+}
+
+/// A `quit_reset`'s messages: non-empty raw messages, within the count and byte caps.
+fn quit_reset(value: &Value) -> Option<Vec<Vec<u8>>> {
+    let list = value.as_array()?;
+    if list.is_empty() || list.len() > MAX_QUIT_RESET_MESSAGES {
+        return None;
+    }
+    let mut total = 0usize;
+    let mut messages = Vec::with_capacity(list.len());
+    for value in list {
+        let bytes = value.as_str().filter(|s| !s.is_empty() && s.len() <= 2 * MAX_MESSAGE_BYTES).and_then(unhex)?;
+        total = total.checked_add(bytes.len())?;
+        if total > MAX_QUIT_RESET_BYTES {
+            return None;
+        }
+        messages.push(bytes);
+    }
+    Some(messages)
 }
 
 /// A JSON value within [`MAX_DEPTH`] of nesting.

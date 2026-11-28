@@ -94,6 +94,7 @@ fn project(length: f64, two: bool, devices: Vec<Device>) -> Project {
     Project {
         tracks: vec![Track {
             folder: false,
+            crossfade_assign: Default::default(),
             id: TrackId(1),
             name: "T".into(),
             color: None,

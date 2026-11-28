@@ -1,0 +1,30 @@
+{
+  "id": "apc40-mkii",
+  "name": "APC40 MkII",
+  "version": "0.1.0",
+  "provides": [
+    {
+      "id": "surface",
+      "label": "Akai APC40 MkII"
+    }
+  ],
+  "license": "CC0-1.0",
+  "license_source": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "license_checked": "2026-11-21",
+  "source": "https://github.com/suhina-daw/suhina-daw",
+  "protocol": 2,
+  "programs": [
+    {
+      "path": "script.lua",
+      "sha256": "7eb9257c86e4c04aa33099052420da61aeff6d2ee441e9df6c75eeb650fcc371"
+    }
+  ],
+  "ports": [
+    "APC40*"
+  ],
+  "runner": "lua",
+  "permissions": [
+    "project.read",
+    "project.write"
+  ]
+}

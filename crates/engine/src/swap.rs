@@ -756,6 +756,13 @@ fn live_sends(chains: &[crate::chain::Chain]) -> Vec<(TrackId, TrackId)> {
 }
 
 fn apply_param(graph: &mut Graph, change: ParamChange) {
+    // The crossfader scales every chain that carries an assign of its own.
+    if change.device == crate::MIXER_CROSSFADE {
+        for chain in &mut graph.chains {
+            chain.set_live_crossfade(change.value);
+        }
+        return;
+    }
     // The main fader of a main channel with no chain scales the whole mix.
     if change.track == TrackId::MAIN
         && change.device == crate::MIXER_VOLUME
@@ -907,6 +914,7 @@ impl Controller {
         if device == crate::MIXER_PAN && (!updater.live_pans.contains(&track) || !value.is_finite()) {
             return Err(crate::ControlError::NeedsGraph("the track's pan"));
         }
+        // The crossfader reaches every chain on its own assign; it needs no new graph.
         let seq = updater.param_seq + 1;
         updater
             .params
