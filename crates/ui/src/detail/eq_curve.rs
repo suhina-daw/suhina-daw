@@ -2609,10 +2609,19 @@ fn draw_stroke(
     painter.add(egui::Shape::line(points, Stroke::new(1.5, Color32::from_rgb(0xF2, 0xA6, 0x5A))));
     if !down {
         ui.ctx().data_mut(|d| d.remove::<Vec<Option<f64>>>(stroke_id));
-        let free: Vec<usize> = panel.bands.iter().enumerate().filter(|(_, b)| !b.in_use).map(|(s, _)| s).collect();
-        let mut edits: Vec<(usize, &str, f64)> = Vec::new();
+        let Some(span) = stroke_span(&columns) else { return };
+        let wanted = stroke_bands(&columns);
+        let slots: Vec<Drawable> = panel
+            .bands
+            .iter()
+            .map(|b| Drawable { in_use: b.in_use, replaceable: b.mode == 0 && b.place == 0, frequency: b.frequency })
+            .collect();
+        // Shift held as the stroke ends adds its bands to those there; otherwise it replaces them.
+        let adding = ui.input(|i| i.modifiers.shift);
+        let (into, freed) = stroke_slots(&slots, span, adding, wanted.len());
+        let mut edits: Vec<(usize, &str, f64)> = freed.iter().map(|&s| (s, "InUse", 0.0)).collect();
         let mut made = Vec::new();
-        for ((kind, frequency, gain, q), slot) in stroke_bands(&columns).into_iter().zip(free) {
+        for ((kind, frequency, gain, q), slot) in wanted.into_iter().zip(into) {
             edits.extend([
                 (slot, "InUse", 1.0),
                 (slot, "On", 1.0),
@@ -2630,6 +2639,44 @@ fn draw_stroke(
         panel.state.group = made.iter().fold(0, |m, s| m | (1 << s));
         panel.state.selected = made.first().copied();
     }
+}
+
+/// The frequencies a drawn curve covers: from its first column to its last, out to the display's
+/// edge where it starts (or ends) in the outer 15 %, where its shelves and cuts are made.
+fn stroke_span(columns: &[Option<f64>]) -> Option<(f64, f64)> {
+    let first = columns.iter().position(Option::is_some)?;
+    let last = columns.iter().rposition(Option::is_some)?;
+    let edge = |c: usize| FREQUENCY.0 * (FREQUENCY.1 / FREQUENCY.0).powf(c as f64 / STROKE_COLUMNS as f64);
+    let low = if first < STROKE_COLUMNS * 15 / 100 { 0.0 } else { edge(first) };
+    let high = if last > STROKE_COLUMNS * 85 / 100 { f64::INFINITY } else { edge(last + 1) };
+    Some((low, high))
+}
+
+/// A slot as a drawn curve sees it: whether it is in use; whether a curve drawn over it may replace
+/// it (a Static band on Stereo, as the drawn bands are); its frequency.
+struct Drawable {
+    in_use: bool,
+    replaceable: bool,
+    frequency: f64,
+}
+
+/// The slots a drawn curve's `wanted` bands go into, low to high, and the slots it frees. Unless
+/// `adding`, the replaceable bands inside `span` give way: the new bands take their slots in
+/// frequency order (so a curve drawn again over the same bands keeps their numbers and colours),
+/// the ones left over are freed, and further bands take free slots. A band with no slot left (all
+/// 24 in use) is not made.
+fn stroke_slots(slots: &[Drawable], span: (f64, f64), adding: bool, wanted: usize) -> (Vec<usize>, Vec<usize>) {
+    let mut replaced: Vec<(usize, f64)> = slots
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| !adding && s.in_use && s.replaceable && s.frequency >= span.0 && s.frequency <= span.1)
+        .map(|(slot, s)| (slot, s.frequency))
+        .collect();
+    replaced.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let free = slots.iter().enumerate().filter(|(_, s)| !s.in_use).map(|(slot, _)| slot);
+    let into: Vec<usize> = replaced.iter().map(|&(slot, _)| slot).chain(free).take(wanted).collect();
+    let freed = replaced.into_iter().map(|(slot, _)| slot).filter(|slot| !into.contains(slot)).collect();
+    (into, freed)
 }
 
 /// The bands a drawn curve makes, `(type, frequency, gain, Q)`, low to high: each stretch of the

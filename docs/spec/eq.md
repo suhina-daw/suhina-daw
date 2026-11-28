@@ -356,8 +356,14 @@ Measurements in canvas px, `[x, y, w, h]`:
   slot, finished where the curve comes back to 0 dB: in the middle a bell at the stretch's peak,
   its Q from the width between its half-gain points; from the curve's start near the left edge (the
   first 15 %) a low shelf at its half-gain point, or a 48 dB low cut once it falls past −18 dB; the
-  same at the right edge a high shelf or cut. The whole stroke is one undo step, and the bands it
-  made are selected. It is meant for a fast rough start, tuned afterwards.
+  same at the right edge a high shelf or cut. The stroke replaces what it covers (from its first
+  column to its last, out to the display's edge where it starts or ends in the outer 15 %): the
+  Static bands on Stereo there give their slots to the new bands, in frequency order, so a curve
+  drawn again over the same bands keeps their numbers and colours; those left over are freed, so a
+  flat stroke clears what it crosses. Dynamic and Spectral bands, and bands on another placement,
+  stay. Further bands take free slots, and with none left they are not made. Shift held as the
+  stroke ends adds its bands and replaces nothing. The whole stroke is one undo step, and the bands
+  it made are selected. It is meant for a fast rough start, tuned afterwards.
 - **The live curve.** While sound plays through a Dynamic or Spectral band, a curve in the band's
   colour draws its side with the bands as they are at that moment, from the device's readouts —
   drawn all the while, so it never blinks in and out: a Dynamic band at its gain plus its change;

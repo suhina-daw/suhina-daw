@@ -247,6 +247,53 @@ fn a_drawn_curve_makes_one_band_per_stretch_away_from_0_db() {
     assert!(bands[0].1 < bands[1].1);
 }
 
+/// Slots for a drawn curve: `used` as `(frequency, replaceable)`, then free slots up to 24.
+fn drawable(used: &[(f64, bool)]) -> Vec<Drawable> {
+    let mut slots: Vec<Drawable> =
+        used.iter().map(|&(frequency, replaceable)| Drawable { in_use: true, replaceable, frequency }).collect();
+    slots.resize_with(24, || Drawable { in_use: false, replaceable: true, frequency: 1_000.0 });
+    slots
+}
+
+#[test]
+fn a_curve_drawn_over_bands_replaces_them_in_their_slots() {
+    // Bands at 2 kHz and 500 Hz under the stroke, one at 100 Hz beside it.
+    let slots = drawable(&[(2_000.0, true), (100.0, true), (500.0, true)]);
+    let (into, freed) = stroke_slots(&slots, (300.0, 5_000.0), false, 2);
+    assert_eq!(into, vec![2, 0], "the new bands take the covered slots, low to high");
+    assert!(freed.is_empty());
+    // Drawn again with one band: the covered slot left over is freed, the one beside it stays.
+    let (into, freed) = stroke_slots(&slots, (300.0, 5_000.0), false, 1);
+    assert_eq!((into, freed), (vec![2], vec![0]));
+    // More bands than covered slots: the rest take free slots.
+    let (into, _) = stroke_slots(&slots, (300.0, 5_000.0), false, 4);
+    assert_eq!(into, vec![2, 0, 3, 4]);
+    // A flat stroke makes nothing and clears what it covers.
+    assert_eq!(stroke_slots(&slots, (300.0, 5_000.0), false, 0), (vec![], vec![2, 0]));
+}
+
+#[test]
+fn a_drawn_curve_keeps_dynamic_and_placed_bands_and_adds_with_shift() {
+    let slots = drawable(&[(1_000.0, false), (1_200.0, true)]);
+    let (into, freed) = stroke_slots(&slots, (300.0, 5_000.0), false, 2);
+    assert_eq!((into, freed), (vec![1, 2], vec![]), "the Dynamic (or placed) band stays");
+    let (into, freed) = stroke_slots(&slots, (300.0, 5_000.0), true, 1);
+    assert_eq!((into, freed), (vec![2], vec![]), "adding replaces nothing");
+    // Every slot in use and nothing covered: nothing is made.
+    let full: Vec<Drawable> = (0..24).map(|_| Drawable { in_use: true, replaceable: true, frequency: 50.0 }).collect();
+    assert_eq!(stroke_slots(&full, (300.0, 5_000.0), false, 2), (vec![], vec![]));
+}
+
+#[test]
+fn a_drawn_curve_covers_out_to_an_edge_it_starts_near() {
+    let middle: Vec<Option<f64>> = (0..STROKE_COLUMNS).map(|c| (40..80).contains(&c).then_some(0.0)).collect();
+    let (low, high) = stroke_span(&middle).unwrap_or((0.0, 0.0));
+    assert!(low > 100.0 && high < 10_000.0 && low < high, "{low} – {high}");
+    let edges = stroke_span(&stroke(|_| 0.0)).unwrap_or((1.0, 1.0));
+    assert_eq!(edges, (0.0, f64::INFINITY));
+    assert_eq!(stroke_span(&vec![None; STROKE_COLUMNS]), None);
+}
+
 #[test]
 fn a_drawn_curve_from_an_edge_is_a_shelf_or_a_cut() {
     let shelf = stroke_bands(&stroke(|c| if c < 40 { 6.0 } else { 0.0 }));
