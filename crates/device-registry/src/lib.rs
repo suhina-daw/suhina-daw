@@ -7,11 +7,14 @@
 
 use std::any::Any;
 use std::path::Path;
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use suhina_device_api::{Device, DeviceError, DeviceInfo};
+use suhina_device_api::{Device, DeviceError, DeviceInfo, ParamKind};
 use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
+use suhina_device_sdk::ui::Widget;
 
 /// One built-in device: everything the rest of Suhina asks the registry about it, in one row
 /// (#764 › 9). [`DEVICES`], [`create`], [`layout`], [`panel`] and [`is_file_device`] read this
@@ -223,16 +226,181 @@ pub fn info(id: &str) -> Option<&'static DeviceInfo> {
     entry(id).map(|entry| entry.info)
 }
 
-/// The layout of the device with this id, when it has one (ADR 0021 › Amendment: device panels
-/// for built-in devices): the `.sd` UI part only, its parameters named by id. A device crate
-/// gives it in Rust, or as `devices/<name>/panel.json`.
-pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
-    match entry(id)?.layout {
+/// Every layout and dial order, worked out once while Suhina runs: a controller's subscription
+/// reads a device's dials on every look, and the FM Synth's panel is 4.4 MB. The
+/// value-dependent part of a reading — the page and operator a panel shows — stays outside the
+/// cache.
+struct Cached {
+    /// The device's layout, parsed on its first read.
+    layout: OnceLock<Option<Result<Layout, DeviceSdkError>>>,
+    /// The dials its layout and parameters give, in reading order.
+    dials: OnceLock<Vec<String>>,
+}
+
+impl Cached {
+    const fn new() -> Self {
+        Self { layout: OnceLock::new(), dials: OnceLock::new() }
+    }
+}
+
+struct LayoutCache {
+    devices: OnceLock<Vec<Cached>>,
+    #[cfg(test)]
+    parses: AtomicUsize,
+    #[cfg(test)]
+    computes: AtomicUsize,
+}
+
+impl LayoutCache {
+    const fn new() -> Self {
+        Self {
+            devices: OnceLock::new(),
+            #[cfg(test)]
+            parses: AtomicUsize::new(0),
+            #[cfg(test)]
+            computes: AtomicUsize::new(0),
+        }
+    }
+
+    /// The entry and cache row of `id`, made on the first call; `None` for an unknown id.
+    fn row(&self, id: &str) -> Option<(&'static Entry, &Cached)> {
+        let index = ENTRIES.iter().position(|entry| entry.info.id == id)?;
+        let entry = ENTRIES.get(index)?;
+        let devices = self.devices.get_or_init(|| (0..ENTRIES.len()).map(|_| Cached::new()).collect());
+        let cached = devices.get(index)?;
+        Some((entry, cached))
+    }
+
+    /// The layout of `id`, parsed on its first call and borrowed afterwards; `None` for an
+    /// unknown id or a device whose panel is generated.
+    fn get(&self, id: &str) -> Option<&Result<Layout, DeviceSdkError>> {
+        let (entry, cached) = self.row(id)?;
+        cached
+            .layout
+            .get_or_init(|| {
+                #[cfg(test)]
+                self.parses.fetch_add(1, Ordering::Relaxed);
+                parse_layout(entry)
+            })
+            .as_ref()
+    }
+
+    #[cfg(test)]
+    fn parses(&self) -> usize {
+        self.parses.load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    fn computes(&self) -> usize {
+        self.computes.load(Ordering::Relaxed)
+    }
+}
+
+/// The layout of `entry`, from its own source.
+fn parse_layout(entry: &'static Entry) -> Option<Result<Layout, DeviceSdkError>> {
+    match entry.layout {
         LayoutSource::Generated => None,
         LayoutSource::Json(text) => Some(Layout::from_json(text)),
         LayoutSource::JsonWithImages(text, images) => Some(with_images(text, images)),
         LayoutSource::Rust(make) => Some(Ok(make())),
     }
+}
+
+static LAYOUTS: LayoutCache = LayoutCache::new();
+
+/// The layout of the device with this id, when it has one (ADR 0021 › Amendment: device panels
+/// for built-in devices): the `.sd` UI part only, its parameters named by id. A device crate
+/// gives it in Rust, or as `devices/<name>/panel.json`. Parsed once per id while Suhina runs;
+/// the reference is shared, so a reading does not parse it again.
+pub fn layout(id: &str) -> Option<&'static Result<Layout, DeviceSdkError>> {
+    LAYOUTS.get(id)
+}
+
+/// A built-in device's dials as parameter ids, in its compact panel's reading order: the
+/// `Knob` and `Dial` controls bound to a continuous or whole-number parameter, left to right
+/// and top to bottom, then the dials the generated list places under the canvas in parameter
+/// order. A device with no custom panel follows its parameter order alone. The selection
+/// reading gives this to a controller, so its knobs follow the panel's layout, not the
+/// parameter order. Worked out once per id while Suhina runs, beside the cached layout.
+pub fn dials(id: &str) -> Vec<String> {
+    dials_in(&LAYOUTS, id)
+}
+
+/// [`dials`] against a cache: a test passes its own, so the parse and compute counters cannot
+/// be warmed by another test.
+fn dials_in(cache: &LayoutCache, id: &str) -> Vec<String> {
+    let Some(info) = info(id) else { return Vec::new() };
+    let Some((_, cached)) = cache.row(id) else { return Vec::new() };
+    cached
+        .dials
+        .get_or_init(|| {
+            #[cfg(test)]
+            cache.computes.fetch_add(1, Ordering::Relaxed);
+            dial_order(cache, id, info)
+        })
+        .clone()
+}
+
+/// The dial order `info`'s panel gives: its knobs and dials by the panel's rows, then every
+/// parameter the panel did not place, in parameter order ([`dials`]).
+fn dial_order(cache: &LayoutCache, id: &str, info: &'static DeviceInfo) -> Vec<String> {
+    let mut ordered: Vec<String> = Vec::new();
+    if let Some(Ok(layout)) = cache.get(id)
+        && let Some(ui) = &layout.ui
+    {
+        let mut controls: Vec<DialControl<'_>> = ui
+            .controls
+            .iter()
+            .filter(|control| matches!(control.widget, Some(Widget::Knob { .. } | Widget::Dial { .. })))
+            .filter_map(|control| {
+                let id = control.x.as_ref().or(control.y.as_ref())?.parameter.as_str();
+                let param = info.params.iter().find(|p| p.id == id)?;
+                matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer).then_some((
+                    control.bounds[1],
+                    control.bounds[3],
+                    control.bounds[0],
+                    id,
+                ))
+            })
+            .collect();
+        ordered = in_reading_order(&mut controls);
+    }
+    for param in info.params.iter() {
+        if matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer)
+            && !ordered.iter().any(|id| id == param.id.as_ref())
+        {
+            ordered.push(param.id.to_string());
+        }
+    }
+    ordered
+}
+
+/// A dial control's place in its panel: its top, height and left, with the parameter it drives.
+type DialControl<'a> = (f32, f32, f32, &'a str);
+
+/// One row of dials: its top, its first control's height, and each control's left with its id.
+type DialRow<'a> = (f32, f32, Vec<(f32, &'a str)>);
+
+/// [`DialControl`]s as dial ids in reading order: a row is controls whose tops lie within the
+/// height of the row's first control, so a small dial beside a tall one is read left to right
+/// with it; rows run top to bottom, each left to right (#1680 review).
+fn in_reading_order(controls: &mut [DialControl<'_>]) -> Vec<String> {
+    controls.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.2.total_cmp(&b.2)));
+    let mut rows: Vec<DialRow<'_>> = Vec::new();
+    for &(top, height, x, id) in controls.iter() {
+        match rows.last_mut() {
+            Some((row_top, row_height, row)) if top - *row_top <= *row_height => row.push((x, id)),
+            _ => rows.push((top, height, vec![(x, id)])),
+        }
+    }
+    let mut ordered = Vec::new();
+    for (_, _, mut row) in rows {
+        row.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (_, id) in row {
+            ordered.push(id.to_string());
+        }
+    }
+    ordered
 }
 
 /// The layout in `text` with `images` added to its compact canvas's assets.
@@ -300,7 +468,7 @@ pub fn panel(id: &str) -> Option<&'static Panel> {
                 .iter()
                 .map(|info| {
                     layout(&info.id)
-                        .and_then(Result::ok)
+                        .and_then(|result| result.as_ref().ok())
                         .and_then(|layout| layout.panel(info).ok())
                         .unwrap_or_else(|| builtin::generated(info))
                 })

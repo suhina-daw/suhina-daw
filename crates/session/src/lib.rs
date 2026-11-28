@@ -79,6 +79,7 @@ mod record_writer;
 mod recording;
 mod relink;
 mod scales;
+mod selection;
 mod sends;
 mod soundmap;
 mod swing;
@@ -287,6 +288,10 @@ pub struct Session {
     /// The take lane heard in place of its track's clips (`take.solo`, #989): its track and its
     /// index in `arrangement.takes`. Not saved, not an undo step.
     pub(crate) take_solo: Option<(suhina_model::TrackId, usize)>,
+    /// The selection (`docs/spec/selection.md`, #1679): the selected track and the selected
+    /// device of its chain — what controllers, mappings and agents point at. Not saved, not an
+    /// undo step.
+    pub(crate) selection: selection::Selection,
     /// The audio input a new audio track takes, and an armed one that hears none: the
     /// default track input of Settings › Audio while an input device is chosen, else none
     /// ([`Session::set_default_input`], ADR 0017).
@@ -345,6 +350,7 @@ impl Session {
             backup: backup::SessionBackups::default(),
             live: live_input::LiveInput::default(),
             take_solo: None,
+            selection: selection::Selection::default(),
             default_input: suhina_model::InputChannels::None,
             defaulted: Vec::new(),
             library_base: None,
@@ -878,6 +884,22 @@ impl Session {
 
     pub fn is_armed(&self, track: suhina_model::TrackId) -> bool {
         self.live.armed.contains(&track) && self.project.tracks.iter().any(|t| t.id == track)
+    }
+
+    /// The selected track (`docs/spec/selection.md`, #1679): what the window, controllers,
+    /// mappings and agents point at. `None` when nothing is selected or the track is gone. A
+    /// presentation folder is a track without a channel, and Main is a channel without a track.
+    pub fn selected_track(&self) -> Option<suhina_model::TrackId> {
+        self.selection
+            .track()
+            .filter(|track| self.project.track(*track).is_some() || self.project.channel_of_track(*track).is_some())
+    }
+
+    /// The selected device's path on the selected track, when one is: an index on the track's
+    /// chain, or a path through device groups (`"2/1/0"`). `None` when nothing is selected or
+    /// the device is gone.
+    pub fn selected_device_path(&self) -> Option<Vec<usize>> {
+        self.selection.device_path(&self.project)
     }
 
     /// Arms `track` or disarms it; `exclusive` also disarms every other track. The playing
