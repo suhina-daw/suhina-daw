@@ -188,7 +188,8 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "record.state",
         label: "What is being recorded: whether the arrangement records, each take (track, slot or arrangement, start and end beat, notes, frames, file), the count-in setting and the beats it has left",
         params: &[],
-        kind: CommandKind::TRANSPORT,
+        // A reading: a surface program's record light follows it (#1677).
+        kind: CommandKind::READ,
         run: crate::recording::record_state,
         policy: Policy::DEFAULT,
     },

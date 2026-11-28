@@ -126,6 +126,12 @@ pub(crate) struct Chain {
     /// A fader move since the graph was built, as a factor on `post`, its cue and its post-fader
     /// sends, smoothed like a fader in OSS hosts (a one-pole low pass at about 25 Hz).
     pub(crate) live: LiveVolume,
+    /// The crossfader side this chain is on, when its own assign applies here; `None` for a
+    /// chain the crossfader does not scale (the main channel, or a track inside an assigned
+    /// group, whose group carries the assign).
+    pub(crate) crossfade_assign: Option<suhina_model::CrossfadeAssign>,
+    /// The crossfader's equal-power gain for this chain, smoothed like a fader.
+    pub(crate) crossfade: LiveVolume,
     /// The lanes of its built-in devices' parameters.
     device_lanes: DeviceLanes,
     /// The lanes of the track's mixer, which scale `post` frame by frame (#395).
@@ -487,6 +493,8 @@ impl Chain {
             built_pan: None,
             pan: (LiveVolume::default(), LiveVolume::default()),
             live: LiveVolume::default(),
+            crossfade_assign: None,
+            crossfade: LiveVolume::default(),
             key_reads: Vec::new(),
             key_readers: Vec::new(),
             taps: Default::default(),
@@ -551,6 +559,8 @@ impl Chain {
             built_pan: None,
             pan: (LiveVolume::default(), LiveVolume::default()),
             live: LiveVolume::default(),
+            crossfade_assign: None,
+            crossfade: LiveVolume::default(),
             key_reads: Vec::new(),
             key_readers: Vec::new(),
             taps: Default::default(),
@@ -567,6 +577,21 @@ impl Chain {
             && let Some(ratio) = live_ratio(volume, built)
         {
             self.live.target = ratio;
+        }
+    }
+
+    /// Sets the crossfader side this chain's own assign puts it on; `None` when the crossfader
+    /// does not scale it (the main channel, or a track inside an assigned group).
+    pub(crate) fn set_crossfade_assign(&mut self, assign: Option<suhina_model::CrossfadeAssign>, value: f64) {
+        self.crossfade_assign = assign;
+        self.crossfade = LiveVolume::fixed(crate::crossfade_gain(assign, value));
+    }
+
+    /// Takes the crossfader's move from the next block, smoothed; ignored when this chain has no
+    /// own assign. Never allocates.
+    pub(crate) fn set_live_crossfade(&mut self, value: f64) {
+        if self.crossfade_assign.is_some() {
+            self.crossfade.target = crate::crossfade_gain(self.crossfade_assign, value);
         }
     }
 
@@ -1390,6 +1415,7 @@ impl Chain {
     /// the result to where the track plays into, and the sends read it before that.
     pub(crate) fn complete(&mut self, frames: usize, context: &ProcessContext) {
         self.live.plan(frames, self.sample_rate);
+        self.crossfade.plan(frames, self.sample_rate);
         self.pan.0.plan(frames, self.sample_rate);
         self.pan.1.plan(frames, self.sample_rate);
         self.plan_sends(frames);
@@ -1407,8 +1433,8 @@ impl Chain {
         self.delay.run(buffer);
         let pairs = out.as_chunks_mut::<2>().0.iter_mut().zip(buffer.as_chunks::<2>().0);
         match &self.mix {
-            None if live.steady() && pan.0.steady() && pan.1.steady() => {
-                let fader = live.at(0);
+            None if live.steady() && pan.0.steady() && pan.1.steady() && self.crossfade.steady() => {
+                let fader = live.at(0) * self.crossfade.at(0);
                 let (left, right) = (gain_left * fader * pan.0.at(0), gain_right * fader * pan.1.at(0));
                 for ([l, r], [cl, cr]) in pairs {
                     *l += cl * left;
@@ -1417,7 +1443,7 @@ impl Chain {
             }
             None => {
                 for (frame, ([l, r], [cl, cr])) in pairs.enumerate() {
-                    let fader = live.at(frame);
+                    let fader = live.at(frame) * self.crossfade.at(frame);
                     *l += cl * gain_left * fader * pan.0.at(frame);
                     *r += cr * gain_right * fader * pan.1.at(frame);
                 }
@@ -1426,7 +1452,7 @@ impl Chain {
             Some(mix) => {
                 for (frame, ([l, r], [cl, cr])) in pairs.enumerate() {
                     let (left, right) = mix.gains(frame);
-                    let fader = live.at(frame);
+                    let fader = live.at(frame) * self.crossfade.at(frame);
                     // The pan is (1, 1) unless the chain applies it live.
                     *l += cl * gain_left * left * fader * pan.0.at(frame);
                     *r += cr * gain_right * right * fader * pan.1.at(frame);

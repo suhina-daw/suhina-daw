@@ -69,6 +69,7 @@ fn project(tracks: u32) -> Project {
     for id in 1..=tracks {
         p.tracks.push(Track {
             folder: false,
+            crossfade_assign: Default::default(),
             id: TrackId(id),
             name: format!("Synth {id}"),
             color: None,

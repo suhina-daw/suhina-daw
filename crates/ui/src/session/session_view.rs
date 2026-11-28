@@ -213,6 +213,8 @@ pub fn step_slot(grid: &TrackGrid, from: (TrackId, usize), step: Step) -> Option
 pub(crate) enum Control {
     Volume,
     Pan,
+    /// The mixer's A–B crossfader.
+    Crossfader,
     /// The send to this return track.
     Send(TrackId),
 }
@@ -233,6 +235,29 @@ fn rgb(color: suhina_engine::model::Rgb) -> Color32 {
 /// How much of the track's color an empty slot shows: the whole column reads as the track's,
 /// the whole column in its track's color.
 const EMPTY_TINT: f32 = 0.12;
+
+/// The x ranges the visible Launcher columns of a control surface's window cover. A window
+/// counts Launcher columns; the spans are visible UI columns, which also hold presentation
+/// folders and omit folded children, so the launcher index on each column is what is matched.
+/// Matches that are not visible one after another are separate ranges, so an outline never
+/// reaches across a folder or a reordered track the surface does not control.
+fn surface_track_runs(
+    surface: &suhina_session::ControlSurfaceWindow,
+    spans: impl IntoIterator<Item = (Option<usize>, egui::Rangef)>,
+) -> Vec<egui::Rangef> {
+    let end = surface.track.saturating_add(surface.tracks);
+    let mut runs = Vec::new();
+    let mut run: Option<egui::Rangef> = None;
+    for (launcher, span) in spans {
+        if launcher.is_some_and(|index| (surface.track..end).contains(&index)) {
+            run = Some(run.map_or(span, |range: egui::Rangef| egui::Rangef::new(range.min, span.max)));
+        } else if let Some(range) = run.take() {
+            runs.push(range);
+        }
+    }
+    runs.extend(run);
+    runs
+}
 
 /// Draws the Launcher view in the space left in `ui` and adds what the user asked for to
 /// `actions`. `progress` is how far each column's playing clip is (0 … 1), by column index.
@@ -426,6 +451,30 @@ pub fn show(
         let below_headers = Rect::from_min_max(Pos2::new(empty.left(), header.bottom() + 1.0), empty.max);
         empty_space(ui, &painter, below_headers, actions);
     }
+    // Each control surface's window: the slots it shows, outlined in a theme color. The first
+    // (the APC40 MkII) is the theme's recording red, as a controller's ring is; more surfaces
+    // take the accent and the selection color in turn.
+    let slot_painter = painter.with_clip_rect(body.intersect(tracks_clip));
+    for (index, surface) in grid.control_surfaces.iter().enumerate() {
+        let visible = spans.iter().map(|(column, span)| (column.launcher, *span));
+        let runs = surface_track_runs(surface, visible);
+        let scene_end = (surface.scene + surface.scenes).min(grid.scenes.len());
+        if runs.is_empty() || scene_end <= surface.scene {
+            continue;
+        }
+        let top = bands.top + surface.scene as f32 * slot_pitch();
+        let bottom = top + (scene_end - surface.scene) as f32 * slot_pitch() - 1.0;
+        let color = match index % 3 {
+            0 => crate::kit::element::error_ink(),
+            1 => crate::kit::element::accent_ink(),
+            _ => crate::kit::selection::fill(&crate::kit::element::SESSION.enter())
+                .unwrap_or_else(crate::kit::element::accent_ink),
+        };
+        for x in runs {
+            let outline = Rect::from_min_max(Pos2::new(x.min, top), Pos2::new(x.max, bottom));
+            slot_painter.rect_stroke(outline.shrink(0.5), 0.0, egui::Stroke::new(2.0, color), StrokeKind::Inside);
+        }
+    }
     if let Some(probe) = state.drop.as_mut() {
         let row_of = |y: f32| ((y - bands.top) / slot_pitch()).floor().max(0.0) as usize;
         if probe.devices && !probe.files && !probe.clip {
@@ -603,6 +652,16 @@ pub fn show(
             &main_painter,
             (parts.readout.unwrap_or(Rect::NOTHING), fader, parts.scale),
             grid.main_volume_db,
+            state,
+            actions,
+        );
+    }
+    if let Some(rect) = parts.crossfader {
+        crate::session::mixer_strip::main_crossfader(
+            ui,
+            &painter.with_clip_rect(main_mixer),
+            rect,
+            grid.main_crossfader,
             state,
             actions,
         );

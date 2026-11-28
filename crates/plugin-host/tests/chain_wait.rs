@@ -96,6 +96,7 @@ fn project(chains: &[usize]) -> Project {
         let id = n as u32 + 1;
         p.tracks.push(Track {
             folder: false,
+            crossfade_assign: Default::default(),
             id: TrackId(id),
             name: format!("T{id}"),
             color: None,

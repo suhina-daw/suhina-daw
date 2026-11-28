@@ -22,6 +22,7 @@ fn project() -> Project {
 fn project_built() -> Project {
     let track = |id: u32, name: &str| Track {
         folder: false,
+        crossfade_assign: Default::default(),
         id: TrackId(id),
         name: name.into(),
         color: None,
@@ -133,6 +134,21 @@ fn advance(renderer: &mut Renderer, frames: usize) {
         renderer.process(&mut buffer[..2 * n]);
         left -= n;
     }
+}
+
+/// The engine's state is a reading: it changes nothing, and a surface program's reads and
+/// subscriptions run only reading commands, so the launcher, record and meter readings must be
+/// ones (#1677).
+#[test]
+fn the_engines_readings_are_reads_a_surface_can_watch() {
+    let (mut session, _) = playing();
+    for id in ["launcher.state", "record.state", "mixer.levels"] {
+        let spec = commands().iter().find(|c| c.id == id).unwrap();
+        assert_eq!(spec.kind, CommandKind::READ, "{id} is a reading");
+    }
+    let before = session.project().clone();
+    run(&mut session, "launcher.state", json!({})).unwrap();
+    assert_eq!(session.project(), &before, "reading the state changed nothing");
 }
 
 #[test]

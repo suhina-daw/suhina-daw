@@ -1031,7 +1031,8 @@ pub(super) fn plugin_graph(d: &suhina_engine::model::Device, list: &[suhina_plug
         .take(suhina_device_sdk::MAX_PARAMETERS)
         .map(|p| {
             let id = p.id.to_string();
-            let stored = d.params.iter().find(|v| suhina_engine::param_id(&v.id) == Some(p.id)).map(|v| v.value);
+            // The last value wins, as the engine reads a duplicate parameter id.
+            let stored = d.params.iter().rev().find(|v| suhina_engine::param_id(&v.id) == Some(p.id)).map(|v| v.value);
             let toggle = p.steps == 1 && p.min == 0.0 && p.max == 1.0;
             let mut ui = suhina_device_sdk::ParameterUi { group: p.group.clone(), decimals: 2, ..Default::default() };
             if p.steps > 1 {

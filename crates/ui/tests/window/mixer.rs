@@ -850,3 +850,62 @@ fn a_drag_ends_on_mouse_up_and_the_next_drag_is_a_step_of_its_own() {
     harness.run_steps(2);
     assert_eq!(pan(&harness), 0.0);
 }
+
+/// Main's A–B crossfader: a drag changes the project's value, the value is heard (the command
+/// runs), and one drag is one undo step; a double-click centers it.
+#[test]
+fn the_main_crossfader_drags_and_undoes_as_one_step() {
+    // Frames close enough together for the double-click at the end.
+    let mut harness = window_with_step(demo_app(), 1.0 / 60.0);
+    let value = |h: &Harness<'static, App>| h.state().session().map_or(f64::NAN, |s| s.project().crossfader.0);
+    assert_eq!(value(&harness), 0.5);
+    let at = harness.get_by_label("Main crossfader").rect().center();
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.step();
+    for i in 1..=10 {
+        harness.hover_at(at + egui::vec2(i as f32 * 3.0, 0.0));
+        harness.step();
+    }
+    harness.drop_at(at + egui::vec2(30.0, 0.0));
+    harness.run();
+    let moved = value(&harness);
+    assert!(moved > 0.5, "dragging right moves toward B: {moved}");
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(value(&harness), 0.5, "one drag is one undo step");
+    // A double-click centers the crossfader, even after a value from elsewhere.
+    harness.state_mut().run(&Action::new("mixer.setCrossfader", json!({ "value": 0.8 })));
+    harness.run();
+    assert!((value(&harness) - 0.8).abs() < 1e-9);
+    double_click_at(&mut harness, at);
+    assert_eq!(value(&harness), 0.5, "a double-click centers the crossfader");
+}
+
+/// Each track strip has one A/B/off button: a click cycles the track's assign, and one undo
+/// takes it back.
+#[test]
+fn a_tracks_crossfade_button_cycles_a_b_off() {
+    let mut harness = window(demo_app());
+    let assign = |h: &Harness<'static, App>| {
+        h.state()
+            .session()
+            .and_then(|s| s.project().track(suhina_engine::model::TrackId(1)).map(|t| t.crossfade_assign))
+    };
+    use suhina_engine::model::CrossfadeAssign;
+    assert!(harness.query_by_label("Drums crossfade: Off").is_some());
+    harness.get_by_label("Drums crossfade: Off").click();
+    harness.run();
+    assert_eq!(assign(&harness), Some(CrossfadeAssign::A));
+    assert!(harness.query_by_label("Drums crossfade: A").is_some());
+    harness.get_by_label("Drums crossfade: A").click();
+    harness.run();
+    assert_eq!(assign(&harness), Some(CrossfadeAssign::B));
+    harness.get_by_label("Drums crossfade: B").click();
+    harness.run();
+    assert_eq!(assign(&harness), Some(CrossfadeAssign::Off));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run();
+    assert_eq!(assign(&harness), Some(CrossfadeAssign::B), "one click, one step");
+}

@@ -602,6 +602,31 @@ impl Extensions {
         self.subs.iter().map(|sub| (sub.program.clone(), sub.token, sub.cmd.clone(), sub.params.clone())).collect()
     }
 
+    /// Forgets every subscription's last value, so the next look pushes each one again even
+    /// when the new project's reading is the same as the old one's.
+    pub(crate) fn forget_subscription_values(&mut self) {
+        for sub in &mut self.subs {
+            sub.last = None;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn remember_subscription_value(&mut self, program: &str, token: u64, value: Value) {
+        self.subs.push(Sub {
+            program: program.to_string(),
+            token,
+            handle: 0,
+            cmd: "project.info".into(),
+            params: Value::Null,
+            last: Some(value),
+        });
+    }
+
+    #[cfg(test)]
+    pub(crate) fn subscription_value_is_remembered(&self, program: &str, token: u64) -> bool {
+        self.subs.iter().any(|sub| sub.program == program && sub.token == token && sub.last.is_some())
+    }
+
     /// Takes the reads' results in, and says what to push: a `state` for every subscription
     /// whose value changed from the last one sent — the first read after a subscribe always
     /// has. A refused read pushes nothing; the next look reads again.
@@ -813,6 +838,18 @@ impl Extensions {
         }
         self.subs.retain(|sub| sub.program != id);
         self.claims_epoch += 1;
+    }
+
+    /// The ids of the surface programs whose scripts are running, for the windows only they
+    /// may keep.
+    pub(crate) fn running_programs(&self) -> Vec<String> {
+        self.known
+            .iter()
+            .filter(|extension| {
+                extension.state == State::Running && !extension.script_stopped && extension.program.is_some()
+            })
+            .map(|extension| extension.id.clone())
+            .collect()
     }
 
     /// What each running program claims, for the MIDI router: the extension's id, its
@@ -1065,6 +1102,11 @@ fn remove(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
         projects.poll_plugins();
         return Err(format!("the extension's folder cannot be removed: {e}").into());
     }
+    // A shipped script's removal is remembered: later starts do not install it again
+    // (docs/spec/shipped-scripts.md › Where it lands, and what runs).
+    if let Some(root) = &projects.extensions.root {
+        crate::shipped_scripts::note_removed(root, id);
+    }
     projects.extensions.reload();
     // The program's ports go back to the usual path at once: this look syncs the claims.
     projects.poll_plugins();
@@ -1235,8 +1277,9 @@ const MAX_LICENCE: usize = 256 * 1024;
 
 /// The SHA-256 of a file, hashed as it is read in chunks, no further than `limit`: a file the
 /// manifest names is read by the store's scan, so the read is bounded — the error says the
-/// file is missing, or it is bigger than the cap.
-fn file_digest(file: &Path, limit: usize) -> Result<String, String> {
+/// file is missing, or it is bigger than the cap. The shipped scripts' record compares its
+/// store copies with the same hash ([`crate::shipped_scripts`]).
+pub(crate) fn file_digest(file: &Path, limit: usize) -> Result<String, String> {
     use sha2::{Digest, Sha256};
     use std::io::Read;
     let file = std::fs::File::open(file).map_err(|_| "is missing".to_string())?;

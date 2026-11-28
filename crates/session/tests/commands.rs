@@ -1981,3 +1981,56 @@ fn several_tracks_delete_as_one_undo_step() {
         assert_eq!(session.project(), &built, "{wrong} changes nothing");
     }
 }
+
+/// The View buttons are commands: they queue the window's own action, which the window runs at
+/// its next frame.
+#[test]
+fn view_commands_queue_the_windows_actions() {
+    let mut session = Session::new(project());
+    let queued = run(&mut session, "view.detail", json!({})).unwrap();
+    assert_eq!(queued["queued"], true, "{queued}");
+    run(&mut session, "view.devices", json!({})).unwrap();
+    assert_eq!(
+        session.take_view_actions(),
+        vec![("view.detail".to_string(), json!({})), ("view.devices".to_string(), json!({}))]
+    );
+    assert!(session.take_view_actions().is_empty(), "the window took them once");
+    // The queue is bounded, and a ninth action is refused rather than silently lost while the
+    // caller is told it was queued.
+    for _ in 0..8 {
+        run(&mut session, "view.detail", json!({})).unwrap();
+    }
+    let full = run(&mut session, "view.detail", json!({})).unwrap_err();
+    assert!(full.to_string().contains("waiting"), "{full}");
+    assert_eq!(session.take_view_actions().len(), 8);
+}
+
+/// A control surface reports the Launcher window it shows, and the window reads it back.
+#[test]
+fn a_control_surface_reports_its_launcher_window() {
+    let mut session = Session::new(project());
+    let reported = run(
+        &mut session,
+        "surface.setWindow",
+        json!({ "id": "apc40-mkii", "name": "APC40 MkII", "track": 2, "scene": 1, "tracks": 8, "scenes": 5 }),
+    )
+    .unwrap();
+    assert_eq!(reported["scene"], 1, "{reported}");
+    let windows = session.control_surface_windows();
+    assert_eq!(windows.len(), 1);
+    assert_eq!((windows[0].track, windows[0].scene, windows[0].tracks, windows[0].scenes), (2, 1, 8, 5));
+    // The same surface moves its window; it does not add a second one.
+    run(&mut session, "surface.setWindow", json!({ "id": "apc40-mkii", "track": 3, "scene": 0 })).unwrap();
+    let windows = session.control_surface_windows();
+    assert_eq!(windows.len(), 1);
+    assert_eq!((windows[0].track, windows[0].name.as_str()), (3, "apc40-mkii"));
+    // A seventeenth distinct surface is refused instead of appearing to report a window that
+    // the session silently dropped.
+    for id in 2..=16 {
+        run(&mut session, "surface.setWindow", json!({ "id": format!("surface-{id}"), "track": 0, "scene": 0 }))
+            .unwrap();
+    }
+    let full = run(&mut session, "surface.setWindow", json!({ "id": "surface-17", "track": 0, "scene": 0 }));
+    assert!(full.is_err(), "{full:?}");
+    assert_eq!(session.control_surface_windows().len(), 16);
+}

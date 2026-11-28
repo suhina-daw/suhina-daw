@@ -1421,6 +1421,12 @@ impl App {
         self.view.selected_slot
     }
 
+    /// The device picked in the chain or a strip's list: its track and where it is, for the
+    /// window's tests and the keys.
+    pub fn picked_device(&self) -> Option<(TrackId, detail_view::DeviceAt)> {
+        self.selected_device.clone()
+    }
+
     /// The Arrangement view's state: what is selected, how far it is scrolled and which groups are
     /// folded. The view draws itself from it, and the window's tests read it.
     pub fn arrangement(&self) -> &ArrangementViewState {
@@ -3290,6 +3296,18 @@ impl App {
         );
         // egui's widgets follow the sheet: the root's `Visuals` the frame's setup rebuilt.
         theme::follow_root_visuals(ui);
+        // Restore the active project's view before the selection follows it or the frame's
+        // snapshot is taken, so a device a command set on the newly active project is neither
+        // overwritten by the previous project's pick nor mistaken for this frame's click.
+        self.follow_active(ui.ctx());
+        self.frame_trace.mark("follow project");
+        // A selection a command from the CLI, MCP or a surface program made moves the window:
+        // the track highlight and the device picked in the chain follow
+        // (docs/spec/selection.md › The window follows).
+        self.follow_session_selection();
+        // What the window points at after following the session: only a change from this, made
+        // in this frame, is a click or a key the frame's end publishes.
+        let selection_before = self.window_selection();
         // The layout settings, as the window's grid reads them (#1370), so a theme's rules for
         // them paint as they lay out.
         let (detail_place, browser_side) = self.window_place(self.session().is_some());
@@ -3417,14 +3435,21 @@ impl App {
             self.device_focus = false;
         }
         self.frame_trace.mark("input");
-        self.follow_active(ui.ctx());
-        self.frame_trace.mark("follow project");
         self.poll_scan(ui.ctx());
         self.frame_trace.mark("plug-in scan");
         self.poll_export(ui.ctx());
         self.frame_trace.mark("export");
         self.poll_plugins(ui.ctx());
         self.frame_trace.mark("plug-ins");
+        // A surface program's View buttons reach the window as commands; run their window
+        // actions now (the commands only queue them).
+        let mut view_actions = Vec::new();
+        for (id, _) in self.projects.take_view_actions() {
+            self.do_action(&id, &mut view_actions);
+        }
+        for action in view_actions {
+            self.run(&action);
+        }
         self.tick_backups(ui.ctx());
         self.frame_trace.mark("backups");
         // The sample map's analysis goes on in the background; take in what it finished.
@@ -3473,6 +3498,7 @@ impl App {
             grid.click_route = s.click_route();
             grid.input_channels =
                 s.player().and_then(suhina_session::Player::output_info).map_or(0, |i| i.input_channels);
+            grid.control_surfaces = s.control_surface_windows().to_vec();
             for column in &mut grid.columns {
                 column.armed = s.is_armed(column.track);
                 column.recording = s.recording_slot(column.track);
@@ -4248,7 +4274,14 @@ impl App {
                 && let Some(now) = self.device_count(track)
             {
                 if now == count {
-                    self.selected_device = Some((track, detail_view::DeviceAt::at(selected)));
+                    // Undo brings the chain back, not the selection: a removed device stays
+                    // unselected. A device after it keeps the id the session still holds.
+                    if selected == index {
+                        self.selected_device = None;
+                        self.device_picks.clear();
+                    } else {
+                        self.selected_device = Some((track, detail_view::DeviceAt::at(selected)));
+                    }
                 } else if now.checked_add(1) == Some(count) {
                     self.selected_device = (selected != index).then(|| {
                         (track, detail_view::DeviceAt::at(if selected > index { selected - 1 } else { selected }))
@@ -4266,6 +4299,9 @@ impl App {
         }
         // A selection this frame's commands or clicks made arms its track.
         self.follow_selection_with_arm();
+        // A click that selected a track or picked a device sets the same selection the CLI, MCP
+        // and surface programs read (docs/spec/selection.md › The window follows).
+        self.publish_session_selection(selection_before);
         self.end_gesture_on_release(ui.ctx());
         self.frame_trace.mark("commands");
         self.frame_trace.note(|| format!("{ran} commands"));
@@ -4607,3 +4643,7 @@ enum CopiedLast {
 #[cfg(test)]
 #[path = "app/instrument_editor_tests.rs"]
 mod instrument_editor_tests;
+
+#[cfg(test)]
+#[path = "app/selection_tests.rs"]
+mod selection_tests;

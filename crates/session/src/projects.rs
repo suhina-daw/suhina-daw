@@ -351,6 +351,12 @@ impl Projects {
     /// wherever the next look comes from, never dropped.
     pub(crate) fn poll_programs(&mut self) {
         let drained = self.extensions.drain_events();
+        // A window belongs to a running surface program: a removed, crashed or stopped-at-its-
+        // boundary one leaves no outline behind. The next report brings a restart's back.
+        let running = self.extensions.running_programs();
+        for open in &mut self.tabs.open {
+            open.session.retain_control_surface_windows(&running);
+        }
         // The commands of one gesture stream: the newest stands for the run — the earlier
         // values of a fader's move are history the moment the next one lands, and the undo
         // step they shared is unchanged — while each of them is answered either way, so the
@@ -496,6 +502,21 @@ impl Projects {
 
     pub fn output_choice(&self) -> &crate::OutputChoice {
         &self.devices.output_choice
+    }
+
+    /// Takes the window actions the active project's commands asked for, for the window's next
+    /// frame.
+    pub fn take_view_actions(&mut self) -> Vec<(String, Value)> {
+        self.session_mut(None).map(Session::take_view_actions).unwrap_or_default()
+    }
+
+    /// The Launcher windows control surfaces show in the active project.
+    pub fn control_surface_windows(&self) -> Vec<crate::ControlSurfaceWindow> {
+        self.tabs
+            .active
+            .and_then(|id| self.get(id))
+            .map(|session| session.control_surface_windows().to_vec())
+            .unwrap_or_default()
     }
 
     /// Chooses the output players open on from now on; [`Projects::reopen_output`] moves the
@@ -744,6 +765,9 @@ impl Projects {
         self.suspend_active()?;
         self.tabs.open.push(Open { id, name, session });
         self.tabs.active = Some(id);
+        // Opening a project is an active-project change like a tab switch: even a reading that
+        // matches the previous project's must reach the surface programs again.
+        self.extensions.forget_subscription_values();
         Ok(id)
     }
 
@@ -942,6 +966,9 @@ impl Projects {
     /// was let go in time: a plug-in still busy then is left to its host, which ends when this
     /// process does.
     pub fn close_all(&mut self, timeout: std::time::Duration) -> bool {
+        // A controller keeps its last lights after the app closes its output: turn every claimed
+        // controller dark before the projects, and the app, go.
+        self.devices.midi.reset_outputs(timeout);
         let started = std::time::Instant::now();
         let going = self.let_go_all();
         if going.is_empty() {
@@ -986,6 +1013,14 @@ impl Projects {
     /// folder at start-up; the CLI relies on [`Projects::new`]'s default.
     pub fn set_extensions_root(&mut self, root: &Path) {
         self.extensions.set_root(root);
+    }
+
+    /// Installs every shipped surface program into the extensions store when it is not there,
+    /// and updates the copies Suhina installed ([`crate::shipped_scripts`],
+    /// docs/spec/shipped-scripts.md); the store's port scan runs what it finds. The start
+    /// calls it once the store's root is set. Returns the lines a start-up failure should say.
+    pub fn install_shipped_scripts(&mut self) -> Vec<String> {
+        crate::shipped_scripts::install(&mut self.extensions).1
     }
 
     /// The one program running, for the tests: this slice's store starts none by itself, so
@@ -1178,8 +1213,17 @@ impl Projects {
     /// a drag that outran it ([`Session::catch_up_player`]).
     pub fn poll_plugins(&mut self) -> Vec<String> {
         let mut notices = Vec::new();
+        // Let subscriptions read what the takes are now; the notices stay queued until the
+        // window's own poll below, so a program's `record.state` cannot take them first.
+        if let Some(session) = self.tabs.active.and_then(|id| self.get_mut(id)) {
+            session.poll_recording_keeping_notices();
+        }
         self.poll_programs();
         if let Some(session) = self.tabs.active.and_then(|id| self.get_mut(id)) {
+            // Every subscription has read the notices up to here. A take finished by the poll
+            // below queues a new notice for the next frame's readings while the window gets it
+            // now, so neither consumer can take one from the other.
+            session.clear_surface_recording_notices();
             session.catch_up_player();
             notices.extend(session.poll_recording());
         }
@@ -1397,6 +1441,9 @@ impl Projects {
         }
         self.suspend_active()?;
         self.tabs.active = Some(id);
+        // A surface program's subscriptions follow the active project: the first look after
+        // the switch pushes each reading again, even one that reads the same as before.
+        self.extensions.forget_subscription_values();
         Ok(())
     }
 
@@ -1605,4 +1652,43 @@ fn stream_target(id: &str, params: &Value) -> Value {
 /// not.
 fn same_target(id: &str, a: &Value, b: &Value) -> bool {
     stream_target(id, a) == stream_target(id, b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Opening a project forgets every subscription's last value, so a reading equal to the
+    /// previous project's still reaches the surface programs.
+    #[test]
+    fn opening_a_project_forgets_subscription_values() {
+        let mut projects = Projects::default();
+        projects.add(Session::new(suhina_model::Project::default()), None).unwrap();
+        projects.extensions.remember_subscription_value("apc40-mkii", 1, json!({ "same": true }));
+        assert!(projects.extensions.subscription_value_is_remembered("apc40-mkii", 1));
+        projects.add(Session::new(suhina_model::Project::default()), None).unwrap();
+        assert!(!projects.extensions.subscription_value_is_remembered("apc40-mkii", 1));
+    }
+
+    /// A window whose surface program is no longer running is dropped; nothing draws an
+    /// outline for a removed or stopped controller.
+    #[test]
+    fn a_stopped_surface_loses_its_window() {
+        let mut session = Session::new(suhina_model::Project::default());
+        session
+            .set_control_surface_window(crate::ControlSurfaceWindow {
+                id: "apc40-mkii".into(),
+                name: "APC40 MkII".into(),
+                track: 0,
+                scene: 0,
+                tracks: 8,
+                scenes: 5,
+            })
+            .unwrap();
+        let mut projects = Projects::default();
+        projects.add(session, None).unwrap();
+        assert_eq!(projects.control_surface_windows().len(), 1);
+        projects.poll_plugins();
+        assert!(projects.control_surface_windows().is_empty(), "no running surface keeps it");
+    }
 }

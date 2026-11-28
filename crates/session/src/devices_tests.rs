@@ -1,7 +1,9 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use suhina_model::{AutomationLane, AutomationPoint, Channel, ChannelId, Device, DeviceKind, Project, Track, TrackId};
+use suhina_model::{
+    AutomationLane, AutomationPoint, Channel, ChannelId, Device, DeviceKind, DeviceParam, Project, Track, TrackId,
+};
 
 use super::*;
 
@@ -10,11 +12,81 @@ fn project() -> Project {
     let mut project = Project::default();
     let mut track = Track::new(TrackId(1), "Synth");
     track.content.notes = true;
+    track.channel = Some(ChannelId(1));
     let mut channel = Channel::new(ChannelId(1), "Synth");
     channel.devices.push(Device::new("Serum", DeviceKind::Vst3 { id: "AABBCCDDEEFF0011AABBCCDDEEFF0011".into() }));
     project.tracks.push(track);
     project.channels.push(channel);
     project
+}
+
+#[test]
+fn a_plugins_generated_panel_gives_its_sliders_to_the_knobs() {
+    let mut project = project();
+    // The project's own value for the Cutoff wins over the one the plug-in listed; a duplicate
+    // parameter id takes its last value, as the engine does.
+    project.channels[0].devices[0].params.push(DeviceParam::new("2", 0.25));
+    project.channels[0].devices[0].params.push(DeviceParam::new("2", 0.4));
+    let param =
+        |id: u32, name: &str, min: f64, max: f64, value: f64, steps: u32, list: bool| suhina_plugins::ParamInfo {
+            id,
+            name: name.into(),
+            group: String::new(),
+            min,
+            max,
+            default: value,
+            value,
+            text: String::new(),
+            steps,
+            list,
+            automatable: true,
+            read_only: false,
+            hidden: false,
+        };
+    let mut hidden = param(4, "Hidden", 0.0, 1.0, 0.0, 0, false);
+    hidden.hidden = true;
+    let mut read_only = param(5, "Read only", 0.0, 1.0, 0.0, 0, false);
+    read_only.read_only = true;
+    let mut cutoff = param(2, "Cutoff", 0.0, 1.0, 0.1, 0, false);
+    cutoff.text = "0.1".into();
+    let mut shape = param(3, "Shape", 0.0, 3.0, 1.0, 3, true);
+    shape.text = "1".into();
+    let list = vec![
+        param(1, "Bypass", 0.0, 1.0, 0.0, 1, false),
+        cutoff,
+        shape,
+        hidden,
+        read_only,
+        param(6, "Flat", 0.5, 0.5, 0.5, 0, false),
+        param(7, "", 0.0, 1.0, 0.0, 0, false),
+    ];
+    let (params, dials) = plugin_panel_params(&project.channels[0].devices[0], &list);
+    // The panel's order, at most its parameters, with the hidden and read-only ones and an
+    // empty range left out.
+    let params = params.as_array().unwrap();
+    let ids: Vec<u64> = params.iter().filter_map(|p| p["id"].as_u64()).collect();
+    assert_eq!(ids, [1, 2, 3, 7]);
+    assert_eq!(params[1]["value"], 0.4, "the project's last value: {}", params[1]);
+    assert_eq!(params[0]["kind"], "toggle", "{}", params[0]);
+    assert_eq!(params[1]["kind"], "continuous", "{}", params[1]);
+    assert_eq!(params[2]["kind"], "continuous", "a list drawn as a slider: {}", params[2]);
+    assert_eq!(params[1]["text"], "", "the plug-in's text is for its own value: {}", params[1]);
+    assert_eq!(params[2]["text"], "1", "an unchanged value keeps its text: {}", params[2]);
+    assert_eq!(params[3]["name"], "7", "an unnamed parameter names its id: {}", params[3]);
+    // A switch stays on the panel; every slider is a dial, in the same order.
+    assert_eq!(dials, json!([2, 3, 7]));
+}
+
+#[test]
+fn setting_a_duplicate_plugin_parameter_updates_the_value_that_plays() {
+    let mut project = project();
+    project.channels[0].devices[0].params.push(DeviceParam::new("2", 0.25));
+    project.channels[0].devices[0].params.push(DeviceParam::new("2", 0.4));
+    let mut session = Session::new(project);
+    set_plugin_param(&mut session, &json!({ "track": 1, "device": 0 }), TrackId(1), &[0], "2", 0.75).unwrap();
+    let values: Vec<f64> =
+        session.project().channels[0].devices[0].params.iter().filter(|p| p.id == "2").map(|p| p.value).collect();
+    assert_eq!(values, [0.25, 0.75], "the last value, which the engine plays, is the one set");
 }
 
 #[test]

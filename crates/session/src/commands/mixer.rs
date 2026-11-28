@@ -18,10 +18,19 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
     CommandSpec {
+        id: "mixer.setCrossfader",
+        label: "Set the mixer's crossfader, 0 at side A and 1 at side B, equal-power in between; a playing engine takes a drag as a smoothed message",
+        params: &[param("value", ParamType::Number, "0 at the A end, 0.5 centered, 1 at the B end"), GESTURE],
+        kind: CommandKind::EDIT,
+        run: set_crossfader,
+        policy: Policy::DEFAULT,
+    },
+    CommandSpec {
         id: "mixer.levels",
         label: "Read the level meters of the playing engine: the main output's and each track's peak and RMS level per side in dB (null for silence), and whether it clipped",
         params: &[],
-        kind: CommandKind::TRANSPORT,
+        // A reading: a surface program's meters follow it (#1677).
+        kind: CommandKind::READ,
         run: meters::levels,
         policy: Policy::DEFAULT,
     },
@@ -37,6 +46,22 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         policy: Policy::DEFAULT,
     },
 ];
+
+fn set_crossfader(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let value = Args::new(params).f64("value")?;
+    if !(0.0..=1.0).contains(&value) {
+        return Err(format!("value must be from 0 (A) to 1 (B), got {value}").into());
+    }
+    session.project.crossfader = suhina_model::Crossfader(value);
+    // A crossfader move, nothing else: a playing engine takes it as a message where it can.
+    session.sync.mixer_edits = vec![crate::ParamEdit {
+        track: suhina_model::TrackId::MAIN,
+        device: suhina_engine::MIXER_CROSSFADE,
+        param: 0,
+        value,
+    }];
+    Ok(json!({ "value": value }))
+}
 
 fn set_main_volume(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let db = Args::new(params).f64_or_neg_infinity("db")?;

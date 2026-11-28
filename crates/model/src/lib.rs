@@ -100,6 +100,9 @@ pub const MAX_GROUP_DEPTH: usize = 16;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Project {
     pub transport: Transport,
+    /// The mixer's crossfader: 0 at the A end, 1 at the B end, centered by default
+    /// (`docs/spec/crossfader.md`).
+    pub crossfader: Crossfader,
     pub tracks: Vec<Track>,
     pub channels: Vec<Channel>,
     /// Shared pool of clip contents; clips refer to these by id.
@@ -202,6 +205,9 @@ pub struct Track {
     /// A presentation folder: a track without a channel that only gathers the tracks inside it
     /// (`parent`) in view, playing nothing and changing nothing they play (#1416).
     pub folder: bool,
+    /// Which side of the mixer's crossfader this track is on: A, B, or off (heard on both).
+    /// A group's assign governs its children until it is off (`docs/spec/crossfader.md`).
+    pub crossfade_assign: CrossfadeAssign,
     pub extensions: Extensions,
 }
 
@@ -283,6 +289,42 @@ impl Project {
         for (place, track) in self.tracks.iter_mut().enumerate() {
             track.color.get_or_insert(LEGACY_TRACK_COLORS[place % LEGACY_TRACK_COLORS.len()]);
         }
+    }
+}
+
+/// Which side of the mixer's crossfader a track is assigned to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CrossfadeAssign {
+    A,
+    B,
+    /// Heard on both sides; the default.
+    #[default]
+    Off,
+}
+
+impl CrossfadeAssign {
+    /// The next assign a strip's A/B/off button cycles to: A to B to off to A.
+    pub fn next(self) -> Self {
+        match self {
+            Self::A => Self::B,
+            Self::B => Self::Off,
+            Self::Off => Self::A,
+        }
+    }
+}
+
+/// The mixer's crossfader value: 0 at the A end, 1 at the B end, centered by default.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Crossfader(pub f64);
+
+impl Crossfader {
+    /// The centered value a new project and a double-clicked crossfader have.
+    pub const CENTER: f64 = 0.5;
+}
+
+impl Default for Crossfader {
+    fn default() -> Self {
+        Self(Self::CENTER)
     }
 }
 

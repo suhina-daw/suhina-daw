@@ -79,7 +79,9 @@ mod record_writer;
 mod recording;
 mod relink;
 mod scales;
+mod selection;
 mod sends;
+pub mod shipped_scripts;
 mod soundmap;
 mod swing;
 mod take_carry;
@@ -245,6 +247,19 @@ impl From<suhina_model::IdsExhausted> for CommandError {
     }
 }
 
+/// The part of the Launcher a control surface shows: its first track and scene and the size of
+/// its window, in tracks and scenes. A surface program reports it (`surface.setWindow`), and the
+/// window draws its outline over the slots.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlSurfaceWindow {
+    pub id: String,
+    pub name: String,
+    pub track: usize,
+    pub scene: usize,
+    pub tracks: usize,
+    pub scenes: usize,
+}
+
 /// An edit that is only a device parameter's new value, which a playing engine can take
 /// without a new graph.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -287,6 +302,17 @@ pub struct Session {
     /// The take lane heard in place of its track's clips (`take.solo`, #989): its track and its
     /// index in `arrangement.takes`. Not saved, not an undo step.
     pub(crate) take_solo: Option<(suhina_model::TrackId, usize)>,
+    /// The selection (`docs/spec/selection.md`, #1679): the selected track and the selected
+    /// device of its chain — what controllers, mappings and agents point at. Not saved, not an
+    /// undo step.
+    pub(crate) selection: selection::Selection,
+    /// Window actions a command asked for (`view.detail`, `view.devices`), for the window to
+    /// run at its next frame: a surface program's buttons reach the detail area this way. Not
+    /// saved, not an undo step.
+    pub(crate) view_actions: Vec<(String, serde_json::Value)>,
+    /// The Launcher windows control surfaces show (`surface.setWindow`), for the window to draw
+    /// their outlines. Not saved, not an undo step.
+    pub(crate) control_surfaces: Vec<ControlSurfaceWindow>,
     /// The audio input a new audio track takes, and an armed one that hears none: the
     /// default track input of Settings › Audio while an input device is chosen, else none
     /// ([`Session::set_default_input`], ADR 0017).
@@ -316,6 +342,8 @@ pub struct FileAccess {
 
 /// Files kept decoded ahead of the commands that use them.
 const MAX_DECODED: usize = 16;
+/// Most control surfaces whose Launcher windows one project keeps.
+const MAX_CONTROL_SURFACES: usize = 16;
 /// A device panel's note for a file the project names outside where its audio may be read from.
 const DEVICE_FILE_OUTSIDE: &str =
     "the file is outside the project's folder and what Suhina trusts: choose it again to load it";
@@ -345,6 +373,9 @@ impl Session {
             backup: backup::SessionBackups::default(),
             live: live_input::LiveInput::default(),
             take_solo: None,
+            selection: selection::Selection::default(),
+            view_actions: Vec::new(),
+            control_surfaces: Vec::new(),
             default_input: suhina_model::InputChannels::None,
             defaulted: Vec::new(),
             library_base: None,
@@ -377,6 +408,36 @@ impl Session {
     /// The library's root, when it was set ([`Session::set_library_base`]).
     pub fn library_base(&self) -> Option<&Path> {
         self.library_base.as_deref()
+    }
+
+    /// Takes the window actions a command asked for, for the window to run this frame.
+    pub fn take_view_actions(&mut self) -> Vec<(String, serde_json::Value)> {
+        std::mem::take(&mut self.view_actions)
+    }
+
+    /// Sets or moves the Launcher window a control surface shows, by its id. At most
+    /// [`MAX_CONTROL_SURFACES`] windows are kept; one past that is refused rather than silently
+    /// left without an outline.
+    pub fn set_control_surface_window(&mut self, window: ControlSurfaceWindow) -> Result<(), CommandError> {
+        if let Some(known) = self.control_surfaces.iter_mut().find(|known| known.id == window.id) {
+            *known = window;
+        } else if self.control_surfaces.len() >= MAX_CONTROL_SURFACES {
+            return Err(format!("at most {MAX_CONTROL_SURFACES} control surfaces can report a window").into());
+        } else {
+            self.control_surfaces.push(window);
+        }
+        Ok(())
+    }
+
+    /// The Launcher windows control surfaces show.
+    pub fn control_surface_windows(&self) -> &[ControlSurfaceWindow] {
+        &self.control_surfaces
+    }
+
+    /// Drops the windows of surfaces whose programs are no longer running, so an outline
+    /// disappears with its controller and while a stopped script has not reported again.
+    pub fn retain_control_surface_windows(&mut self, running: &[String]) {
+        self.control_surfaces.retain(|window| running.iter().any(|id| id == &window.id));
     }
 
     /// Sets the audio input new audio tracks take from now on ([`Projects`] keeps it in line
@@ -880,6 +941,22 @@ impl Session {
         self.live.armed.contains(&track) && self.project.tracks.iter().any(|t| t.id == track)
     }
 
+    /// The selected track (`docs/spec/selection.md`, #1679): what the window, controllers,
+    /// mappings and agents point at. `None` when nothing is selected or the track is gone. A
+    /// presentation folder is a track without a channel, and Main is a channel without a track.
+    pub fn selected_track(&self) -> Option<suhina_model::TrackId> {
+        self.selection
+            .track()
+            .filter(|track| self.project.track(*track).is_some() || self.project.channel_of_track(*track).is_some())
+    }
+
+    /// The selected device's path on the selected track, when one is: an index on the track's
+    /// chain, or a path through device groups (`"2/1/0"`). `None` when nothing is selected or
+    /// the device is gone.
+    pub fn selected_device_path(&self) -> Option<Vec<usize>> {
+        self.selection.device_path(&self.project)
+    }
+
     /// Arms `track` or disarms it; `exclusive` also disarms every other track. The playing
     /// engine hears it from its next block.
     pub(crate) fn set_armed(&mut self, track: suhina_model::TrackId, armed: bool, exclusive: bool) {
@@ -1246,7 +1323,7 @@ impl Session {
         if let Some(value) = lane.and_then(|l| l.value_at(beat.max(0.0), stepped, &suhina_model::automation::Plain)) {
             return Some(value);
         }
-        device.params.iter().find(|p| suhina_engine::param_id(&p.id) == Some(id)).map(|p| p.value)
+        device.params.iter().rev().find(|p| suhina_engine::param_id(&p.id) == Some(id)).map(|p| p.value)
     }
 
     /// The plug-in parameters the user moved in a plug-in's own editor since the last call

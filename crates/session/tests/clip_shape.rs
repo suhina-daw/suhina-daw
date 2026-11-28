@@ -45,6 +45,7 @@ fn project() -> Project {
 fn project_built() -> Project {
     let track = Track {
         folder: false,
+        crossfade_assign: Default::default(),
         id: TrackId(1),
         name: "Keys".into(),
         color: None,

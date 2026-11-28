@@ -475,10 +475,10 @@ impl App {
                     actions.push(delete);
                     return;
                 }
-                // A device selected in the detail area (its panel's click) is deleted before any
-                // clip, while the detail shows the chain.
+                // A device the user picked is deleted before any clip. A device the session
+                // followed after a header click is not: Delete there takes the track.
                 if action == "selection.delete"
-                    && (self.detail_shows_devices() || self.device_focus)
+                    && self.device_focus
                     && let Some((track, at)) = self.selected_device.clone()
                     // Main's chain too, which has no track of its own (#690).
                     && self.session().is_some_and(|s| {
@@ -1431,6 +1431,80 @@ impl App {
             View::Session => self.view.selected,
             View::Arrangement => self.arrangement.selected_tracks.first().copied(),
         }
+    }
+
+    /// Moves the window to the session's selection (`docs/spec/selection.md` › The window
+    /// follows): a command from the CLI, MCP or a surface program moves the track highlight and
+    /// the device picked in the chain. The window's own multi-picks stay its own; only the one
+    /// the selection names changes.
+    pub(super) fn follow_session_selection(&mut self) {
+        let Some(session) = self.session() else { return };
+        let Some(track) = session.selected_track() else {
+            // An empty selection clears a window highlight whose track has gone, as a removal
+            // does. A window pick of a track that exists stays until the frame publishes it.
+            if let Some(shown) = self.selected_track()
+                && session.project().track(shown).is_none()
+            {
+                self.arrangement.selected_tracks.clear();
+                self.view.selected = None;
+                self.view.selected_tracks.clear();
+                self.view.selected_slot = None;
+                self.selected_device = None;
+                self.device_picks.clear();
+            }
+            return;
+        };
+        let device = session.selected_device_path();
+        if self.selected_track() != Some(track) {
+            self.arrangement.select_one(track);
+            self.view.selected = Some(track);
+            self.view.selected_tracks = vec![track];
+            if self.view.selected_slot.is_some_and(|(slot_track, _)| slot_track != track) {
+                self.view.selected_slot = None;
+            }
+        }
+        let picked = device.map(|path| (track, detail_view::DeviceAt(path)));
+        if self.selected_device != picked {
+            self.selected_device = picked.clone();
+            self.device_picks = picked.into_iter().collect();
+        }
+    }
+
+    /// Sets the session's selection from the window's, after a click or a key moved it
+    /// (`docs/spec/selection.md` › The window follows): the window runs the same commands a
+    /// script or an agent would, so both point at the same track and device.
+    /// `window_before` is what the window pointed at when the frame began, after following the
+    /// session: only a change from that is the window's to publish.
+    pub(super) fn publish_session_selection(
+        &mut self,
+        window_before: (Option<TrackId>, Option<(TrackId, detail_view::DeviceAt)>),
+    ) {
+        // A command the frame ran — a surface program's, the CLI's, MCP's — can move the
+        // session's selection before the window has followed it. The window still shows the old
+        // one, and publishing that would undo the command (a controller's Device arrow would
+        // step and spring back).
+        if self.window_selection() == window_before {
+            return;
+        }
+        let Some(track) = self.selected_track() else { return };
+        let Some(session) = self.session() else { return };
+        let selected_track = session.selected_track();
+        if selected_track != Some(track) {
+            self.run(&Action::new("track.select", json!({ "track": track.0 })));
+        }
+        // A device clicked on another track goes in the same frame as that track's selection;
+        // otherwise the next frame would follow the track's first device and replace it.
+        let Some((picked_track, at)) = self.selected_device.clone().filter(|(t, _)| *t == track) else { return };
+        let now = self.session().and_then(Session::selected_device_path);
+        if now.as_deref() != Some(at.0.as_slice()) {
+            self.run(&Action::new("device.select", json!({ "track": picked_track.0, "device": at.value() })));
+        }
+    }
+
+    /// What the window points at for the selection: its primary track and the device picked in
+    /// the chain. The window's own multi-picks are not part of it.
+    pub(super) fn window_selection(&self) -> (Option<TrackId>, Option<(TrackId, detail_view::DeviceAt)>) {
+        (self.selected_track(), self.selected_device.clone())
     }
 }
 

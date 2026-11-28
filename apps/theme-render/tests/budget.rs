@@ -99,45 +99,62 @@ use suhina_theme_render::{Subject, scenes};
 /// The menu bar's titles (#1487 › P8) are elements a theme styles (`menu-bar bar-item[kind="menu"]`),
 /// 5 more nodes in each scene and no identity (474 and 721; 486 and 733 on Windows).
 ///
-/// On Windows the window's three buttons are `button` elements a sheet styles (they were egui
-/// buttons with no frame), 3 more nodes in the Launcher and 1 in the FM synth (489 and 734); their
-/// identities are shared with the other buttons', so the recorded identities stay.
+/// #1718 (the FM Synth's native dials) raised the expanded scene by 15 nodes and 6 identities,
+/// and the styles worked out after a theme change by 6 (and after a color change in the
+/// see-through theme by 6): its Output, Stereo, Voices and Pitch dials and the device row's LFO
+/// rate and Random amount are the SDK's native dial widget, which the style engine paints as knob
+/// elements, where the hand-drawn dial was a canvas drawing (736 and 715; 748 and 728 on
+/// Windows).
+///
+/// #1678 (the crossfader) raised the Launcher by 11 nodes and 4 identities, and the expanded FM
+/// scene by 11 nodes and 11 identities, and the styles worked out after a theme or color change
+/// by the same: the Main strip's crossfader and each track strip's A/B/off button, each a styled
+/// level bar or button (485 and 463, 747 and 726; 497 and 475, 759 and 739 on Windows).
+///
+/// On Windows the window's three controls are `window-button` elements a sheet styles (they were
+/// egui buttons with no frame and are deliberately not `button`s): 3 more nodes in the Launcher
+/// and 1 in the FM synth on top of #1678's counts (500 and 760), and 3 more identities in the
+/// Launcher, where the egui buttons entered none. All 15 of the Windows Launcher's identities
+/// over the other systems' are in the application bar: 12 of its own (the bar, its fill, groups,
+/// items and the looks read under it) and the window's 3 controls. The earlier 476 was the other
+/// systems' 463 plus a 13-identity Windows difference and nothing for the window's egui controls;
+/// a Windows run now measures 478, and the see-through theme's color change 479.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 474,
-            identities: 459,
+            nodes: 485,
+            identities: 463,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 459,
+            theme_change_fresh: 463,
             hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 460,
+            color_change_fresh: 464,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 721,
-            identities: 709,
+            nodes: 747,
+            identities: 726,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 709,
+            theme_change_fresh: 726,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 710,
+            color_change_fresh: 727,
         },
     ),
 ];
@@ -149,37 +166,37 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "launcher",
         Counts {
-            nodes: 489,
-            identities: 472,
+            nodes: 500,
+            identities: 478,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 472,
-            hover_frames: 4,
+            theme_change_fresh: 478,
+            hover_frames: 3,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 473,
+            color_change_fresh: 479,
         },
     ),
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 734,
-            identities: 722,
+            nodes: 760,
+            identities: 739,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 722,
+            theme_change_fresh: 739,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 723,
+            color_change_fresh: 740,
         },
     ),
 ];

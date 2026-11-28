@@ -10,7 +10,9 @@ pub(super) static COMMANDS: &[CommandSpec] = &[
         id: "launcher.state",
         label: "What the audio engine is playing: transport, tempo, position, each track's playing and queued clip, and the engine's CPU load",
         params: &[],
-        kind: CommandKind::TRANSPORT,
+        // A reading, not a transport command: it changes nothing, so a surface program's
+        // subscription may follow it (#1677).
+        kind: CommandKind::READ,
         run: launcher_state,
         policy: Policy::DEFAULT,
     },

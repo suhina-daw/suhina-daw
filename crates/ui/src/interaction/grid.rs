@@ -110,6 +110,8 @@ pub struct Column {
     pub sends: Vec<SendKnob>,
     /// The track's devices and plug-ins in chain order, for the channel strip's list.
     pub devices: Vec<StripDevice>,
+    /// Which side of the mixer's crossfader the track is on (`docs/spec/crossfader.md`).
+    pub crossfade_assign: suhina_engine::model::CrossfadeAssign,
 }
 
 /// A device in a channel strip's list.
@@ -221,6 +223,8 @@ pub struct TrackGrid {
     /// audio input menus; set by the app.
     pub input_channels: u16,
     pub scenes: Vec<Scene>,
+    /// The Launcher windows control surfaces show, for their outlines; set by the app.
+    pub control_surfaces: Vec<suhina_session::ControlSurfaceWindow>,
     pub running: bool,
     /// Beats since the transport started.
     pub beat: f64,
@@ -235,6 +239,8 @@ pub struct TrackGrid {
     pub mapped: Vec<(MappingTarget, String)>,
     /// The main output's volume in dB.
     pub main_volume_db: f64,
+    /// The mixer's crossfader: 0 at A, 1 at B.
+    pub main_crossfader: f64,
     /// The main channel's devices, for its strip's list.
     pub main_devices: Vec<StripDevice>,
     /// The metronome: on, its level, its sounds and those it picks from; set by the app.
@@ -378,6 +384,7 @@ impl TrackGrid {
                         .collect(),
                 },
                 devices: channel.map_or_else(Vec::new, |c| strip_devices(&c.devices)),
+                crossfade_assign: track.crossfade_assign,
             };
             if kind == ColumnKind::Return { returns.push(column) } else { columns.push(column) }
         }
@@ -429,6 +436,7 @@ impl TrackGrid {
             key_readers: crate::interaction::menus::key_readers(project),
             input_channels: 0,
             scenes,
+            control_surfaces: Vec::new(),
             running,
             beat,
             tempo_bpm,
@@ -440,6 +448,7 @@ impl TrackGrid {
                 .iter()
                 .find(|c| c.role == ChannelRole::Master)
                 .map_or(0.0, |c| gain_to_db(c.volume)),
+            main_crossfader: project.crossfader.0,
             main_devices: project
                 .channels
                 .iter()

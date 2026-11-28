@@ -9,9 +9,10 @@ use std::any::Any;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use suhina_device_api::{Device, DeviceError, DeviceInfo};
+use suhina_device_api::{Device, DeviceError, DeviceInfo, ParamKind};
 use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
+use suhina_device_sdk::ui::{CustomControl, Widget};
 
 /// One built-in device: everything the rest of Suhina asks the registry about it, in one row
 /// (#764 › 9). [`DEVICES`], [`create`], [`layout`], [`panel`] and [`is_file_device`] read this
@@ -233,6 +234,128 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
         LayoutSource::JsonWithImages(text, images) => Some(with_images(text, images)),
         LayoutSource::Rust(make) => Some(Ok(make())),
     }
+}
+
+/// A built-in device's dials as parameter ids, in its compact panel's reading order: the
+/// `Knob` and `Dial` controls bound to a continuous or whole-number parameter, left to right
+/// and top to bottom, then the dials the generated list places under the canvas in parameter
+/// order. A device with no custom panel follows its parameter order alone. The selection
+/// reading gives this to a controller, so its knobs follow the panel's layout, not the
+/// parameter order.
+pub fn dials(id: &str) -> Vec<String> {
+    dials_with(id, &[])
+}
+
+/// [`dials`] with the reading's values: the page and operator the panel shows (the hidden
+/// `panel.page` and `panel.op` parameters) and the model a page's dials follow (the FM Synth's
+/// ADSR or Rates envelope) choose which dials come first. The other pages' dials follow, then a
+/// compact panel with no native dials falls back to its continuous parameters. A controller
+/// follows the reading, so a page or operator change in the window moves its dials with it.
+pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
+    let Some(info) = info(id) else { return Vec::new() };
+    let value = |id: &str| -> f64 {
+        values
+            .iter()
+            .rev()
+            .find(|(key, _)| key == id)
+            .map_or_else(|| info.params.iter().find(|p| p.id == id).map_or(0.0, |p| p.default), |(_, value)| *value)
+    };
+    let Some(Ok(layout)) = layout(id) else { return generated_dials(info) };
+    let Some(ui) = layout.ui else { return generated_dials(info) };
+    let parameter = |id: &str, normalized: bool| -> f64 {
+        let Some(param) = info.params.iter().find(|p| p.id == id) else { return 0.0 };
+        if normalized { param.to_normalized(value(id)) } else { value(id) }
+    };
+    let visible = |control: &CustomControl, page: f64, op: f64| -> bool {
+        control.visible_when.as_ref().is_none_or(|condition| {
+            condition.evaluate(&|id, normalized, _log| {
+                if id == "panel.page" {
+                    page
+                } else if id == "panel.op" {
+                    op
+                } else {
+                    parameter(id, normalized)
+                }
+            }) > 0.0
+        })
+    };
+    let (page, op) = (value("panel.page"), value("panel.op"));
+    let mut page_controls: Vec<(f32, f32, &str)> = Vec::new();
+    let mut always: Vec<&str> = Vec::new();
+    let mut rest: Vec<&str> = Vec::new();
+    let mut has_native = false;
+    for control in &ui.controls {
+        // Only the native dial widgets are a controller's dials; a host-drawn bar or number
+        // field is the panel's own, and the operator table's cells are not dials.
+        if !matches!(control.widget, Some(Widget::Knob { .. } | Widget::Dial { .. })) {
+            continue;
+        }
+        let Some(id) = control.x.as_ref().or(control.y.as_ref()).map(|binding| binding.parameter.as_str()) else {
+            continue;
+        };
+        let Some(param) = info.params.iter().find(|p| p.id == id) else { continue };
+        if !matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer) {
+            continue;
+        }
+        has_native = true;
+        if !visible(control, page, op) {
+            // A page that is not showing follows the ones that are, in the panel's own order, so
+            // Bank ▶ pages through every dial the panel has.
+            if !rest.contains(&id) {
+                rest.push(id);
+            }
+            continue;
+        }
+        // A control whose visibility changes with the page or the operator is the page's own;
+        // one that stays on every page (the LFO, filter, Spread and Volume dials) follows it.
+        let page_only = !visible(control, 1.0, 1.0) || !visible(control, 0.0, 2.0);
+        if page_only {
+            page_controls.push((control.bounds[1], control.bounds[0], id));
+        } else if !always.contains(&id) {
+            always.push(id);
+        }
+    }
+    // The page's dials read left to right and top to bottom; the always-visible ones follow in
+    // their panel's own order, which keeps the LFO, filter, Spread and Volume sections together.
+    page_controls.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    let mut page_dials: Vec<String> = Vec::new();
+    let mut rows: Vec<(f32, Vec<(f32, &str)>)> = Vec::new();
+    for (top, x, id) in page_controls {
+        match rows.last_mut() {
+            Some((row_top, row)) if top - *row_top <= 24.0 => row.push((x, id)),
+            _ => rows.push((top, vec![(x, id)])),
+        }
+    }
+    for (_, mut row) in rows {
+        row.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (_, id) in row {
+            if !page_dials.iter().any(|seen| seen == id) {
+                page_dials.push(id.to_string());
+            }
+        }
+    }
+    // A dial that is also on the page (Random's Amount) is the page's once, not twice.
+    for id in always.into_iter().chain(rest) {
+        if !page_dials.iter().any(|seen| seen == id) {
+            page_dials.push(id.to_string());
+        }
+    }
+    // A compact panel with no native dials keeps the generated list, so a device Suhina has not
+    // migrated yet still maps its continuous parameters.
+    if !has_native {
+        page_dials.extend(generated_dials(info));
+    }
+    page_dials
+}
+
+/// A device with no compact canvas keeps its generated list: its continuous and whole-number
+/// parameters, in parameter order, are the dials.
+fn generated_dials(info: &DeviceInfo) -> Vec<String> {
+    info.params
+        .iter()
+        .filter(|param| matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer))
+        .map(|param| param.id.to_string())
+        .collect()
 }
 
 /// The layout in `text` with `images` added to its compact canvas's assets.

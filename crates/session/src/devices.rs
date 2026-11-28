@@ -530,7 +530,40 @@ pub(crate) fn name_new_devices(
     }
 }
 
-fn device_json(path: &[usize], device: &Device) -> Value {
+/// The value at an `.sd` device's panel position `normalized`, 0 to 1, the inverse of
+/// [`sd_normalized`].
+fn sd_from_normalized(parameter: &suhina_device_sdk::Parameter, normalized: f64) -> f64 {
+    use suhina_device_sdk::ParameterControl;
+    let n = if normalized.is_finite() { normalized.clamp(0.0, 1.0) } else { 0.0 };
+    if parameter.max <= parameter.min {
+        return parameter.min;
+    }
+    if matches!(parameter.control, ParameterControl::LogSlider | ParameterControl::LogKnob) && parameter.min > 0.0 {
+        parameter.min * (parameter.max / parameter.min).powf(n)
+    } else {
+        parameter.min + n * (parameter.max - parameter.min)
+    }
+}
+
+/// Where an `.sd` device's parameter sits on its panel's slider or knob, 0 to 1, by its control:
+/// a log slider or knob follows its logarithmic scale, anything else its range.
+fn sd_normalized(parameter: &suhina_device_sdk::Parameter, value: f64) -> f64 {
+    use suhina_device_sdk::ParameterControl;
+    if parameter.max <= parameter.min {
+        return 0.0;
+    }
+    let value = value.clamp(parameter.min, parameter.max);
+    let position = if matches!(parameter.control, ParameterControl::LogSlider | ParameterControl::LogKnob)
+        && parameter.min > 0.0
+    {
+        (value / parameter.min).ln() / (parameter.max / parameter.min).ln()
+    } else {
+        (value - parameter.min) / (parameter.max - parameter.min)
+    };
+    position.clamp(0.0, 1.0)
+}
+
+pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
     let (kind, id) = match &device.kind {
         DeviceKind::Builtin(id) => ("builtin", Some(id.clone())),
         DeviceKind::Sd => ("sd", None),
@@ -555,9 +588,31 @@ fn device_json(path: &[usize], device: &Device) -> Value {
             .iter()
             .map(|p| {
                 // The engine takes the last value a duplicate parameter id carries (a project
-                // or preset file may name one twice), so the panel shows the same.
+                // or preset file may name one twice), so the panel shows the same. The name,
+                // range and unit ride along, like the `.sd` branch below: a controller's knob
+                // scales onto the unit and its ring draws the position (#1679).
                 let value = device.params.iter().rev().find(|v| v.id == p.id).map_or(p.default, |v| p.clamp(v.value));
-                json!({ "id": p.id, "value": value })
+                json!({
+                    "id": p.id,
+                    "value": value,
+                    // Where the panel's dial sits, 0 to 1: a controller's knob sends this back
+                    // as `normalized` instead of a linear value, so a logarithmic dial (an
+                    // envelope's attack) does not jump (#1718).
+                    "normalized": p.to_normalized(value),
+                    "name": p.name,
+                    "group": p.group,
+                    "min": p.min,
+                    "max": p.max,
+                    "unit": suhina_device_sdk::builtin::unit(p.unit),
+                    // What a controller's knob can turn: a continuous dial or a whole-number
+                    // one, not a switch or a choice (#1679).
+                    "kind": match p.kind {
+                        suhina_device_api::ParamKind::Continuous(_) => "continuous",
+                        suhina_device_api::ParamKind::Integer => "integer",
+                        suhina_device_api::ParamKind::Toggle => "toggle",
+                        suhina_device_api::ParamKind::Choice(_) => "choice",
+                    },
+                })
             })
             .collect::<Vec<_>>()
     });
@@ -567,9 +622,23 @@ fn device_json(path: &[usize], device: &Device) -> Value {
                 .parameters
                 .iter()
                 .map(|p| {
-                    let value =
-                        device.params.iter().find(|stored| stored.id == p.id).map_or(p.default, |stored| p.clamp(stored.value));
-                    json!({ "id": p.id, "name": p.name, "value": value, "min": p.min, "max": p.max, "control": p.control, "unit": p.unit, "ui": p.ui, "smoothing_ms": p.smoothing_ms })
+                    let value = device
+                        .params
+                        .iter()
+                        .find(|stored| stored.id == p.id)
+                        .map_or(p.default, |stored| p.clamp(stored.value));
+                    json!({
+                        "id": p.id,
+                        "name": p.name,
+                        "value": value,
+                        "normalized": sd_normalized(p, value),
+                        "min": p.min,
+                        "max": p.max,
+                        "control": p.control,
+                        "unit": p.unit,
+                        "ui": p.ui,
+                        "smoothing_ms": p.smoothing_ms,
+                    })
                 })
                 .collect::<Vec<_>>()
         })
@@ -584,9 +653,17 @@ fn device_json(path: &[usize], device: &Device) -> Value {
                 .collect::<Vec<_>>()
         })
     });
+    // The dials a controller's knobs take, in the device's compact panel, with the page and
+    // operator the panel shows (the hidden parameters) and the current model; a generated panel
+    // follows its parameter order.
+    let dials = info.map(|info| {
+        let values: Vec<(String, f64)> = device.params.iter().map(|p| (p.id.clone(), p.value)).collect();
+        suhina_device_registry::dials_with(&info.id, &values)
+    });
     let mut value = json!({
         "index": path.last().copied().unwrap_or(0),
         "path": path_value(path),
+        "dials": dials,
         // The device's own id (#763 › 1); `id` is what it is (a built-in's or a plug-in's).
         "device_id": device.id.0,
         "name": device.name,
@@ -628,6 +705,138 @@ fn device_json(path: &[usize], device: &Device) -> Value {
             .collect();
     }
     value
+}
+
+/// One device's entry as `project.selection` gives the selected one: `device_json` plus, for a
+/// running plug-in, the parameter list its generated panel draws (#1679). A controller locked
+/// to a device reads it with `device.read`, so the device section keeps its live values while
+/// the selection moves elsewhere.
+pub(crate) fn device_entry(session: &mut Session, track: suhina_model::TrackId, path: &[usize]) -> Option<Value> {
+    let device = session
+        .project
+        .channel_of_track(track)
+        .and_then(|channel| suhina_model::device_at(&channel.devices, path))
+        .cloned()?;
+    let mut entry = device_json(path, &device);
+    if is_plugin(&device.kind) {
+        session.list_plugin_params_at(track, path);
+        if let Some(report) = session.plugin_report_at(track, path)
+            && let Some(list) = report.params.as_deref()
+        {
+            let (params, dials) = plugin_panel_params(&device, list);
+            entry["params"] = params;
+            entry["dials"] = dials;
+        }
+    }
+    Some(entry)
+}
+
+/// Whether `name` names a track, so an error resolving it is an ambiguity rather than a track
+/// that is gone. A reading by name keeps both errors; only the missing one becomes null.
+fn names_a_track(project: &Project, name: &str) -> bool {
+    project.tracks.iter().any(|track| {
+        project.shown_track_name(track.id) == name
+            || track.name == name
+            || project.shown_track_name(track.id).eq_ignore_ascii_case(name)
+            || track.name.eq_ignore_ascii_case(name)
+    })
+}
+
+/// `device.read {track, device}`: one device's entry, as the selection would give it, or null
+/// when the track or device it names is gone. A controller locked to a device follows it with a
+/// subscription, and a refused read pushes no state: null is how a removal reaches the lock.
+pub(crate) fn read_device(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let track = match Args::new(params).value("track") {
+        Some(Value::Number(n)) => {
+            let id = n.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or("track id must be a whole number")?;
+            let id = suhina_model::TrackId(id);
+            if id == suhina_model::TrackId::MAIN && session.project.main_channel().is_some()
+                || session.project.track(id).is_some()
+            {
+                id
+            } else {
+                return Ok(Value::Null);
+            }
+        }
+        Some(Value::String(name)) => match track_or_main_id(&session.project, params) {
+            Ok(track) => track,
+            Err(error) if names_a_track(&session.project, name) => return Err(error),
+            Err(_) => return Ok(Value::Null),
+        },
+        _ => return Err("track must be a track id or name, or \"main\" for the main channel".into()),
+    };
+    let Some(channel) = session.project.channel_of_track(track) else { return Ok(Value::Null) };
+    let path = match Args::new(params).value("device") {
+        Some(Value::Object(named)) => {
+            let id = named
+                .get("id")
+                .and_then(Value::as_u64)
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or("device must be a device index, a path such as \"2/1/0\", or {\"id\": a device_id}")?;
+            let Some((path, _)) = suhina_model::walk_devices(&channel.devices)
+                .into_iter()
+                .find(|(_, device)| device.id.0 == id && device.id.is_some())
+            else {
+                return Ok(Value::Null);
+            };
+            path
+        }
+        Some(value) => match crate::device_groups::parse_path(value) {
+            Some(path) if path.len() % 2 == 1 => path,
+            Some(_) => return Ok(Value::Null),
+            None => {
+                return Err("device must be a device index, a path such as \"2/1/0\", or {\"id\": a device_id}".into());
+            }
+        },
+        None => return Err("device must be a device index, a path such as \"2/1/0\", or {\"id\": a device_id}".into()),
+    };
+    if device_at(&channel.devices, &path).is_none() {
+        return Ok(Value::Null);
+    }
+    Ok(device_entry(session, track, &path).unwrap_or(Value::Null))
+}
+
+/// A plug-in's parameters as its generated panel draws them (#679), with the `dials` a
+/// controller's knobs turn: every parameter the panel shows, in its order, with the value the
+/// project keeps for it or the one the plug-in listed. A switch is left out of `dials`, as a
+/// built-in's is; a slider — stepped or a list too — is a dial, because that is what the panel
+/// draws (#1679). The panel's cap of [`suhina_device_sdk::MAX_PARAMETERS`] holds here too.
+pub(crate) fn plugin_panel_params(device: &Device, list: &[suhina_plugins::ParamInfo]) -> (Value, Value) {
+    let shown: Vec<&suhina_plugins::ParamInfo> = list
+        .iter()
+        .filter(|p| !p.hidden && !p.read_only && p.min < p.max)
+        .take(suhina_device_sdk::MAX_PARAMETERS)
+        .collect();
+    let mut params = Vec::with_capacity(shown.len());
+    let mut dials = Vec::new();
+    for p in shown {
+        // The engine keeps the last value a duplicate parameter id carries, so the reading
+        // shows that one too.
+        let stored = device.params.iter().rev().find(|stored| param_id(&stored.id) == Some(p.id));
+        let value = stored.map_or(p.value, |stored| stored.value).clamp(p.min, p.max);
+        let toggle = p.steps == 1 && p.min == 0.0 && p.max == 1.0;
+        if !toggle {
+            dials.push(json!(p.id));
+        }
+        params.push(json!({
+            "id": p.id,
+            "name": if p.name.is_empty() { p.id.to_string() } else { p.name.clone() },
+            "group": p.group,
+            "min": p.min,
+            "max": p.max,
+            "default": p.default.clamp(p.min, p.max),
+            "value": value,
+            // The plug-in's own text only while it stands for the value the panel shows.
+            "text": if stored.is_none_or(|stored| stored.value == p.value) { p.text.clone() } else { String::new() },
+            "steps": p.steps,
+            "list": p.list,
+            "automatable": p.automatable,
+            "unit": "",
+            // What the generated panel draws it as: a slider or a switch.
+            "kind": if toggle { "toggle" } else { "continuous" },
+        }));
+    }
+    (Value::Array(params), Value::Array(dials))
 }
 
 /// A linear gain in dB, silence as -150.
@@ -1544,16 +1753,27 @@ pub(crate) fn save_preset(session: &mut Session, params: &Value) -> Result<Value
 
 pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let param = Args::new(params).raw_str("param").ok_or("param must be a parameter id, from device.list")?;
-    let mut value = Args::new(params).f64("value")?;
-    let source_tempo =
-        if param == "warp" && value > 0. { initial_sampler_tempo(session, params, false)? } else { None };
-    if param == "source_bpm" && value == 0. {
-        value = initial_sampler_tempo(session, params, true)?.unwrap_or(0.);
+    let mut value = Args::new(params).opt_f64("value")?;
+    let normalized = Args::new(params).opt_f64("normalized")?;
+    match (value.is_some(), normalized.is_some()) {
+        (true, true) => return Err("give value or normalized, not both".into()),
+        (false, false) => return Err("give value or normalized".into()),
+        _ => {}
+    }
+    let source_tempo = match (param, value) {
+        ("warp", Some(value)) if value > 0. => initial_sampler_tempo(session, params, false)?,
+        _ => None,
+    };
+    if param == "source_bpm" && value == Some(0.) {
+        value = Some(initial_sampler_tempo(session, params, true)?.unwrap_or(0.));
     }
     let track = track_or_main_id(&session.project, params)?;
     let channel = device_channel(session, params)?;
     let path = device_path(&channel.devices, params, "device")?;
     if device_at(&channel.devices, &path).is_some_and(|d| is_plugin(&d.kind)) {
+        let Some(value) = value else {
+            return Err("a plug-in's normalized position is not known; send value from device.pluginParams".into());
+        };
         return set_plugin_param(session, params, track, &path, param, value);
     }
     let device = device_at_mut(&mut channel.devices, &path).ok_or("the device is missing")?;
@@ -1566,7 +1786,11 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
                 .param_index(param)
                 .ok_or_else(|| format!("{} has no parameter {param:?}; device.list lists them", info.name))?;
             let spec = info.params.get(index).ok_or("the parameter is missing")?;
-            (index, spec.clamp(value))
+            let value = match value {
+                Some(value) => spec.clamp(value),
+                None => spec.from_normalized(normalized.unwrap_or(0.)),
+            };
+            (index, value)
         }
         DeviceKind::Sd => {
             let bytes = device.state.as_deref().ok_or("the .sd graph is missing")?;
@@ -1578,6 +1802,10 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
                 .enumerate()
                 .find(|(_, p)| p.id == param)
                 .ok_or_else(|| format!("{} has no parameter {param:?}", graph.name))?;
+            let value = match value {
+                Some(value) => parameter.clamp(value),
+                None => sd_from_normalized(parameter, normalized.unwrap_or(0.)),
+            };
             edits = graph
                 .parameter_edits(param, value, |id| {
                     device.params.iter().find(|p| p.id == id).map_or_else(
@@ -1588,14 +1816,18 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
                 .into_iter()
                 .filter_map(|(i, value)| graph.parameters.get(i).map(|p| (i, p.id.clone(), value)))
                 .collect();
-            (index, parameter.clamp(value))
+            (index, value)
         }
         DeviceKind::Group(_) => {
             let index = suhina_engine::group_param_index(param).ok_or_else(|| {
                 format!("a device group has no parameter {param:?}; it has mix, gain and macro.1 to macro.8")
             })?;
             let &(_, min, max, _) = suhina_engine::GROUP_PARAMS.get(index).ok_or("the parameter is missing")?;
-            (index, value.clamp(min, max))
+            let value = match value {
+                Some(value) => value.clamp(min, max),
+                None => min + normalized.unwrap_or(0.).clamp(0., 1.) * (max - min),
+            };
+            (index, value)
         }
         _ => return Err("this device has no parameters Suhina can set (it is from another program)".into()),
     };
@@ -1703,7 +1935,9 @@ fn set_plugin_param(
     let value = plugin_value(session, track, path, id, value)?;
     let channel = device_channel(session, params)?;
     let device = device_at_mut(&mut channel.devices, path).ok_or("the device is missing")?;
-    match device.params.iter_mut().find(|p| param_id(&p.id) == Some(id)) {
+    // A project or preset may name one parameter twice; the engine keeps the last, so a set
+    // updates that one rather than leaving the audible value behind.
+    match device.params.iter_mut().rev().find(|p| param_id(&p.id) == Some(id)) {
         Some(stored) => {
             stored.id = id.to_string();
             stored.value = value;
@@ -1886,7 +2120,7 @@ pub(crate) fn take_in_param_edits(
         if by_hand {
             off |= crate::automation::override_lane(&mut device.automation, |l| param_id(&l.param) == Some(*id));
         }
-        match device.params.iter_mut().find(|p| param_id(&p.id) == Some(*id)) {
+        match device.params.iter_mut().rev().find(|p| param_id(&p.id) == Some(*id)) {
             Some(stored) if stored.value != *value => {
                 stored.value = *value;
                 changed = true;

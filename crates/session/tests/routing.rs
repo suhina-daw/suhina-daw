@@ -21,6 +21,7 @@ fn project() -> Project {
 fn project_built() -> Project {
     let track = |id: u32, name: &str, notes: bool| Track {
         folder: false,
+        crossfade_assign: Default::default(),
         id: TrackId(id),
         name: name.into(),
         color: None,

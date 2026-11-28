@@ -124,7 +124,13 @@ fn widgets_work_with_unrelated_parameter_names() {
         ),
         (Widget::Knob { label: "Amount".into() }, UiGesture::Drag),
         (
-            Widget::Dial { label: "Amount".into(), decimals: 0, format: TextFormat::Number, image: None },
+            Widget::Dial {
+                label: "Amount".into(),
+                decimals: 0,
+                format: TextFormat::Number,
+                image: None,
+                readout: None,
+            },
             UiGesture::Drag,
         ),
         (Widget::Stepper { decimals: 1 }, UiGesture::Drag),
@@ -305,4 +311,45 @@ fn widget_drawings_resolve_the_host_palette() {
     let draws = number.drawings_with_palette(&palette);
     assert!(matches!(&draws[0], Draw::Rect { color, .. } if *color == palette.border));
     assert!(matches!(&draws[1], Draw::Rect { color, .. } if *color == palette.control));
+}
+
+/// A dial's readout can show a value computed from its parameter (a rate in hertz) instead of
+/// the parameter's own number; the dial still turns the bound parameter, and the expression is
+/// checked against the panel's parameters (#1718).
+#[test]
+fn a_dial_readout_shows_its_computed_value() {
+    let control = |readout| CustomControl {
+        widget: Some(Widget::Dial {
+            label: "Rate".into(),
+            decimals: 2,
+            format: TextFormat::Number,
+            image: None,
+            readout: Some(DialReadout { value: readout, prefix: String::new(), suffix: " Hz".into() }),
+        }),
+        id: "rate".into(),
+        name: "Rate".into(),
+        tooltip: String::new(),
+        bounds: [0., 0., 46., 70.],
+        visible_when: None,
+        gesture: UiGesture::Drag,
+        x: None,
+        y: Some(UiBinding::new("rate")),
+        drawing: vec![],
+    };
+    let parameters = [Parameter::new("rate", "Rate", (0., 1.), 0.5)];
+    let shown = control(UiValue::from(440.0));
+    let drawings = shown.drawings();
+    assert!(
+        drawings.iter().any(|draw| matches!(draw, Draw::Value { suffix, .. } if suffix == " Hz")),
+        "the readout replaces the parameter's own value: {drawings:?}"
+    );
+    assert!(
+        !drawings.iter().any(|draw| matches!(draw, Draw::Text { parameter: Some(id), .. } if id == "rate")),
+        "no second, raw value: {drawings:?}"
+    );
+    let ui = DeviceUi { controls: vec![shown], ..DeviceUi::default() };
+    assert!(ui.validate(&parameters).is_ok());
+    let missing = control(UiValue::parameter("missing", false));
+    let ui = DeviceUi { controls: vec![missing], ..DeviceUi::default() };
+    assert!(ui.validate(&parameters).is_err(), "a readout names a parameter the panel has");
 }
