@@ -1576,12 +1576,9 @@ fn a_device_panel_padded_more_when_selected_is_still_shown_whole() {
     let ctx = h.ctx.clone();
     h.state_mut().use_theme(&ctx, "padded");
     h.run_steps(2);
+    // Selecting the track selects its first device with it, so the panel is the selected one.
     h.get_by_label("Track Drums").click();
     h.run_steps(4);
-    let before = h.get_by_label("Device Utility").rect();
-    h.get_by_label("Device Utility").click();
-    h.run_steps(4);
-    assert!(before.height() < 228.0, "unselected, the panel is the plainer one's: {before:?}");
     let splitter = h.get_by_label("Detail area splitter").rect();
     let panel = h.get_by_label("Device Utility").rect();
     let needs = suhina_ui::detail::detail_view::device_row_height() + 28.0;

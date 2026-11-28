@@ -32,6 +32,7 @@ mod range;
 mod registry;
 mod returns;
 mod scene;
+mod selection;
 pub(crate) mod take;
 mod tempo;
 mod time_signature;
@@ -703,6 +704,7 @@ static NAMESPACES: &[&[CommandSpec]] = &[
     launcher::COMMANDS,
     mapping::COMMANDS,
     scene::COMMANDS,
+    selection::COMMANDS,
     device::COMMANDS,
     preview::COMMANDS,
     branch::COMMANDS,

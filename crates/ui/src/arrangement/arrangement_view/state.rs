@@ -691,6 +691,14 @@ impl ArrangementViewState {
         self.anchor = Some(key);
     }
 
+    /// Selects `track` alone from outside the view — the window following the session's
+    /// selection (`docs/spec/selection.md` › The window follows) — with the anchor on it, so a
+    /// Shift-click after it takes the run from the selection.
+    pub fn select_one(&mut self, track: TrackId) {
+        self.selected_tracks = vec![track];
+        self.track_anchor = Some(track);
+    }
+
     /// Picks the track `track` the way a click on its header does: Shift takes the run of tracks
     /// between the last one picked and this one, Ctrl (Cmd) adds it or takes it away. A time
     /// selection goes over to the tracks picked, keeping its span: the stretch picked (the loop's,

@@ -530,7 +530,7 @@ pub(crate) fn name_new_devices(
     }
 }
 
-fn device_json(path: &[usize], device: &Device) -> Value {
+pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
     let (kind, id) = match &device.kind {
         DeviceKind::Builtin(id) => ("builtin", Some(id.clone())),
         DeviceKind::Sd => ("sd", None),
@@ -555,9 +555,27 @@ fn device_json(path: &[usize], device: &Device) -> Value {
             .iter()
             .map(|p| {
                 // The engine takes the last value a duplicate parameter id carries (a project
-                // or preset file may name one twice), so the panel shows the same.
+                // or preset file may name one twice), so the panel shows the same. The name,
+                // range and unit ride along, like the `.sd` branch below: a controller's knob
+                // scales onto the unit and its ring draws the position (#1679).
                 let value = device.params.iter().rev().find(|v| v.id == p.id).map_or(p.default, |v| p.clamp(v.value));
-                json!({ "id": p.id, "value": value })
+                json!({
+                    "id": p.id,
+                    "value": value,
+                    "name": p.name,
+                    "group": p.group,
+                    "min": p.min,
+                    "max": p.max,
+                    "unit": suhina_device_sdk::builtin::unit(p.unit),
+                    // What a controller's knob can turn: a continuous dial or a whole-number
+                    // one, not a switch or a choice (#1679).
+                    "kind": match p.kind {
+                        suhina_device_api::ParamKind::Continuous(_) => "continuous",
+                        suhina_device_api::ParamKind::Integer => "integer",
+                        suhina_device_api::ParamKind::Toggle => "toggle",
+                        suhina_device_api::ParamKind::Choice(_) => "choice",
+                    },
+                })
             })
             .collect::<Vec<_>>()
     });
@@ -584,9 +602,13 @@ fn device_json(path: &[usize], device: &Device) -> Value {
                 .collect::<Vec<_>>()
         })
     });
+    // The dials a controller's knobs take, in the device's compact panel order; a generated
+    // panel follows its parameter order (the registry appends what a custom canvas leaves out).
+    let dials = info.map(|info| suhina_device_registry::dials(&info.id));
     let mut value = json!({
         "index": path.last().copied().unwrap_or(0),
         "path": path_value(path),
+        "dials": dials,
         // The device's own id (#763 › 1); `id` is what it is (a built-in's or a plug-in's).
         "device_id": device.id.0,
         "name": device.name,
