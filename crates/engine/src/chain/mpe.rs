@@ -191,7 +191,8 @@ impl Curves {
 
 /// `dim`'s curve of `expression` as changes, for a note `length` beats long: its value at the
 /// start, then at each point and every [`CURVE_STEP`] between points, where the MIDI value
-/// changes. Before the first point and after the last the curve holds, so nothing changes there.
+/// changes. Before the first point and after the last the curve holds, so nothing changes there;
+/// a curve an LFO rides on is sampled every [`CURVE_STEP`] over the whole note.
 fn sample(expression: &NoteExpression, dim: Dim, length: f64, out: &mut Vec<CurveChange>) {
     let kind = dim.kind();
     let curve = expression.curve(kind);
@@ -205,6 +206,11 @@ fn sample(expression: &NoteExpression, dim: Dim, length: f64, out: &mut Vec<Curv
         }
     };
     let length = if length.is_finite() { length.max(0.0) } else { 0.0 };
+    // An LFO riding on the curve moves it between its points too: the whole note is sampled.
+    if expression.has_lfo(kind) {
+        steps(0.0, length, &mut |offset| emit(offset, out));
+        return;
+    }
     let mut previous: Option<f64> = None;
     for point in curve {
         if !point.offset.is_finite() || point.offset >= length {

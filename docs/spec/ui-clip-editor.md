@@ -1328,16 +1328,19 @@ button opens its clip in the editor.
 
 ### MPE LFO
 
-**Built:** the clip panel's Transform tab lists **MPE LFO**. It writes a low-frequency oscillation
-into one curve of each selected note (every note when none is selected), one
-`note.lfoExpression`, one undo step. With a time selected it writes only over that stretch
-(`from`, `to`), the curve kept outside it and held up to its edges; Attack and Decay are then
-parts of the stretch. While it is chosen and MPE is on, what it would write is drawn dashed over
-those notes, and the panel shows the wave over one bar under Target and Mode.
+**Built:** the clip panel's Transform tab lists **MPE LFO**. It puts a low-frequency oscillation on
+one curve of each selected note (every note when none is selected), one `note.lfoExpression`,
+one undo step ([MPE](mpe.md#lfos)). It covers the time selected (`from`, `to`) or, with none and a
+point of the target's curve selected (Shift and a click), the stretch from that point to the next
+one (or to the note's end); otherwise the whole note. Apply says which ("…, in the time selected",
+"…, after the selected point"). Outside the stretch the curve stays; Attack and Decay are parts of
+the stretch. While it is chosen and MPE is on, what it would make is drawn dashed over those notes,
+and the panel shows the wave over one bar under Target and Mode.
 
 - **Target:** Pitch, Slide or Pressure.
-- **Mode:** **Replace** writes the wave around Base; **Add** swings it around the curve already
-  there, so a bend keeps its shape and the wave rides on it (`mode`).
+- **Mode:** **Keep** (the default) keeps the wave on the notes as settings riding on the curve,
+  editable afterwards; **Add** writes it as points swinging around the curve already there, so a
+  bend keeps its shape; **Replace** writes it as points around Base (`mode`).
 - **Wave:** Sine, Square, Triangle or Random; **Shape**, -1 to 1, skews the wave: the sine and
   triangle lean toward the start (negative) or the end (positive), the square's pulse narrows or
   widens, the random wave's steps glide (positive) or jump (negative). **Reseed** picks another
@@ -1352,9 +1355,20 @@ those notes, and the panel shows the wave over one bar under Target and Mode.
   and falls back to nothing over the last part of the note given by the decay; together they are at
   most 100 %, and raising one lowers the other.
 
-Each note gets points every 1/32 of a cycle (at most every 1/256 beat), and the turning points of
-square and random waves on both sides, within the curve's limit; values outside the target's range
-are held at its ends.
+Add and Replace give each note points every 1/32 of a cycle (at most every 1/256 beat), within the
+curve's limit; values outside the target's range are held at its ends.
+
+**A kept LFO** (Keep) is drawn in its note's curve, and on a selected note, with MPE on, as a bar
+just above the curve over the stretch it covers (in a lane, at the lane's top), named `LFO`:
+
+- **A click on the bar** picks it: the panel shows its settings and its Apply becomes **Update
+  the picked LFO** (`note.setLfo`). Picking another note lets it go.
+- **Dragging the bar** moves its stretch, **dragging an end** (`LFO start`, `LFO end`) moves that
+  end, on the grid unless Alt is held and inside the note; **dragging the knob** in its middle
+  (`LFO depth`) up or down sets how far it swings (pitch by rows, in steps of 0.05 semitone; a lane
+  by its height). Each drag is one `note.setLfo`.
+- **Right-click on the bar:** **Bake into points** writes every LFO the note keeps into its curves
+  (`note.bakeLfo`); **Delete LFO** removes it (`note.removeLfo`).
 
 ## Shortcuts
 
@@ -1547,12 +1561,13 @@ own curves ([ADR 0039](../decisions/0039-per-note-expression.md) › 6,
 ### Bent notes
 
 **Settings › Clip editor › MPE › Pitch bends drawn as** chooses how a note with a pitch curve is
-drawn: **Bent notes** (the default) or **Lines** (as above). The right-click menu has the same
+drawn: **Bent notes** (the default) or **Lines** (as above); **Bent note thickness** how much of a
+row the band takes: Thin (30 %), Medium (50 %, the default) or Full row. The right-click menu has the same
 choice while MPE is on (**Draw bends as lines** / **Draw bends as bent notes**). The curve is the
 same either way: the two are two ways of working on it.
 
-- **Drawn:** the note is a band along its pitch curve, as tall as a row less the gap between rows,
-  in the note's own fill (selected, muted and faded as a note is), with its name at its start. The
+- **Drawn:** the note is a band along its pitch curve, its thickness's share of a row, in the
+  note's own fill (selected, muted and faded as a note is), with its name at its start. The
   row it starts in stays faint behind it, so the pitch the bend starts from is seen. This holds
   with MPE off too; with MPE on, the thin pitch line is not drawn over a bent note.
 - **Pressed as the note:** a press on the band, or on the faint row behind it, is a press on the
@@ -1583,7 +1598,9 @@ the last, the one under the pointer and the selected ones.
 - A **click on a point** removes it; a curve left with only neutral points goes.
 - **Dragging a point** moves it. Dragged past a neighbour, the neighbour goes. **Shift** keeps
   the drag to the axis it first moved along, and a vertical drag with Shift moves a tenth as far,
-  for fine values.
+  for fine values. A point taken up or down off a flat stretch (the point before it has its value)
+  gets a hold point a grid step before it at the value it had, so the bend is local and a grid step
+  long, not a slope from the point before; **Alt** (points free of the grid) leaves the hold out.
 - **A drag on a line** curves the segment, as an automation segment's does: up bulges it toward
   higher values, down toward lower ones. **Alt and a double-click on a line** makes it straight
   again. A flat segment does not curve.

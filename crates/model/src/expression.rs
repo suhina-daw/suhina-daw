@@ -10,6 +10,8 @@
 //! kind's neutral value. Every operation that changes a note's length or splits it reshapes the
 //! curves here, so the piano roll, the commands and the file all keep one rule.
 
+pub use crate::lfo::NoteLfo;
+
 /// What a curve moves. Values are musical, not MIDI bytes (ADR 0039 › 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ExpressionKind {
@@ -107,6 +109,10 @@ pub enum ExpressionError {
     TooManyPoints(usize),
     /// A segment's curvature is outside -1 to 1.
     CurveOutside(f64),
+    /// A kept LFO is refused: what is wrong with it.
+    Lfo(String),
+    /// More LFOs than one note may keep.
+    TooManyLfos(usize),
 }
 
 impl std::fmt::Display for ExpressionError {
@@ -127,6 +133,10 @@ impl std::fmt::Display for ExpressionError {
             ExpressionError::TooManyPoints(count) => {
                 write!(f, "a curve has {count} points, more than {MAX_CURVE_POINTS}")
             }
+            ExpressionError::Lfo(why) => write!(f, "{why}"),
+            ExpressionError::TooManyLfos(count) => {
+                write!(f, "a note keeps {count} LFOs, more than {}", crate::lfo::MAX_NOTE_LFOS)
+            }
         }
     }
 }
@@ -141,6 +151,8 @@ pub enum JoinError {
     ValueDiffers(ExpressionKind),
     /// This joined curve would have `count` points, more than [`MAX_CURVE_POINTS`].
     TooManyPoints { kind: ExpressionKind, count: usize },
+    /// The joined note would keep `count` LFOs, more than [`crate::lfo::MAX_NOTE_LFOS`].
+    TooManyLfos(usize),
 }
 
 impl std::fmt::Display for JoinError {
@@ -150,18 +162,23 @@ impl std::fmt::Display for JoinError {
             JoinError::TooManyPoints { kind, count } => {
                 write!(f, "the joined {} curve would have {count} points, more than {MAX_CURVE_POINTS}", kind.name())
             }
+            JoinError::TooManyLfos(count) => {
+                write!(f, "the joined note would keep {count} LFOs, more than {}", crate::lfo::MAX_NOTE_LFOS)
+            }
         }
     }
 }
 
 impl std::error::Error for JoinError {}
 
-/// A note's curves. An empty curve is the kind's neutral value throughout.
+/// A note's curves. An empty curve is the kind's neutral value throughout. The LFOs it keeps ride
+/// on its curves ([`NoteLfo`]).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct NoteExpression {
     pub pitch: Vec<ExpressionPoint>,
     pub pressure: Vec<ExpressionPoint>,
     pub timbre: Vec<ExpressionPoint>,
+    pub lfos: Vec<NoteLfo>,
 }
 
 impl NoteExpression {
@@ -181,9 +198,25 @@ impl NoteExpression {
         }
     }
 
-    /// Whether every curve is missing.
+    /// Whether every curve is missing and no LFO is kept.
     pub fn is_empty(&self) -> bool {
-        self.pitch.is_empty() && self.pressure.is_empty() && self.timbre.is_empty()
+        self.pitch.is_empty() && self.pressure.is_empty() && self.timbre.is_empty() && self.lfos.is_empty()
+    }
+
+    /// Whether `kind` has an LFO riding on it.
+    pub fn has_lfo(&self, kind: ExpressionKind) -> bool {
+        self.lfos.iter().any(|lfo| lfo.kind == kind)
+    }
+
+    /// The curves with every kept LFO written into them as points, and no LFO kept: what a note
+    /// `duration` beats long plays, as points (exported, or baked by `note.bakeLfo`).
+    pub fn baked(&self, duration: f64) -> NoteExpression {
+        let mut out = NoteExpression { lfos: Vec::new(), ..self.clone() };
+        for lfo in &self.lfos {
+            let curve = lfo.baked(duration, out.curve(lfo.kind));
+            *out.curve_mut(lfo.kind) = curve;
+        }
+        out
     }
 
     /// The points of all three curves together, for the per-content limit.
@@ -191,15 +224,27 @@ impl NoteExpression {
         self.pitch.len() + self.pressure.len() + self.timbre.len()
     }
 
-    /// The value of `kind` at `offset` beats from the note's start.
+    /// The value of `kind` at `offset` beats from the note's start: its curve with the LFOs
+    /// riding on it, kept in the kind's range.
     pub fn value_at(&self, kind: ExpressionKind, offset: f64) -> f64 {
-        curve_value(self.curve(kind), offset).unwrap_or(kind.neutral())
+        let value = curve_value(self.curve(kind), offset).unwrap_or(kind.neutral());
+        if self.lfos.is_empty() {
+            return value;
+        }
+        let swing: f64 = self.lfos.iter().filter(|lfo| lfo.kind == kind).map(|lfo| lfo.swing_at(offset)).sum();
+        kind.clamp(value + swing).unwrap_or(value)
     }
 
     /// Checks every curve against a note `duration` beats long.
     pub fn validate(&self, duration: f64) -> Result<(), ExpressionError> {
         for kind in ExpressionKind::ALL {
             validate_curve(kind, self.curve(kind), duration)?;
+        }
+        if self.lfos.len() > crate::lfo::MAX_NOTE_LFOS {
+            return Err(ExpressionError::TooManyLfos(self.lfos.len()));
+        }
+        for lfo in &self.lfos {
+            lfo.check(duration).map_err(ExpressionError::Lfo)?;
         }
         Ok(())
     }
@@ -238,6 +283,7 @@ impl NoteExpression {
             return;
         }
         let duration = duration.max(0.0);
+        self.lfos = self.lfos.iter().filter_map(|lfo| lfo.cropped_to(duration)).collect();
         for kind in ExpressionKind::ALL {
             let curve = self.curve_mut(kind);
             if curve.last().is_none_or(|last| last.offset <= duration) {
@@ -260,6 +306,7 @@ impl NoteExpression {
         if !delta.is_finite() || delta == 0.0 {
             return;
         }
+        self.lfos = self.lfos.iter().filter_map(|lfo| lfo.moved_earlier(delta)).collect();
         for kind in ExpressionKind::ALL {
             let curve = self.curve_mut(kind);
             if curve.is_empty() {
@@ -291,6 +338,9 @@ impl NoteExpression {
         if !(factor.is_finite() && factor > 0.0) || factor == 1.0 {
             return;
         }
+        for lfo in &mut self.lfos {
+            *lfo = lfo.stretched(factor);
+        }
         for kind in ExpressionKind::ALL {
             for point in self.curve_mut(kind).iter_mut() {
                 point.offset *= factor;
@@ -306,6 +356,11 @@ impl NoteExpression {
     pub fn split(&self, at: f64) -> (NoteExpression, NoteExpression) {
         let mut left = NoteExpression::default();
         let mut right = NoteExpression::default();
+        for lfo in &self.lfos {
+            let (l, r) = lfo.split(at);
+            left.lfos.extend(l);
+            right.lfos.extend(r);
+        }
         for kind in ExpressionKind::ALL {
             let curve = self.curve(kind);
             let Some(boundary) = curve_value(curve, at) else { continue };
@@ -332,9 +387,19 @@ impl NoteExpression {
     /// when a joined curve would have more than [`MAX_CURVE_POINTS`] points.
     pub fn joined(&self, duration: f64, next: &NoteExpression) -> Result<NoteExpression, JoinError> {
         let mut out = self.clone();
+        let lfos = self.lfos.len().saturating_add(next.lfos.len());
+        if lfos > crate::lfo::MAX_NOTE_LFOS {
+            return Err(JoinError::TooManyLfos(lfos));
+        }
+        out.lfos.extend(next.lfos.iter().map(|lfo| NoteLfo {
+            from: lfo.from + duration,
+            to: lfo.to + duration,
+            ..*lfo
+        }));
         for kind in ExpressionKind::ALL {
-            let end = self.value_at(kind, duration);
-            let start = next.value_at(kind, 0.0);
+            // The curves meet; the LFOs ride on them and go along as they are.
+            let end = curve_value(self.curve(kind), duration).unwrap_or(kind.neutral());
+            let start = curve_value(next.curve(kind), 0.0).unwrap_or(kind.neutral());
             if (end - start).abs() > 1e-9 {
                 return Err(JoinError::ValueDiffers(kind));
             }

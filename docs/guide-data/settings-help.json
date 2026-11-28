@@ -1729,6 +1729,31 @@
       "crates/ui/src/detail/piano_roll/layout.rs"
     ]
   },
+  "ClipEditor/MPE/piano_bent_width": {
+    "sourceFingerprint": "084522999fd344fe454bf037e440bffef7687a10458b17a3e3640282e6c9e941",
+    "summary": "Choose how thick a bent note is drawn in the piano roll.",
+    "description": "With Pitch bends drawn as set to Bent notes, a note whose pitch bends is drawn as a band along its curve. This sets how much of a row's height the band takes.\n\nA thinner band leaves the rows around it, and the notes in them, easier to see while a note bends across them; a full one reads most like a note. The band is pressed as the note at any thickness: a thin one is still easy to grab.",
+    "options": [
+      {
+        "name": "Thin",
+        "description": "The band takes 30 % of a row."
+      },
+      {
+        "name": "Medium",
+        "description": "The band takes half a row. This is the default."
+      },
+      {
+        "name": "Full row",
+        "description": "The band is as tall as a row, less the gap between rows."
+      }
+    ],
+    "whenToChange": "Choose Thin when bends cross many notes, Full row when you want bent notes to look like the others.",
+    "references": [
+      "crates/ui/src/settings/settings_rows.rs",
+      "crates/ui/src/settings.rs",
+      "crates/ui/src/detail/piano_roll/expression.rs"
+    ]
+  },
   "ClipEditor/Advanced/covered_notes": {
     "sourceFingerprint": "5bf26e891d1fbefa9c68fac5756e1648cb2a1a11d13b8bd4ceb361f1d79271fc",
     "summary": "Choose what happens to a note that a note placed over it covers from its start.",

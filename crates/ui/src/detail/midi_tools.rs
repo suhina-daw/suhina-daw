@@ -195,8 +195,46 @@ pub struct ToolSettings {
     pub lfo_attack: f64,
     pub lfo_decay: f64,
     pub lfo_seed: u64,
-    /// Add swings the wave around the curve as it is; off (Replace) around the base.
-    pub lfo_add: bool,
+    /// What Apply does with the wave (› MPE LFO).
+    pub lfo_mode: LfoMode,
+}
+
+/// What the MPE LFO's Apply does with the wave.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LfoMode {
+    /// Kept on the notes as settings riding on the curve, editable afterwards.
+    #[default]
+    Keep,
+    /// Written as points swinging around the curve as it is.
+    Add,
+    /// Written as points swinging around Base, replacing the curve there.
+    Replace,
+}
+
+impl LfoMode {
+    pub const ALL: [LfoMode; 3] = [LfoMode::Keep, LfoMode::Add, LfoMode::Replace];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            LfoMode::Keep => "Keep",
+            LfoMode::Add => "Add",
+            LfoMode::Replace => "Replace",
+        }
+    }
+
+    /// `note.lfoExpression`'s `mode`.
+    pub const fn param(self) -> &'static str {
+        match self {
+            LfoMode::Keep => "keep",
+            LfoMode::Add => "add",
+            LfoMode::Replace => "replace",
+        }
+    }
+
+    /// The wave rides on the curve as it is (Keep and Add), not around Base.
+    pub const fn rides(self) -> bool {
+        !matches!(self, LfoMode::Replace)
+    }
 }
 
 /// The MPE LFO's rates: a cycle per part of a bar, each also dotted (`.`) and triplet (`T`), and
@@ -253,7 +291,7 @@ impl Default for ToolSettings {
             lfo_attack: 0.0,
             lfo_decay: 0.0,
             lfo_seed: 1,
-            lfo_add: false,
+            lfo_mode: LfoMode::Keep,
         }
     }
 }
@@ -262,7 +300,7 @@ impl ToolSettings {
     /// The MPE LFO these settings make, the curve it writes and whether it adds to the curve, for
     /// a bar `bar_beats` long: what `note.lfoExpression` is given and what the piano roll
     /// previews.
-    pub fn lfo(&self, bar_beats: f64) -> (suhina_engine::model::ExpressionKind, suhina_session::Lfo, bool) {
+    pub fn lfo(&self, bar_beats: f64) -> (suhina_engine::model::ExpressionKind, suhina_session::Lfo, LfoMode) {
         use suhina_engine::model::ExpressionKind;
         let kind = match self.lfo_target {
             1 => ExpressionKind::Timbre,
@@ -289,6 +327,33 @@ impl ToolSettings {
             decay: (self.lfo_decay / 100.0).clamp(0.0, 1.0 - attack),
             seed: self.lfo_seed,
         };
-        (kind, lfo, self.lfo_add)
+        (kind, lfo, self.lfo_mode)
+    }
+
+    /// The panel set to a kept LFO's settings, so it shows them and Apply updates it.
+    pub fn load_lfo(&mut self, kept: &suhina_engine::model::NoteLfo, bar_beats: f64) {
+        use suhina_engine::model::ExpressionKind;
+        let pitch = kept.kind == ExpressionKind::Pitch;
+        self.lfo_target = match kept.kind {
+            ExpressionKind::Pitch => 0,
+            ExpressionKind::Timbre => 1,
+            ExpressionKind::Pressure => 2,
+        };
+        let lfo = kept.lfo;
+        self.lfo_wave = LFO_WAVES.iter().position(|(name, _)| *name == lfo.wave.name()).unwrap_or(0);
+        self.lfo_shape = lfo.shape * 100.0;
+        self.lfo_shift = lfo.shift * 100.0;
+        let bar = if bar_beats.is_finite() && bar_beats > 0.0 { bar_beats } else { 4.0 };
+        let part = lfo.period / bar;
+        self.lfo_rate = LFO_RATES
+            .iter()
+            .enumerate()
+            .min_by(|a, b| (a.1.1 - part).abs().total_cmp(&(b.1.1 - part).abs()))
+            .map_or(self.lfo_rate, |(i, _)| i);
+        self.lfo_amount = if pitch { lfo.amount } else { lfo.amount * 127.0 };
+        self.lfo_attack = lfo.attack * 100.0;
+        self.lfo_decay = lfo.decay * 100.0;
+        self.lfo_seed = lfo.seed;
+        self.lfo_mode = LfoMode::Keep;
     }
 }

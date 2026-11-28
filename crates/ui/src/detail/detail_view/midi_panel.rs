@@ -12,7 +12,7 @@ use super::clip_panel::{
     plain_number, push_button, set_button, small_button, toggle, whole,
 };
 use super::*;
-use crate::detail::midi_tools::{Tools, ToolsTab, Transform, tools_width};
+use crate::detail::midi_tools::{LfoMode, Tools, ToolsTab, Transform, tools_width};
 use crate::detail::piano_roll::{PianoRollState, QUANTIZE_GRIDS};
 use suhina_engine::model::{ROOT_NAMES, ScaleMode};
 
@@ -670,8 +670,16 @@ fn transform_tab(
         return;
     }
     let chosen = state.transform;
-    // The MPE LFO writes only over the time selected, when there is one (› MPE LFO).
-    let lfo_span = state.time_span();
+    // The MPE LFO writes only over the time selected, or after the selected point (› MPE LFO).
+    let lfo_kind = state.tools.lfo(tools.bar_beats).0;
+    let lfo_span = crate::detail::piano_roll::expression::lfo_span(state, lfo_kind);
+    let lfo_where = if state.time_span().is_some() {
+        "in the time selected"
+    } else if lfo_span.is_some() {
+        "after the selected point"
+    } else {
+        ""
+    };
     let list = Rect::from_min_size(body.min, Vec2::new(body.width(), s.field));
     let entries: Vec<Option<(&str, bool)>> = Transform::ALL
         .iter()
@@ -828,9 +836,15 @@ fn transform_tab(
     if y + s.toggle > body.bottom() + 0.5 {
         return;
     }
-    let apply_text = format!("{} {}", chosen.verb(), tools.target());
+    // A kept LFO picked in the piano roll: Apply updates it with the settings shown (› MPE LFO).
+    let kept = state.mpe.kept.filter(|_| chosen == Transform::MpeLfo);
+    let apply_text = match chosen {
+        Transform::MpeLfo if kept.is_some() => "Update the picked LFO".to_owned(),
+        Transform::MpeLfo if !lfo_where.is_empty() => format!("{} {}, {lfo_where}", chosen.verb(), tools.target()),
+        _ => format!("{} {}", chosen.verb(), tools.target()),
+    };
     let apply = Rect::from_min_size(Pos2::new(body.left(), y), Vec2::new(body.width(), s.toggle));
-    let enabled = tools.count() > 0;
+    let enabled = kept.is_some() || tools.count() > 0;
     // A push button, `:disabled` while there are no notes to change.
     let id = Id::unique("midi-tools-apply");
     let response = push_button(ui, painter, apply, id, (&apply_text, &apply_text), enabled, theme::TEXT_SMALL)
@@ -845,7 +859,18 @@ fn transform_tab(
             Transform::RampVelocity => "note.rampVelocity",
             Transform::MpeLfo => "note.lfoExpression",
         };
-        actions.push(Action::new(id, params));
+        match kept {
+            Some((note, lfo)) => {
+                let mut update = tools.address.clone();
+                update["note"] = json!({ "id": note.0 });
+                update["lfo"] = json!(lfo);
+                for key in ["wave", "shape", "period", "shift", "amount", "attack", "decay", "seed"] {
+                    update[key] = params[key].clone();
+                }
+                actions.push(Action::new("note.setLfo", update));
+            }
+            None => actions.push(Action::new(id, params)),
+        }
     }
 }
 
@@ -892,18 +917,19 @@ fn lfo_settings(
         (settings.lfo_amount, settings.lfo_base) =
             if i == 0 { (1.0, 0.0) } else { (32.0, if i == 1 { 64.0 } else { 0.0 }) };
     }
-    let modes = [Some(("Replace", !settings.lfo_add)), Some(("Add", settings.lfo_add))];
-    let shown = if settings.lfo_add { "Add" } else { "Replace" };
+    let modes: Vec<Option<(&str, bool)>> =
+        LfoMode::ALL.iter().map(|m| Some((m.name(), *m == settings.lfo_mode))).collect();
+    let shown = settings.lfo_mode.name();
     explain(
         ui,
         b_name,
         "lfo-mode",
-        "Replace writes the wave around Base; Add swings it around the curve already there",
+        "Keep keeps the wave on the notes, riding on the curve and editable afterwards; Add writes it as points around the curve already there; Replace writes it around Base",
     );
     if let Some(i) =
         drop_down(ui, painter, b_field, Id::unique("midi-tools-lfo-mode"), "LFO mode", shown, &modes, b_field.width())
     {
-        settings.lfo_add = i == 1;
+        settings.lfo_mode = LfoMode::ALL.get(i).copied().unwrap_or_default();
     }
     y += NAME + s.field + s.gap;
     // The wave over a bar, its envelope included, as it will be written.
@@ -966,7 +992,7 @@ fn lfo_settings(
     if let Some(v) = setting_field(ui, painter, a_field, "LFO amount", settings.lfo_amount, (-reach, reach), unit) {
         settings.lfo_amount = v;
     }
-    if !settings.lfo_add {
+    if settings.lfo_mode == LfoMode::Replace {
         name_over(painter, b_name, "Base", Align2::LEFT_BOTTOM);
         if let Some(v) = setting_field(ui, painter, b_field, "LFO base", settings.lfo_base, base_range, unit) {
             settings.lfo_base = v;
@@ -1043,7 +1069,7 @@ fn lfo_params(
     span: Option<(f64, f64)>,
 ) {
     use crate::detail::midi_tools::{LFO_TARGETS, LFO_WAVES};
-    let (_, lfo, add) = settings.lfo(bar_beats);
+    let (_, lfo, mode) = settings.lfo(bar_beats);
     params["kind"] = json!(LFO_TARGETS.get(settings.lfo_target).map_or("pitch", |(name, _)| *name));
     params["wave"] = json!(LFO_WAVES.get(settings.lfo_wave).map_or("sine", |(name, _)| *name));
     params["period"] = json!(lfo.period);
@@ -1054,7 +1080,7 @@ fn lfo_params(
     params["attack"] = json!(lfo.attack);
     params["decay"] = json!(lfo.decay);
     params["seed"] = json!(lfo.seed);
-    params["mode"] = json!(if add { "add" } else { "replace" });
+    params["mode"] = json!(mode.param());
     if let Some((from, to)) = span.filter(|(from, to)| to > from) {
         params["from"] = json!(from);
         params["to"] = json!(to);

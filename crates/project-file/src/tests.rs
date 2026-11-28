@@ -1553,6 +1553,7 @@ fn curves() -> NoteExpression {
         pitch: vec![ExpressionPoint::new(0.0, 0.0), ExpressionPoint::new(0.5, 2.0), ExpressionPoint::new(1.0, -1.5)],
         pressure: vec![ExpressionPoint::new(0.0, 0.2), ExpressionPoint::new(1.0, 0.9)],
         timbre: vec![ExpressionPoint::new(0.25, 0.5)],
+        lfos: Vec::new(),
     }
 }
 
@@ -2069,6 +2070,65 @@ fn a_notes_expression_curves_round_trip() {
     let pitch =
         notes_of(&mut read).and_then(|notes| notes.first().cloned()).unwrap().expression().unwrap().pitch.clone();
     assert_eq!(pitch[0].curve, 0.5);
+}
+
+/// A kept LFO is written inside its note's expression and read back as it was: its stretch,
+/// the cuts taken off it (only when there are some) and its settings.
+#[test]
+fn a_notes_kept_lfos_round_trip() {
+    let lfo = |kind, (from, to), (lead, tail), wave| suhina_model::NoteLfo {
+        kind,
+        from,
+        to,
+        lead,
+        tail,
+        lfo: suhina_model::Lfo {
+            wave,
+            shape: 0.25,
+            period: 0.125,
+            shift: -0.5,
+            amount: if kind == ExpressionKind::Pitch { 1.5 } else { 0.25 },
+            base: kind.neutral(),
+            attack: 0.2,
+            decay: 0.3,
+            seed: 7,
+        },
+    };
+    let mut project = everything();
+    if let Some(note) = notes_of(&mut project).and_then(|notes| notes.get_mut(0)) {
+        let duration = note.duration;
+        note.expression_mut().lfos = vec![
+            lfo(ExpressionKind::Pitch, (0.0, duration / 2.0), (0.0, 0.0), suhina_model::LfoWave::Sine),
+            lfo(ExpressionKind::Timbre, (duration / 4.0, duration), (0.5, 0.25), suhina_model::LfoWave::Random),
+        ];
+    }
+    let written = to_json(&project);
+    assert!(written.contains("\"lfos\"") && written.contains("\"lead\""), "{written}");
+    assert_eq!(written.matches("\"lead\"").count(), 1, "only the cut one writes its lead");
+    assert_eq!(from_json(&written), Ok(project));
+}
+
+#[test]
+fn malformed_kept_lfos_are_refused() {
+    let good = r#""kind": "pitch", "from": 0, "to": 1, "wave": "sine", "period": 0.25, "amount": 1"#;
+    assert!(with_expression(&format!(r#"{{ "lfos": [{{ {good} }}] }}"#)).is_ok());
+    let at = "project.contents[0].lanes[0].notes[0].expression.lfos";
+    for (lfo, why) in [
+        (r#""kind": "volume", "from": 0, "to": 1, "wave": "sine", "period": 0.25, "amount": 1"#, "unknown curve"),
+        (r#""kind": "pitch", "from": 0, "to": 1, "wave": "saw", "period": 0.25, "amount": 1"#, "unknown wave"),
+        (r#""kind": "pitch", "from": 0, "to": 2, "wave": "sine", "period": 0.25, "amount": 1"#, "inside the note"),
+        (r#""kind": "pitch", "from": 0.5, "to": 0.5, "wave": "sine", "period": 0.25, "amount": 1"#, "not empty"),
+        (r#""kind": "pitch", "from": 0, "to": 1, "wave": "sine", "period": 0, "amount": 1"#, "period"),
+        (r#""kind": "pressure", "from": 0, "to": 1, "wave": "sine", "period": 0.25, "amount": 2"#, "amount"),
+        (r#""kind": "pitch", "from": 0, "to": 1, "wave": "sine", "period": 0.25, "amount": 1, "lead": -1"#, "lead"),
+        (r#""kind": "pitch", "to": 1, "wave": "sine", "period": 0.25, "amount": 1"#, "expected a number"),
+    ] {
+        let error = with_expression(&format!(r#"{{ "lfos": [{{ {lfo} }}] }}"#)).unwrap_err().to_string();
+        assert!(error.contains(&format!("{at}[0]")) && error.contains(why), "{lfo}: {error}");
+    }
+    let many = vec![format!("{{ {good} }}"); suhina_model::MAX_NOTE_LFOS + 1].join(",");
+    let error = with_expression(&format!(r#"{{ "lfos": [{many}] }}"#)).unwrap_err().to_string();
+    assert!(error.contains("LFOs, more than"), "{error}");
 }
 
 /// A project without curves writes byte for byte what version 16 wrote, apart from the version,

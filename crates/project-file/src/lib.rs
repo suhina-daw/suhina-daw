@@ -772,7 +772,78 @@ fn expression_value(expression: &NoteExpression) -> Value {
             map.insert(kind.name().into(), Value::Array(points));
         }
     }
+    if !expression.lfos.is_empty() {
+        map.insert("lfos".into(), Value::Array(expression.lfos.iter().map(lfo_value).collect()));
+    }
     Value::Object(map)
+}
+
+/// One LFO a note keeps: its curve's kind, its stretch, what cuts took off it (only when
+/// something did) and its settings.
+fn lfo_value(lfo: &suhina_model::NoteLfo) -> Value {
+    let mut out = json!({
+        "kind": lfo.kind.name(),
+        "from": number(lfo.from),
+        "to": number(lfo.to),
+        "wave": lfo.lfo.wave.name(),
+        "shape": number(lfo.lfo.shape),
+        "period": number(lfo.lfo.period),
+        "shift": number(lfo.lfo.shift),
+        "amount": number(lfo.lfo.amount),
+        "attack": number(lfo.lfo.attack),
+        "decay": number(lfo.lfo.decay),
+        "seed": lfo.lfo.seed,
+    });
+    if let Some(map) = out.as_object_mut() {
+        if lfo.lead != 0.0 {
+            map.insert("lead".into(), json!(number(lfo.lead)));
+        }
+        if lfo.tail != 0.0 {
+            map.insert("tail".into(), json!(number(lfo.tail)));
+        }
+    }
+    out
+}
+
+/// A note's kept LFOs (`expression.lfos`, from version 17): at most
+/// [`suhina_model::MAX_NOTE_LFOS`], each checked against the note `duration` beats long.
+fn read_lfos(e: &Obj, duration: f64, at: &str) -> Result<Vec<suhina_model::NoteLfo>, ProjectFileError> {
+    let items = list(e, "lfos", at)?;
+    if items.len() > suhina_model::MAX_NOTE_LFOS {
+        return Err(format!("{at}.lfos: {} LFOs, more than {}", items.len(), suhina_model::MAX_NOTE_LFOS).into());
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for (i, item) in items.iter().enumerate() {
+        let at = format!("{at}.lfos[{i}]");
+        let o = object(item, &at)?;
+        let kind_name = required_text(o, "kind", &at)?;
+        let kind = ExpressionKind::from_name(&kind_name)
+            .ok_or_else(|| ProjectFileError(format!("{at}.kind: unknown curve {kind_name:?}")))?;
+        let wave_name = required_text(o, "wave", &at)?;
+        let wave = suhina_model::LfoWave::from_name(&wave_name)
+            .ok_or_else(|| ProjectFileError(format!("{at}.wave: unknown wave {wave_name:?}")))?;
+        let lfo = suhina_model::NoteLfo {
+            kind,
+            from: float(o, "from", &at)?,
+            to: float(o, "to", &at)?,
+            lead: float_or(o, "lead", 0.0, &at)?,
+            tail: float_or(o, "tail", 0.0, &at)?,
+            lfo: suhina_model::Lfo {
+                wave,
+                shape: float_or(o, "shape", 0.0, &at)?,
+                period: float(o, "period", &at)?,
+                shift: float_or(o, "shift", 0.0, &at)?,
+                amount: float(o, "amount", &at)?,
+                base: kind.neutral(),
+                attack: float_or(o, "attack", 0.0, &at)?,
+                decay: float_or(o, "decay", 0.0, &at)?,
+                seed: optional_whole(o, "seed", &at)?.unwrap_or(1),
+            },
+        };
+        lfo.check(duration).map_err(|why| ProjectFileError(format!("{at}: {why}")))?;
+        out.push(lfo);
+    }
+    Ok(out)
 }
 
 /// A note's `expression` (from version 17; missing in an earlier file, so no curves). Each
@@ -839,6 +910,7 @@ fn read_expression(
         }
         *expression.curve_mut(kind) = curve;
     }
+    expression.lfos = read_lfos(e, duration, &at)?;
     Ok((!expression.is_empty()).then(|| Shared::new(expression)))
 }
 

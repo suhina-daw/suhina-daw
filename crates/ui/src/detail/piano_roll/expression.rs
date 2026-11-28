@@ -25,7 +25,7 @@ use std::collections::BTreeSet;
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use serde_json::{Value, json};
 use suhina_engine::model::expression::{curve_value, shaped};
-use suhina_engine::model::{ExpressionKind, ExpressionPoint, MAX_CURVE_POINTS, Note, NoteId};
+use suhina_engine::model::{ExpressionKind, ExpressionPoint, MAX_CURVE_POINTS, Note, NoteId, NoteLfo};
 
 use super::{Layout, PianoClip, PianoRollState, Tool, nearest_line};
 use crate::interaction::key_name::key_name;
@@ -77,8 +77,9 @@ impl Lane {
 /// How a point drag moves.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum DragMode {
-    /// One point, or the selected points together.
-    Points { press: Pos2 },
+    /// One point, or the selected points together; `at`, where the grabbed point is in the curve
+    /// while a hold point put before it moved it on by one (› Editing points).
+    Points { press: Pos2, at: Option<usize> },
     /// The segment after point `index`, up or down.
     Segment { press: Pos2 },
     /// The segment after point `index` curved, from the curvature it had.
@@ -105,6 +106,68 @@ impl PointDrag {
     fn of(&self, id: Option<NoteId>, kind: ExpressionKind) -> bool {
         id == Some(self.note) && self.kind == kind
     }
+
+    /// Where the point it took is in the curve as dragged.
+    fn shown_index(&self) -> usize {
+        match self.mode {
+            DragMode::Points { at: Some(at), .. } => at,
+            _ => self.index,
+        }
+    }
+}
+
+/// `moved` (the curve with point `grabbed` of `from` moved by `delta`) with a hold point put a
+/// grid `step` before the grabbed point, at the value it had, when the grabbed point left a flat
+/// stretch up or down: the bend then starts a step before the point, not at the point before it
+/// (› Editing points). With the hold's index in the result and the grabbed point's. `None` when
+/// the stretch before was not flat, the value did not change or there is no room for the hold.
+pub(super) fn with_hold(
+    from: &[ExpressionPoint],
+    grabbed: usize,
+    moved: &[ExpressionPoint],
+    (delta, duration, step): (Move, f64, f64),
+) -> Option<(Vec<ExpressionPoint>, usize)> {
+    let old = from.get(grabbed)?;
+    let before = from.get(grabbed.checked_sub(1)?)?;
+    if (before.value - old.value).abs() > 1e-9 || !(step.is_finite() && step > 0.0) {
+        return None;
+    }
+    let offset = (old.offset + delta.beats).clamp(0.0, duration.max(0.0));
+    let now = moved.iter().position(|p| (p.offset - offset).abs() <= GAP)?;
+    let value = moved.get(now)?.value;
+    if (value - old.value).abs() <= 1e-9 || moved.len() >= MAX_CURVE_POINTS {
+        return None;
+    }
+    let hold = offset - step;
+    let earlier = now.checked_sub(1).and_then(|i| moved.get(i)).map_or(f64::NEG_INFINITY, |p| p.offset);
+    if hold <= earlier + GAP {
+        return None;
+    }
+    let mut out = moved.to_vec();
+    out.insert(now, ExpressionPoint::new(hold, old.value));
+    Some((out, now + 1))
+}
+
+/// [`MpeState::point_span`] for `clip`: from the first selected point to the point after it, or
+/// to the note's end when it is the last.
+pub(super) fn point_span(clip: &PianoClip, state: &PianoRollState) -> Option<(ExpressionKind, f64, f64)> {
+    let selection = &state.mpe.selection;
+    let kind = selection.kind?;
+    let note = clip.notes.position(selection.note?).and_then(|i| clip.notes.get(i))?;
+    let curve = own_curve(note, kind);
+    let first = *selection.points.first()?;
+    let from = curve.get(first)?.offset;
+    let to = curve.get(first + 1).map_or(note.duration, |p| p.offset);
+    (to > from + GAP).then_some((kind, note.time + from, note.time + to))
+}
+
+/// Where the MPE LFO writes `kind`, in the clip's beats: the time selected, else the stretch
+/// after the selected point of a `kind` curve, else nowhere in particular (the whole note).
+pub(crate) fn lfo_span(state: &PianoRollState, kind: ExpressionKind) -> Option<(f64, f64)> {
+    state
+        .time_span()
+        .filter(|(from, to)| to > from)
+        .or_else(|| state.mpe.point_span.filter(|(of, _, _)| *of == kind).map(|(_, from, to)| (from, to)))
 }
 
 /// The selected points of one note's curve.
@@ -145,6 +208,40 @@ pub(crate) struct MpeState {
     pub(crate) bend_targets: bool,
     /// The curve last edited, which Ctrl+A selects the points of.
     pub(crate) last_kind: ExpressionKind,
+    /// The stretch from the first selected point to the next point (or the note's end), in the
+    /// clip's beats, with its curve's kind: where the MPE LFO writes when no time is selected
+    /// (› MPE LFO). Worked out each frame from the selection.
+    pub(crate) point_span: Option<(ExpressionKind, f64, f64)>,
+    /// The kept LFO picked (its note and its index among the note's LFOs): the clip panel's
+    /// MPE LFO shows its settings and Apply updates it (› MPE LFO).
+    pub(crate) kept: Option<(NoteId, usize)>,
+    /// A kept LFO's stretch or depth being dragged.
+    pub(crate) lfo_drag: Option<LfoDrag>,
+    /// A right-click on a kept LFO: its menu, at the pointer.
+    pub(crate) lfo_menu: Option<(NoteId, usize, Pos2)>,
+}
+
+/// Which part of a kept LFO's bar a drag took.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LfoPart {
+    /// The bar: the stretch moves.
+    Body,
+    Start,
+    End,
+    /// The knob in its middle: how far it swings.
+    Depth,
+}
+
+/// A kept LFO being dragged: its note, which of its LFOs, the part, where the press was, and
+/// the LFO as it was and as it is now.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LfoDrag {
+    pub(crate) note: NoteId,
+    pub(crate) index: usize,
+    pub(crate) part: LfoPart,
+    pub(crate) press: Pos2,
+    pub(crate) from: NoteLfo,
+    pub(crate) now: NoteLfo,
 }
 
 impl Default for MpeState {
@@ -157,6 +254,10 @@ impl Default for MpeState {
             menu: None,
             release: None,
             scale: None,
+            point_span: None,
+            kept: None,
+            lfo_drag: None,
+            lfo_menu: None,
             bend_targets: true,
             last_kind: ExpressionKind::Pitch,
         }
@@ -317,6 +418,10 @@ pub(super) fn curve_line(
     area: Rect,
     curve: &[ExpressionPoint],
 ) -> Vec<Pos2> {
+    let lfos = kept_of(note, kind);
+    if !lfos.is_empty() {
+        return lfo_line(layout, note, (kind, area), curve, &lfos);
+    }
     let Some(first) = curve.first() else { return Vec::new() };
     let at = |offset: f64, value: f64| {
         y_of(layout, note, kind, area, value)
@@ -338,6 +443,48 @@ pub(super) fn curve_line(
         line.extend(at(note.duration, last.value));
     }
     line
+}
+
+/// The LFOs `note` keeps on its `kind` curve.
+fn kept_of(note: &Note, kind: ExpressionKind) -> Vec<NoteLfo> {
+    note.expression().map_or_else(Vec::new, |e| e.lfos.iter().filter(|l| l.kind == kind).copied().collect())
+}
+
+/// Whether `note` has a `kind` curve or an LFO riding on one: something to draw.
+fn has_curve(note: &Note, kind: ExpressionKind) -> bool {
+    note.expression().is_some_and(|e| !e.curve(kind).is_empty() || e.has_lfo(kind))
+}
+
+/// The line of a curve `lfos` ride on: sampled every 2 points across the note, at most 4000
+/// times, the curve's value with their swing, kept in the kind's range.
+fn lfo_line(
+    layout: &Layout,
+    note: &Note,
+    (kind, area): (ExpressionKind, Rect),
+    curve: &[ExpressionPoint],
+    lfos: &[NoteLfo],
+) -> Vec<Pos2> {
+    let width = (layout.x_of(note.time + note.duration.max(0.0)) - layout.x_of(note.time)).abs();
+    let steps = ((width / 2.0).ceil() as usize).clamp(1, 4000);
+    (0..=steps)
+        .filter_map(|i| {
+            let offset = note.duration.max(0.0) * i as f64 / steps as f64;
+            let base = curve_value(curve, offset).unwrap_or(kind.neutral());
+            let swing: f64 = lfos.iter().map(|l| l.swing_at(offset)).sum();
+            let value = kind.clamp(base + swing).unwrap_or(base);
+            y_of(layout, note, kind, area, value).map(|y| Pos2::new(layout.x_of(note.time + offset), y))
+        })
+        .collect()
+}
+
+/// `note` as drawn: with a kept LFO being dragged as the drag leaves it.
+pub(super) fn with_lfo_drag(state: &PianoRollState, id: Option<NoteId>, note: Note) -> Note {
+    let Some(drag) = state.mpe.lfo_drag.as_ref().filter(|d| Some(d.note) == id) else { return note };
+    let mut note = note;
+    if let Some(slot) = note.expression_mut().lfos.get_mut(drag.index) {
+        *slot = drag.now;
+    }
+    note
 }
 
 fn next_rise(p: &ExpressionPoint, next: Option<&ExpressionPoint>) -> f64 {
@@ -432,10 +579,11 @@ fn draw_lfo_preview(ui: &Ui, layout: &Layout, clip: &PianoClip, state: &PianoRol
     if !(state.tools_open && state.tools_tab == ToolsTab::Transform && state.transform == Transform::MpeLfo) {
         return;
     }
-    let (kind, lfo, add) = state.tools.lfo(clip.bar_beats);
+    let (kind, lfo, mode) = state.tools.lfo(clip.bar_beats);
+    let add = mode.rides();
     let Some(area) = area_of(state, layout, kind) else { return };
     let painter = ui.painter_at(area);
-    let span = state.time_span().filter(|(from, to)| to > from);
+    let span = lfo_span(state, kind);
     for (index, note) in clip.notes.iter().enumerate() {
         if !(state.selected.is_empty() || state.selected.contains(&index)) {
             continue;
@@ -469,8 +617,10 @@ fn draw_curves(
     let font = crate::kit::theme::ui_font(crate::kit::theme::TEXT_SMALL);
     for (index, note) in clip.notes.iter().enumerate() {
         let id = clip.notes.id(index);
+        let dragged_lfo = with_lfo_drag(state, id, note.clone());
+        let note = &dragged_lfo;
         let curve = shown_curve(state, (index, id), note, kind);
-        if curve.is_empty() {
+        if curve.is_empty() && !has_curve(note, kind) {
             continue;
         }
         let selected = state.selected.contains(&index);
@@ -509,7 +659,7 @@ fn draw_curves(
                 && state.mpe.selection.kind == Some(kind)
                 && state.mpe.selection.points.contains(&point)
         };
-        let active_point = state.expression_drag.as_ref().filter(|d| d.of(id, kind)).map(|d| d.index);
+        let active_point = state.expression_drag.as_ref().filter(|d| d.of(id, kind)).map(PointDrag::shown_index);
         if bent {
             // Each bend's own handle in its middle: dragged, it curves the bend.
             for (_, at) in bend_handles(layout, note, &curve) {
@@ -521,12 +671,24 @@ fn draw_curves(
                 ));
             }
         }
+        for (lfo, bar) in kept_bars(layout, note, kind, area) {
+            let picked = state.mpe.kept == id.map(|id| (id, lfo));
+            let fill = if picked { inks.accent } else { inks.accent.gamma_multiply(0.55) };
+            painter.rect_filled(bar, 2.0, fill);
+            painter.rect_stroke(bar, 2.0, Stroke::new(1.0, inks.edge), egui::StrokeKind::Outside);
+            painter.circle_filled(bar.center(), 4.0, inks.edge);
+            painter.circle_stroke(bar.center(), 4.0, Stroke::new(1.5, inks.accent));
+            if bar.width() > 30.0 {
+                let font = crate::kit::theme::mono_font(crate::kit::theme::TEXT_TINY);
+                painter.text(bar.left_center() + Vec2::new(3.0, 0.0), Align2::LEFT_CENTER, "LFO", font, inks.edge);
+            }
+        }
         let shown = sparse(handles(layout, note, kind, area, &curve), hover, |p| chosen(p) || active_point == Some(p));
         for (point, at) in shown {
             painter.circle_filled(at, 4.5, inks.edge);
             painter.circle_stroke(at, 4.0, Stroke::new(1.5, inks.accent));
             painter.circle_filled(at, 3.0, if chosen(point) { inks.accent } else { color });
-            let active = dragged && state.expression_drag.as_ref().is_some_and(|d| d.index == point);
+            let active = dragged && state.expression_drag.as_ref().is_some_and(|d| d.shown_index() == point);
             if (active || hover.is_some_and(|p| p.distance(at) <= HANDLE))
                 && let Some(value) = curve.get(point).map(|p| p.value)
             {
@@ -664,21 +826,51 @@ pub(super) fn bend_handles(layout: &Layout, note: &Note, curve: &[ExpressionPoin
         .collect()
 }
 
+/// The bar over each LFO `note` keeps on its `kind` curve, by its index among the note's LFOs:
+/// as long as its stretch, just above the curve there (pitch) or at the lane's top.
+pub(super) fn kept_bars(layout: &Layout, note: &Note, kind: ExpressionKind, area: Rect) -> Vec<(usize, Rect)> {
+    let Some(expression) = note.expression() else { return Vec::new() };
+    let line = if kind == ExpressionKind::Pitch {
+        curve_line(layout, note, kind, area, expression.curve(kind))
+    } else {
+        Vec::new()
+    };
+    let lift = if layout.bent && kind == ExpressionKind::Pitch { band_width(layout) / 2.0 } else { 0.0 };
+    expression
+        .lfos
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.kind == kind)
+        .map(|(i, l)| {
+            let (left, right) = (layout.x_of(note.time + l.from), layout.x_of(note.time + l.to));
+            let top = line
+                .iter()
+                .filter(|p| p.x >= left - 1.0 && p.x <= right + 1.0)
+                .map(|p| p.y)
+                .fold(f32::INFINITY, f32::min);
+            let y = if top.is_finite() { top - lift - 12.0 } else { area.top() + 2.0 };
+            let y = y.max(area.top() + 1.0);
+            (i, Rect::from_min_max(Pos2::new(left, y), Pos2::new(right.max(left + 4.0), y + 7.0)))
+        })
+        .collect()
+}
+
 /// Whether `p` is over `note` or near its line.
 fn near_line(layout: &Layout, note: &Note, kind: ExpressionKind, line: &[Pos2], p: Pos2) -> bool {
     (kind == ExpressionKind::Pitch && layout.note_rect(note).expand(HANDLE).contains(p))
         || line.windows(2).any(|w| distance_to_segment(p, w[0], w[1]) <= HANDLE * 1.5)
 }
 
-/// How wide a bent note's band is drawn: as tall as its row, less the gap between rows.
+/// How wide a bent note's band is drawn: its share of the row (Settings › Clip editor › MPE ›
+/// Bent note thickness), at most the row less the gap between rows.
 pub(super) fn band_width(layout: &Layout) -> f32 {
-    (layout.key_height - 2.0).max(2.0)
+    ((layout.key_height - 2.0) * layout.bent_width.clamp(0.1, 1.0)).max(2.0)
 }
 
 /// The middle line of `note`'s band while pitch bends are drawn as bent notes and its curve is
 /// `curve`; empty when they are not or it has no pitch curve.
 pub(super) fn band_line(layout: &Layout, note: &Note, curve: &[ExpressionPoint]) -> Vec<Pos2> {
-    if !layout.bent || curve.is_empty() {
+    if !layout.bent || (curve.is_empty() && !has_curve(note, ExpressionKind::Pitch)) {
         return Vec::new();
     }
     curve_line(layout, note, ExpressionKind::Pitch, layout.grid, curve)
@@ -688,7 +880,8 @@ pub(super) fn band_line(layout: &Layout, note: &Note, curve: &[ExpressionPoint])
 /// in the note's time.
 pub(super) fn on_band(layout: &Layout, note: &Note, pos: Pos2) -> bool {
     let line = band_line(layout, note, own_curve(note, ExpressionKind::Pitch));
-    let reach = band_width(layout) / 2.0 + 0.5;
+    // A thin band is still easy to press: at least as near as a point's handle.
+    let reach = (band_width(layout) / 2.0 + 0.5).max(HANDLE);
     let (start, end) = (layout.x_of(note.time), layout.x_of(note.time + note.duration.max(0.0)));
     pos.x >= start && pos.x <= end && line.windows(2).any(|w| distance_to_segment(pos, w[0], w[1]) <= reach)
 }
@@ -746,12 +939,16 @@ pub(super) fn handle_points(
         }
     }
     busy |= point_menu(&cx, state, actions);
+    busy |= lfo_menu(&cx, state, actions);
+    if state.mpe.lfo_drag.is_some() && !ui.input(|i| i.pointer.primary_down()) {
+        state.mpe.lfo_drag = None;
+    }
     // A drag whose widget no frame made (its note left the selection, a lane was hidden) never
     // hears the button let go: it ends with the button.
     if state.expression_drag.is_some() && !ui.input(|i| i.pointer.primary_down()) {
         state.expression_drag = None;
     }
-    busy || state.expression_drag.is_some() || state.mpe.menu.is_some()
+    busy || state.expression_drag.is_some() || state.mpe.menu.is_some() || state.mpe.lfo_drag.is_some()
 }
 
 /// The lane toggles in the header.
@@ -1033,6 +1230,15 @@ fn handle_note(
             return true;
         }
     }
+    // The kept LFOs' bars, before the points: a point over a bar is the point's.
+    if let Some(id) = id {
+        let drawn = with_lfo_drag(state, Some(id), note.clone());
+        for (lfo, bar) in kept_bars(cx.layout, &drawn, kind, area) {
+            if lfo_bar(cx, (index, id, note, kind, area), (lfo, bar), state, actions, busy) {
+                return true;
+            }
+        }
+    }
     let active_point = state.expression_drag.as_ref().filter(|d| d.of(id, kind)).map(|d| d.index);
     let selection = &state.mpe.selection;
     let chosen = |p: usize| selection.note == id && selection.kind == Some(kind) && selection.points.contains(&p);
@@ -1056,6 +1262,169 @@ fn handle_note(
         }
     }
     false
+}
+
+/// The shortest stretch a kept LFO is dragged to, in beats.
+const MIN_KEPT: f64 = 1.0 / 64.0;
+
+/// A kept LFO's bar: a click picks it (the clip panel shows its settings), a right-click opens its
+/// menu, a drag of the bar moves its stretch, of an end moves that end, and of the knob in the
+/// middle sets how far it swings. True when an edit was sent.
+fn lfo_bar(
+    cx: &Cx<'_>,
+    (_, id, note, kind, area): (usize, NoteId, &Note, ExpressionKind, Rect),
+    (lfo, bar): (usize, Rect),
+    state: &mut PianoRollState,
+    actions: &mut Vec<Action>,
+    busy: &mut bool,
+) -> bool {
+    let Some(kept) = note.expression().and_then(|e| e.lfos.get(lfo)).copied() else { return false };
+    let edge = |x: f32| Rect::from_min_max(Pos2::new(x - 3.0, bar.top() - 2.0), Pos2::new(x + 3.0, bar.bottom() + 2.0));
+    let parts = [
+        (LfoPart::Body, bar.expand2(Vec2::new(0.0, 3.0)), "LFO"),
+        (LfoPart::Start, edge(bar.left()), "LFO start"),
+        (LfoPart::End, edge(bar.right()), "LFO end"),
+        (LfoPart::Depth, Rect::from_center_size(bar.center(), Vec2::splat(10.0)), "LFO depth"),
+    ];
+    for (part, rect, label) in parts {
+        let dragging = state.mpe.lfo_drag.as_ref().is_some_and(|d| d.note == id && d.index == lfo && d.part == part);
+        let response =
+            cx.ui.interact(rect, Id::unique(("piano-mpe-lfo", kind.name(), id, lfo, label)), Sense::click_and_drag());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, label));
+        if response.hovered() || dragging {
+            *busy = true;
+            cx.ui.ctx().set_cursor_icon(match part {
+                LfoPart::Body => egui::CursorIcon::Grab,
+                LfoPart::Start | LfoPart::End => egui::CursorIcon::ResizeHorizontal,
+                LfoPart::Depth => egui::CursorIcon::ResizeVertical,
+            });
+        }
+        if response.secondary_clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            state.mpe.lfo_menu = Some((id, lfo, pos));
+            return false;
+        }
+        if response.clicked() || response.drag_started() {
+            state.mpe.kept = Some((id, lfo));
+            state.tools.load_lfo(&kept, cx.clip.bar_beats);
+        }
+        let pos = cx.ui.ctx().pointer_latest_pos();
+        if response.drag_started() {
+            let press = cx.ui.input(|i| i.pointer.press_origin()).or(pos).unwrap_or_default();
+            state.mpe.lfo_drag = Some(LfoDrag { note: id, index: lfo, part, press, from: kept, now: kept });
+        }
+        if response.dragged()
+            && let Some(pos) = pos
+            && let Some(drag) = state.mpe.lfo_drag.as_mut().filter(|d| d.note == id && d.index == lfo && d.part == part)
+        {
+            drag.now = dragged_lfo(cx, (note, kind, area), drag, pos);
+        }
+        if response.drag_stopped()
+            && let Some(drag) = state.mpe.lfo_drag.take_if(|d| d.note == id && d.index == lfo && d.part == part)
+        {
+            if drag.now != drag.from {
+                let mut params = cx.clip.address.clone();
+                params["note"] = json!({ "id": id.0 });
+                params["lfo"] = json!(lfo);
+                if (drag.now.from, drag.now.to) != (drag.from.from, drag.from.to) {
+                    params["from"] = json!(note.time + drag.now.from);
+                    params["to"] = json!(note.time + drag.now.to);
+                }
+                if drag.now.lfo.amount != drag.from.lfo.amount {
+                    params["amount"] = json!(drag.now.lfo.amount);
+                }
+                actions.push(Action::new("note.setLfo", params));
+            }
+            return true;
+        }
+    }
+    false
+}
+
+/// A kept LFO as `drag` leaves it with the pointer at `pos`: its stretch moved or an end of it,
+/// on the grid unless Alt is held and kept inside the note; or how far it swings, by rows
+/// (pitch, in steps of a twentieth of a semitone) or by the lane's height.
+fn dragged_lfo(cx: &Cx<'_>, (note, kind, area): (&Note, ExpressionKind, Rect), drag: &LfoDrag, pos: Pos2) -> NoteLfo {
+    let was = drag.from;
+    let duration = note.duration.max(0.0);
+    let by = beat_at(cx.layout, cx.grid, pos.x, cx.snap) - beat_at(cx.layout, cx.grid, drag.press.x, cx.snap);
+    let fresh = |from: f64, to: f64| NoteLfo { from, to, lead: 0.0, tail: 0.0, ..was };
+    match drag.part {
+        LfoPart::Body => {
+            let by = by.clamp(-was.from, duration - was.to);
+            fresh(was.from + by, was.to + by)
+        }
+        LfoPart::Start => fresh((was.from + by).clamp(0.0, was.to - MIN_KEPT), was.to),
+        LfoPart::End => fresh(was.from, (was.to + by).clamp(was.from + MIN_KEPT, duration)),
+        LfoPart::Depth => {
+            let up = f64::from(drag.press.y - pos.y);
+            let amount = if kind == ExpressionKind::Pitch {
+                let semitones = was.lfo.amount + up / f64::from(cx.layout.key_height.max(1.0));
+                ((semitones * 20.0).round() / 20.0).clamp(-96.0, 96.0)
+            } else {
+                (was.lfo.amount + up / f64::from(area.height().max(1.0))).clamp(-1.0, 1.0)
+            };
+            NoteLfo { lfo: suhina_engine::model::Lfo { amount, ..was.lfo }, ..was }
+        }
+    }
+}
+
+/// A kept LFO's menu: Bake into points (every LFO the note keeps, `note.bakeLfo`) and Delete LFO.
+fn lfo_menu(cx: &Cx<'_>, state: &mut PianoRollState, actions: &mut Vec<Action>) -> bool {
+    let Some((note, lfo, pos)) = state.mpe.lfo_menu else { return false };
+    let Some(index) = cx.clip.notes.position(note) else {
+        state.mpe.lfo_menu = None;
+        return false;
+    };
+    let mut picked: Option<&'static str> = None;
+    let id = Id::unique("piano-mpe-lfo-menu");
+    let area = crate::kit::floating::area(cx.ui.ctx(), id, crate::kit::floating::Kind::Popup)
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos + Vec2::new(4.0, 4.0))
+        .show(cx.ui.ctx(), |ui| {
+            egui::Frame::menu(ui.style()).show(ui, |ui| {
+                ui.set_min_width(140.0);
+                if crate::kit::menu::action(ui, "Bake into points", None, true).clicked() {
+                    picked = Some("bake");
+                }
+                if crate::kit::menu::action(ui, "Delete LFO", None, true).clicked() {
+                    picked = Some("delete");
+                }
+            });
+        });
+    let mut params = cx.clip.address.clone();
+    match picked {
+        Some("bake") => {
+            params["notes"] = json!([index]);
+            actions.push(Action::new("note.bakeLfo", params));
+        }
+        Some("delete") => {
+            params["note"] = json!({ "id": note.0 });
+            params["lfo"] = json!(lfo);
+            actions.push(Action::new("note.removeLfo", params));
+        }
+        _ => {}
+    }
+    if picked.is_some() {
+        state.mpe.kept = None;
+    }
+    let outside = cx.ui.input(|i| i.pointer.any_pressed())
+        && cx.ui.ctx().pointer_latest_pos().is_some_and(|p| !area.response.rect.contains(p));
+    if picked.is_some() || outside {
+        state.mpe.lfo_menu = None;
+    }
+    true
+}
+
+/// Lets go of a picked kept LFO whose note is gone or no longer keeps it, or is not selected.
+pub(super) fn settle_kept(clip: &PianoClip, state: &mut PianoRollState) {
+    let Some((note, lfo)) = state.mpe.kept else { return };
+    let index = clip.notes.position(note);
+    let keeps = index.and_then(|i| clip.notes.get(i)).and_then(|n| n.expression()).is_some_and(|e| lfo < e.lfos.len());
+    if !keeps || index.is_none_or(|i| !state.selected.contains(&i)) {
+        state.mpe.kept = None;
+    }
 }
 
 /// A line's click (a point on it), Shift drag (the segment moves), Alt drag (it curves) and Alt
@@ -1208,13 +1577,13 @@ fn point_gestures(
             index: point,
             curve: curve.to_vec(),
             from,
-            mode: DragMode::Points { press },
+            mode: DragMode::Points { press, at: None },
         });
     }
     if response.dragged()
         && let Some(pos) = pos
         && let Some(drag) = state.expression_drag.as_mut().filter(|d| d.of(id, kind) && d.index == point)
-        && let DragMode::Points { press } = drag.mode
+        && let DragMode::Points { press, .. } = drag.mode
     {
         let group: BTreeSet<usize> = if state.mpe.selection.points.is_empty() {
             BTreeSet::from([point])
@@ -1232,6 +1601,16 @@ fn point_gestures(
         };
         let delta = constrain(moved, pos - press, cx.shift);
         drag.curve = moved_points(&drag.from, &group, point, delta, note.duration, kind, cx.snap);
+        // One point taken off a flat stretch bends from a grid step before it; Alt (no snap)
+        // keeps the slope from the point before (› Editing points).
+        let held = (group.len() == 1 && cx.snap)
+            .then(|| with_hold(&drag.from, point, &drag.curve, (delta, note.duration, cx.grid.step)))
+            .flatten();
+        let at = held.as_ref().map(|(_, at)| *at);
+        if let Some((curve, _)) = held {
+            drag.curve = curve;
+        }
+        drag.mode = DragMode::Points { press, at };
     }
     if response.drag_stopped()
         && let Some(drag) = state.expression_drag.take_if(|d| d.of(id, kind) && d.index == point)

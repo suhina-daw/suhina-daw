@@ -292,6 +292,7 @@ fn folded_layout(rows: KeyRows) -> Layout {
         key_height: 10.0,
         rows,
         bent: false,
+        bent_width: 1.0,
     }
 }
 
@@ -778,6 +779,7 @@ fn a_rectangle_covers_whole_grid_steps() {
         key_height: 12.0,
         rows: scale_view::rows(&clip(Vec::new()), Fold::default()),
         bent: false,
+        bent_width: 1.0,
     };
     let grid = TimelineGrid { step: 0.5, bar_beats: 4.0, snaps: true };
     let rect = Rect::from_min_max(Pos2::new(62.5, 10.0), Pos2::new(125.0, 20.0));

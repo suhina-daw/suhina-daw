@@ -162,8 +162,11 @@ writer, no notation work had landed (no model field, no file field, no decision)
 project file rule allows no field without a rise: an older Suhina skips a key it does not know
 and drops it on its next save ([ADR 0010](0010-project-files.md) › Amendment: format versions).
 So expression takes version 17 on its own: a note's optional `expression` with `pitch`,
-`pressure` and `timbre` lists of `[offset, value]` points, missing in earlier files
-([project file](../spec/suhina-format.md#versions)). Notation takes the next version when it lands.
+`pressure` and `timbre` lists of `[offset, value]` points (a third number, the segment's
+curvature, from -1 to 1, on a curved one) and the LFOs the note keeps (`lfos`, at most 16: a wave
+and its settings riding on one curve over a stretch of the note, [MPE](../spec/mpe.md#lfos)),
+missing in earlier files ([project file](../spec/suhina-format.md#versions)). Notation takes the
+next version when it lands.
 
 ## Consequences
 

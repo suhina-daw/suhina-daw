@@ -210,8 +210,12 @@ fn set_expression_keeps_a_clip_content_within_its_expression_points() {
     let mut all = Vec::new();
     for n in 0..21 {
         let mut held = note(f64::from(n) * 5.0, 5.0, 60);
-        held.expression =
-            Some(Shared::new(NoteExpression { pitch: full.clone(), pressure: full.clone(), timbre: full.clone() }));
+        held.expression = Some(Shared::new(NoteExpression {
+            pitch: full.clone(),
+            pressure: full.clone(),
+            timbre: full.clone(),
+            lfos: Vec::new(),
+        }));
         all.push(held);
     }
     let mut last = note(105.0, 5.0, 60);
@@ -431,4 +435,70 @@ fn an_edit_past_the_content_expression_limit_is_refused() {
     assert!(error.contains("TooManyExpressionPoints"), "{error}");
     assert_eq!(session.project(), &before);
     assert!(!session.can_undo());
+}
+
+/// The LFOs note `index` keeps.
+fn lfos(session: &Session, index: usize) -> Vec<NoteLfo> {
+    notes(session)[index].expression().map_or_else(Vec::new, |e| e.lfos.clone())
+}
+
+#[test]
+fn a_kept_lfo_rides_on_the_curve_and_is_edited_removed_and_baked() {
+    let mut session = session(vec![arch(), note(4.0, 2.0, 64)]);
+    // Kept over beats 1.5 to 2.5 of the clip: half a beat into the arch to half a beat before its end.
+    let keep = with(json!({ "notes": [0], "kind": "pitch", "period": 0.25, "amount": 1, "from": 1.5, "to": 2.5,
+        "mode": "keep" }));
+    run(&mut session, "note.lfoExpression", keep).unwrap();
+    assert_curve(&pitch(&session, 0), &[(0.0, 0.0), (1.0, 2.0), (2.0, 0.0)]);
+    let kept = lfos(&session, 0);
+    assert_eq!(kept.len(), 1, "kept as settings, not points");
+    assert_eq!((kept[0].kind, kept[0].from, kept[0].to), (ExpressionKind::Pitch, 0.5, 1.5));
+    let expression = notes(&session)[0].expression().cloned().unwrap();
+    // A quarter cycle into the LFO: the arch's own value there and a semitone more.
+    let at = 0.5 + 0.25 / 4.0;
+    let own = suhina_model::expression::curve_value(&expression.pitch, at).unwrap();
+    let swing = expression.value_at(ExpressionKind::Pitch, at) - own;
+    assert!((swing - 1.0).abs() < 1e-9, "a quarter cycle in, a semitone up: {swing}");
+    assert!(lfos(&session, 1).is_empty(), "only the notes given");
+    // Its settings change, what is left out stays.
+    run(&mut session, "note.setLfo", with(json!({ "note": 0, "lfo": 0, "amount": 0.5, "wave": "triangle" }))).unwrap();
+    let edited = lfos(&session, 0)[0];
+    assert_eq!((edited.lfo.amount, edited.lfo.wave, edited.lfo.period), (0.5, LfoWave::Triangle, 0.25));
+    run(&mut session, "note.setLfo", with(json!({ "note": 0, "lfo": 0, "from": 1.0, "to": 3.0 }))).unwrap();
+    assert_eq!((lfos(&session, 0)[0].from, lfos(&session, 0)[0].to), (0.0, 2.0));
+    assert!(run(&mut session, "note.setLfo", with(json!({ "note": 0, "lfo": 1, "amount": 1 }))).is_err());
+    assert!(run(&mut session, "note.setLfo", with(json!({ "note": 0, "lfo": 0, "period": 0 }))).is_err());
+    // Baked, it is points that sound as it did, and kept no longer.
+    let before = notes(&session)[0].expression().cloned().unwrap();
+    run(&mut session, "note.bakeLfo", with(json!({ "notes": [0] }))).unwrap();
+    assert!(lfos(&session, 0).is_empty());
+    let after = notes(&session)[0].expression().cloned().unwrap();
+    for step in 0..=32 {
+        let offset = f64::from(step) / 16.0;
+        let (a, b) = (before.value_at(ExpressionKind::Pitch, offset), after.value_at(ExpressionKind::Pitch, offset));
+        assert!((a - b).abs() < 0.05, "at {offset}: kept {a}, baked {b}");
+    }
+    undo(&mut session);
+    assert_eq!(lfos(&session, 0).len(), 1, "one undo brings it back");
+    run(&mut session, "note.removeLfo", with(json!({ "note": 0, "lfo": 0 }))).unwrap();
+    assert!(lfos(&session, 0).is_empty());
+    assert_curve(&pitch(&session, 0), &[(0.0, 0.0), (1.0, 2.0), (2.0, 0.0)]);
+}
+
+#[test]
+fn a_kept_lfo_goes_with_its_note_through_a_split() {
+    let mut session = session(vec![note(0.0, 4.0, 60)]);
+    run(&mut session, "note.lfoExpression", with(json!({ "kind": "pitch", "period": 1, "amount": 1, "mode": "keep" })))
+        .unwrap();
+    let whole = notes(&session)[0].expression().cloned().unwrap();
+    run(&mut session, "note.split", with(json!({ "notes": [0], "at": 1.5 }))).unwrap();
+    let parts = notes(&session);
+    assert_eq!(parts.len(), 2);
+    let right = parts.iter().find(|n| n.time > 1.0).unwrap();
+    let e = right.expression().unwrap();
+    assert_eq!(e.lfos.len(), 1);
+    for offset in [0.1, 0.9, 2.0] {
+        let (a, b) = (whole.value_at(ExpressionKind::Pitch, 1.5 + offset), e.value_at(ExpressionKind::Pitch, offset));
+        assert!((a - b).abs() < 1e-9, "at {offset} into the right part: {a} and {b}");
+    }
 }

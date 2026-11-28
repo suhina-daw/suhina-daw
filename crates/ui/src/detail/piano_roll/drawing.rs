@@ -509,6 +509,7 @@ pub(super) fn draw(
             stems.push(Stem { note: note.clone(), ink, selected });
         }
         // A note whose pitch bends, drawn bent: a band along its curve (› MPE › Bent notes).
+        let note = super::expression::with_lfo_drag(state, clip.notes.id(i), note);
         let band = super::expression::band_line(
             layout,
             &note,

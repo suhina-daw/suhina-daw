@@ -878,6 +878,7 @@ impl App {
             toolbar_size: self.settings.toolbar_size,
             workflow: self.keymap.workflow(),
             bent_notes: self.settings.bent_notes,
+            bent_width: self.settings.bent_width,
         };
         // The toolbar's tooltips show the keys the keymap has now, so a rebind (or a preset) is
         // visible on the button.

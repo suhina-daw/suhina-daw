@@ -165,6 +165,34 @@ fn prepared_curves_hold_the_exact_values_at_their_points() {
 }
 
 #[test]
+fn a_kept_lfo_is_played_between_the_curves_points() {
+    // A flat pitch curve with a one-beat sine of one semitone riding on it from beat 0 to 2.
+    let mut note = bent(0.0, 2.0, 60, &[(0.0, 0.0)]);
+    let lfo = Lfo {
+        wave: LfoWave::Sine,
+        shape: 0.0,
+        period: 1.0,
+        shift: 0.0,
+        amount: 1.0,
+        base: 0.0,
+        attack: 0.0,
+        decay: 0.0,
+        seed: 1,
+    };
+    note.expression_mut().lfos.push(NoteLfo::new(ExpressionKind::Pitch, (0.0, 2.0), lfo));
+    let mut curves = Curves::default();
+    let range = curves.add(note.expression.as_ref(), 2.0);
+    let changes = curves.changes.get(range.first as usize..range.end as usize).unwrap();
+    let bends: Vec<_> = changes.iter().filter(|c| c.dim == Dim::Bend).collect();
+    let near = |beat: f32| bends.iter().rev().find(|c| c.at <= beat).map(|c| i32::from(c.value)).unwrap();
+    // A semitone of 48 either way of 8192: about 171 steps.
+    assert!((near(0.25) - (8192 + 171)).abs() <= 2, "a quarter cycle in: {}", near(0.25));
+    assert!((near(0.75) - (8192 - 171)).abs() <= 2, "three quarters in: {}", near(0.75));
+    assert!((near(1.25) - (8192 + 171)).abs() <= 2, "the next cycle: {}", near(1.25));
+    assert!(bends.iter().all(|c| c.at < 2.0), "nothing at or after the end");
+}
+
+#[test]
 fn a_curve_past_the_notes_end_is_cut_there() {
     let note = bent(0.0, 4.0, 60, &[(0.0, 0.0), (4.0, 48.0)]);
     let mut curves = Curves::default();

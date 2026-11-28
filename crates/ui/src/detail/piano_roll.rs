@@ -40,7 +40,7 @@ mod clip_strip;
 mod context_menu;
 mod drawing;
 mod edits;
-mod expression;
+pub(crate) mod expression;
 mod keys;
 mod layout;
 mod select_steps;
@@ -391,6 +391,7 @@ pub fn show(
         key_height: state.key_height,
         rows,
         bent: options.bent_notes,
+        bent_width: f32::from(options.bent_width.clamp(10, 100)) / 100.0,
     };
     if let Some(row) = clip_row {
         clip_strip::show(ui, row, &layout, clip, state, actions);
@@ -469,6 +470,8 @@ pub fn show(
     // press on a handle is the handle's alone: it selects, draws and sounds no note under it.
     let mpe_busy =
         state.expression.is_some() && expression::handle_points(ui, &layout, clip, grid, !inputs.alt, state, actions);
+    state.mpe.point_span = state.expression.and(expression::point_span(clip, state));
+    expression::settle_kept(clip, state);
     let mpe_spot = state.expression.is_some()
         && !mpe_busy
         // The empty grid or a selected note itself: a double-click on the note adds a point at

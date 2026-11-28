@@ -20,6 +20,7 @@ mod groups;
 mod id_list;
 mod ids;
 mod lane_layout;
+pub mod lfo;
 pub mod names;
 mod tempo;
 
@@ -43,6 +44,7 @@ pub use groups::{
     MacroMapping, MappedDevice, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups,
     visit_devices_mut, walk_devices,
 };
+pub use lfo::{Lfo, MAX_NOTE_LFOS, NoteLfo, Wave as LfoWave};
 
 /// The extension of a Suhina project file, without the dot.
 pub const PROJECT_EXTENSION: &str = "suhina";

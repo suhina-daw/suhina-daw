@@ -21,6 +21,8 @@ pub(super) struct Layout {
     pub(super) rows: KeyRows,
     /// A note whose pitch bends is drawn, and pressed, along its curve (› MPE › Bent notes).
     pub(super) bent: bool,
+    /// How much of a row's height a bent note's band takes, 0 to 1.
+    pub(super) bent_width: f32,
 }
 
 impl Layout {

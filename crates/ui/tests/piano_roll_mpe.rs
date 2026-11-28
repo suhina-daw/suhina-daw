@@ -232,3 +232,34 @@ fn with_bends_drawn_as_lines_the_bend_is_not_the_note() {
     drag(&mut h, pos2(from, y), pos2(to, y));
     assert_eq!(notes(&h)[0].time, 0.0, "note B's row after B is empty grid in line mode");
 }
+
+#[test]
+fn a_kept_lfos_end_is_dragged_and_its_bar_picks_it() {
+    // Note A bent as in `bent_app`, keeping a sine over its whole two beats.
+    let mut a = Note::new(0.0, 2.0, 60, 0.8);
+    let lfo = suhina_engine::model::Lfo {
+        wave: suhina_engine::model::LfoWave::Sine,
+        shape: 0.0,
+        period: 0.25,
+        shift: 0.0,
+        amount: 0.5,
+        base: 0.0,
+        attack: 0.0,
+        decay: 0.0,
+        seed: 1,
+    };
+    a.expression = Some(Shared::new(NoteExpression {
+        pitch: vec![ExpressionPoint::new(0.0, 0.0), ExpressionPoint::new(1.0, 2.0)],
+        lfos: vec![suhina_engine::model::NoteLfo::new(ExpressionKind::Pitch, (0.0, 2.0), lfo)],
+        ..NoteExpression::default()
+    }));
+    let mut h = mpe_app_with(vec![a, Note::new(0.5, 1.0, 62, 0.8)]);
+    let end = rect(&h, "LFO end").center();
+    let half_beat = beat_x(&h, 0.5) - beat_x(&h, 0.0);
+    drag(&mut h, end, end - vec2(half_beat, 0.0));
+    let kept = notes(&h)[0].expression().unwrap().lfos.clone();
+    assert_eq!(kept.len(), 1);
+    assert!((kept[0].to - 1.5).abs() < 1e-6, "the end moved half a beat earlier: {:?}", kept[0]);
+    assert_eq!(kept[0].from, 0.0);
+    assert_eq!(h.state().piano_roll().mpe_kept(), Some(0), "the drag picked it");
+}

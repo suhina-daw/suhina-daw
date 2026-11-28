@@ -195,192 +195,45 @@ pub(crate) fn set_release_velocity(session: &mut Session, params: &Value) -> Res
     })
 }
 
-/// The waves `note.lfoExpression` draws.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Wave {
-    Sine,
-    Square,
-    Triangle,
-    Random,
+pub use suhina_model::lfo::{Lfo, Wave};
+use suhina_model::lfo::{MAX_NOTE_LFOS, NoteLfo};
+
+/// An LFO's settings from `args`: each one given replaces `base`'s, checked for `kind`.
+fn lfo_settings(args: &Args<'_>, kind: ExpressionKind, base: Lfo) -> Result<Lfo, CommandError> {
+    let wave = match args.raw_str("wave") {
+        None => base.wave,
+        Some(name) => Wave::from_name(name)
+            .ok_or_else(|| format!("wave must be \"sine\", \"square\", \"triangle\" or \"random\", not {name:?}"))?,
+    };
+    let lfo = Lfo {
+        wave,
+        shape: args.opt_f64("shape")?.unwrap_or(base.shape),
+        period: args.opt_f64("period")?.unwrap_or(base.period),
+        shift: args.opt_f64("shift")?.unwrap_or(base.shift),
+        amount: args.opt_f64("amount")?.unwrap_or(base.amount),
+        base: args.opt_f64("base")?.unwrap_or(base.base),
+        attack: args.opt_f64("attack")?.unwrap_or(base.attack),
+        decay: args.opt_f64("decay")?.unwrap_or(base.decay),
+        seed: args.opt_f64("seed")?.map_or(base.seed, |s| s.abs() as u64),
+    };
+    lfo.check(kind)?;
+    Ok(lfo)
 }
 
-impl Wave {
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "sine" => Some(Wave::Sine),
-            "square" => Some(Wave::Square),
-            "triangle" => Some(Wave::Triangle),
-            "random" => Some(Wave::Random),
-            _ => None,
-        }
+/// The LFO a `note.lfoExpression` starts from: a sine of one beat, a semitone (pitch) or half the
+/// range wide, around the kind's neutral value.
+fn default_lfo(kind: ExpressionKind) -> Lfo {
+    Lfo {
+        wave: Wave::Sine,
+        shape: 0.0,
+        period: 1.0,
+        shift: 0.0,
+        amount: if kind == ExpressionKind::Pitch { 1.0 } else { 0.5 },
+        base: kind.neutral(),
+        attack: 0.0,
+        decay: 0.0,
+        seed: 1,
     }
-}
-
-/// The settings of one `note.lfoExpression`, checked.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Lfo {
-    pub wave: Wave,
-    /// -1 to 1: the skew of sine and triangle, the pulse width of square, glide of random.
-    pub shape: f64,
-    /// Beats per cycle.
-    pub period: f64,
-    /// -1 to 1 of a cycle: positive delays the start, negative moves the phase.
-    pub shift: f64,
-    /// How far the wave swings either way, in the kind's units (negative turns it over).
-    pub amount: f64,
-    /// The value it swings around (Replace).
-    pub base: f64,
-    /// Parts of the range written, 0 to 1, together at most 1.
-    pub attack: f64,
-    pub decay: f64,
-    pub seed: u64,
-}
-
-/// The fewest beats between two points of an LFO curve.
-const LFO_STEP: f64 = 1.0 / 256.0;
-
-impl Lfo {
-    /// The wave at `phase` cycles from its start, -1 to 1.
-    fn wave_at(&self, phase: f64) -> f64 {
-        let x = phase.rem_euclid(1.0);
-        // Sine and triangle lean: the half-way point of a cycle moves between 5 % and 95 %.
-        let lean = |x: f64| {
-            let middle = (0.5 + 0.45 * self.shape).clamp(0.05, 0.95);
-            if x < middle { 0.5 * x / middle } else { 0.5 + 0.5 * (x - middle) / (1.0 - middle) }
-        };
-        match self.wave {
-            Wave::Sine => (std::f64::consts::TAU * lean(x)).sin(),
-            Wave::Triangle => {
-                let x = lean(x);
-                if x < 0.25 {
-                    4.0 * x
-                } else if x < 0.75 {
-                    2.0 - 4.0 * x
-                } else {
-                    4.0 * x - 4.0
-                }
-            }
-            Wave::Square => {
-                if x < (0.5 + 0.45 * self.shape).clamp(0.05, 0.95) {
-                    1.0
-                } else {
-                    -1.0
-                }
-            }
-            Wave::Random => {
-                // Four steps a cycle; a positive shape glides from one to the next.
-                let steps = phase.max(0.0) * 4.0;
-                let step = steps.floor();
-                let here = random(self.seed, step as u64);
-                let next = random(self.seed, step as u64 + 1);
-                let glide = self.shape.max(0.0);
-                let t = steps - step;
-                let smooth = t * t * (3.0 - 2.0 * t);
-                here + (next - here) * smooth * glide
-            }
-        }
-    }
-
-    /// The swing's envelope at `offset` beats into a note `duration` long, 0 to 1.
-    fn envelope(&self, offset: f64, duration: f64) -> f64 {
-        let attack = self.attack * duration;
-        let decay = self.decay * duration;
-        let mut level: f64 = 1.0;
-        if attack > 0.0 && offset < attack {
-            level = offset / attack;
-        }
-        if decay > 0.0 && offset > duration - decay {
-            level = level.min((duration - offset) / decay);
-        }
-        level.clamp(0.0, 1.0)
-    }
-
-    /// The curve for a note `duration` beats long, its values kept in `kind`'s range, at most
-    /// [`MAX_CURVE_POINTS`] points; a point between two of the same value is left out.
-    pub fn curve(&self, kind: ExpressionKind, duration: f64) -> Vec<ExpressionPoint> {
-        self.written(kind, duration, &[], None, false)
-    }
-
-    /// `existing` (a note's `kind` curve, `duration` beats long) with the LFO written over
-    /// `range` (beats from the note's start; the whole note when `None`): replacing the curve
-    /// there around `base`, or with `add` swinging around the curve as it is. Outside the range
-    /// the curve stays, held up to the range's edges. The attack and decay are parts of the
-    /// range. At most [`MAX_CURVE_POINTS`] points.
-    pub fn written(
-        &self,
-        kind: ExpressionKind,
-        duration: f64,
-        existing: &[ExpressionPoint],
-        range: Option<(f64, f64)>,
-        add: bool,
-    ) -> Vec<ExpressionPoint> {
-        if !(duration.is_finite() && duration > 0.0) {
-            return existing.to_vec();
-        }
-        let (from, to) = range.map_or((0.0, duration), |(a, b)| (a.max(0.0), b.min(duration)));
-        let span = to - from;
-        if !(span.is_finite() && span > 0.0) {
-            return existing.to_vec();
-        }
-        const EDGE: f64 = 2.0e-4;
-        let before: Vec<ExpressionPoint> = existing.iter().copied().filter(|p| p.offset < from - EDGE).collect();
-        let after: Vec<ExpressionPoint> = existing.iter().copied().filter(|p| p.offset > to + EDGE).collect();
-        let at = |offset: f64| suhina_model::expression::curve_value(existing, offset).unwrap_or(kind.neutral());
-        let mut out: Vec<ExpressionPoint> = Vec::new();
-        out.extend(before.iter().copied());
-        // The curve as it was, held to the range's start, so the part before keeps its shape.
-        if !before.is_empty() && from - EDGE > before.last().map_or(f64::NEG_INFINITY, |p| p.offset) {
-            out.push(ExpressionPoint::new(from - EDGE, at(from - EDGE)));
-        }
-        let room = MAX_CURVE_POINTS.saturating_sub(out.len() + after.len() + 2).max(2);
-        let step = (self.period / 32.0).max(LFO_STEP).max(span / (room - 1) as f64);
-        let count = ((span / step).ceil() as usize).min(room - 1);
-        let (low, high) = kind.range();
-        let start = out.len();
-        for i in 0..=count {
-            let local = (i as f64 * step).min(span);
-            let offset = from + local;
-            if out.last().is_some_and(|last| offset <= last.offset) {
-                continue;
-            }
-            let delay = self.shift.max(0.0) * self.period;
-            let swing = if local < delay {
-                0.0
-            } else {
-                let phase = (local - delay) / self.period + (-self.shift).max(0.0);
-                self.wave_at(phase)
-            };
-            let centre = if add { at(offset) } else { self.base };
-            let value = (centre + self.amount * self.envelope(local, span) * swing).clamp(low, high);
-            out.push(ExpressionPoint::new(offset, value));
-        }
-        // The curve as it was again from the range's end.
-        if !after.is_empty() && to + EDGE < after.first().map_or(f64::INFINITY, |p| p.offset) && to + EDGE <= duration {
-            out.push(ExpressionPoint::new(to + EDGE, at(to + EDGE)));
-        }
-        out.extend(after.iter().copied());
-        let points = out;
-        let _ = start;
-        // A point between two of the same value changes nothing.
-        let mut kept: Vec<ExpressionPoint> = Vec::with_capacity(points.len());
-        for (i, point) in points.iter().enumerate() {
-            let same_before = kept.last().is_some_and(|p| p.value == point.value);
-            let same_after = points.get(i + 1).is_some_and(|p| p.value == point.value);
-            if !(same_before && same_after) {
-                kept.push(*point);
-            }
-        }
-        kept
-    }
-}
-
-/// A random number from -1 to 1 for `seed` and `step`, the same every time.
-fn random(seed: u64, step: u64) -> f64 {
-    let mut z = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(step).wrapping_add(0x9E37_79B9_7F4A_7C15);
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    z ^= z >> 31;
-    (z >> 11) as f64 / (1u64 << 53) as f64 * 2.0 - 1.0
 }
 
 /// `note.lfoExpression`: an LFO written into one curve of `notes` (every note when not given),
@@ -388,42 +241,20 @@ fn random(seed: u64, step: u64) -> f64 {
 pub(crate) fn lfo_expression(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
     let args = Args::new(params);
     let kind = kind_of(&args)?;
-    let wave_name = args.raw_str("wave").unwrap_or("sine");
-    let wave = Wave::from_name(wave_name)
-        .ok_or_else(|| format!("wave must be \"sine\", \"square\", \"triangle\" or \"random\", not {wave_name:?}"))?;
-    let number = |name: &str, default: f64, (low, high): (f64, f64)| -> Result<f64, CommandError> {
-        let value = args.opt_f64(name)?.unwrap_or(default);
-        if value.is_finite() && (low..=high).contains(&value) {
-            Ok(value)
-        } else {
-            Err(format!("{name} must be {low} to {high}, got {value}").into())
-        }
-    };
-    let (low, high) = kind.range();
-    let reach = if kind == ExpressionKind::Pitch { 96.0 } else { 1.0 };
     let range = match (args.opt_f64("from")?, args.opt_f64("to")?) {
         (Some(from), Some(to)) if from.is_finite() && to.is_finite() && to > from => Some((from, to)),
         (None, None) => None,
         _ => return Err("from and to must both be given, to after from, in the clip's beats".into()),
     };
-    let add = match args.raw_str("mode").unwrap_or("replace") {
-        "replace" => false,
-        "add" => true,
-        other => return Err(format!("mode must be \"replace\" or \"add\", not {other:?}").into()),
+    let (add, keep) = match args.raw_str("mode").unwrap_or("replace") {
+        "replace" => (false, false),
+        "add" => (true, false),
+        "keep" => (true, true),
+        other => return Err(format!("mode must be \"replace\", \"add\" or \"keep\", not {other:?}").into()),
     };
-    let lfo = Lfo {
-        wave,
-        shape: number("shape", 0.0, (-1.0, 1.0))?,
-        period: number("period", 1.0, (1.0 / 32.0, 64.0))?,
-        shift: number("shift", 0.0, (-1.0, 1.0))?,
-        amount: number("amount", if kind == ExpressionKind::Pitch { 1.0 } else { 0.5 }, (-reach, reach))?,
-        base: number("base", kind.neutral(), (low, high))?,
-        attack: number("attack", 0.0, (0.0, 1.0))?,
-        decay: number("decay", 0.0, (0.0, 1.0))?,
-        seed: args.opt_f64("seed")?.map_or(1, |s| s.abs() as u64),
-    };
-    if lfo.attack + lfo.decay > 1.0 + 1e-9 {
-        return Err("attack and decay together must be at most 1".into());
+    let lfo = lfo_settings(&args, kind, default_lfo(kind))?;
+    if keep {
+        return keep_lfo(session, params, kind, range, lfo);
     }
     let notes = notes_of(&session.project, params)?;
     let chosen = notes_or_all(params, notes)?;
@@ -458,6 +289,132 @@ pub(crate) fn lfo_expression(session: &mut Session, params: &Value) -> Result<Va
             }
         }
         Ok(json!({ "notes": written, "kind": kind.name() }))
+    })
+}
+
+/// `note.lfoExpression` with `mode` "keep": the LFO kept on each chosen note over `range` (the
+/// clip's beats; the whole note when `None`), riding on its `kind` curve, editable afterwards.
+fn keep_lfo(
+    session: &mut Session,
+    params: &Value,
+    kind: ExpressionKind,
+    range: Option<(f64, f64)>,
+    lfo: Lfo,
+) -> Result<Value, CommandError> {
+    let notes = notes_of(&session.project, params)?;
+    let chosen = notes_or_all(params, notes)?;
+    let kept: Vec<(usize, NoteLfo)> = chosen
+        .iter()
+        .filter_map(|&i| notes.get(i).map(|n| (i, n)))
+        .filter_map(|(i, n)| {
+            let (from, to) = range.map_or((0.0, n.duration), |(from, to)| (from - n.time, to - n.time));
+            let (from, to) = (from.max(0.0), to.min(n.duration));
+            // A range that misses a note leaves it as it is.
+            (to - from > 1.0e-4).then(|| (i, NoteLfo::new(kind, (from, to), lfo)))
+        })
+        .collect();
+    for (index, _) in &kept {
+        let count = notes.get(*index).and_then(|n| n.expression()).map_or(0, |e| e.lfos.len());
+        if count >= MAX_NOTE_LFOS {
+            return Err(format!("note {index} keeps {count} LFOs already, the most a note keeps").into());
+        }
+    }
+    edit_notes(&mut session.project, params, |notes| {
+        let mut written = Vec::new();
+        for (index, lfo) in kept {
+            if let Some(note) = notes.get_mut(index) {
+                note.expression_mut().lfos.push(lfo);
+                written.push(index);
+            }
+        }
+        Ok(json!({ "notes": written, "kind": kind.name(), "kept": true }))
+    })
+}
+
+/// The note `note` names and its kept LFO `lfo` (its index, from 0).
+fn kept_lfo(session: &Session, params: &Value) -> Result<(usize, usize, NoteLfo), CommandError> {
+    let args = Args::new(params);
+    let item = args.value("note").ok_or("note must be given: the note's index, from 0, or {\"id\": n}")?;
+    let notes = notes_of(&session.project, params)?;
+    let index = find_one(notes, NoteId, item).map_err(note_miss)?;
+    let note = notes.get(index).ok_or("a note is missing")?;
+    let which = args.opt_f64("lfo")?.ok_or("lfo must be given: which of the note's LFOs, from 0")?;
+    let kept = note.expression().map_or(&[][..], |e| e.lfos.as_slice());
+    let at = (which >= 0.0 && which.fract() == 0.0).then_some(which as usize);
+    let lfo = at.and_then(|i| kept.get(i)).ok_or_else(|| {
+        format!("note {index} keeps {} LFOs; lfo must be a whole number from 0, got {which}", kept.len())
+    })?;
+    Ok((index, at.unwrap_or(0), *lfo))
+}
+
+/// `note.setLfo`: changes a kept LFO's settings and, with `from` and `to` (the clip's beats), the
+/// stretch it covers; a setting left out stays. A new stretch is whole: nothing cut off it.
+pub(crate) fn set_lfo(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let args = Args::new(params);
+    let (index, at, old) = kept_lfo(session, params)?;
+    let notes = notes_of(&session.project, params)?;
+    let note = notes.get(index).ok_or("a note is missing")?;
+    let mut lfo = NoteLfo { lfo: lfo_settings(&args, old.kind, old.lfo)?, ..old };
+    match (args.opt_f64("from")?, args.opt_f64("to")?) {
+        (None, None) => {}
+        (Some(from), Some(to)) => {
+            let (from, to) = ((from - note.time).max(0.0), (to - note.time).min(note.duration));
+            lfo = NoteLfo { from, to, lead: 0.0, tail: 0.0, ..lfo };
+        }
+        _ => return Err("from and to must both be given, in the clip's beats".into()),
+    }
+    lfo.check(note.duration).map_err(|why| format!("note {index}: {why}"))?;
+    edit_notes(&mut session.project, params, |notes| {
+        let slot =
+            notes.get_mut(index).and_then(|n| n.expression_mut().lfos.get_mut(at)).ok_or("the LFO is missing")?;
+        *slot = lfo;
+        Ok(json!({ "note": index, "lfo": at }))
+    })
+}
+
+/// `note.removeLfo`: the kept LFO goes; the curve it rode on stays.
+pub(crate) fn remove_lfo(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let (index, at, _) = kept_lfo(session, params)?;
+    edit_notes(&mut session.project, params, |notes| {
+        let note = notes.get_mut(index).ok_or("a note is missing")?;
+        if at < note.expression().map_or(0, |e| e.lfos.len()) {
+            note.expression_mut().lfos.remove(at);
+        }
+        note.tidy_expression();
+        Ok(json!({ "note": index, "lfo": at }))
+    })
+}
+
+/// `note.bakeLfo`: every LFO `notes` keep (every note's when left out) written into their curves
+/// as points, sounding as it did, and kept no longer.
+pub(crate) fn bake_lfo(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let notes = notes_of(&session.project, params)?;
+    let chosen = notes_or_all(params, notes)?;
+    let baked: Vec<(usize, suhina_model::NoteExpression)> = chosen
+        .iter()
+        .filter_map(|&i| notes.get(i).map(|n| (i, n)))
+        .filter_map(|(i, n)| n.expression().filter(|e| !e.lfos.is_empty()).map(|e| (i, e.baked(n.duration))))
+        .collect();
+    let replaced: usize =
+        baked.iter().filter_map(|(i, _)| notes.get(*i)).filter_map(|n| n.expression()).map(|e| e.point_count()).sum();
+    let added: usize = baked.iter().map(|(_, e)| e.point_count()).sum();
+    let total = content_points(&session.project, params)?.saturating_sub(replaced).saturating_add(added);
+    if total > MAX_CONTENT_EXPRESSION_POINTS {
+        return Err(format!(
+            "a clip's content holds at most {MAX_CONTENT_EXPRESSION_POINTS} expression points; baking would make {total}"
+        )
+        .into());
+    }
+    edit_notes(&mut session.project, params, |notes| {
+        let mut written = Vec::new();
+        for (index, expression) in baked {
+            if let Some(note) = notes.get_mut(index) {
+                *note.expression_mut() = expression;
+                note.tidy_expression();
+                written.push(index);
+            }
+        }
+        Ok(json!({ "notes": written }))
     })
 }
 

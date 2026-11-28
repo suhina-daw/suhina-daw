@@ -103,7 +103,7 @@ what is inside it).
 | Launcher and mixer | Mixer | Mixer control style |
 | Clip editor | Audio editor | Audio editor waveform colour (Track colour, the default; Theme), Drag markers by line (off by default) |
 | Clip editor | Piano roll | Full-height piano roll covers, Piano roll toolbar size, Allow stacked notes, Piano key style, Piano key names, Note names, Default scale |
-| Clip editor | MPE | Pitch bends drawn as (Bent notes, the default; Lines) |
+| Clip editor | MPE | Pitch bends drawn as (Bent notes, the default; Lines), Bent note thickness (Thin; Medium, the default; Full row) |
 | Clip editor | Advanced | Covered notes |
 | Browser | Browser | Browser side, Recent item kinds layout, Dropping on a folder |
 | Browser | Previews | Preview selected file, Preview volume |

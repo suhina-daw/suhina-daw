@@ -368,6 +368,11 @@ impl PianoRollState {
     pub fn show_mpe_lanes(&mut self, lanes: [bool; 4]) {
         self.mpe.lanes = lanes;
     }
+
+    /// Which of its note's LFOs the picked kept LFO is, if one is picked.
+    pub fn mpe_kept(&self) -> Option<usize> {
+        self.mpe.kept.map(|(_, lfo)| lfo)
+    }
 }
 
 impl Default for PianoRollState {
@@ -1117,6 +1122,8 @@ pub struct Options {
     /// A note whose pitch bends is drawn bent along its curve (Settings › Clip editor › MPE ›
     /// Pitch bends drawn as).
     pub bent_notes: bool,
+    /// How much of a row's height a bent note's band takes, in percent (› Bent note thickness).
+    pub bent_width: u8,
 }
 
 /// What the piano roll needs from the window besides its own state, for one frame: the settings

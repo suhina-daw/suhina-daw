@@ -228,6 +228,34 @@ are stored inside the note, without runtime IDs: project file version 17 writes 
 ([project file](suhina-format.md#versions)). Notation was not ready, so expression took its own
 version (ADR 0039 › Amendment: expression versioned alone).
 
+## LFOs
+
+An LFO is a wave with a shape, a cycle in beats (1/32 to 64), a time shift, an amount (pitch up to
+96 semitones either way, pressure and timbre up to 1), an attack and a decay (parts of the
+stretch it covers, together at most 1) and, for the random wave, a seed. `note.lfoExpression`
+draws one over the chosen notes (all when none are given), within `from` to `to` in the clip's
+beats when given, three ways (`mode`):
+
+- **replace** writes it as points around `base`, replacing the curve over that stretch;
+- **add** writes it as points riding on the curve as it is;
+- **keep** keeps it on the note as settings: the note's `expression.lfos` gets the LFO, its
+  curve's `kind` and the stretch it covers (`from`, `to`, beats from the note's start). It rides
+  on the curve there: the value played, drawn and evaluated is the curve's with every kept LFO of
+  its kind added, kept in the kind's range. A note keeps at most 16.
+
+A kept LFO stays editable: `note.setLfo {clip, note, lfo, …}` changes the settings given (the
+others stay) and, with `from` and `to`, the stretch; `note.removeLfo {clip, note, lfo}` removes it
+and leaves the curve; `note.bakeLfo {clip, notes?}` writes every LFO the notes keep into their
+curves as points (every 1/32 of a cycle, within the curve limit), sounding as it did, and keeps
+them no longer. Each is one undo step.
+
+Edits that reshape a note keep what a kept LFO sounds like: a resize from the right cuts its
+stretch at the new end, one from the left cuts it at the new start, a split gives each part the
+piece on its side, a stretch scales its stretch and its cycle, a join keeps both notes' LFOs
+(the joined note at most 16). A cut piece remembers how much was cut before (`lead`) and after it
+(`tail`), so its wave and its attack and decay go on as they were. Playback samples a curve an LFO
+rides on every 1/256 beat over the whole note.
+
 ## Plug-in boundaries
 
 CLAP native note events retain the full address tuple in an adapter table. Wildcards resolve

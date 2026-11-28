@@ -197,3 +197,32 @@ fn the_lanes_share_the_room_below_the_header() {
     assert_eq!(split_lanes(&mut state, room), room);
     assert!(state.mpe.rects.is_empty());
 }
+
+#[test]
+fn a_point_taken_off_a_flat_stretch_bends_from_a_grid_step_before_it() {
+    // Flat from the start to beat 4; the point at beat 4 dragged down two semitones.
+    let from = points(&[(0.0, 0.0), (4.0, 0.0)]);
+    let delta = Move { beats: 0.0, value: -2.0 };
+    let moved = moved_points(&from, &BTreeSet::new(), 1, delta, 4.0, ExpressionKind::Pitch, true);
+    let (held, at) = with_hold(&from, 1, &moved, (delta, 4.0, 0.25)).unwrap();
+    assert_eq!(held, points(&[(0.0, 0.0), (3.75, 0.0), (4.0, -2.0)]));
+    assert_eq!(at, 2);
+}
+
+#[test]
+fn no_hold_point_after_a_slope_without_a_change_or_without_room() {
+    let delta = Move { beats: 0.0, value: 2.0 };
+    // A slope before: the bend already starts at the point before.
+    let sloped = points(&[(0.0, 0.0), (1.0, 1.0)]);
+    let moved = moved_points(&sloped, &BTreeSet::new(), 1, delta, 1.0, ExpressionKind::Pitch, true);
+    assert!(with_hold(&sloped, 1, &moved, (delta, 1.0, 0.25)).is_none());
+    // A sideways drag changes no value.
+    let flat = points(&[(0.0, 0.0), (1.0, 0.0)]);
+    let sideways = Move { beats: -0.25, value: 0.0 };
+    let moved = moved_points(&flat, &BTreeSet::new(), 1, sideways, 1.0, ExpressionKind::Pitch, true);
+    assert!(with_hold(&flat, 1, &moved, (sideways, 1.0, 0.25)).is_none());
+    // The point before is within a step: no room for a hold.
+    let close = points(&[(0.0, 0.0), (0.2, 0.0)]);
+    let moved = moved_points(&close, &BTreeSet::new(), 1, delta, 1.0, ExpressionKind::Pitch, true);
+    assert!(with_hold(&close, 1, &moved, (delta, 1.0, 0.25)).is_none());
+}
