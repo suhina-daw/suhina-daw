@@ -1801,9 +1801,14 @@ fn read_clip_audio(a: &Map<String, Value>, at: &str) -> Result<ClipAudio, Projec
         Some(_) => return Err(format!("{at}.tempo_source: expected a name").into()),
     };
     let gain = float_or(a, "gain", 1.0, at)?;
-    if !(gain >= 0.0 && gain <= max_clip_gain() * (1.0 + 1e-9)) {
+    // A hair over the top is the top: an imported +24 dB stored in single precision is 15.8489332,
+    // and projects imported before the `.als` importer capped it hold that value. Transitional, as the
+    // `.locr` reading was (ADR 0010): back to 1e-9 and no cap once those files need not open,
+    // at the latest by 1.0.
+    if !(gain >= 0.0 && gain <= max_clip_gain() * (1.0 + 1e-6)) {
         return Err(format!("{at}.gain: {gain} is outside 0 to {} (+{CLIP_GAIN_MAX_DB} dB)", max_clip_gain()).into());
     }
+    let gain = gain.min(max_clip_gain());
     Ok(ClipAudio {
         gain,
         gain_envelope,

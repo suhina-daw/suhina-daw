@@ -23,7 +23,7 @@ use suhina_model::{
     LaneData, LaneId, Launcher, LauncherColumn, LoopRange, MACROS, MAX_BRANCHES, MAX_CHANGE_BEAT, MAX_DENOMINATOR,
     MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_GROUP_DEPTH, MAX_TEMPO_CHANGES, MAX_TIME_SIGNATURE_CHANGES, Marker, Note,
     Project, Scene, SceneId, Send, Slot, StretchMode, TempoPoint, TimeSignature, TimeSignatureChange, Track, TrackId,
-    Transport, ValidationError, WarpMarker, valid_bpm,
+    Transport, ValidationError, WarpMarker, max_clip_gain, valid_bpm,
 };
 
 /// Upper bound for the decompressed XML, so a malicious file cannot exhaust memory.
@@ -943,7 +943,9 @@ impl Reader {
             warped: boolean(clip, &["IsWarped"]).unwrap_or(true),
             stretch,
             warp_markers,
-            gain: number(clip, &["SampleVolume"]).filter(|g| *g >= 0.0).unwrap_or(1.0),
+            // Live keeps the gain in single precision: its top, +24 dB, is written 15.8489332, a
+            // hair over the model's +24 dB, which the project file would then refuse to open.
+            gain: number(clip, &["SampleVolume"]).filter(|g| *g >= 0.0).map_or(1.0, |g| g.min(max_clip_gain())),
             transpose: coarse + fine / 100.0,
             ..ClipAudio::default()
         };

@@ -227,7 +227,7 @@ clips are under `DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events`**, 
 | Warp on/off | `IsWarped@Value` | |
 | Warp mode | `WarpMode@Value` | `4` for this file by default, shown by Live as **Complex** (files `30`, `61`). Other codes **(needs corpus)**. |
 | Warp markers | `WarpMarkers/WarpMarker@SecTime`, `@BeatTime` | Pairs of (seconds in the file, beats in the clip). |
-| Clip gain | `SampleVolume@Value` | Linear, `1` = 0 dB; −6 dB is `0.5011872053` (file `36`). |
+| Clip gain | `SampleVolume@Value` | Linear, `1` = 0 dB; −6 dB is `0.5011872053` (file `36`). Live's top, +24 dB, is written `15.8489332`, a hair over 10^(24/20) = 15.848931924…; the importer reads anything over +24 dB as +24 dB. |
 | Transpose | `PitchCoarse@Value`, `PitchFine@Value` | Semitones, and cents **(fine: hypothesis)**. |
 
 The file and its rate and length become the content's audio region; the warp switch, mode, markers,

@@ -1918,6 +1918,27 @@ fn a_notes_velocity_range_round_trips_and_is_checked() {
     assert!(from_json(&bad).is_err());
 }
 
+/// A clip gain a hair over +24 dB, as projects imported from a `.als` file before the importer
+/// capped its single-precision +24 dB hold, opens as +24 dB; one clearly over it still refuses the
+/// file.
+#[test]
+fn a_clip_gain_a_hair_over_the_top_opens_as_the_top() {
+    let project = everything();
+    let lane = project.arrangement.lanes.iter().position(|l| l.name == "Free").unwrap();
+    let written: Value = serde_json::from_str(&to_json(&project)).unwrap();
+    let with_gain = |gain: f64| {
+        let mut file = written.clone();
+        file["project"]["arrangement"]["lanes"][lane]["clips"][0]["audio"]["gain"] = json!(gain);
+        file.to_string()
+    };
+    let read = from_json(&with_gain(15.8489332)).unwrap();
+    let gain = read.arrangement.lanes[lane].clips[0].audio.gain;
+    assert_eq!(gain, max_clip_gain());
+    assert!(read.arrangement.lanes[lane].clips[0].audio.is_valid());
+    let err = from_json(&with_gain(16.0)).unwrap_err().to_string();
+    assert!(err.contains("gain: 16 is outside 0 to"), "{err}");
+}
+
 /// A file before version 15 said a folder and an instrument role with `suhina/*` extensions
 /// (#1416): they are read into the fields, and the extensions are gone.
 #[test]
