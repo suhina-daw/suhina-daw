@@ -118,6 +118,7 @@ for the documents about something, `python scripts/docs.py covers PATH` for thos
 | [Suhina device graph (`.sd`)](spec/sd-device-format.md) | spec | current | Version 6 of the data-only Suhina device graph format, SDK, track loading, and device revision migrations |
 | [Custom device panels](spec/sdk-custom-ui.md) | spec | current | Self-contained device canvases, image assets, drawing expressions and programmable parameter controls |
 | [SDK node reference](spec/sdk-nodes.md) | spec | current | Every executable SDK node, ports, defaults, formulas, state and real-time limits |
+| [The selection](spec/selection.md) | spec | current | The selection an open project carries - the selected track and the selected device of its chain - as commands and a reading, and the window that shows it |
 | [Sends and returns](spec/sends-and-returns.md) | spec | draft | How sends and return tracks behave: what a send taps (before or after the fader), what a return plays, loops, solo and mute, latency, the commands and the send knobs |
 | [Settings guide export](spec/settings-guide-export.md) | spec | current | Source-owned settings help, its versioned website export and the coverage gate reviewed with native changes |
 | [Website shortcut export](spec/shortcuts-guide-export.md) | spec | current | Source-owned version-one shortcut data for the Suhina website, its coverage boundary, key tokens and review gate |

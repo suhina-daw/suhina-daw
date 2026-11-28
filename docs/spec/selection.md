@@ -3,7 +3,7 @@ description: The selection an open project carries - the selected track and the 
 read_when: selected track, selected device, selection, track.select, device.select, project.selection, controller focus, mapping selected target, what the knobs control
 type: spec
 status: current
-last_verified: 2026-11-26
+last_verified: 2026-11-28
 covers:
   - crates/session/src/selection.rs
   - crates/session/src/commands/selection.rs
