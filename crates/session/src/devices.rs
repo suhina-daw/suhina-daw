@@ -657,22 +657,7 @@ pub(crate) fn device_json(path: &[usize], device: &Device) -> Value {
     // operator the panel shows (the hidden parameters) and the current model; a generated panel
     // follows its parameter order.
     let dials = info.map(|info| {
-        // The dials follow the same clamped values the panel reports, the last of a duplicate
-        // id winning as the engine's does: a stored value past the parameter's range must not
-        // move an operator-specific dial by a page it is not showing (#1720 review).
-        let values: Vec<(String, f64)> = info
-            .params
-            .iter()
-            .map(|spec| {
-                let value = device
-                    .params
-                    .iter()
-                    .rev()
-                    .find(|stored| stored.id == spec.id)
-                    .map_or(spec.default, |stored| spec.clamp(stored.value));
-                (spec.id.to_string(), value)
-            })
-            .collect();
+        let values: Vec<(String, f64)> = device.params.iter().map(|p| (p.id.clone(), p.value)).collect();
         suhina_device_registry::dials_with(&info.id, &values)
     });
     let mut value = json!({
@@ -1649,15 +1634,6 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
     };
     if param == "source_bpm" && value == Some(0.) {
         value = Some(initial_sampler_tempo(session, params, true)?.unwrap_or(0.));
-    } else if param == "source_bpm"
-        && value.is_none()
-        && normalized == Some(0.)
-        && let Some(detected) = initial_sampler_tempo(session, params, true)?
-    {
-        // A controller's first knob position is the same request as a value of 0: detect the
-        // tempo before the normalized 0 is resolved (it is the parameter's minimum). A
-        // sampler with nothing to detect keeps that minimum through the conversion below.
-        value = Some(detected);
     }
     let track = track_or_main_id(&session.project, params)?;
     let channel = device_channel(session, params)?;
@@ -1696,10 +1672,7 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
                 .ok_or_else(|| format!("{} has no parameter {param:?}", graph.name))?;
             let value = match value {
                 Some(value) => parameter.clamp(value),
-                // A normalized position lands between two whole numbers on an integer
-                // parameter: the stored value is the clamped (rounded) one, not the raw
-                // conversion (#1720 review).
-                None => parameter.clamp(sd_from_normalized(parameter, normalized.unwrap_or(0.))),
+                None => sd_from_normalized(parameter, normalized.unwrap_or(0.)),
             };
             edits = graph
                 .parameter_edits(param, value, |id| {

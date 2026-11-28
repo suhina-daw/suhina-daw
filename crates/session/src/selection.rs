@@ -100,17 +100,16 @@ impl Selection {
         // The branch the device sits in: the chain itself, or a group's branch of it — a
         // device path is device, branch, device … (`"2/1/0"`), so the parent's own parent
         // holds the group and its last element the branch.
-        let parent = &path[..path.len() - 1];
+        let Some((&at, parent)) = path.split_last() else { return };
         let siblings = if parent.is_empty() {
             &channel.devices
         } else {
-            let Some(group) = device_at(&channel.devices, &parent[..parent.len() - 1]) else { return };
-            let Some(branch) = parent.last().and_then(|branch| group.as_group()?.branches.get(*branch)) else {
-                return;
-            };
+            let Some((branch, group_path)) = parent.split_last() else { return };
+            let Some(group) = device_at(&channel.devices, group_path) else { return };
+            let Some(group) = group.as_group() else { return };
+            let Some(branch) = group.branches.get(*branch) else { return };
             &branch.devices
         };
-        let at = path.last().copied().unwrap_or(0);
         let next = if forward {
             siblings.get(at + 1)
         } else if at > 0 {

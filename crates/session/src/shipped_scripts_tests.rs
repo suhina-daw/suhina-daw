@@ -98,6 +98,8 @@ fn the_unpacked_folder_passes_the_stores_checks() {
         assert_eq!(manifest.programs.len(), 1, "the one script, pinned");
         let readme = std::fs::read_to_string(folder.join("README.md")).unwrap();
         assert!(readme.contains("CC0-1.0"), "the README records the licence");
+        let licence = std::fs::read_to_string(folder.join("LICENSE-CC0.txt")).unwrap();
+        assert!(licence.contains("CC0 1.0 Universal"), "the licence text rides beside the files");
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

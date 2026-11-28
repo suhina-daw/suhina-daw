@@ -15,8 +15,8 @@ use crate::extensions::{Extensions, Manifest};
 
 /// One shipped script: its manifest's `id` — the folder it unpacks into under `Scripts/MIDI/` —
 /// and its files as `(name, bytes)`, embedded from the tree's `packs/<id>/` ([ADR 0036] › 3).
-/// Beside the script ride its manifest and a README carrying where the script's knowledge
-/// comes from and its licence ([ADR 0036] › 1 and 6).
+/// Beside the script ride its manifest, a README carrying where the script's knowledge comes
+/// from, and the publisher's licence text ([ADR 0036] › 1 and 6).
 pub struct ShippedScript {
     pub id: &'static str,
     pub files: &'static [(&'static str, &'static [u8])],
@@ -31,6 +31,7 @@ pub fn scripts() -> &'static [ShippedScript] {
             ("extension.json", include_bytes!("../../../packs/apc40-mkii/extension.json")),
             ("script.lua", include_bytes!("../../../packs/apc40-mkii/script.lua")),
             ("README.md", include_bytes!("../../../packs/apc40-mkii/README.md")),
+            ("LICENSE-CC0.txt", include_bytes!("../../../packs/apc40-mkii/LICENSE-CC0.txt")),
         ],
     }];
     SCRIPTS
@@ -92,48 +93,18 @@ fn unpack_one(scripts_root: &Path, script: &ShippedScript) -> std::io::Result<us
     Ok(written)
 }
 
-/// Writes `bytes` beside `target` first, then publishes the completed file — a write that
-/// fails (or an app that ends mid-write) leaves no partial file at the target, and an existing
-/// file is never replaced: `false` for one that appeared while this ran, another start's.
+/// Writes `bytes` beside `target` first, then renames the completed file into place — a write
+/// that fails (or an app that ends mid-write) leaves no partial file at the target
+/// ([`crate::files::stage_and_rename`]). `false` for a file that appeared while this ran:
+/// another start's, never replaced.
 fn publish(target: &Path, bytes: &[u8]) -> std::io::Result<bool> {
+    if target.exists() {
+        return Ok(false);
+    }
     let staging =
         target.with_file_name(format!("{}.suhina-new", target.file_name().unwrap_or_default().to_string_lossy()));
-    if let Err(e) = std::fs::write(&staging, bytes) {
-        let _ = std::fs::remove_file(&staging);
-        return Err(e);
-    }
-    // A link never replaces: a file another writer made since the caller's look is not touched,
-    // and the staging copy goes. A filesystem without hard links falls back to creating the
-    // target exclusively, so an existing file is still never replaced; a write that fails
-    // midway leaves a partial file only where no file existed, and later starts leave it alone.
-    match std::fs::hard_link(&staging, target) {
-        Ok(()) => {
-            let _ = std::fs::remove_file(&staging);
-            Ok(true)
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            let _ = std::fs::remove_file(&staging);
-            Ok(false)
-        }
-        Err(_) => {
-            use std::io::Write;
-            let mut file = match std::fs::OpenOptions::new().write(true).create_new(true).open(target) {
-                Ok(file) => file,
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    let _ = std::fs::remove_file(&staging);
-                    return Ok(false);
-                }
-                Err(e) => {
-                    let _ = std::fs::remove_file(&staging);
-                    return Err(e);
-                }
-            };
-            let written = file.write_all(bytes);
-            drop(file);
-            let _ = std::fs::remove_file(&staging);
-            written.map(|()| true)
-        }
-    }
+    crate::files::stage_and_rename(&staging, target, bytes)?;
+    Ok(true)
 }
 
 /// The record's name in the store's root: a dotfile beside the extension folders, and
@@ -177,16 +148,12 @@ impl Record {
     /// The store's record; a missing, unreadable or malformed one reads as empty — it is
     /// Suhina's own state, and a corrupted one must not stop the start.
     fn read(root: &Path) -> Self {
-        use std::io::Read;
         let path = root.join(RECORD_FILE);
-        let Ok(file) = std::fs::File::open(&path) else { return Self::default() };
-        let mut bytes = Vec::new();
-        // The cap is read as the file is read, not from a size taken before it: a record that
-        // grows between the two calls is still never loaded whole (#1720 review).
-        match file.take(RECORD_MAX_BYTES + 1).read_to_end(&mut bytes) {
-            Ok(read) if read as u64 <= RECORD_MAX_BYTES => {}
-            _ => return Self::default(),
+        let Ok(meta) = std::fs::metadata(&path) else { return Self::default() };
+        if meta.len() > RECORD_MAX_BYTES {
+            return Self::default();
         }
+        let Ok(bytes) = std::fs::read(&path) else { return Self::default() };
         let Ok(record) = serde_json::from_slice::<Self>(&bytes) else { return Self::default() };
         if record.version > RECORD_VERSION {
             return Self::default();
@@ -252,15 +219,6 @@ pub fn install(extensions: &mut Extensions) -> (usize, Vec<String>) {
             Some(entry) if entry.removed && !folder.exists() => {
                 if debug {
                     eprintln!("shipped scripts: {} was removed; it stays removed", script.id);
-                }
-                continue;
-            }
-            // Added back from the library after its removal: the user's copy now, even when its
-            // bytes match what Suhina shipped, and a later version does not replace it
-            // (docs/spec/shipped-scripts.md › Where it lands, and what runs).
-            Some(entry) if entry.removed && folder.exists() => {
-                if debug {
-                    eprintln!("shipped scripts: {} was added back; it is the user's now", script.id);
                 }
                 continue;
             }
@@ -352,22 +310,9 @@ fn install_one(root: &Path, script: &ShippedScript, replace: bool) -> Result<(),
         let _ = std::fs::remove_dir_all(&staging);
         return Err(format!("the staged copy does not pass the store's checks: {reason}"));
     }
-    if replace {
-        // The old copy goes aside whole, so a failed replacement leaves the complete old one,
-        // not a half-deleted folder the record no longer matches (#1720 review).
-        let backup = root.join(format!(".shipped-{}.old", script.id));
-        let _ = std::fs::remove_dir_all(&backup);
-        if let Err(e) = std::fs::rename(&folder, &backup) {
-            let _ = std::fs::remove_dir_all(&staging);
-            return Err(format!("the copy being replaced cannot be set aside: {e}"));
-        }
-        if let Err(e) = std::fs::rename(&staging, &folder) {
-            let _ = std::fs::rename(&backup, &folder);
-            let _ = std::fs::remove_dir_all(&staging);
-            return Err(format!("the copy cannot be put in the store: {e}"));
-        }
-        let _ = std::fs::remove_dir_all(&backup);
-        return Ok(());
+    if replace && let Err(e) = std::fs::remove_dir_all(&folder) {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(format!("the copy being replaced cannot be removed: {e}"));
     }
     if let Err(e) = std::fs::rename(&staging, &folder) {
         let _ = std::fs::remove_dir_all(&staging);

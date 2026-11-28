@@ -1068,7 +1068,7 @@ fn remove(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
     // A shipped script's removal is remembered: later starts do not install it again
     // (docs/spec/shipped-scripts.md › Where it lands, and what runs). A record that cannot be
     // written is said, after the store and the router are back in order, so a later start
-    // does not quietly install the script again (#1720 review).
+    // does not quietly install the script again.
     let mut record_error = None;
     if let Some(root) = &projects.extensions.root
         && let Err(e) = crate::shipped_scripts::note_removed(root, id)

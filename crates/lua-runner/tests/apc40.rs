@@ -34,6 +34,7 @@ struct Fake {
     lua: Lua,
     commands: Rc<RefCell<Vec<Command>>>,
     sends: Sends,
+    quit_reset: Rc<RefCell<Vec<Vec<u8>>>>,
 }
 
 impl Fake {
@@ -44,6 +45,22 @@ impl Fake {
         let suhina = lua.create_table().unwrap();
         // JSON null: a value that is neither nil nor false, as the runner's `suhina.null`.
         suhina.set("null", lua.create_table().unwrap()).unwrap();
+        let quit_reset = Rc::new(RefCell::new(Vec::new()));
+        let reset = Rc::clone(&quit_reset);
+        suhina
+            .set(
+                "quit_reset",
+                lua.create_function(move |_, messages: mlua::Table| {
+                    let mut list = Vec::new();
+                    for message in messages.sequence_values::<LuaString>() {
+                        list.push(message?.as_bytes().to_vec());
+                    }
+                    *reset.borrow_mut() = list;
+                    Ok(true)
+                })
+                .unwrap(),
+            )
+            .unwrap();
 
         let midi = lua.create_table().unwrap();
         midi.set(
@@ -159,7 +176,7 @@ impl Fake {
         }
         lua.globals().set("suhina", suhina).unwrap();
         lua.load(script).exec().unwrap();
-        Self { lua, commands, sends }
+        Self { lua, commands, sends, quit_reset }
     }
 
     /// The ports opening, with one output to send LEDs on.
@@ -239,11 +256,16 @@ impl Fake {
 
     /// The tracks the project's subscription lists, so the track select buttons have ids.
     fn strips(&self, ids: &[u32]) {
+        self.strips_with_pan(ids, 0.0);
+    }
+
+    /// The same with every track's pan at `pan`, for the pan rings.
+    fn strips_with_pan(&self, ids: &[u32], pan: f64) {
         let strips = self.lua.create_table().unwrap();
         for (index, id) in ids.iter().enumerate() {
             let strip = self.lua.create_table().unwrap();
             strip.set("id", *id).unwrap();
-            strip.set("pan", 0.0).unwrap();
+            strip.set("pan", pan).unwrap();
             strip.set("crossfade_assign", "off").unwrap();
             strips.set(index + 1, strip).unwrap();
         }
@@ -420,18 +442,29 @@ fn the_crossfader_and_the_ab_button_drive_their_commands() {
     assert_eq!(fake.last_command().assign.as_deref(), Some("a"));
 }
 
-/// The alternate Live mode hands every LED to the host, so a knob's ring follows its parameter
-/// without the device's own ring updates fighting it.
+/// The Application/Configuration mode hands every LED to the host, so a knob's ring follows its
+/// parameter without the device's own ring updates fighting it.
 #[test]
-fn the_program_uses_the_live_mode() {
+fn the_program_uses_the_application_configuration_mode() {
     let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
     fake.ports();
     let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
     assert!(
         fake.sends.borrow().iter().any(|(_, bytes)| bytes.starts_with(&mode)),
-        "the alternate Live mode is sent: {:?}",
+        "the Application/Configuration mode is sent: {:?}",
         fake.sends.borrow()
     );
+}
+
+/// The script registers its own quit reset: every note and controller off on every channel, so
+/// the host does not need this device's LED map (surface-programs.md › Quitting).
+#[test]
+fn the_script_registers_its_quit_reset() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    let reset = fake.quit_reset.borrow();
+    assert_eq!(reset.len(), 16 * (128 + 128), "every channel's notes and controllers");
+    assert!(reset.iter().any(|m| m.as_slice() == [0x90, 50, 0]), "the strip button's LED is reset");
+    assert!(reset.iter().any(|m| m.as_slice() == [0xB0, 0, 0]), "the first controller is zeroed");
 }
 
 #[test]
@@ -455,35 +488,54 @@ fn a_knobs_own_report_is_not_written_back_to_its_ring() {
     );
     // A value the knob never reported — the window set the gain to its maximum — writes.
     fake.selection_with_gain(4, 1, 0, 35.0);
-    let after_max = fake.sends.borrow().len();
     assert!(
         fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 127].as_slice()),
         "a change from elsewhere writes the ring: {:?}",
         &fake.sends.borrow()[after_knob..]
     );
-    // The history is the turn's echo window, not forever: a settled value that comes back to a
-    // position the knob passed through writes the ring again.
-    fake.selection_with_gain(4, 1, 0, gain);
-    assert!(
-        fake.sends.borrow()[after_max..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
-        "a later change back to an old position writes the ring: {:?}",
-        &fake.sends.borrow()[after_max..]
-    );
 }
 
-/// A controller that reconnects may have lost its rings: reopening the ports sends every ring
-/// position again, though the same dial is still shown.
+/// Once a turn has settled, its reports are no longer an echo guard: a later change that lands
+/// on one of those positions must still write the ring (#1719 review).
 #[test]
-fn a_port_reopen_sends_the_rings_again() {
+fn a_settled_turn_forgets_its_reports() {
     let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
     fake.ports();
     fake.selection(4, 1, 0);
-    let before = fake.sends.borrow().len();
-    fake.ports();
+    let gain = |position: f64| -150.0 + (position / 127.0) * 185.0;
+    fake.knob(1, 64);
+    fake.knob(1, 100);
+    for _ in 0..12 {
+        fake.selection_with_gain(4, 1, 0, gain(100.0));
+    }
+    let settled = fake.sends.borrow().len();
+    // The window sets the gain to the position the knob reported before its last turn: that is
+    // a change, not an echo, and the ring shows it.
+    fake.selection_with_gain(4, 1, 0, gain(64.0));
     assert!(
-        fake.sends.borrow()[before..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 103].as_slice()),
-        "the gain's ring is sent again after the ports reopen: {:?}",
-        &fake.sends.borrow()[before..]
+        fake.sends.borrow()[settled..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
+        "the settled turn's old report does not swallow a later change: {:?}",
+        &fake.sends.borrow()[settled..]
+    );
+}
+
+/// The pan encoder's ring has the same guard and the same clearing once its turn settles.
+#[test]
+fn a_settled_pan_turn_forgets_its_reports() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.strips(&[7]);
+    fake.message(&[0xB0, 48, 32]);
+    fake.message(&[0xB0, 48, 64]);
+    for _ in 0..12 {
+        fake.strips_with_pan(&[7], 0.0);
+    }
+    let settled = fake.sends.borrow().len();
+    fake.strips_with_pan(&[7], (32.0 - 64.0) / 63.5);
+    assert!(
+        fake.sends.borrow()[settled..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 48, 32].as_slice()),
+        "the settled pan turn's old report does not swallow a later change: {:?}",
+        &fake.sends.borrow()[settled..]
     );
 }
 

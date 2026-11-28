@@ -426,9 +426,6 @@ pub struct App {
     /// The project whose view state is in the fields below; others are in `stashes`.
     shown_project: Option<ProjectId>,
     stashes: HashMap<ProjectId, Stash>,
-    /// The window selection the session last knew: an empty session clears exactly that pick,
-    /// not a newer one the user has made since.
-    synced_selection: (Option<TrackId>, Option<(TrackId, detail_view::DeviceAt)>),
     /// A dropped file waiting for the user to choose a new tab or replace.
     open_prompt: Option<PathBuf>,
     /// A zipped project waiting for the person to say where to unpack it.
@@ -817,7 +814,6 @@ impl App {
             background: background::Background::default(),
             shown_project: None,
             stashes: HashMap::new(),
-            synced_selection: (None, None),
             open_prompt: None,
             zip_prompt: None,
             unsaved_prompt: None,
@@ -3310,10 +3306,8 @@ impl App {
         // (docs/spec/selection.md › The window follows).
         self.follow_session_selection();
         // What the window points at after following the session: only a change from this, made
-        // in this frame, is a click or a key the frame's end publishes. The active project is
-        // part of it: a switch this frame moves the pick's owner.
+        // in this frame, is a click or a key the frame's end publishes.
         let selection_before = self.window_selection();
-        let project_before = self.projects.active();
         // The layout settings, as the window's grid reads them (#1370), so a theme's rules for
         // them paint as they lay out.
         let (detail_place, browser_side) = self.window_place(self.session().is_some());
@@ -4297,7 +4291,7 @@ impl App {
         self.follow_selection_with_arm();
         // A click that selected a track or picked a device sets the same selection the CLI, MCP
         // and surface programs read (docs/spec/selection.md › The window follows).
-        self.publish_session_selection(selection_before, project_before);
+        self.publish_session_selection(selection_before);
         self.end_gesture_on_release(ui.ctx());
         self.frame_trace.mark("commands");
         self.frame_trace.note(|| format!("{ran} commands"));

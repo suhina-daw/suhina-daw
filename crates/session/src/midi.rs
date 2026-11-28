@@ -15,6 +15,7 @@
 //! runs; when the program stops, the port goes back to the usual path.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use serde_json::{Value, json};
@@ -98,10 +99,14 @@ const OUTPUT_QUEUE_BYTES: usize = 8 * 1024 * 1024;
 /// of the port's own does the waiting; it ends when the port goes, after the writes it holds.
 struct OutputWorker {
     queue: Arc<OutputQueue>,
+    /// The all-off reset was queued: a second close after a quit's reset sends nothing twice.
+    cleared: AtomicBool,
+    /// The program's own quit reset; the safe fallback when it registered none.
+    reset: programs::QuitReset,
 }
 
 impl OutputWorker {
-    fn start(out: Box<dyn MidiOut>, port: String) -> Self {
+    fn start(out: Box<dyn MidiOut>, port: String, reset: programs::QuitReset) -> Self {
         let queue = Arc::new(OutputQueue::default());
         let worker = Arc::clone(&queue);
         let _ = std::thread::Builder::new().name("suhina-midi-out".into()).spawn(move || {
@@ -112,15 +117,47 @@ impl OutputWorker {
                 if let Err(e) = out.send(&bytes) {
                     suhina_plugins::trace!("midi out {port}: {e}");
                 }
+                worker.finish();
             }
         });
-        Self { queue }
+        Self { queue, cleared: AtomicBool::new(false), reset }
     }
 
     /// Enqueues the write; a queue at its caps is a driver that cannot keep up, and the oldest
     /// write goes to make room — never a wait on the session's look.
     fn write(&self, bytes: &[u8]) {
         self.queue.push(bytes.to_vec());
+    }
+
+    /// Writes the program's quit reset, or a device-safe one when it registered none: notes
+    /// off and the channel-mode silences, never CC 0, 7 or 10 (bank select, volume, pan), which
+    /// are not the host's to change on a device it does not know. A program that owns its
+    /// device's lights registers the whole reset (`suhina.quit_reset`, surface-programs.md).
+    fn all_off(&self) {
+        if self.cleared.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        let registered = self.reset.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+        if let Some(messages) = registered {
+            for bytes in messages {
+                self.write(&bytes);
+            }
+            return;
+        }
+        for channel in 0..16u8 {
+            for note in 0..128u8 {
+                self.write(&[0x80 | channel, note, 0]);
+            }
+            self.write(&[0xB0 | channel, 123, 0]);
+            self.write(&[0xB0 | channel, 120, 0]);
+            self.write(&[0xB0 | channel, 121, 0]);
+        }
+    }
+
+    /// Waits until the queue and the write in the driver are done, or the timeout passes: the
+    /// quit path waits on this so the reset reaches the device before the process ends.
+    fn wait_empty(&self, timeout: std::time::Duration) -> bool {
+        self.queue.wait_empty(timeout)
     }
 }
 
@@ -141,6 +178,8 @@ struct OutputQueue {
 struct OutputQueueState {
     writes: std::collections::VecDeque<Vec<u8>>,
     bytes: usize,
+    /// One write the worker has taken and not finished sending.
+    in_flight: usize,
     closed: bool,
 }
 
@@ -164,12 +203,41 @@ impl OutputQueue {
         loop {
             if let Some(bytes) = state.writes.pop_front() {
                 state.bytes = state.bytes.saturating_sub(bytes.len());
+                state.in_flight += 1;
                 return Some(bytes);
             }
             if state.closed {
                 return None;
             }
             state = self.ready.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+    }
+
+    /// The write the worker took was sent (or failed): the quit path may now finish.
+    fn finish(&self) {
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.in_flight = state.in_flight.saturating_sub(1);
+        drop(state);
+        self.ready.notify_all();
+    }
+
+    /// Whether every write has left the queue and the driver, within `timeout`.
+    fn wait_empty(&self, timeout: std::time::Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if state.writes.is_empty() && state.in_flight == 0 {
+                return true;
+            }
+            if state.closed {
+                return false;
+            }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            let (guard, _) = self.ready.wait_timeout(state, left).unwrap_or_else(std::sync::PoisonError::into_inner);
+            state = guard;
         }
     }
 
@@ -437,9 +505,12 @@ impl MidiInputs {
                 }
                 self.outs.retain(|(p, held_id, _, _)| !(p == name && held_id == id));
                 match system.open_output(name) {
-                    Ok(out) => {
-                        self.outs.push((name.clone(), id.to_string(), token, OutputWorker::start(out, name.clone())))
-                    }
+                    Ok(out) => self.outs.push((
+                        name.clone(),
+                        id.to_string(),
+                        token,
+                        OutputWorker::start(out, name.clone(), claim.handle.quit_reset()),
+                    )),
                     Err(e) => notices.extend(self.fail(name, e)),
                 }
             }
@@ -494,6 +565,29 @@ impl MidiInputs {
         // session's look is not held by the driver.
         suhina_plugins::trace!("midi out {port}: {bytes:02x?}");
         out.write(bytes);
+    }
+
+    /// Sends each program's quit reset on its outputs, then waits until `deadline` for the
+    /// workers to write them: quitting must leave a controller dark, not lit by its last frame.
+    /// The same deadline bounds the close that follows, so quit is not given two full waits.
+    pub(crate) fn reset_outputs(&self, deadline: std::time::Instant) {
+        // The last frame's writes go first, so the reset is not pushed out by them; then the
+        // offs, then their writes, before the app closes the ports.
+        for (_, _, _, out) in &self.outs {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() || !out.wait_empty(left) {
+                break;
+            }
+        }
+        for (_, _, _, out) in &self.outs {
+            out.all_off();
+        }
+        for (_, _, _, out) in &self.outs {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() || !out.wait_empty(left) {
+                break;
+            }
+        }
     }
 
     fn fail(&mut self, name: &str, error: String) -> Vec<String> {

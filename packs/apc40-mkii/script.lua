@@ -9,15 +9,15 @@
 -- Suhina's own, written from public documentation alone (the repository's clean-room rules):
 -- Akai's public *APC40 Mk2 Communication Protocol v1.2* (January 19, 2015) for the note and CC
 -- map, the RGB values and the Application/Configuration message that puts the device in the
--- mode the document names Ableton Live (0x41), and Akai's public MIDI implementation chart for
--- the control map. See README.md beside this file. Suhina content: CC0-1.0.
+-- mode the document names (0x41), and Akai's public MIDI implementation chart for the control
+-- map. See README.md beside this file. Suhina content: CC0-1.0.
 
 local TRACKS = 8
 local SCENES = 5
 
 -- The device wakes in its Generic mode, where the activator, solo and record-arm buttons are
--- latching toggles that drive their own lights. Ableton Live mode (0x41) makes every button
--- momentary — a press is always note-on 127, a release note-off —
+-- latching toggles that drive their own lights. The Application/Configuration mode (0x41)
+-- makes every button momentary — a press is always note-on 127, a release note-off —
 -- and hands the buttons' LEDs to the host; the knobs' rings ride the hardware, and the script
 -- writes a ring only for a value the knob did not just report, so a session value trailing a
 -- turn cannot yank it back. The message is the Application/Configuration identifier of
@@ -169,8 +169,7 @@ local function device_key()
 end
 
 -- The parameter a knob (0-7) shows in the open bank, or nil past the device's last one.
-local function knob_param(knob)
-    local dials = device_dials()
+local function knob_param(dials, knob)
     if dials == nil then
         return nil
     end
@@ -178,8 +177,7 @@ local function knob_param(knob)
 end
 
 -- The last bank the device has: the one holding its last parameter.
-local function last_bank()
-    local dials = device_dials()
+local function last_bank(dials)
     if dials == nil or #dials == 0 then
         return 0
     end
@@ -419,9 +417,12 @@ end
 local function refresh_device()
     local device = selected_device()
     local device_key = device ~= nil and (tostring(selection.track) .. ":" .. tostring(device.path)) or ""
+    -- The dials once for the whole bank: rebuilding the reading's lookup table for each of the
+    -- eight knobs and the bank arrow is the same answer nine times.
+    local dials = device_dials()
     for knob = 0, KNOBS - 1 do
         local controller = 16 + knob
-        local param = knob_param(knob)
+        local param = knob_param(dials, knob)
         if param ~= nil and type(param.min) == "number" and type(param.max) == "number" then
             led_cc(24 + knob, 1)
             local position = ring_position(param)
@@ -431,18 +432,18 @@ local function refresh_device()
             -- leave the ring to the knob, so its next report is not reset elsewhere. Only a
             -- value from elsewhere writes, once the turn has settled.
             if shown ~= knob_shown[controller] then
-                led_cc(controller, position)
+                -- Another dial's reports are no guard for this one.
                 knob_recent[controller] = nil
+                led_cc(controller, position)
                 knob_reported(controller, position)
                 knob_turn[controller] = 0
             elseif turning > 0 then
-                knob_turn[controller] = turning - 1
+                -- The turn has settled: forget its reports, so a later change that happens to
+                -- land on one of those positions still writes the ring.
                 if turning == 1 then
-                    -- The echo window closes with the settle: a value that comes back to a
-                    -- position the knob passed through is a change from elsewhere, not this
-                    -- knob's echo, and writes the ring again.
                     knob_recent[controller] = nil
                 end
+                knob_turn[controller] = turning - 1
             elseif not knob_saw(controller, position) then
                 led_cc(controller, position)
                 knob_reported(controller, position)
@@ -453,13 +454,12 @@ local function refresh_device()
             led_cc(16 + knob, 0)
             knob_shown[controller] = nil
             knob_turn[controller] = nil
-            knob_recent[controller] = nil
         end
     end
     led(0, DEVICE_LEFT, device ~= nil and ON or OFF_BUTTON)
     led(0, DEVICE_RIGHT, device ~= nil and ON or OFF_BUTTON)
     led(0, BANK_LEFT, bank > 0 and ON or OFF_BUTTON)
-    led(0, BANK_RIGHT, bank < last_bank() and ON or OFF_BUTTON)
+    led(0, BANK_RIGHT, bank < last_bank(dials) and ON or OFF_BUTTON)
     led(0, DEVICE_ON_OFF, (device ~= nil and device.enabled == true) and ON or OFF_BUTTON)
 end
 
@@ -488,8 +488,17 @@ local function refresh()
         else
             position = math.floor(pan * 63.5 + 64 + 0.5)
         end
-        if not knob_saw(48 + track, position) then
-            led_cc(48 + track, position)
+        -- The pan encoder's ring has the same echo guard as the device knobs: leave it to the
+        -- encoder while it turns, then forget the reports so a later change still writes.
+        local controller = 48 + track
+        local turning = knob_turn[controller] or 0
+        if turning > 0 then
+            if turning == 1 then
+                knob_recent[controller] = nil
+            end
+            knob_turn[controller] = turning - 1
+        elseif not knob_saw(controller, position) then
+            led_cc(controller, position)
         end
     end
     for scene = 0, SCENES - 1 do
@@ -543,7 +552,7 @@ local function press(channel, note)
             refresh()
         end
     elseif channel == 0 and note == BANK_RIGHT then
-        if bank < last_bank() then
+        if bank < last_bank(device_dials()) then
             bank = bank + 1
             refresh()
         end
@@ -613,7 +622,7 @@ local function cc_received(channel, controller, value)
         -- moves smoothly; an older reading's dial scales the knob onto its range instead. One
         -- gesture per knob and parameter, so a turn is one undo step.
         local device = selected_device()
-        local param = knob_param(controller - 16)
+        local param = knob_param(device_dials(), controller - 16)
         if device == nil or param == nil or type(param.min) ~= "number" or type(param.max) ~= "number" then
             return
         end
@@ -645,6 +654,7 @@ local function cc_received(channel, controller, value)
         end
         suhina.command("track.setPan", { tracks = { id }, pan = pan }, "apc40-mkii pan " .. id)
         knob_reported(controller, value)
+        knob_turn[controller] = KNOB_SETTLE
     elseif controller == 14 then
         -- The master fader (CC 14): the main output's volume, the same curve.
         local db = "-inf"
@@ -692,13 +702,8 @@ suhina.on_ports(function(inputs, outputs)
     if out ~= nil then
         suhina.send(out, LIVE_MODE)
     end
-    -- The device may hold LEDs from before: send every control again, whatever changed. The
-    -- rings' ownership, turn and echo history go with it, or a ring the controller lost keeps
-    -- its old position because the script thinks it still shows it.
+    -- The device may hold LEDs from before: send every control again, whatever changed.
     leds = {}
-    knob_shown = {}
-    knob_turn = {}
-    knob_recent = {}
     refresh()
 end)
 
@@ -706,3 +711,17 @@ kinds[suhina.subscribe("project.launcher")] = "grid"
 kinds[suhina.subscribe("launcher.state")] = "state"
 kinds[suhina.subscribe("project.tracks")] = "strips"
 kinds[suhina.subscribe("project.selection")] = "selection"
+
+-- The controller's own quit reset: the host writes it when the app quits, so the session does
+-- not have to know this device's LED map (docs/spec/surface-programs.md › Quitting). Every
+-- note and controller off on every channel, as the script's own LED writes are.
+local quit_reset = {}
+for channel = 0, 15 do
+    for note = 0, 127 do
+        quit_reset[#quit_reset + 1] = suhina.midi.note_on(channel, note, 0)
+    end
+    for controller = 0, 127 do
+        quit_reset[#quit_reset + 1] = suhina.midi.cc(channel, controller, 0)
+    end
+end
+suhina.quit_reset(quit_reset)

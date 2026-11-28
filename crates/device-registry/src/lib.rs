@@ -6,13 +6,16 @@
 //! through this crate; front ends list what can be added.
 
 use std::any::Any;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use suhina_device_api::{Device, DeviceError, DeviceInfo, ParamKind};
+use suhina_device_api::{Device, DeviceError, DeviceInfo, ParamInfo, ParamKind};
 use suhina_device_sdk::DeviceSdkError;
 use suhina_device_sdk::builtin::{self, Layout, Panel};
-use suhina_device_sdk::ui::{CustomControl, Widget};
+use suhina_device_sdk::ui::{UiExpression, UiValue, Widget};
 
 /// One built-in device: everything the rest of Suhina asks the registry about it, in one row
 /// (#764 › 9). [`DEVICES`], [`create`], [`layout`], [`panel`] and [`is_file_device`] read this
@@ -224,11 +227,111 @@ pub fn info(id: &str) -> Option<&'static DeviceInfo> {
     entry(id).map(|entry| entry.info)
 }
 
-/// The layout of the device with this id, when it has one (ADR 0021 › Amendment: device panels
-/// for built-in devices): the `.sd` UI part only, its parameters named by id. A device crate
-/// gives it in Rust, or as `devices/<name>/panel.json`.
-pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
-    match entry(id)?.layout {
+/// One device's layout and dial plan, each worked out on its first read.
+struct CachedDevice {
+    layout: OnceLock<Option<Result<Layout, DeviceSdkError>>>,
+    plan: OnceLock<DialPlan>,
+}
+
+impl CachedDevice {
+    const fn new() -> Self {
+        Self { layout: OnceLock::new(), plan: OnceLock::new() }
+    }
+}
+
+/// What a device's panel gives a controller, worked out once per id: its native dials in the
+/// panel's order, and the continuous parameters the panel does not place, in parameter order.
+struct DialPlan {
+    controls: Vec<DialControl>,
+    /// The continuous and whole-number parameters no native dial names, in parameter order.
+    unplaced: Vec<&'static str>,
+    /// Every parameter by id, for a reading's own values and for the defaults it leaves out.
+    params: HashMap<&'static str, &'static ParamInfo>,
+}
+
+/// A page dial's place in its panel: its top, height and left, with its index in the plan.
+type PlacedDial = (f32, f32, f32, usize);
+
+/// One row of page dials: its top, its first control's height, and each control's left with its
+/// index in the plan.
+type DialRow = (f32, f32, Vec<(f32, usize)>);
+
+/// One native dial control, with what a reading needs from it.
+struct DialControl {
+    id: &'static str,
+    visible_when: Option<UiValue>,
+    /// Its place among the page's dials in reading order; `None` for every other control.
+    page_rank: Option<usize>,
+}
+
+/// Every layout and dial plan, worked out once while Suhina runs: a controller's subscription
+/// reads a device's dials on every look, and the FM Synth's panel is 4.4 MB. What a reading
+/// changes — the page and operator a panel shows — stays outside the plan.
+struct LayoutCache {
+    cells: OnceLock<Vec<CachedDevice>>,
+    #[cfg(test)]
+    parses: AtomicUsize,
+    #[cfg(test)]
+    computes: AtomicUsize,
+}
+
+impl LayoutCache {
+    const fn new() -> Self {
+        Self {
+            cells: OnceLock::new(),
+            #[cfg(test)]
+            parses: AtomicUsize::new(0),
+            #[cfg(test)]
+            computes: AtomicUsize::new(0),
+        }
+    }
+
+    /// The entry and cache cell of `id`, made on the first call; `None` for an unknown id.
+    fn row(&self, id: &str) -> Option<(&'static Entry, &CachedDevice)> {
+        let index = ENTRIES.iter().position(|entry| entry.info.id == id)?;
+        let entry = ENTRIES.get(index)?;
+        let cells = self.cells.get_or_init(|| (0..ENTRIES.len()).map(|_| CachedDevice::new()).collect());
+        Some((entry, cells.get(index)?))
+    }
+
+    /// The layout of `id`, parsed on its first call and borrowed afterwards; `None` for an
+    /// unknown id or a device whose panel is generated.
+    fn get(&self, id: &str) -> Option<&Result<Layout, DeviceSdkError>> {
+        let (entry, cached) = self.row(id)?;
+        cached
+            .layout
+            .get_or_init(|| {
+                #[cfg(test)]
+                self.parses.fetch_add(1, Ordering::Relaxed);
+                parse_layout(entry)
+            })
+            .as_ref()
+    }
+
+    /// The dial plan of `id`, worked out on its first call beside the layout.
+    fn plan(&self, id: &str) -> Option<&DialPlan> {
+        let (entry, cached) = self.row(id)?;
+        Some(cached.plan.get_or_init(|| {
+            #[cfg(test)]
+            self.computes.fetch_add(1, Ordering::Relaxed);
+            dial_plan(self, entry)
+        }))
+    }
+
+    #[cfg(test)]
+    fn parses(&self) -> usize {
+        self.parses.load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    fn computes(&self) -> usize {
+        self.computes.load(Ordering::Relaxed)
+    }
+}
+
+/// The layout `entry` names, from its own source.
+fn parse_layout(entry: &'static Entry) -> Option<Result<Layout, DeviceSdkError>> {
+    match entry.layout {
         LayoutSource::Generated => None,
         LayoutSource::Json(text) => Some(Layout::from_json(text)),
         LayoutSource::JsonWithImages(text, images) => Some(with_images(text, images)),
@@ -236,37 +339,51 @@ pub fn layout(id: &str) -> Option<Result<Layout, DeviceSdkError>> {
     }
 }
 
+static LAYOUTS: LayoutCache = LayoutCache::new();
+
+/// The layout of the device with this id, when it has one (ADR 0021 › Amendment: device panels
+/// for built-in devices): the `.sd` UI part only, its parameters named by id. A device crate
+/// gives it in Rust, or as `devices/<name>/panel.json`. Parsed once per id while Suhina runs;
+/// the reference is shared, so a reading does not parse it again.
+pub fn layout(id: &str) -> Option<&'static Result<Layout, DeviceSdkError>> {
+    LAYOUTS.get(id)
+}
+
 /// A built-in device's dials as parameter ids, in its compact panel's reading order: the
 /// `Knob` and `Dial` controls bound to a continuous or whole-number parameter, left to right
-/// and top to bottom, then the dials the generated list places under the canvas in parameter
-/// order. A device with no custom panel follows its parameter order alone. The selection
-/// reading gives this to a controller, so its knobs follow the panel's layout, not the
-/// parameter order.
+/// and top to bottom, then every continuous or whole-number parameter the panel does not place,
+/// in parameter order (the panel's own `panel.page` and `panel.op` are not dials). A device with
+/// no custom panel follows its parameter order alone. The
+/// selection reading gives this to a controller, so its knobs follow the panel's layout, not the
+/// parameter order. Worked out once per id while Suhina runs, beside the cached layout.
 pub fn dials(id: &str) -> Vec<String> {
     dials_with(id, &[])
 }
 
 /// [`dials`] with the reading's values: the page and operator the panel shows (the hidden
 /// `panel.page` and `panel.op` parameters) and the model a page's dials follow (the FM Synth's
-/// ADSR or Rates envelope) choose which dials come first. The other pages' dials follow, then a
-/// compact panel with no native dials falls back to its continuous parameters. A controller
-/// follows the reading, so a page or operator change in the window moves its dials with it.
+/// ADSR or Rates envelope) choose which dials come first. The other pages' dials follow in the
+/// panel's order, then the parameters the panel does not place. A controller follows the
+/// reading, so a page or operator change in the window moves its dials with it.
 pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
-    let Some(info) = info(id) else { return Vec::new() };
+    dials_in(&LAYOUTS, id, values)
+}
+
+/// [`dials_with`] against a cache: a test passes its own, so the parse and compute counters
+/// cannot be warmed by another test.
+fn dials_in(cache: &LayoutCache, id: &str, values: &[(String, f64)]) -> Vec<String> {
+    let Some(plan) = cache.plan(id) else { return Vec::new() };
+    // The reading repeats a parameter's value at the end when it changed, so the last one wins.
+    let reading: HashMap<&str, f64> = values.iter().map(|(key, value)| (key.as_str(), *value)).collect();
     let value = |id: &str| -> f64 {
-        values
-            .iter()
-            .rev()
-            .find(|(key, _)| key == id)
-            .map_or_else(|| info.params.iter().find(|p| p.id == id).map_or(0.0, |p| p.default), |(_, value)| *value)
+        reading.get(id).copied().or_else(|| plan.params.get(id).map(|param| param.default)).unwrap_or(0.0)
     };
-    let Some(Ok(layout)) = layout(id) else { return generated_dials(info) };
-    let Some(ui) = layout.ui else { return generated_dials(info) };
     let parameter = |id: &str, normalized: bool| -> f64 {
-        let Some(param) = info.params.iter().find(|p| p.id == id) else { return 0.0 };
+        let Some(param) = plan.params.get(id) else { return 0.0 };
         if normalized { param.to_normalized(value(id)) } else { value(id) }
     };
-    let visible = |control: &CustomControl, page: f64, op: f64| -> bool {
+    let (page, op) = (value("panel.page"), value("panel.op"));
+    let visible = |control: &DialControl| -> bool {
         control.visible_when.as_ref().is_none_or(|condition| {
             condition.evaluate(&|id, normalized, _log| {
                 if id == "panel.page" {
@@ -279,83 +396,123 @@ pub fn dials_with(id: &str, values: &[(String, f64)]) -> Vec<String> {
             }) > 0.0
         })
     };
-    let (page, op) = (value("panel.page"), value("panel.op"));
-    let mut page_controls: Vec<(f32, f32, &str)> = Vec::new();
-    let mut always: Vec<&str> = Vec::new();
-    let mut rest: Vec<&str> = Vec::new();
-    let mut has_native = false;
-    for control in &ui.controls {
-        // Only the native dial widgets are a controller's dials; a host-drawn bar or number
-        // field is the panel's own, and the operator table's cells are not dials.
-        if !matches!(control.widget, Some(Widget::Knob { .. } | Widget::Dial { .. })) {
-            continue;
-        }
-        let Some(id) = control.x.as_ref().or(control.y.as_ref()).map(|binding| binding.parameter.as_str()) else {
-            continue;
-        };
-        let Some(param) = info.params.iter().find(|p| p.id == id) else { continue };
-        if !matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer) {
-            continue;
-        }
-        has_native = true;
-        if !visible(control, page, op) {
-            // A page that is not showing follows the ones that are, in the panel's own order, so
-            // Bank ▶ pages through every dial the panel has.
-            if !rest.contains(&id) {
-                rest.push(id);
+    let mut page_dials: Vec<(usize, &'static str)> = Vec::new();
+    let mut always: Vec<&'static str> = Vec::new();
+    let mut rest: Vec<&'static str> = Vec::new();
+    for control in &plan.controls {
+        if visible(control) {
+            if let Some(rank) = control.page_rank {
+                page_dials.push((rank, control.id));
+            } else {
+                always.push(control.id);
             }
-            continue;
-        }
-        // A control whose visibility changes with the page or the operator is the page's own;
-        // one that stays on every page (the LFO, filter, Spread and Volume dials) follows it.
-        let page_only = !visible(control, 1.0, 1.0) || !visible(control, 0.0, 2.0);
-        if page_only {
-            page_controls.push((control.bounds[1], control.bounds[0], id));
-        } else if !always.contains(&id) {
-            always.push(id);
+        } else {
+            rest.push(control.id);
         }
     }
-    // The page's dials read left to right and top to bottom; the always-visible ones follow in
-    // their panel's own order, which keeps the LFO, filter, Spread and Volume sections together.
-    page_controls.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
-    let mut page_dials: Vec<String> = Vec::new();
-    let mut rows: Vec<(f32, Vec<(f32, &str)>)> = Vec::new();
-    for (top, x, id) in page_controls {
-        match rows.last_mut() {
-            Some((row_top, row)) if top - *row_top <= 24.0 => row.push((x, id)),
-            _ => rows.push((top, vec![(x, id)])),
+    page_dials.sort_by_key(|(rank, _)| *rank);
+    let mut dials = Vec::new();
+    let mut seen = HashSet::new();
+    for (_, id) in page_dials {
+        if seen.insert(id) {
+            dials.push(id.to_string());
         }
     }
-    for (_, mut row) in rows {
-        row.sort_by(|a, b| a.0.total_cmp(&b.0));
-        for (_, id) in row {
-            if !page_dials.iter().any(|seen| seen == id) {
-                page_dials.push(id.to_string());
-            }
+    for id in always.into_iter().chain(rest).chain(plan.unplaced.iter().copied()) {
+        if seen.insert(id) {
+            dials.push(id.to_string());
         }
     }
-    // A dial that is also on the page (Random's Amount) is the page's once, not twice.
-    for id in always.into_iter().chain(rest) {
-        if !page_dials.iter().any(|seen| seen == id) {
-            page_dials.push(id.to_string());
-        }
-    }
-    // A compact panel with no native dials keeps the generated list, so a device Suhina has not
-    // migrated yet still maps its continuous parameters.
-    if !has_native {
-        page_dials.extend(generated_dials(info));
-    }
-    page_dials
+    dials
 }
 
-/// A device with no compact canvas keeps its generated list: its continuous and whole-number
-/// parameters, in parameter order, are the dials.
-fn generated_dials(info: &DeviceInfo) -> Vec<String> {
-    info.params
+/// The plan `entry`'s panel gives a reading: its native dials, the page's in reading order, and
+/// the continuous parameters it does not place, in parameter order ([`dials`]).
+fn dial_plan(cache: &LayoutCache, entry: &'static Entry) -> DialPlan {
+    let info = entry.info;
+    let params = info.params.iter().map(|param| (param.id.as_ref(), param)).collect();
+    let mut controls = Vec::new();
+    let mut page: Vec<PlacedDial> = Vec::new();
+    if let Some(Ok(layout)) = cache.get(&info.id)
+        && let Some(ui) = &layout.ui
+    {
+        for control in &ui.controls {
+            // Only the native dial widgets are a controller's dials; a host-drawn bar or number
+            // field is the panel's own, and the operator table's cells are not dials.
+            if !matches!(control.widget, Some(Widget::Knob { .. } | Widget::Dial { .. })) {
+                continue;
+            }
+            let Some(id) = control.x.as_ref().or(control.y.as_ref()).map(|binding| binding.parameter.as_str()) else {
+                continue;
+            };
+            let Some(param) = info.params.iter().find(|p| p.id == id) else { continue };
+            if !matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer) {
+                continue;
+            }
+            // A control whose visibility reads the page or the operator is the page's own; one
+            // that stays on every page (the LFO, filter, Spread and Volume dials) follows it.
+            let page_only = control.visible_when.as_ref().is_some_and(reads_panel_state);
+            if page_only {
+                page.push((control.bounds[1], control.bounds[3], control.bounds[0], controls.len()));
+            }
+            controls.push(DialControl {
+                id: param.id.as_ref(),
+                visible_when: control.visible_when.clone(),
+                page_rank: None,
+            });
+        }
+    }
+    // The page's dials read left to right and top to bottom; a row is the controls whose tops lie
+    // within the height of its first, so a small dial beside a tall one is read with it.
+    page.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.2.total_cmp(&b.2)));
+    let mut rows: Vec<DialRow> = Vec::new();
+    for (top, height, x, index) in page {
+        match rows.last_mut() {
+            Some((row_top, row_height, row)) if top - *row_top <= *row_height => row.push((x, index)),
+            _ => rows.push((top, height, vec![(x, index)])),
+        }
+    }
+    let mut rank = 0;
+    for (_, _, mut row) in rows {
+        row.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (_, index) in row {
+            if let Some(control) = controls.get_mut(index) {
+                control.page_rank = Some(rank);
+                rank += 1;
+            }
+        }
+    }
+    let unplaced = info
+        .params
         .iter()
         .filter(|param| matches!(param.kind, ParamKind::Continuous(_) | ParamKind::Integer))
-        .map(|param| param.id.to_string())
-        .collect()
+        .map(|param| param.id.as_ref())
+        .filter(|id| *id != "panel.page" && *id != "panel.op")
+        .filter(|id| !controls.iter().any(|control| control.id == *id))
+        .collect();
+    DialPlan { controls, unplaced, params }
+}
+
+/// Whether a visibility condition reads the page the panel shows or the selected operator:
+/// such a control is the page's own rather than one that stays on every page.
+fn reads_panel_state(value: &UiValue) -> bool {
+    match value {
+        UiValue::Number(_) => false,
+        UiValue::Expression(expression) => match expression.as_ref() {
+            UiExpression::Parameter { parameter, .. } => parameter == "panel.page" || parameter == "panel.op",
+            UiExpression::Add { a, b }
+            | UiExpression::Multiply { a, b }
+            | UiExpression::Equal { a, b }
+            | UiExpression::Min { a, b }
+            | UiExpression::Max { a, b }
+            | UiExpression::Wave { shape: a, cycles: b } => reads_panel_state(a) || reads_panel_state(b),
+            UiExpression::Readout { .. } => false,
+            UiExpression::Exp { value }
+            | UiExpression::Log { value }
+            | UiExpression::Sin { value }
+            | UiExpression::Cos { value } => reads_panel_state(value),
+        },
+    }
 }
 
 /// The layout in `text` with `images` added to its compact canvas's assets.
@@ -423,7 +580,7 @@ pub fn panel(id: &str) -> Option<&'static Panel> {
                 .iter()
                 .map(|info| {
                     layout(&info.id)
-                        .and_then(Result::ok)
+                        .and_then(|result| result.as_ref().ok())
                         .and_then(|layout| layout.panel(info).ok())
                         .unwrap_or_else(|| builtin::generated(info))
                 })

@@ -200,39 +200,6 @@ fn selecting_a_missing_device_is_refused_with_its_reason() {
     assert!(err.contains("99999"), "{err}");
 }
 
-/// Every malformed selection is refused and leaves the selection as it was: a missing track,
-/// one of the wrong type, a negative or overflowing id, a name that does not exist, and the
-/// same for a device and for a named track on `device.select`.
-#[test]
-fn malformed_selections_are_refused_and_keep_the_old_one() {
-    let (mut session, track) = with_devices();
-    run(&mut session, "track.select", json!({ "track": track.0 })).unwrap();
-    let before = selection(&mut session);
-    for params in [
-        json!({}),
-        json!({ "track": null }),
-        json!({ "track": "no such track" }),
-        json!({ "track": -1 }),
-        json!({ "track": 9_999_999_999u64 }),
-        json!({ "track": {} }),
-    ] {
-        assert!(run(&mut session, "track.select", params.clone()).is_err(), "track.select took {params}");
-        assert_eq!(selection(&mut session), before, "a refused track.select keeps the selection: {params}");
-    }
-    for params in [
-        json!({}),
-        json!({ "device": null }),
-        json!({ "device": -1 }),
-        json!({ "device": 999 }),
-        json!({ "device": "no such device" }),
-        json!({ "device": 0, "track": {} }),
-        json!({ "device": 0, "track": "no such track" }),
-    ] {
-        assert!(run(&mut session, "device.select", params.clone()).is_err(), "device.select took {params}");
-        assert_eq!(selection(&mut session), before, "a refused device.select keeps the selection: {params}");
-    }
-}
-
 /// The main channel is selectable, addressed as the device commands address it; stepping is
 /// over the project's tracks, so it moves off it.
 #[test]

@@ -13,7 +13,7 @@ it for the device it names ([shipped scripts](../docs/spec/shipped-scripts.md)).
 |---|---|---|
 | `packs/nam-amp-modeler/` | `.nam` models the NAM Amp Modeler runs | 18 |
 | `packs/nam-cab-loader/` | `.wav` cabinet responses the NAM Cab Loader runs | 26 |
-| `packs/apc40-mkii/` | the Lua surface program the runner runs for the APC40 MkII | 3 |
+| `packs/apc40-mkii/` | the Lua surface program the runner runs for the APC40 MkII, with its provenance README and CC0 text | 4 |
 
 ## Licences
 
@@ -48,5 +48,5 @@ panels show them.
 
 | File | Author | Source | Licence |
 |---|---|---|---|
-| `script.lua` | Suhina | written for Suhina from public documentation alone: Akai's public *APC40 Mk2 Communication Protocol v1.2* — the note and controller assignments, the RGB values by velocity, the Application/Configuration message that puts the device in the mode the document names Ableton Live — and the public APC40 MkII MIDI implementation chart; no other product's code, content or script | CC0-1.0 |
-| `extension.json`, `README.md` | Suhina | the program's manifest and the record beside the script | CC0-1.0 |
+| `script.lua` | Suhina | written for Suhina from public documentation alone: Akai's public *APC40 Mk2 Communication Protocol v1.2* — the note and controller assignments, the RGB values by velocity, the Application/Configuration message that puts the device in the mode the document names (0x41) — and the public APC40 MkII MIDI implementation chart; no other product's code, content or script | CC0-1.0 |
+| `extension.json`, `README.md`, `LICENSE-CC0.txt` | Suhina | the program's manifest, the record beside the script, and the CC0 text it is dedicated under | CC0-1.0 |

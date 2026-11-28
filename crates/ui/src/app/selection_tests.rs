@@ -29,10 +29,9 @@ fn window_on_two_devices() -> (App, TrackId) {
 fn a_script_selection_is_not_undone_by_the_windows_older_pick() {
     let (mut app, _) = window_on_two_devices();
     let before = app.window_selection();
-    let project = app.projects.active();
     app.run(&Action::new("device.selectNext", json!({})));
     assert_eq!(app.session().and_then(Session::selected_device_path), Some(vec![1]), "the command moved it");
-    app.publish_session_selection(before, project);
+    app.publish_session_selection(before);
     assert_eq!(
         app.session().and_then(Session::selected_device_path),
         Some(vec![1]),
@@ -46,9 +45,8 @@ fn a_script_selection_is_not_undone_by_the_windows_older_pick() {
 fn a_click_on_another_device_is_published() {
     let (mut app, track) = window_on_two_devices();
     let before = app.window_selection();
-    let project = app.projects.active();
     app.selected_device = Some((track, detail_view::DeviceAt::at(1)));
-    app.publish_session_selection(before, project);
+    app.publish_session_selection(before);
     assert_eq!(app.session().and_then(Session::selected_device_path), Some(vec![1]));
 }
 
@@ -71,45 +69,6 @@ fn a_command_selecting_another_track_clears_the_old_slot() {
     assert_eq!(app.view.selected_slot, None, "the old track's slot is gone");
 }
 
-/// A pick made in the frame that switches projects is not published to the project that
-/// became active: it belongs to the one the frame began on.
-#[test]
-fn a_project_switch_in_the_frame_does_not_publish_the_outgoing_pick() {
-    let mut app = App::new();
-    let mut first = Session::new(crate::demo::demo_project());
-    let first_track = first.project().tracks[0].id;
-    first.execute("track.select", &json!({ "track": first_track.0 })).unwrap();
-    let first_id = app.open_project(first, &[], OpenAs::NewTab).unwrap();
-    let second = Session::new(crate::demo::demo_project());
-    let second_id = app.open_project(second, &[], OpenAs::NewTab).unwrap();
-    app.projects_mut().execute("project.switch", &json!({ "project": second_id.0 })).unwrap();
-    // The outgoing project's window pick, published after the switch landed.
-    app.arrangement.selected_tracks = vec![first_track];
-    app.view.selected = Some(first_track);
-    app.publish_session_selection((Some(first_track), None), Some(first_id));
-    assert!(app.session().and_then(Session::selected_track).is_none(), "the new project's own empty selection stays");
-}
-
-/// A deleted track's highlight stays gone even when an undo brings the track back before the
-/// next frame: undo does not restore the selection, and the window follows the empty one.
-#[test]
-fn undo_before_the_follow_does_not_restore_a_removed_tracks_highlight() {
-    let mut app = App::new();
-    let mut session = Session::new(crate::demo::demo_project());
-    let first = session.project().tracks[0].id;
-    session.execute("track.select", &json!({ "track": first.0 })).unwrap();
-    app.set_session(session, &[]);
-    app.arrangement.selected_tracks = vec![first];
-    app.view.selected = Some(first);
-    app.follow_session_selection();
-    app.projects_mut().execute("track.delete", &json!({ "track": first.0 })).unwrap();
-    app.projects_mut().execute("edit.undo", &json!({})).unwrap();
-    assert!(app.session().and_then(Session::selected_track).is_none(), "the session stays empty");
-    app.follow_session_selection();
-    assert_eq!(app.view.selected, None, "the window follows the empty selection after undo");
-    assert!(app.arrangement.selected_tracks.is_empty());
-}
-
 /// A device clicked in another track's mixer list publishes its track and its device in the
 /// same frame; the track's first device must not replace the click next frame.
 #[test]
@@ -125,12 +84,11 @@ fn a_device_clicked_with_its_track_is_published_together() {
     app.arrangement.selected_tracks = vec![first];
     app.view.selected = Some(first);
     let before = app.window_selection();
-    let project = app.projects.active();
     app.arrangement.selected_tracks = vec![second];
     app.view.selected = Some(second);
     app.view.selected_tracks = vec![second];
     app.selected_device = Some((second, detail_view::DeviceAt::at(0)));
-    app.publish_session_selection(before, project);
+    app.publish_session_selection(before);
     let session = app.session().unwrap();
     assert_eq!(session.selected_track(), Some(second));
     assert_eq!(session.selected_device_path(), Some(vec![0]));
@@ -150,11 +108,10 @@ fn a_presentation_folder_is_published() {
     app.arrangement.selected_tracks = vec![first];
     app.view.selected = Some(first);
     let before = app.window_selection();
-    let project = app.projects.active();
     app.arrangement.selected_tracks = vec![folder];
     app.view.selected = Some(folder);
     app.view.selected_tracks = vec![folder];
-    app.publish_session_selection(before, project);
+    app.publish_session_selection(before);
     assert_eq!(app.session().and_then(Session::selected_track), Some(folder));
 }
 
