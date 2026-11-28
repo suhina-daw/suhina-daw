@@ -330,6 +330,19 @@ fn a_devices_layout_is_parsed_once_for_its_dials() {
     let second = dials_in(&cache, "fm-synth");
     assert_eq!(first, second, "the same dials on every read");
     assert_eq!(cache.parses(), 1, "the layout was parsed more than once");
+    assert_eq!(cache.computes(), 1, "the dial order was computed more than once");
+}
+
+/// A row's threshold is its first control's height, not a fixed number: two tall dials a short
+/// distance apart share a row, where a fixed 24 px threshold would split them.
+#[test]
+fn dial_rows_group_by_the_first_controls_height() {
+    let mut tall = [(0.0, 40.0, 50.0, "right"), (30.0, 40.0, 10.0, "left")];
+    assert_eq!(in_reading_order(&mut tall), vec!["left", "right"]);
+    // Short controls do not take one another in from 20 px away the way a fixed 24 px row did:
+    // reading by rows puts `a` first, where one fixed row would sort `b` before it by x.
+    let mut short = [(0.0, 10.0, 100.0, "a"), (20.0, 10.0, 0.0, "b")];
+    assert_eq!(in_reading_order(&mut short), vec!["a", "b"]);
 }
 
 #[test]
