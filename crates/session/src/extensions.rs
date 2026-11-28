@@ -36,6 +36,10 @@ const MAX_PERMISSIONS: usize = 16;
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 /// How deep a folder `extensions.add` copies; an honest extension is flat or nearly.
 const MAX_COPY_DEPTH: usize = 8;
+/// How many files `extensions.add` copies, and how many bytes: the copy runs while the
+/// window waits, so the whole folder is bounded before it is made part of the store.
+const MAX_COPY_FILES: usize = 1024;
+const MAX_COPY_BYTES: u64 = 256 * 1024 * 1024;
 
 /// The runners Suhina ships, by a manifest's `runner` value.
 const RUNNERS: &[&str] = &["lua"];
@@ -916,7 +920,8 @@ fn add(projects: &mut Projects, params: &Value) -> Result<Value, CommandError> {
     // store never holds half of one.
     let staging = root.join(format!(".add-{}.staging", manifest.id));
     let _ = std::fs::remove_dir_all(&staging);
-    if let Err(reason) = copy_folder(source, &staging, 0) {
+    let mut budget = CopyBudget { files: 0, bytes: 0 };
+    if let Err(reason) = copy_folder(source, &staging, 0, &mut budget) {
         let _ = std::fs::remove_dir_all(&staging);
         return Err(reason);
     }
@@ -1190,8 +1195,15 @@ pub(crate) fn contained(folder: &Path, path: &Path) -> Result<PathBuf, String> {
     Ok(joined)
 }
 
-/// A folder copied whole: files and folders, within a depth, nothing followed out of it.
-fn copy_folder(from: &Path, to: &Path, depth: usize) -> Result<(), CommandError> {
+/// What an `extensions.add` copy has taken so far, against its caps.
+struct CopyBudget {
+    files: usize,
+    bytes: u64,
+}
+
+/// A folder copied whole: files and folders, within its depth, file count and byte caps;
+/// nothing is followed out of it.
+fn copy_folder(from: &Path, to: &Path, depth: usize, budget: &mut CopyBudget) -> Result<(), CommandError> {
     if depth > MAX_COPY_DEPTH {
         return Err(format!("the folder is nested deeper than {MAX_COPY_DEPTH} levels").into());
     }
@@ -1201,8 +1213,17 @@ fn copy_folder(from: &Path, to: &Path, depth: usize) -> Result<(), CommandError>
         let kind = entry.file_type().map_err(|e| format!("{} cannot be read: {e}", entry.path().display()))?;
         let to = to.join(entry.file_name());
         if kind.is_dir() {
-            copy_folder(&entry.path(), &to, depth + 1)?;
+            copy_folder(&entry.path(), &to, depth + 1, budget)?;
         } else if kind.is_file() {
+            budget.files = budget.files.saturating_add(1);
+            if budget.files > MAX_COPY_FILES {
+                return Err(format!("the folder holds more than {MAX_COPY_FILES} files").into());
+            }
+            let size = entry.metadata().map_err(|e| format!("{} cannot be read: {e}", entry.path().display()))?.len();
+            budget.bytes = budget.bytes.saturating_add(size);
+            if budget.bytes > MAX_COPY_BYTES {
+                return Err(format!("the folder holds more than {} MiB", MAX_COPY_BYTES / (1024 * 1024)).into());
+            }
             std::fs::copy(entry.path(), &to)
                 .map_err(|e| format!("{} cannot be copied: {e}", entry.path().display()))?;
         }

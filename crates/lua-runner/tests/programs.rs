@@ -24,6 +24,9 @@ struct Fixture {
     id: String,
     root: std::path::PathBuf,
     midi: Arc<Midi>,
+    /// Woken by every supervisor event and every stand-in MIDI write: the pump's wait, with
+    /// no clock.
+    wake: std::sync::mpsc::Receiver<()>,
 }
 
 const SCRIPT_OK: &str =
@@ -180,7 +183,7 @@ impl Fixture {
         projects.set_midi_system(system);
         // An open session, so the scripts' commands and reads run on a project.
         projects.add(Session::new(blank_project()), None).expect("the session opens");
-        Self { root, id: id.to_string(), projects, midi }
+        Self { root, id: id.to_string(), projects, midi, wake: programs::test_watch() }
     }
 
     fn folder(&self) -> std::path::PathBuf {
@@ -211,13 +214,13 @@ impl Fixture {
     }
 
     /// Services the session and waits until `done` says the waited thing is observable —
-    /// in the queue, or already drained and written out by one of the looks — breathing on
-    /// the programs' event signal between looks. What a test waits for is its own
-    /// observable (a marker written to a port), not a frame count (AGENTS.md rule 7); a
-    /// look may be what produces the waited thing (a script's command is answered where
-    /// the frame drains), so the wait cannot be a plain one on the supervisor's signal.
+    /// in the queue, or already drained and written out by one of the looks. The wait is on
+    /// the test wake: every supervisor event and every stand-in MIDI write wakes it, so the
+    /// pump never decides its result on a clock (AGENTS.md rule 7). A look may be what
+    /// produces the waited thing (a script's command is answered where the frame drains), so
+    /// it runs again after every wake.
     fn pump_until(&mut self, done: impl Fn(&Self) -> bool, what: &str) {
-        for _ in 0..4_000 {
+        loop {
             if done(self) {
                 return;
             }
@@ -225,11 +228,11 @@ impl Fixture {
             if done(self) {
                 return;
             }
-            if let Err(reason) = self.projects.test_extensions_breath() {
+            if let Some(reason) = self.projects.test_extensions_reason() {
                 panic!("the program ended without {what}: {reason}");
             }
+            self.wake.recv().unwrap_or_else(|e| panic!("{what}: the test wake ended: {e}"));
         }
-        panic!("{what} never became observable: {:?}", self.midi.written_for("APC out"));
     }
 
     /// Sends the claimed ports to the running program.
@@ -865,12 +868,11 @@ fn a_subscription_of_an_edit_pushes_nothing() {
     let mut fixture = Fixture::claiming("subedit", SCRIPT_SUBSCRIBE_EDIT);
     fixture.start();
     fixture.expect(|e| *e == programs::Event::Running, "running");
-    // The looks the subscription's reads would have run on: no state is pushed.
+    // The looks the subscription's reads would have run on: no state is pushed. The program
+    // is running, so the subscribe is already queued; the looks service it, and there is no
+    // clock to wait on.
     for _ in 0..200 {
         fixture.projects.poll_plugins();
-        if let Err(reason) = fixture.projects.test_extensions_breath() {
-            panic!("the program ended: {reason}");
-        }
     }
     assert!(fixture.midi.written_for("APC out").is_empty(), "{:?}", fixture.midi.written_for("APC out"));
 }
@@ -1169,6 +1171,8 @@ impl MidiOut for Out {
         let mut written = self.written.lock().unwrap();
         written.push((self.name.clone(), bytes.to_vec()));
         self.signal.notify_all();
+        drop(written);
+        programs::test_wake();
         Ok(())
     }
 }
