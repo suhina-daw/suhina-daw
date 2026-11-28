@@ -167,6 +167,17 @@ jobs:
           for target in ${TARGETS//,/ }; do
             cargo build --release --locked -p suhina-cli -p suhina -p suhina-plugin-host --target "$target" "${features[@]}"
           done
+      # The 32-bit plug-in host, the bridge for 32-bit Windows plug-ins
+      # (docs/spec/plugin-hosting.md › 32-bit plug-ins on Windows), with the C runtime linked
+      # statically like the rest.
+      - name: Build the 32-bit plug-in host
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          rustup target add i686-pc-windows-msvc
+          cargo build --release --locked -p suhina-plugin-host --target i686-pc-windows-msvc
       - name: Collect the package
         shell: bash
         run: |
@@ -175,7 +186,8 @@ jobs:
             Windows)
               for bin in "$BIN" "$APP" "$HOST"; do
                 cp "target/x86_64-pc-windows-msvc/release/$bin.exe" "dist/$PACKAGE/"
-              done ;;
+              done
+              cp "target/i686-pc-windows-msvc/release/$HOST.exe" "dist/$PACKAGE/$HOST-32.exe" ;;
             macOS)
               for bin in "$BIN" "$APP" "$HOST"; do
                 lipo -create -output "dist/$PACKAGE/$bin" \
@@ -210,6 +222,8 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             "$exe" audio devices > audio-devices.json
             jq -e '.hosts | any(.name == "ASIO")' audio-devices.json
+            # The 32-bit host loads its built-in VST2 test plug-in.
+            "dist/$PACKAGE/$HOST-32.exe" --scan test:vst2 | grep -q '^SUHINA-SCAN {"plugins"'
           fi
           output=$("$exe" --version)
           echo "$output"

@@ -34,6 +34,7 @@
 //! project's plug-ins with it and hands their audio halves to the engine.
 
 pub mod arch;
+pub mod bridge;
 pub mod library;
 pub mod matching;
 pub mod offline;
@@ -960,7 +961,10 @@ impl Plugin {
     /// Loads the plug-in into a host process and returns both halves: into the running process
     /// of its group ([`Launch::group`]), or a new one when the group has none running or the
     /// instance has no group.
-    pub fn start(launch: Launch) -> Result<(Self, PluginAudio), PluginError> {
+    pub fn start(mut launch: Launch) -> Result<(Self, PluginAudio), PluginError> {
+        // A 32-bit plug-in runs in the 32-bit host beside this one, when it is there; its group
+        // is then that host's ([`bridge`]).
+        launch.host = bridge::host_for_spec(&launch.host, &launch.plugin);
         let group = group_for_launch(&launch);
         let instance = next_instance();
         let (generation, latency, edits_clips, link, edits) = {

@@ -170,6 +170,9 @@ What a scan gives for a file is one of four (ADR 0006 › 9):
   It is never loaded and is settled: not read again until the file changes. Listed as *Wrong
   architecture* with the processors it is built for, apart from the failures
   (`plugin.list` › `incompatible`).
+  A 32-bit Windows plug-in is not one of them when the 32-bit host is installed beside
+  Suhina: it is scanned and loaded through that host, and one settled here before is read
+  again ([plug-in hosting › 32-bit plug-ins on Windows](plugin-hosting.md#32-bit-plug-ins-on-windows)).
 - **No plug-ins**: the file loads and holds no audio plug-ins (a vendor's shell bundle with no
   classes). Settled and not in the table; `plugin.list` with `ignored: true` lists it.
 

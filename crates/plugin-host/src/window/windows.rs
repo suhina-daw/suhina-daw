@@ -124,6 +124,13 @@ unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, 
 }
 
 /// Registers the window class once; whether it is registered.
+/// A window handle the engine sent, as this process holds one. Windows keeps window handles to
+/// 32 significant bits so 32-bit and 64-bit processes can pass them to each other: a 64-bit
+/// handle may be sign-extended, and the 32-bit host (the bridge) takes its low half.
+fn handle(value: u64) -> Option<usize> {
+    if cfg!(target_pointer_width = "32") { usize::try_from(value as u32).ok() } else { usize::try_from(value).ok() }
+}
+
 fn register() -> bool {
     static REGISTERED: OnceLock<bool> = OnceLock::new();
     *REGISTERED.get_or_init(|| {
@@ -180,7 +187,7 @@ impl Window {
         // The engine's window, if it still is one: the editor's is owned by it (not a child
         // of it), so it floats above Suhina and goes with it.
         let owner = super::owner()
-            .and_then(|o| usize::try_from(o).ok())
+            .and_then(handle)
             .map(|o| o as HWND)
             // SAFETY: only asks whether the handle names a window; any value is allowed.
             .filter(|&o| unsafe { IsWindow(o) } != 0)
@@ -236,7 +243,7 @@ impl Window {
         if !register() {
             return Err("could not register the editor's window class".into());
         }
-        let parent = usize::try_from(parent).ok().map(|p| p as HWND).ok_or("no window to embed the editor in")?;
+        let parent = handle(parent).map(|p| p as HWND).ok_or("no window to embed the editor in")?;
         // SAFETY: only asks whether the handle names a window; any value is allowed.
         if unsafe { IsWindow(parent) } == 0 {
             return Err("the window to embed the editor in is gone".into());

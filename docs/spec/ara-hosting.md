@@ -29,6 +29,10 @@ catalog's VST3 files are read again so installed ARA plug-ins are found). `plugi
 support was known starts it in its file's process. The factory's API generations are checked
 when an instance is bound.
 
+The 32-bit Windows host binds no ARA document: the bindings are generated for 64-bit
+processors, so it builds `ara_off.rs` in place of `ara.rs`, and a 32-bit plug-in is never
+marked as supporting ARA ([plug-in hosting › 32-bit plug-ins on Windows](plugin-hosting.md#32-bit-plug-ins-on-windows)).
+
 ## The plug-in belongs to the clip
 
 [#990](https://github.com/suhina-daw/suhina-daw/issues/990). An ARA edit is the clip's, not the
