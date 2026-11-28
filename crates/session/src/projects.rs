@@ -287,6 +287,20 @@ impl Projects {
         self.devices.midi.off.iter().cloned().collect()
     }
 
+    /// Saved expression configuration by physical MIDI input name.
+    pub fn midi_mpe(&self) -> std::collections::BTreeMap<String, crate::MpeConfig> {
+        self.devices.midi.mpe.clone()
+    }
+
+    /// Restores bounded, validated input settings before opening ports at startup.
+    pub fn set_midi_mpe(&mut self, settings: std::collections::BTreeMap<String, crate::MpeConfig>) {
+        self.devices.midi.mpe = settings
+            .into_iter()
+            .filter(|(name, config)| !name.is_empty() && name.len() <= 1024 && config.is_valid())
+            .take(256)
+            .collect();
+    }
+
     /// Turns the ports `off` names off and every other one on, opening and closing them.
     pub fn set_midi_inputs_off(&mut self, off: impl IntoIterator<Item = String>) -> Vec<String> {
         self.devices.midi.off = off.into_iter().collect();

@@ -245,6 +245,22 @@ pub(super) fn push_event(out: &mut Vec<Event>, frame: u32, event: DeviceEvent) {
         }
     };
     match event {
+        // Hosted native-expression routing belongs to #927. Its chain explicitly selects
+        // ordinary compatibility; keep notes playable if called directly through a graph.
+        DeviceEvent::Instance { event: suhina_device_api::NoteInstanceEvent::On { key, velocity, .. }, .. }
+            if key < 128 && velocity.is_finite() =>
+        {
+            push(EventKind::NoteOn { channel: 0, key, velocity: velocity.clamp(0., 1.) });
+        }
+        DeviceEvent::Instance { event: suhina_device_api::NoteInstanceEvent::Off { key, velocity }, .. }
+            if key < 128 && velocity.is_finite() =>
+        {
+            push(EventKind::NoteOff { channel: 0, key, velocity: velocity.clamp(0., 1.) });
+        }
+        DeviceEvent::Instance { event: suhina_device_api::NoteInstanceEvent::Choke { key }, .. } if key < 128 => {
+            push(EventKind::NoteOff { channel: 0, key, velocity: 0. });
+        }
+        DeviceEvent::Instance { .. } => {}
         DeviceEvent::On { key, velocity } if key < 128 => {
             push(EventKind::NoteOn { channel: 0, key, velocity: velocity.clamp(0.0, 1.0) });
         }

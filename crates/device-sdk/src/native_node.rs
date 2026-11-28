@@ -9,6 +9,10 @@ use suhina_device_api::NoteEvent;
 /// Prepared native stereo graph kernel. All methods except resource access run without allocation,
 /// locking or I/O. Construction and disposal belong off the audio thread.
 pub trait NativeNode: Send {
+    /// Optional canonical identified-note endpoint for a bounded voice runtime.
+    fn note_instances(&mut self) -> Option<&mut dyn suhina_device_api::NoteInstanceDevice> {
+        None
+    }
     fn prepare_block(&mut self, context: &ProcessContext);
     fn process(&mut self, inputs: [&[f32]; 5], buffer: &mut [f32]);
     /// Read a zero-based named output for a frame of the last process call (at most 64 frames).

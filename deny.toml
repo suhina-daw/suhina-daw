@@ -10,7 +10,8 @@
 all-features = true
 
 [licenses]
-# AGENTS.md rule 9, exactly: MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0.
+# AGENTS.md rule 10, exactly: MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL, GPL-3.0, AGPL-3.0
+# (compatible with GPL-3.0 by both licences' section 13; CONTRIBUTING.md › Licence).
 # Not GPL-2.0-only, not proprietary or "non-commercial" licences. Anything else needs an
 # exception below, for the one crate that needs it, with the reason.
 allow = [
@@ -27,13 +28,16 @@ allow = [
     "LGPL-3.0-or-later",
     "GPL-3.0",
     "GPL-3.0-or-later",
+    "AGPL-3.0",
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later",
 ]
 # A licence on the list that no dependency uses today is not an error.
 unused-allowed-license = "allow"
 # How sure cargo-deny must be when it recognises a licence from the text of a licence file.
 confidence-threshold = 0.93
 
-# Licences outside rule 9's list, each GPLv3-compatible, each for named crates only.
+# Licences outside rule 10's list, each GPLv3-compatible, each for named crates only.
 exceptions = [
     # Unicode License v3: a permissive licence for Unicode data tables, GPL-compatible. The ICU4X
     # crates (pulled in through url/idna), unicode-ident and unicode-properties (whose other part is MIT OR Apache-2.0)

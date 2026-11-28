@@ -4,6 +4,12 @@ Tests in `src/fade_tests.rs` render small projects offline and compare the left 
 for sample (within 1e-6), with the files here. Offline renders are the oracle for real-time
 playback: both run the same `Renderer::process` (AGENTS.md › One render path).
 
+- `live-mpe-two-notes.f32` (`src/live_mpe_tests.rs`): two self-authored FM notes (keys 60 and
+  67), only the first bent up one octave at frame 211. The same fixture verifies isolated
+  voice sums and identical rendering at host blocks of 1, 17, 64 and 512 frames. The FM
+  core retains its intrinsic 64-frame control quantum. Regenerate only this new fixture with
+  `SUHINA_BLESS=1 cargo test -p suhina-engine live_mpe_two_notes_only_one_bends_golden_and_partition_invariant`.
+
 - `fade-in.f32`: a 2-beat audio clip at 120 bpm, 8 kHz, playing a constant 0.25, with a
   1-beat fade-in.
 - `fade-out.f32`: the same clip with a half-beat fade-out.

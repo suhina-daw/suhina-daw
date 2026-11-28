@@ -72,7 +72,7 @@ describe a file. Read only the ones that match your task.
    word that says what a device does stays allowed ("Compressor", "Saturator"), a distinctive
    name people recognise as one product's device does not.
 10. **GPL-compatible dependencies only** (MIT, Apache-2.0, BSD, ISC, Zlib, MPL-2.0, LGPL,
-    GPL-3.0; not GPL-2.0-only or non-commercial). The `ci` check runs `cargo-deny`; `deny.toml` has a
+    GPL-3.0, AGPL-3.0; not GPL-2.0-only or non-commercial). The `ci` check runs `cargo-deny`; `deny.toml` has a
     code owner, so the pull request that adds a dependency is not the one that permits its licence.
     Run `cargo deny check` before adding or updating one
     ([CONTRIBUTING.md › Dependencies](CONTRIBUTING.md#dependencies)).
