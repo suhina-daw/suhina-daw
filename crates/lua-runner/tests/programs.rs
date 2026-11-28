@@ -907,6 +907,9 @@ fn the_send_back_queue_holds_at_most_eight_mib() {
         fixture.projects.poll_plugins();
         fixture.expect(|e| *e == programs::Event::Running, "running after the crash");
         fixture.pump_until(|f| f.midi.raw_open("APC in"), "the port after the restart");
+        // The dead storm's send-backs are drained and written above; the cap is judged on the
+        // storm that produced the drop.
+        fixture.midi.forget_written();
     }
     fixture.projects.poll_plugins();
     let written = fixture.midi.written_for("APC out");
@@ -1256,6 +1259,11 @@ impl Midi {
 
     fn written_for(&self, port: &str) -> Vec<Vec<u8>> {
         self.written.lock().unwrap().iter().filter(|(name, _)| name == port).map(|(_, bytes)| bytes.clone()).collect()
+    }
+
+    /// Forgets the writes so far: a storm judged after a restart counts only the fresh one.
+    fn forget_written(&self) {
+        self.written.lock().unwrap().clear();
     }
 
     /// Waits for the output port's write count to reach `count`, on the writes' signal —
