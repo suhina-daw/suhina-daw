@@ -203,6 +203,79 @@ fn a_track_routed_past_its_assigned_group_still_takes_the_fade() {
     assert!(level < 1e-4, "the bypassing child of the A group is silent at B: {level}");
 }
 
+/// A track routed into a bus that has an assign of its own takes that bus's fade only once: the
+/// track's own assign does not fade it a second time (#1720 review).
+#[test]
+fn a_track_routed_into_an_assigned_bus_takes_only_the_bus_s_fade() {
+    let mut project = ProjectBuilder::new()
+        .midi_track(1, "A")
+        .bus_track(3, "B", ChannelRole::Submix)
+        .notes(1, "n", 1.0, vec![Note::new(0.0, 1.0, 69, 1.0)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 1.0))
+        .channel(Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(100), "Main") })
+        .output(1, 3)
+        .with(|p| {
+            p.tracks[0].crossfade_assign = CrossfadeAssign::A;
+            p.tracks[1].crossfade_assign = CrossfadeAssign::B;
+            p.crossfader = Crossfader(1.0);
+        })
+        .build();
+    let channel = project.channels.iter_mut().find(|c| c.id == ChannelId(3)).unwrap_or_else(|| {
+        panic!("the bus's channel");
+    });
+    channel.devices.push(crate::chain_tests::device("utility", &[]));
+    let render = |p: &Project| peak(&render_offline(p, SR, 256, suhina_device_registry::factory()).unwrap());
+    let mut level = |value: f64| {
+        project.crossfader = Crossfader(value);
+        render(&project)
+    };
+    let a = level(0.0);
+    let center = level(0.5);
+    let b = level(1.0);
+    assert!(a < 1e-4, "the B bus is silent at A: {a}");
+    assert!(b > 1e-3, "the routed track is heard at B: {b}");
+    assert!((b / center - std::f32::consts::SQRT_2).abs() < 0.01, "one √½ fade at the center: {center} from {b}");
+}
+
+/// The same when the track is routed past its assigned group into an assigned bus: the group's
+/// assign does not fade it a second time (#1720 review).
+#[test]
+fn a_track_routed_past_its_group_into_an_assigned_bus_takes_only_the_bus_s_fade() {
+    let mut project = ProjectBuilder::new()
+        .midi_track(1, "A")
+        .bus_track(3, "G", ChannelRole::Submix)
+        .bus_track(4, "B", ChannelRole::Submix)
+        .notes(1, "n", 1.0, vec![Note::new(0.0, 1.0, 69, 1.0)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 1.0))
+        .channel(Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(100), "Main") })
+        .parent(1, 3)
+        .output(1, 4)
+        .with(|p| {
+            p.tracks[0].crossfade_assign = CrossfadeAssign::Off;
+            p.tracks[1].crossfade_assign = CrossfadeAssign::A;
+            p.tracks[2].crossfade_assign = CrossfadeAssign::B;
+            p.crossfader = Crossfader(1.0);
+        })
+        .build();
+    for id in [3, 4] {
+        let channel = project.channels.iter_mut().find(|c| c.id == ChannelId(id)).unwrap_or_else(|| {
+            panic!("the channel {id}");
+        });
+        channel.devices.push(crate::chain_tests::device("utility", &[]));
+    }
+    let render = |p: &Project| peak(&render_offline(p, SR, 256, suhina_device_registry::factory()).unwrap());
+    let mut level = |value: f64| {
+        project.crossfader = Crossfader(value);
+        render(&project)
+    };
+    let a = level(0.0);
+    let center = level(0.5);
+    let b = level(1.0);
+    assert!(a < 1e-4, "the B bus is silent at A: {a}");
+    assert!(b > 1e-3, "the routed track is heard at B: {b}");
+    assert!((b / center - std::f32::consts::SQRT_2).abs() < 0.01, "one √½ fade at the center: {center} from {b}");
+}
+
 /// The crossfader moves while the engine plays, as a message: no new graph, and the A track
 /// fades out as the value reaches B.
 #[test]

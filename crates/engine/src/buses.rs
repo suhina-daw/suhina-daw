@@ -485,6 +485,34 @@ fn crossfade_chain_assign(
     chained: &[TrackId],
 ) -> Option<suhina_model::CrossfadeAssign> {
     let (assign, owner) = crossfade_governing(project, track)?;
+    // The track's own governing chain: itself, or its parents up to the assigned group that
+    // governs it. Those channels are where this assign belongs, so they do not count as a
+    // later assign.
+    let mut governing = vec![owner];
+    let mut parent = project.track(track).and_then(|t| t.parent);
+    let mut hops = 0;
+    while let Some(group) = parent {
+        governing.push(group);
+        if group == owner || hops > suhina_model::MAX_GROUP_DEPTH {
+            break;
+        }
+        parent = project.track(group).and_then(|t| t.parent);
+        hops += 1;
+    }
+    // A track routed into an assigned bus is faded by that bus, not twice: when a channel later
+    // in its output chain is a track with an assign of its own (or one of a group above it), the
+    // fade belongs there, whether or not the track's parent group feeds it.
+    let channel = project.track(track).and_then(|t| t.channel)?;
+    let routed = project.output_chain(channel).any(|later| {
+        project.tracks.iter().any(|track| {
+            track.channel == Some(later)
+                && !governing.contains(&track.id)
+                && crossfade_governing(project, track.id).is_some()
+        })
+    });
+    if routed {
+        return None;
+    }
     if owner == track {
         return Some(assign);
     }
