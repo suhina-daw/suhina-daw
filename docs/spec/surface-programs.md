@@ -3,7 +3,7 @@ description: The surface-program protocol - how Suhina talks to a surface progra
 read_when: surface program, surface-program protocol, Lua runner, lua-runner, mlua, Lua 5.4, sandbox, script error, error boundary, send-back, subscribe, port message, system exclusive, control surface script
 type: spec
 status: current
-last_verified: 2026-11-13
+last_verified: 2026-11-28
 covers:
   - crates/plugins/src/surface.rs
   - crates/lua-runner/**
