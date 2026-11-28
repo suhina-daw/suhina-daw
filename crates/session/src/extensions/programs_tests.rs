@@ -253,3 +253,18 @@ fn a_parked_drop_wakes_a_waiter() {
     assert!(!waited.timed_out(), "the drop woke the waiter");
     assert_eq!(dropped, 1);
 }
+
+/// A send-back queued after the test's last look wakes its pump: without the wake, the
+/// marker the test waits for stays in the queue until a look that never comes. The wake is
+/// taken without a clock: the enqueue calls it on the calling thread.
+#[test]
+fn a_queued_send_back_wakes_the_tests_pump() {
+    let wake = test_watch();
+    // Empty the channel of any wake another test in this process sent before this one.
+    while wake.try_recv().is_ok() {}
+    let events: Shared = Arc::new(Queue::default());
+    enqueue_send_back(&events, "APC out".into(), vec![0xB1, 0x00, 0x01], &mut 0);
+    assert!(wake.try_recv().is_ok(), "the send-back did not wake the pump");
+    let queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    assert!(matches!(queue.front(), Some(Event::SendBack { .. })), "{queue:?}");
+}
