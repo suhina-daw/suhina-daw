@@ -887,11 +887,27 @@ fn the_send_back_queue_holds_at_most_eight_mib() {
     fixture.expect(|e| *e == programs::Event::Running, "running");
     fixture.projects.poll_plugins();
     // Twenty one-MiB sends with no drain between them: the eighth queues, and the ninth's
-    // enqueue — the first past the byte budget — is the drop the wait is on.
-    for _ in 0..20 {
-        fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    // enqueue — the first past the byte budget — is the drop the wait is on. A runner that
+    // went silent long enough to be restarted (a starved process on a loaded machine) takes
+    // the presses it never read with it; a crash is not the drop, so the storm is pressed
+    // again once it is back. The wait takes either answer on the queue's signal, never a clock.
+    loop {
+        for _ in 0..20 {
+            fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+        }
+        let answered = fixture
+            .projects
+            .test_extensions_wait_for(|e| matches!(e, programs::Event::Dropped(_) | programs::Event::Crashed(_)))
+            .unwrap_or_else(|reason| panic!("the program ended without the byte budget's drop: {reason}"));
+        if matches!(answered, programs::Event::Dropped(_)) {
+            break;
+        }
+        // The crash's presses went with the dead process: wait for the fresh one and the
+        // stand-in's port it claims, then press again.
+        fixture.projects.poll_plugins();
+        fixture.expect(|e| *e == programs::Event::Running, "running after the crash");
+        fixture.pump_until(|f| f.midi.raw_open("APC in"), "the port after the restart");
     }
-    fixture.expect(|e| matches!(e, programs::Event::Dropped(_)), "the byte budget's drop");
     fixture.projects.poll_plugins();
     let written = fixture.midi.written_for("APC out");
     let bytes: usize = written.iter().map(|m| m.len()).sum();
