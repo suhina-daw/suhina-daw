@@ -229,6 +229,82 @@ fn settings_audio_lists_the_midi_inputs_and_one_turned_off_is_saved() {
 }
 
 #[test]
+fn settings_mpe_configures_one_port_through_the_command_and_saves_it() {
+    let mut app = demo_app();
+    app.projects_mut().set_midi_system(std::sync::Arc::new(StandMidi(vec![
+        ("Keys In".into(), "Keys In#1".into()),
+        ("Pads In".into(), "Pads In#1".into()),
+    ])));
+    let mut harness = window(app);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
+    harness.run();
+    harness.get_by_label("Settings page: MIDI").click();
+    harness.run_steps(3);
+    harness.get_by_label("MPE mode Keys In: Off").click();
+    harness.run_steps(2);
+    harness.get_by_label("Automatic").click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().projects().midi_mpe()["Keys In"].mode, suhina_session::MpeMode::Automatic);
+    assert!(!harness.state().projects().midi_mpe().contains_key("Pads In"));
+    let saved = harness.state_mut().take_changed_settings().unwrap();
+    assert_eq!(saved.midi_mpe["Keys In"].mode, suhina_session::MpeMode::Automatic);
+    harness.get_by_label("MPE mode Keys In: Automatic").click();
+    harness.run_steps(2);
+    harness.get_by_label("Manual").click();
+    harness.run_steps(3);
+    harness.get_by_label("Lower MPE members Keys In: 15").click();
+    harness.run_steps(2);
+    harness.get_by_label("4").click();
+    harness.run_steps(3);
+    let config = harness.state().projects().midi_mpe()["Keys In"];
+    assert_eq!(config.mode, suhina_session::MpeMode::Manual);
+    assert_eq!(config.lower_members, 4);
+    assert_eq!(harness.state_mut().take_changed_settings().unwrap().midi_mpe["Keys In"], config);
+    harness.set_size(egui::vec2(1000., 420.));
+    harness.run_steps(3);
+    harness.get_by_label("Lower member bend Keys In: 48").scroll_to_me();
+    harness.run_steps(3);
+    harness.get_by_label("Lower member bend Keys In: 48").click();
+    harness.run_steps(2);
+    // Exercise the physical pointer path: an accessibility activation can select an
+    // off-screen menu item and would not prove that this long range is reachable.
+    let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000., 420.));
+    let first = harness.get_by_label("0").rect();
+    assert!(window.contains(first.center()), "first option must be visible: {first:?}");
+    harness.hover_at(first.center());
+    harness.run_steps(1);
+    harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0., -4000.),
+        modifiers: Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+    });
+    harness.run_steps(4);
+    let last = harness.get_by_label("96").rect();
+    assert!(window.contains(last.center()), "wheel must reveal the final option: {first:?} -> {last:?}");
+    harness.get_by_label("96").click();
+    harness.run_steps(3);
+    assert_eq!(
+        harness.state().projects().midi_mpe()["Keys In"].lower_member_bend,
+        96,
+        "pointer selection after wheel: {first:?} -> {last:?} inside {window:?}"
+    );
+    assert_eq!(harness.state_mut().take_changed_settings().unwrap().midi_mpe["Keys In"].lower_member_bend, 96);
+    // Accessibility scrolling must leave the same ordinary pointer target usable too.
+    harness.get_by_label("Lower member bend Keys In: 96").click();
+    harness.run_steps(2);
+    harness.get_by_label("0").scroll_to_me();
+    harness.run_steps(3);
+    let first = harness.get_by_label("0").rect();
+    assert!(window.contains(first.center()), "scroll-to-view must reveal the first option: {first:?}");
+    harness.get_by_label("0").click();
+    harness.run_steps(3);
+    assert_eq!(harness.state().projects().midi_mpe()["Keys In"].lower_member_bend, 0);
+    assert_eq!(harness.state_mut().take_changed_settings().unwrap().midi_mpe["Keys In"].lower_member_bend, 0);
+}
+
+#[test]
 fn the_waveform_zoom_draws_every_audio_clip_larger_and_is_kept_as_a_setting() {
     let mut harness = arrangement_app();
     assert_eq!(harness.state().arrangement().waveform_zoom, 1.0);

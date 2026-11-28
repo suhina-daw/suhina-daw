@@ -30,7 +30,7 @@
 
 use std::time::{Duration, Instant};
 
-use suhina_device_api::{Device, MusicalScale, NoteEvent, ProcessContext};
+use suhina_device_api::{Device, MusicalScale, NoteEvent, NoteInstanceEvent, NoteInstanceId, ProcessContext};
 use suhina_model::{DeviceId, Project, TrackId};
 
 use crate::automation::{DeviceLanes, MixLanes};
@@ -49,6 +49,14 @@ const MAX_PENDING: usize = 256;
 const SUSTAIN_PEDAL: u8 = 64;
 
 const NOT_HELD: u64 = u64::MAX;
+
+#[derive(Clone, Copy)]
+struct LiveInstance {
+    id: NoteInstanceId,
+    key: u8,
+    native: bool,
+    released: bool,
+}
 /// Gain of a centered track at unity volume, which the sources of a chain track are mixed at
 /// (see `track_gains`); the track's real gains apply after the chain, divided by this.
 pub(crate) const CHAIN_INPUT_GAIN: f32 = 0.25;
@@ -152,6 +160,7 @@ pub(crate) struct Chain {
     pub(crate) scratch: Vec<f32>,
     pub(crate) buffer: Vec<f32>,
     pending: Vec<(usize, NoteEvent)>,
+    live_instances: [Option<LiveInstance>; 256],
     /// The pending events with their frames counted from the start of the span a plug-in runs.
     span_events: Vec<(usize, NoteEvent)>,
     midi_scratch: Vec<(usize, NoteEvent)>,
@@ -461,6 +470,7 @@ impl Chain {
             scratch: Vec::new(),
             buffer: vec![0.0; MAX_BLOCK * 2],
             pending: Vec::with_capacity(MAX_PENDING * 2),
+            live_instances: [None; 256],
             span_events: Vec::with_capacity(MAX_PENDING * 2),
             midi_scratch: Vec::with_capacity(MAX_PENDING * 2),
             deadline: None,
@@ -525,6 +535,7 @@ impl Chain {
             scratch: Vec::new(),
             buffer: vec![0.0; MAX_BLOCK * 2],
             pending: Vec::new(),
+            live_instances: [None; 256],
             span_events: Vec::new(),
             midi_scratch: Vec::new(),
             deadline: None,
@@ -1065,6 +1076,75 @@ impl Chain {
         self.next_off = self.next_off.min(end.max(position + 1));
     }
 
+    /// Identified input uses the canonical event stream when every MIDI transform and the
+    /// instrument support it. Otherwise the whole occurrence uses ordinary-note compatibility.
+    pub(crate) fn live_instance(&mut self, frame: usize, id: NoteInstanceId, event: NoteInstanceEvent) {
+        let found = self.live_instances.iter().position(|n| n.is_some_and(|n| n.id == id));
+        let index = if let NoteInstanceEvent::On { key, .. } = event {
+            if found.is_some() {
+                return;
+            }
+            let Some(index) = self
+                .live_instances
+                .iter()
+                .position(Option::is_none)
+                .or_else(|| self.live_instances.iter().position(|n| n.is_some_and(|n| n.released)))
+            else {
+                return;
+            };
+            // Only released entries are reclaimed. An ordinary-compatibility note was already
+            // let go by its off; another key-wide off would release a newer note on that key.
+            if let Some(old) = self.live_instances[index].take()
+                && old.native
+            {
+                self.push(frame, NoteEvent::Instance { id: old.id, event: NoteInstanceEvent::Choke { key: old.key } });
+            }
+            let mut native = false;
+            for slot in &mut self.slots {
+                match slot {
+                    DeviceSlot::MidiDevice(device) if device.preserves_note_instances() => {}
+                    DeviceSlot::Device(device) if device.info().role == suhina_device_api::Role::Instrument => {
+                        native = device.note_instances().is_some();
+                        break;
+                    }
+                    DeviceSlot::Device(_) => {}
+                    _ => break,
+                }
+            }
+            self.live_instances[index] = Some(LiveInstance { id, key, native, released: false });
+            index
+        } else {
+            match found {
+                Some(index) => index,
+                None => return,
+            }
+        };
+        let Some(note) = self.live_instances[index] else {
+            return;
+        };
+        if note.native {
+            self.push(frame, NoteEvent::Instance { id, event });
+        } else if !note.released {
+            // Ordinary notes are addressed by key: once this occurrence's off has been sent,
+            // a later off or choke for it would end whichever note now holds that key.
+            match event {
+                NoteInstanceEvent::On { key, velocity, .. } => self.push(frame, NoteEvent::On { key, velocity }),
+                NoteInstanceEvent::Off { key, velocity } => self.push(frame, NoteEvent::Off { key, velocity }),
+                NoteInstanceEvent::Choke { key } => self.push(frame, NoteEvent::Off { key, velocity: 0. }),
+                NoteInstanceEvent::Expression { .. } => {}
+            }
+        }
+        match event {
+            NoteInstanceEvent::Choke { .. } => self.live_instances[index] = None,
+            NoteInstanceEvent::Off { .. } => {
+                if let Some(note) = &mut self.live_instances[index] {
+                    note.released = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Tells the devices, at `frame` of the block, that the notes that follow are in `scale`
     /// (`None` for a clip without one), unless that is the scale they were last told. Only an
     /// instrument chain takes notes, so only it is told.
@@ -1168,6 +1248,11 @@ impl Chain {
             return;
         }
         self.release_keys(frame);
+        for index in 0..self.live_instances.len() {
+            if let Some(note) = self.live_instances[index] {
+                self.live_instance(frame, note.id, NoteInstanceEvent::Choke { key: note.key });
+            }
+        }
         self.push(frame, NoteEvent::AllNotesOff);
     }
 
@@ -1457,6 +1542,10 @@ impl Chain {
         }
         // The track's late render blocks are its own, whatever its devices (ADR 0038 › 3).
         self.missed_blocks = old.missed_blocks;
+        // Identified notes reach the instrument through the MIDI effects in front of it. When
+        // those change, a held note's later off would pass through effects that never saw its
+        // on (a new Pitch drops it), so it is ended at the instrument at the edit instead.
+        let same_route = old.note_route() == self.note_route();
         // The same kinds alone is not enough: two identical devices that traded places would
         // each keep the other's running state.
         if old.ids == self.ids && old.device_ids == self.device_ids {
@@ -1470,12 +1559,49 @@ impl Chain {
             return false;
         }
         self.held = old.held;
+        self.live_instances = old.live_instances;
+        if !same_route {
+            self.end_routed_instances();
+        }
         self.next_off = old.next_off;
         self.arranged = old.arranged;
         self.scale = old.scale;
         self.delay.adopt(&mut old.delay);
         self.adopt_sends(old);
         true
+    }
+
+    /// The devices an identified note passes on its way to the instrument: every slot up to and
+    /// including the first one that is not a MIDI effect, by device id and kind.
+    fn note_route(&self) -> (&[DeviceId], &[String]) {
+        let end = self
+            .slots
+            .iter()
+            .position(|slot| !matches!(slot, DeviceSlot::MidiDevice(_)))
+            .map_or(self.slots.len(), |at| at + 1);
+        (self.device_ids.get(..end).unwrap_or(&self.device_ids), self.ids.get(..end).unwrap_or(&self.ids))
+    }
+
+    /// Ends each held identified note at the instrument itself, by its id, and forgets it: the
+    /// route its on took is gone. Released notes keep their tails, which end on their own.
+    /// Ordinary-compatibility notes keep the key-addressed path. Never allocates.
+    fn end_routed_instances(&mut self) {
+        let instrument = self.slots.iter_mut().find_map(|slot| match slot {
+            DeviceSlot::Device(device) if device.info().role == suhina_device_api::Role::Instrument => Some(device),
+            _ => None,
+        });
+        let Some(instrument) = instrument else { return };
+        for entry in &mut self.live_instances {
+            let Some(note) = entry.filter(|note| note.native) else { continue };
+            if !note.released {
+                let _ = suhina_device_api::dispatch_note_instance(
+                    instrument.as_mut(),
+                    note.id,
+                    NoteInstanceEvent::Choke { key: note.key },
+                );
+            }
+            *entry = None;
+        }
     }
 
     /// Swaps each slot of this chain with the slot of `old` that has its device id and runs the
@@ -1884,7 +2010,11 @@ pub(crate) fn run_device_keyed(
         if timed {
             device.set_context(&at_context(at));
         }
-        device.event(event);
+        if let NoteEvent::Instance { id, event } = event {
+            let _ = suhina_device_api::dispatch_note_instance(device.as_mut(), id, event);
+        } else {
+            device.event(event);
+        }
     }
     for change in changes {
         run_span(device, buffer, at_done, change.frame.max(at_done));
@@ -1895,6 +2025,12 @@ pub(crate) fn run_device_keyed(
         device.set_param(change.param, change.value);
     }
     run_span(device, buffer, at_done, to);
+    // MIDI producers conservatively retain protocol tails until bounded reclamation. Device
+    // completion still frees its admission storage; adapters with host IDs consume it directly.
+    if let Some(notes) = device.note_instances() {
+        let mut finished = [None; 256];
+        let _ = notes.drain_finished(&mut finished);
+    }
 }
 
 #[derive(Clone, Copy)]

@@ -87,7 +87,7 @@ impl DeviceGraph {
                     return Err(fail("invalid parent/target parameter binding"));
                 }
             }
-            if node.kind.auxiliary_count() > 8 {
+            if node.kind.auxiliary_count() > 10 {
                 return Err(fail("too many named outputs"));
             }
             match &node.kind {

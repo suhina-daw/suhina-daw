@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+suhina-device-api.workspace = true
 suhina-engine.workspace = true
 suhina-session.workspace = true
 # The trace log (`suhina --trace`, docs/debugging.md).

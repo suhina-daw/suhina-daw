@@ -6,6 +6,36 @@
 use super::*;
 use suhina_device_api::conformance;
 
+#[test]
+fn identified_notes_keep_their_id_and_transposed_key_through_later_changes() {
+    use suhina_device_api::{NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    let a = NoteInstanceId::from_parts(1, 1).unwrap();
+    let b = NoteInstanceId::from_parts(1, 2).unwrap();
+    let mut pitch = pitch(&[(param::PITCH, 12.)]);
+    let on = |id| NoteEvent::Instance {
+        id,
+        event: E::On { key: 60, velocity: 0., expression: NoteExpressionState::NEUTRAL },
+    };
+    let events = run(&mut pitch, &[(0, on(a)), (1, on(b))]);
+    assert_eq!(events.len(), 2);
+    assert!(matches!(events[0].1, NoteEvent::Instance { id, event: E::On { key: 72, velocity: 0., .. } } if id == a));
+    pitch.set_param(param::PITCH, -12.);
+    let events = run(
+        &mut pitch,
+        &[
+            (2, NoteEvent::Instance { id: a, event: E::Off { key: 60, velocity: 0. } }),
+            (3, NoteEvent::Instance { id: b, event: E::Choke { key: 60 } }),
+        ],
+    );
+    assert_eq!(
+        events,
+        [
+            (2, NoteEvent::Instance { id: a, event: E::Off { key: 72, velocity: 0. } }),
+            (3, NoteEvent::Instance { id: b, event: E::Choke { key: 72 } })
+        ]
+    );
+}
+
 /// A pitch effect with the given parameter values, the rest at their defaults.
 fn pitch(settings: &[(usize, f64)]) -> Pitch {
     let mut device = Pitch::new();
