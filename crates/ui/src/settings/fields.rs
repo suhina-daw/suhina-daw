@@ -359,6 +359,7 @@ pub(super) const LATER: &[Field] = &[
         read: |s, v| suhina_engine::model::ScaleMode::from_name(v).map(|m| s.default_scale_mode = m).is_some(),
     },
     switch!("highlight_scale", highlight_scale),
+    switch!("piano_bent_notes", bent_notes),
     Field {
         key: "background_image",
         write: |s| s.background_image.replace(['\r', '\n'], ""),

@@ -291,6 +291,7 @@ fn folded_layout(rows: KeyRows) -> Layout {
         beat_width: 40.0,
         key_height: 10.0,
         rows,
+        bent: false,
     }
 }
 
@@ -776,6 +777,7 @@ fn a_rectangle_covers_whole_grid_steps() {
         beat_width: 100.0,
         key_height: 12.0,
         rows: scale_view::rows(&clip(Vec::new()), Fold::default()),
+        bent: false,
     };
     let grid = TimelineGrid { step: 0.5, bar_beats: 4.0, snaps: true };
     let rect = Rect::from_min_max(Pos2::new(62.5, 10.0), Pos2::new(125.0, 20.0));
@@ -1429,7 +1431,7 @@ fn the_menus_paste_lands_at_the_playhead_like_the_key() {
     let piano = clip(vec![note(0.0, 1.0, 60)]);
     let keymap = crate::settings::keymap::Keymap::default();
     let grid = TimelineGrid::new(0.25, 40.0, 4.0, 4.0);
-    let menu = MenuCx { clip: &piano, keymap: &keymap, copied: Some(1), grid, playhead: 18.0 };
+    let menu = MenuCx { clip: &piano, keymap: &keymap, copied: Some(1), grid, playhead: 18.0, bent: false };
     let at = MenuAt { pos: Pos2::ZERO, beat: 5.0, note: None, opened: true, serial: 0 };
     let mut by_menu = focused_on(&piano);
     let pasted = menu.run(context_menu::Pick::Key("selection.paste"), at, &mut by_menu).expect("note.paste");
@@ -1528,7 +1530,7 @@ fn the_first_beat_item_counts_a_patterns_other_lanes() {
     assert_eq!(piano.others_first, Some(0.25), "the other track's first note");
     let keymap = crate::settings::keymap::Keymap::default();
     let grid = TimelineGrid::new(0.25, 40.0, 4.0, 4.0);
-    let menu = MenuCx { clip: &piano, keymap: &keymap, copied: None, grid, playhead: 0.0 };
+    let menu = MenuCx { clip: &piano, keymap: &keymap, copied: None, grid, playhead: 0.0, bent: false };
     let at = |beat: f64| MenuAt { pos: Pos2::ZERO, beat, note: None, opened: true, serial: 0 };
     assert!(!menu.origin_ok(at(1.0)), "the other track's note at 0.25 lies before beat 1");
     assert!(menu.origin_ok(at(0.25)));
@@ -1563,13 +1565,13 @@ fn the_first_beat_item_takes_only_an_eighth_on_a_clip_that_swings() {
 
     let straight = super::clip::piano_clip_from(&project, TrackId(1), &placed).expect("a MIDI clip");
     assert!(!straight.swings);
-    let menu = MenuCx { clip: &straight, keymap: &keymap, copied: None, grid, playhead: 0.0 };
+    let menu = MenuCx { clip: &straight, keymap: &keymap, copied: None, grid, playhead: 0.0, bent: false };
     assert!(menu.origin_ok(at(0.75)), "a straight clip takes any point");
 
     placed.swing = suhina_engine::model::ClipSwing { amount: 0.5, own: true };
     let swung = super::clip::piano_clip_from(&project, TrackId(1), &placed).expect("a MIDI clip");
     assert!(swung.swings);
-    let menu = MenuCx { clip: &swung, keymap: &keymap, copied: None, grid, playhead: 0.0 };
+    let menu = MenuCx { clip: &swung, keymap: &keymap, copied: None, grid, playhead: 0.0, bent: false };
     assert!(!menu.origin_ok(at(0.75)), "off an eighth the groove would change");
     assert!(menu.origin_ok(at(1.5)), "on an eighth every note keeps its swing");
 }

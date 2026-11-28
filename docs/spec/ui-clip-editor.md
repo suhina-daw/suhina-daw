@@ -1544,6 +1544,27 @@ own curves ([ADR 0039](../decisions/0039-per-note-expression.md) › 6,
 - While the pointer is over a point, or a point is dragged or added, its value is shown beside it:
   a pitch in semitones with its sign and two decimals (`+4.00 st`), a lane value from 0 to 127.
 
+### Bent notes
+
+**Settings › Clip editor › MPE › Pitch bends drawn as** chooses how a note with a pitch curve is
+drawn: **Bent notes** (the default) or **Lines** (as above). The right-click menu has the same
+choice while MPE is on (**Draw bends as lines** / **Draw bends as bent notes**). The curve is the
+same either way: the two are two ways of working on it.
+
+- **Drawn:** the note is a band along its pitch curve, as tall as a row less the gap between rows,
+  in the note's own fill (selected, muted and faded as a note is), with its name at its start. The
+  row it starts in stays faint behind it, so the pitch the bend starts from is seen. This holds
+  with MPE off too; with MPE on, the thin pitch line is not drawn over a bent note.
+- **Pressed as the note:** a press on the band, or on the faint row behind it, is a press on the
+  note: it selects it, a drag moves the note with its bend, a drag of its first or last 5 points
+  resizes it, the erase and mute tools act on it, and the right-click menu is the note's.
+- **Its points:** with MPE on and the note selected, its points are handles on the band, edited
+  as in › Editing points, and a double-click on the band adds a point at the pitch under the
+  pointer. A click on the band selects the note and adds nothing.
+- **Its bends:** each segment that rises or falls has a diamond handle in its middle
+  (`Bend curve`). Dragging it up or down curves the bend as a drag on a line does in Lines; Shift
+  and a drag moves the segment; a double-click makes it straight again.
+
 ### Editing points
 
 Points are edited on the selected notes' curves; a press on another note selects it as usual.
@@ -1552,7 +1573,8 @@ values go in steps of 1 of 127. **Alt** frees both: a point goes exactly where t
 dense curve (an LFO's) shows its handles thinned out, at least 9 points apart, besides the first,
 the last, the one under the pointer and the selected ones.
 
-- A **click on a curve's line** adds a point there, on the line, at the value the line has there.
+- A **click on a curve's line** adds a point there, on the line, at the value the line has there
+  (Lines; a bent note's band is the note, › Bent notes).
 - A **double-click** on the empty grid or on a selected note, within the time of a selected note,
   adds a point to the selected note whose row is nearest, at the pitch under the pointer. In a lane,
   a double-click in a selected note's time adds a point at the value under the pointer. A curve's

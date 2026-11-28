@@ -37,10 +37,15 @@ fn notes_a_and_b() -> Vec<Note> {
 /// The demo project with Beat B holding notes A and B, the clip open in the piano roll, note A
 /// selected and MPE on.
 fn mpe_app() -> Harness<'static, App> {
+    mpe_app_with(notes_a_and_b())
+}
+
+/// [`mpe_app`] with `notes` in Beat B, the first selected.
+fn mpe_app_with(notes: Vec<Note>) -> Harness<'static, App> {
     let mut project = demo_project();
     let content = project.arrangement.lanes[0].clips.iter().find(|c| c.start == CLIP_START).unwrap().content;
     let content = project.contents.iter_mut().find(|c| c.id == content).unwrap();
-    content.lanes = Shared::new(vec![ContentLane { target: None, data: LaneData::Notes(notes_a_and_b().into()) }]);
+    content.lanes = Shared::new(vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }]);
     let mut app = App::new();
     app.set_browser_open(false);
     app.set_session(Session::new(project), &[]);
@@ -164,4 +169,66 @@ fn a_handle_dragged_out_of_the_grid_still_ends_in_one_edit() {
     button(&mut h, b, false);
     h.run();
     assert_eq!(selected(&h), vec![1]);
+}
+
+/// Note A bent two semitones up by beat 1, onto the row of note B (D, key 62, from beat 0.5 for a
+/// beat): rows close enough that both are well inside the grid, so a drag over them is not one
+/// held at its edge, which scrolls the view.
+fn bent_app() -> Harness<'static, App> {
+    let mut a = Note::new(0.0, 2.0, 60, 0.8);
+    a.expression = Some(Shared::new(NoteExpression {
+        pitch: vec![ExpressionPoint::new(0.0, 0.0), ExpressionPoint::new(1.0, 2.0)],
+        ..NoteExpression::default()
+    }));
+    mpe_app_with(vec![a, Note::new(0.5, 1.0, 62, 0.8)])
+}
+
+/// Note B's row in [`bent_app`].
+fn row_b(h: &Harness<'static, App>) -> Rect {
+    rect(h, &format!("Note {} at beat 0.5", key_name(62)))
+}
+
+/// The x of `beat` in note A's time in [`bent_app`].
+fn beat_x(h: &Harness<'static, App>, beat: f32) -> f32 {
+    let (a, b) = (rect(h, &format!("Note {} at beat 0", key_name(60))), row_b(h));
+    a.left() + beat * 2.0 * (b.left() - a.left())
+}
+
+#[test]
+fn a_bent_notes_band_is_dragged_as_the_note() {
+    // Bent notes are the default: note A is drawn along its curve, on note B's row after beat 1.
+    let mut h = bent_app();
+    let before = curve(&h, ExpressionKind::Pitch);
+    let y = row_b(&h).center().y;
+    let (from, to) = (beat_x(&h, 1.75), beat_x(&h, 2.75));
+    drag(&mut h, pos2(from, y), pos2(to, y));
+    let a = &notes(&h)[0];
+    assert_eq!(a.key, 60, "the note kept its key");
+    assert!((a.time - 1.0).abs() < 1e-6, "the band moved the note a beat: {}", a.time);
+    assert_eq!(curve(&h, ExpressionKind::Pitch), before, "its bend went with it");
+}
+
+#[test]
+fn a_bend_handle_curves_the_bend() {
+    let mut h = bent_app();
+    let (low, high) = (rect(&h, &format!("Note {} at beat 0", key_name(60))).center().y, row_b(&h).center().y);
+    let middle = pos2(beat_x(&h, 0.5), (low + high) / 2.0);
+    drag(&mut h, middle, middle - vec2(0.0, 25.0));
+    let pitch = curve(&h, ExpressionKind::Pitch);
+    assert_eq!(pitch.len(), 2, "no point added: {pitch:?}");
+    assert!(pitch[0].curve > 0.2, "the bend bulged up: {pitch:?}");
+    assert_eq!(notes(&h)[0].time, 0.0, "the note did not move");
+}
+
+#[test]
+fn with_bends_drawn_as_lines_the_bend_is_not_the_note() {
+    let mut h = bent_app();
+    let settings = suhina_ui::settings::Settings { bent_notes: false, ..h.state().settings().clone() };
+    let ctx = h.ctx.clone();
+    h.state_mut().set_settings(&ctx, settings);
+    h.run();
+    let y = row_b(&h).center().y;
+    let (from, to) = (beat_x(&h, 1.75), beat_x(&h, 2.75));
+    drag(&mut h, pos2(from, y), pos2(to, y));
+    assert_eq!(notes(&h)[0].time, 0.0, "note B's row after B is empty grid in line mode");
 }

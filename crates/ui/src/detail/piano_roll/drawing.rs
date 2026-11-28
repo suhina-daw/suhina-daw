@@ -508,7 +508,19 @@ pub(super) fn draw(
             let ink = if any_selected && !selected { ink.gamma_multiply(0.45) } else { ink };
             stems.push(Stem { note: note.clone(), ink, selected });
         }
-        if !rect.intersects(layout.grid) {
+        // A note whose pitch bends, drawn bent: a band along its curve (› MPE › Bent notes).
+        let band = super::expression::band_line(
+            layout,
+            &note,
+            &super::expression::shown_curve(
+                state,
+                (i, clip.notes.id(i)),
+                &note,
+                suhina_engine::model::ExpressionKind::Pitch,
+            ),
+        );
+        let band_rect = Rect::from_points(&band).expand(layout.key_height);
+        if !rect.intersects(layout.grid) && !(band.len() > 1 && band_rect.intersects(layout.grid)) {
             continue;
         }
         let velocity = f32::from(suhina_session::midi_velocity(note.velocity));
@@ -537,6 +549,35 @@ pub(super) fn draw(
         } else {
             fill
         };
+        if band.len() > 1 {
+            let width = super::expression::band_width(layout);
+            // The row it starts in stays, faint, behind it: where the bend starts from.
+            grid_painter.rect_filled(rect, radius, fill.gamma_multiply(0.22));
+            let edge = if selected { Some(style.border.unwrap_or(outline)) } else { style.border.filter(|_| !muted) };
+            if let Some(edge) = edge {
+                grid_painter.add(egui::Shape::line(band.clone(), Stroke::new(width + 2.0, edge)));
+            }
+            grid_painter.add(egui::Shape::line(band.clone(), Stroke::new(width, fill)));
+            if muted {
+                grid_painter.add(egui::Shape::dashed_line(
+                    &band,
+                    Stroke::new(1.0, muted_style.border.unwrap_or(dashes)),
+                    3.0,
+                    3.0,
+                ));
+            }
+            let shown_fill = composite_note_color(fill, background);
+            let themed = if alpha >= 0.55 { name_on_light } else { name_on_dark };
+            let ink = if theme::text_contrast(themed, shown_fill) >= 4.5 { themed } else { theme::text_on(shown_fill) };
+            grid_painter.text(
+                Pos2::new(rect.left() + 2.0, band[0].y),
+                Align2::LEFT_CENTER,
+                key_name(note.key),
+                theme::mono_font(theme::TEXT_TINY),
+                style.color.unwrap_or(ink),
+            );
+            continue;
+        }
         grid_painter.rect_filled(rect, radius, fill);
         // A muted note's edge is its dashes alone: a solid edge under them in the same color would
         // hide them. A selected one keeps its selection's edge.

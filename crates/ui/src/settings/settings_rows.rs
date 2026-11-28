@@ -887,6 +887,14 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::ClipEditor,
+        "MPE",
+        "Pitch bends drawn as",
+        "How a note whose pitch bends is drawn in the piano roll",
+        &["piano_bent_notes"],
+        |cx, r| cx.choose(r, &[("Bent notes", true), ("Lines", false)], |s| &mut s.bent_notes),
+    ),
+    row(
+        Page::ClipEditor,
         "Piano roll",
         "Piano key style",
         "How the piano roll's keys are drawn, when the theme does not set them",

@@ -356,7 +356,7 @@ fn own_curve(note: &Note, kind: ExpressionKind) -> &[ExpressionPoint] {
 }
 
 /// The curve of `kind` a note shows: the one being dragged, a lane being scaled, or its own.
-fn shown_curve<'a>(
+pub(super) fn shown_curve<'a>(
     state: &'a PianoRollState,
     (index, id): (usize, Option<NoteId>),
     note: &'a Note,
@@ -484,10 +484,14 @@ fn draw_curves(
         } else {
             inks.ink.gamma_multiply(0.45)
         };
-        if selected {
+        // A bent note is its own line: the band drawn with the notes (› MPE › Bent notes).
+        let bent = layout.bent && kind == ExpressionKind::Pitch;
+        if selected && !bent {
             painter.add(Shape::line(line.clone(), Stroke::new(4.0, inks.edge.gamma_multiply(0.8))));
         }
-        painter.add(Shape::line(line, Stroke::new(if selected { 1.75 } else { 1.0 }, color)));
+        if !bent {
+            painter.add(Shape::line(line, Stroke::new(if selected { 1.75 } else { 1.0 }, color)));
+        }
         if kind == ExpressionKind::Pitch
             && state.mpe.bend_targets
             && let Some(last) = curve.last().filter(|last| last.value.abs() >= 0.5)
@@ -506,6 +510,17 @@ fn draw_curves(
                 && state.mpe.selection.points.contains(&point)
         };
         let active_point = state.expression_drag.as_ref().filter(|d| d.of(id, kind)).map(|d| d.index);
+        if bent {
+            // Each bend's own handle in its middle: dragged, it curves the bend.
+            for (_, at) in bend_handles(layout, note, &curve) {
+                let diamond = [Vec2::new(0.0, -4.5), Vec2::new(4.5, 0.0), Vec2::new(0.0, 4.5), Vec2::new(-4.5, 0.0)];
+                painter.add(Shape::convex_polygon(
+                    diamond.iter().map(|d| at + *d).collect(),
+                    inks.edge,
+                    Stroke::new(1.5, inks.accent),
+                ));
+            }
+        }
         let shown = sparse(handles(layout, note, kind, area, &curve), hover, |p| chosen(p) || active_point == Some(p));
         for (point, at) in shown {
             painter.circle_filled(at, 4.5, inks.edge);
@@ -633,10 +648,49 @@ fn sparse(all: Vec<(usize, Pos2)>, hover: Option<Pos2>, keep: impl Fn(usize) -> 
     out
 }
 
+/// The middle of each bend of a bent note's pitch curve, by the index of the point it starts
+/// from: the handle a drag curves it with (› MPE › Bent notes). A flat segment has none.
+pub(super) fn bend_handles(layout: &Layout, note: &Note, curve: &[ExpressionPoint]) -> Vec<(usize, Pos2)> {
+    curve
+        .windows(2)
+        .enumerate()
+        .filter(|(_, w)| w[1].value != w[0].value)
+        .filter_map(|(i, w)| {
+            let middle = (w[0].offset + w[1].offset) / 2.0;
+            let value = curve_value(curve, middle)?;
+            let y = pitch_y(layout, f64::from(note.key) + value)?;
+            Some((i, Pos2::new(layout.x_of(note.time + middle), y)))
+        })
+        .collect()
+}
+
 /// Whether `p` is over `note` or near its line.
 fn near_line(layout: &Layout, note: &Note, kind: ExpressionKind, line: &[Pos2], p: Pos2) -> bool {
     (kind == ExpressionKind::Pitch && layout.note_rect(note).expand(HANDLE).contains(p))
         || line.windows(2).any(|w| distance_to_segment(p, w[0], w[1]) <= HANDLE * 1.5)
+}
+
+/// How wide a bent note's band is drawn: as tall as its row, less the gap between rows.
+pub(super) fn band_width(layout: &Layout) -> f32 {
+    (layout.key_height - 2.0).max(2.0)
+}
+
+/// The middle line of `note`'s band while pitch bends are drawn as bent notes and its curve is
+/// `curve`; empty when they are not or it has no pitch curve.
+pub(super) fn band_line(layout: &Layout, note: &Note, curve: &[ExpressionPoint]) -> Vec<Pos2> {
+    if !layout.bent || curve.is_empty() {
+        return Vec::new();
+    }
+    curve_line(layout, note, ExpressionKind::Pitch, layout.grid, curve)
+}
+
+/// Whether `pos` is on `note`'s band (› MPE › Bent notes): within half its width of the line,
+/// in the note's time.
+pub(super) fn on_band(layout: &Layout, note: &Note, pos: Pos2) -> bool {
+    let line = band_line(layout, note, own_curve(note, ExpressionKind::Pitch));
+    let reach = band_width(layout) / 2.0 + 0.5;
+    let (start, end) = (layout.x_of(note.time), layout.x_of(note.time + note.duration.max(0.0)));
+    pos.x >= start && pos.x <= end && line.windows(2).any(|w| distance_to_segment(pos, w[0], w[1]) <= reach)
 }
 
 /// How far `p` is from the segment `a`–`b`.
@@ -934,7 +988,25 @@ fn handle_note(
     let hover = cx.ui.ctx().pointer_hover_pos();
     // The lines first, so a point at a line's end is the point's.
     let at = handles(cx.layout, note, kind, area, &curve);
-    for segment in 0..curve.len().saturating_sub(1) {
+    let bent = cx.layout.bent && kind == ExpressionKind::Pitch;
+    // A bent note is pressed as a note along its band: its bends are curved by their handles.
+    for (segment, middle) in if bent { bend_handles(cx.layout, note, &curve) } else { Vec::new() } {
+        let active = state.expression_drag.as_ref().is_some_and(|d| {
+            d.of(id, kind) && d.index == segment && matches!(d.mode, DragMode::Segment { .. } | DragMode::Curve { .. })
+        });
+        if !active && !hover.is_some_and(|p| p.distance(middle) <= HANDLE * 1.5) {
+            continue;
+        }
+        let rect = Rect::from_center_size(middle, Vec2::splat(HANDLE * 3.0));
+        let response = cx.ui.interact(rect, Id::unique(("piano-mpe-bend", id, segment)), Sense::click_and_drag());
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Slider, true, "Bend curve"));
+        cx.ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        *busy = true;
+        if line_gestures(cx, (index, id, note, kind, area), segment, &curve, &response, state, actions) {
+            return true;
+        }
+    }
+    for segment in 0..if bent { 0 } else { curve.len().saturating_sub(1) } {
         let (Some((_, a)), Some((_, b))) =
             (at.iter().find(|(i, _)| *i == segment), at.iter().find(|(i, _)| *i == segment + 1))
         else {
@@ -997,7 +1069,9 @@ fn line_gestures(
     state: &mut PianoRollState,
     actions: &mut Vec<Action>,
 ) -> bool {
-    if response.double_clicked() && cx.alt {
+    // A bent note's bend handle: a double-click alone straightens it, a click adds nothing.
+    let bent = cx.layout.bent && kind == ExpressionKind::Pitch;
+    if response.double_clicked() && (cx.alt || bent) {
         let mut edited = curve.to_vec();
         if let Some(p) = edited.get_mut(segment) {
             p.curve = 0.0;
@@ -1009,6 +1083,7 @@ fn line_gestures(
     if response.clicked()
         && !cx.alt
         && !cx.shift
+        && !bent
         && let Some(pos) = response.interact_pointer_pos()
     {
         // A point on the line, at the value the line has there.

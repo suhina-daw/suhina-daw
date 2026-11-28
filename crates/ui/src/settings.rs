@@ -464,6 +464,9 @@ pub struct Settings {
     pub default_scale_mode: suhina_engine::model::ScaleMode,
     /// Whether the piano roll tints the rows of the clip's scale (the toolbar's Highlight).
     pub highlight_scale: bool,
+    /// A note whose pitch bends is drawn bent along its curve, its row kept faint behind it; off,
+    /// the note stays in its row with the curve drawn as a line over it (› MPE).
+    pub bent_notes: bool,
     /// A track's volume and pan as a field or as a knob (Settings › Launcher and mixer).
     pub mixer_controls: MixerControls,
     /// Where plug-in editors open.
@@ -606,6 +609,7 @@ impl Default for Settings {
             default_scale_root: 0,
             default_scale_mode: suhina_engine::model::ScaleMode::Major,
             highlight_scale: true,
+            bent_notes: true,
             mixer_controls: MixerControls::Field,
             plugin_editors: EditorPlacement::Window,
             theme: crate::kit::theme::BUILT_IN.into(),

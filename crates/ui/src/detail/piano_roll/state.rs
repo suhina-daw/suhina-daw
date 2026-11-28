@@ -1114,6 +1114,9 @@ pub struct Options {
     /// The workflow settings: what clicks, right-clicks and double-clicks do (› Workflow modes in
     /// `docs/spec/ui-clip-editor.md`).
     pub workflow: Workflow,
+    /// A note whose pitch bends is drawn bent along its curve (Settings › Clip editor › MPE ›
+    /// Pitch bends drawn as).
+    pub bent_notes: bool,
 }
 
 /// What the piano roll needs from the window besides its own state, for one frame: the settings

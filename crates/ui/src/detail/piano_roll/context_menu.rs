@@ -123,6 +123,8 @@ pub(super) enum Pick {
     BendTargets,
     /// Every curve of the notes acted on removed (`note.clearExpression`).
     ClearExpression,
+    /// A note whose pitch bends drawn bent, or as a line over its row (the setting).
+    BentNotes,
 }
 
 /// What the menu needs for one frame besides the state.
@@ -134,6 +136,8 @@ pub(super) struct MenuCx<'a> {
     /// Where playback is, in the clip's placement's input, as the keys get it: Paste with nothing
     /// selected lands there when it is inside the clip.
     pub(super) playhead: f64,
+    /// Pitch bends are drawn as bent notes (Settings › Clip editor › MPE).
+    pub(super) bent: bool,
 }
 
 /// The popup of the menu opened as `serial`.
@@ -251,6 +255,8 @@ impl MenuCx<'_> {
         if state.expression.is_some() {
             let targets = if state.mpe.bend_targets { "Hide bend targets" } else { "Show bend targets" };
             item(ui, targets, None, true, Pick::BendTargets);
+            let bends = if self.bent { "Draw bends as lines" } else { "Draw bends as bent notes" };
+            item(ui, bends, None, true, Pick::BentNotes);
             let curved = state.acting().iter().any(|i| clip.notes.get(*i).is_some_and(|n| n.expression().is_some()));
             item(ui, "Clear expression", None, curved, Pick::ClearExpression);
         }
@@ -348,6 +354,10 @@ impl MenuCx<'_> {
             }
             Pick::BendTargets => {
                 state.mpe.bend_targets = !state.mpe.bend_targets;
+                None
+            }
+            Pick::BentNotes => {
+                state.view_picked = Some(super::ViewPick::BentNotes(!self.bent));
                 None
             }
             Pick::ClearExpression => {
