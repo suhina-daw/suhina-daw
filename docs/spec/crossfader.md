@@ -3,7 +3,7 @@ description: The mixer's crossfader - an equal-power A/B blend of the tracks ass
 read_when: crossfader, crossfade, A/B, A side, B side, assign A, assign B, mixer.setCrossfader, track.setCrossfadeAssign, APC40 crossfader, CC 15, note 66
 type: spec
 status: draft
-last_verified: 2026-11-26
+last_verified: 2026-11-28
 covers:
   - crates/model/src/lib.rs
   - crates/project-file/src/lib.rs
@@ -46,6 +46,10 @@ its per-track A/B buttons drive the same two commands.
   assigned group** in a track's chain governs it: an assign inside an assigned group adds no
   second fade. With no assigned group above it, a track's own assign applies at its output into
   its group or the main channel, so a track inside off groups can still be assigned on its own.
+- A track routed into an assigned bus that is not its group leaves the fade to that bus: the
+  bus's own assign, or the assign of a group above it, applies where the bus's output leaves for Main,
+  and the track's own assign adds no second fade. This holds when the track is routed past its
+  assigned parent group, too.
 - Assigning a group and then a track inside it therefore assigns the group's side to everything
   it holds; assigning the group off lets the inner tracks' own assigns work again. A nested
   group follows the same rule.
@@ -98,7 +102,8 @@ Every earlier file reads as centered with every track off.
   A, both at `√½`, only B; an off track is at full level at all three. A movement across the
   value fades the A side out and brings the B side in without a jump.
 - A group assigned A governs its children, and with the group off an inner track's own assign
-  works, also when the group has a processing chain of its own.
+  works, also when the group has a processing chain of its own. A track routed into an assigned
+  bus, or past its assigned group into one, is faded once by that bus at both ends and the center.
 - The commands: set, undo and redo; malformed values (`NaN`, out of range) and an unknown
   assign refused; a gesture's frames are one undo step; the project file round trip writes and
   reads version 17.
