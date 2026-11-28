@@ -55,7 +55,7 @@ settings-devices suhina-meadow fe50d07c1259f050
 settings-keys suhina-meadow 0775adbbcb92d8dc
 settings-launcher suhina-meadow 5bf8b4e9e3bce18f
 settings-menu suhina-meadow b9dadd8bca2b23c4
-settings-midi suhina-meadow 21d7b51f97b6f12c
+settings-midi suhina-meadow ddae2ef9d0f6c4e4
 settings-plug-ins suhina-meadow 83dfe10b8bab86d4
 settings-themes suhina-meadow 9a2bc110e2207338
 start-panel suhina-meadow 3c1839332e04a55c

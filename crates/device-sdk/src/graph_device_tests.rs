@@ -8,6 +8,156 @@ use crate::nodes::Waveform;
 use crate::{Connection as C, Node as N, NodeKind as K};
 use suhina_device_api::{ShapeKind, conformance};
 
+fn expression_graph(output: &str) -> DeviceGraph {
+    let mut voice = DeviceGraph::new("org.test.mpe-voice", "Voice", DeviceRole::Instrument);
+    voice.nodes = vec![
+        N::new("voice", K::VoiceInput { controller: 1 }),
+        N::new("done", K::Constant { value: 0. }),
+        N::new("result", K::VoiceOutput),
+        N::audio_output("out"),
+    ];
+    voice.connections = vec![
+        C::ports("voice", output, "result", "in"),
+        C::ports("done", "out", "result", "finished"),
+        C::new("result", "out"),
+    ];
+    let mut graph = DeviceGraph::new("org.test.mpe-group", "Group", DeviceRole::Instrument);
+    graph.nodes =
+        vec![N::new("group", K::VoiceGroup { graph: voice.to_sd().unwrap(), voices: 2 }), N::audio_output("out")];
+    graph.connections = vec![C::new("group", "out")];
+    graph
+}
+
+#[test]
+fn mpe_voice_groups_receive_independent_pitch_pressure_and_timbre_signals() {
+    use suhina_device_api::{NoteExpressionKind as Kind, NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    for (output, kind, a, b) in
+        [("pitch", Kind::Pitch, 12., -4.), ("pressure", Kind::Pressure, 0.2, 0.7), ("timbre", Kind::Timbre, 0.3, 0.8)]
+    {
+        let graph = expression_graph(output);
+        let mut device = audio(&graph);
+        let ids = [NoteInstanceId::from_parts(1, 1).unwrap(), NoteInstanceId::from_parts(1, 2).unwrap()];
+        for (id, value) in ids.into_iter().zip([a, b]) {
+            let mut expression = NoteExpressionState::NEUTRAL;
+            expression.set(kind, value);
+            device.note_instances().unwrap().event(id, E::On { key: 60, velocity: 1., expression }).unwrap();
+        }
+        let mut buffer = [0.; 34];
+        device.process(&ProcessContext::default(), &mut buffer);
+        assert!(buffer.iter().all(|sample| (*sample - (a + b) as f32).abs() < 1e-6), "{output}: {buffer:?}");
+        device.note_instances().unwrap().event(ids[0], E::Choke { key: 60 }).unwrap();
+        device.process(&ProcessContext::default(), &mut buffer);
+        assert!(buffer.iter().all(|sample| (*sample - b as f32).abs() < 1e-6));
+        let mut finished = [None; 2];
+        assert_eq!(device.note_instances().unwrap().drain_finished(&mut finished), 1);
+        assert_eq!(finished[0], Some(ids[0]));
+        device.reset();
+        assert_eq!(device.note_instances().unwrap().drain_finished(&mut finished), 1);
+        assert_eq!(finished[0], Some(ids[1]));
+    }
+}
+
+#[test]
+fn mpe_voice_on_preserves_shared_controller_latches_and_its_own_expression() {
+    use suhina_device_api::{NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    for (output, control, expected) in [
+        ("controller", NoteEvent::Controller { number: 1, value: 0.75 }, 1.5),
+        ("bend", NoteEvent::PitchBend(0.75), 1.5),
+        ("pitch", NoteEvent::PitchBend(0.75), 24.),
+        ("pressure", NoteEvent::Pressure(0.4), 1.1),
+    ] {
+        let graph = expression_graph(output);
+        let mut device = audio(&graph);
+        device.event(control);
+        for serial in 1..=2 {
+            let id = NoteInstanceId::from_parts(7, serial).unwrap();
+            let expression = NoteExpressionState::new(12., if serial == 1 { 0.2 } else { 0.7 }, 0.5).unwrap();
+            device.note_instances().unwrap().event(id, E::On { key: 60, velocity: 1., expression }).unwrap();
+        }
+        let mut buffer = [0.; 34];
+        device.process(&ProcessContext::default(), &mut buffer);
+        assert!(buffer.iter().all(|sample| (*sample - expected).abs() < 1e-6), "{output}: {buffer:?}");
+        if output == "pressure" {
+            device.event(NoteEvent::Pressure(0.1));
+            device.process(&ProcessContext::default(), &mut buffer);
+            assert!(
+                buffer.iter().all(|sample| (*sample - 0.9).abs() < 1e-6),
+                "per-note pressure survives channel changes"
+            );
+        }
+    }
+}
+
+#[test]
+fn mpe_voice_group_with_every_voice_held_takes_the_oldest_and_retires_it_after_the_fade() {
+    use suhina_device_api::{NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    let graph = expression_graph("pitch");
+    let mut device = audio(&graph);
+    let ids: Vec<_> = (1..=3).map(|serial| NoteInstanceId::from_parts(5, serial).unwrap()).collect();
+    for (id, pitch) in ids.iter().zip([12., -4., 5.]) {
+        let expression = NoteExpressionState::new(pitch, 0., 0.5).unwrap();
+        device.note_instances().unwrap().event(*id, E::On { key: 60, velocity: 1., expression }).unwrap();
+    }
+    // The third note took the oldest voice: after its 64-frame fade only the two newest sound.
+    let mut buffer = [0.; 128];
+    device.process(&ProcessContext::default(), &mut buffer);
+    device.process(&ProcessContext::default(), &mut buffer);
+    println!("after fade: {:?}", &buffer[..4]);
+    assert!(buffer.iter().all(|sample| (*sample - 1.).abs() < 1e-6), "{buffer:?}");
+    let mut finished = [None; 4];
+    assert_eq!(device.note_instances().unwrap().drain_finished(&mut finished), 1);
+    assert_eq!(finished[0], Some(ids[0]));
+    device.reset();
+    let rest = device.note_instances().unwrap().drain_finished(&mut finished);
+    let mut rest: Vec<_> = finished[..rest].to_vec();
+    rest.sort_by_key(|id| id.map(|id| id.serial()));
+    assert_eq!(rest, [Some(ids[1]), Some(ids[2])]);
+}
+
+#[test]
+fn mpe_capability_rejects_private_sample_lifetimes_including_components() {
+    use crate::sample_resource::{PreparedSamples, SampleAsset};
+    use std::sync::Arc;
+
+    for nested in [false, true] {
+        let mut body = DeviceGraph::new("org.test.sample-body", "Sample body", DeviceRole::Instrument);
+        body.nodes = vec![N::new("sample", K::SamplerAsset { sample: "tone".into() }), N::audio_output("out")];
+        body.connections = vec![C::new("sample", "out")];
+        let mut voice = if nested {
+            let mut wrapper = DeviceGraph::new("org.test.sample-component", "Component", DeviceRole::Instrument);
+            wrapper.nodes = vec![
+                N::new("sample", K::Component { name: "Source".into(), version: 1, graph: body.to_sd().unwrap() }),
+                N::new("midi", K::MidiInput),
+                N::audio_output("out"),
+            ];
+            wrapper
+        } else {
+            body
+        };
+        voice.nodes.extend([N::new("done", K::Constant { value: 0. }), N::new("result", K::VoiceOutput)]);
+        voice.connections =
+            vec![C::new("sample", "result"), C::ports("done", "out", "result", "finished"), C::new("result", "out")];
+        if nested {
+            voice.connections.push(C::ports("midi", "out", "sample", "events"));
+        }
+        let mut graph = DeviceGraph::new("org.test.sample-group", "Group", DeviceRole::Instrument);
+        graph.nodes =
+            vec![N::new("group", K::VoiceGroup { graph: voice.to_sd().unwrap(), voices: 1 }), N::audio_output("out")];
+        graph.connections = vec![C::new("group", "out")];
+        let mut samples = PreparedSamples::default();
+        samples.insert("tone", Arc::new(SampleAsset::new(Arc::new(vec![0.25; 4096]), 48000, 1).unwrap())).unwrap();
+        let compiled = graph.clone();
+        let mut device =
+            GraphDevice::audio(&graph, 48000., Box::new(move |rate| compiled.compile_with_samples_at(rate, &samples)))
+                .unwrap();
+        assert!(device.note_instances().is_none(), "nested={nested}");
+        device.event(NoteEvent::On { key: 60, velocity: 1. });
+        let mut buffer = [0.; 128];
+        device.process(&ProcessContext::default(), &mut buffer);
+        assert!(buffer.iter().any(|sample| *sample > 0.), "ordinary compatibility remains playable");
+    }
+}
+
 const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures");
 
 fn fixture(name: &str) -> DeviceGraph {
@@ -180,4 +330,48 @@ fn graphs_pass_the_device_conformance_checks() {
     });
     failures.extend(found.into_iter().map(|f| format!("transpose: {f}")));
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[test]
+fn mpe_a_choke_of_a_taken_occurrence_ends_its_fade_without_touching_the_new_note() {
+    use suhina_device_api::{NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    let graph = expression_graph("pitch");
+    let mut device = audio(&graph);
+    let ids: Vec<_> = (1..=3).map(|serial| NoteInstanceId::from_parts(6, serial).unwrap()).collect();
+    for (id, pitch) in ids.iter().zip([12., -4., 5.]) {
+        let expression = NoteExpressionState::new(pitch, 0., 0.5).unwrap();
+        device.note_instances().unwrap().event(*id, E::On { key: 60, velocity: 1., expression }).unwrap();
+    }
+    // The third note took the first one's voice, which is still fading out; choke the first.
+    device.note_instances().unwrap().event(ids[0], E::Choke { key: 60 }).unwrap();
+    let mut finished = [None; 4];
+    assert_eq!(device.note_instances().unwrap().drain_finished(&mut finished), 1);
+    assert_eq!(finished[0], Some(ids[0]));
+    let mut buffer = [0.; 34];
+    device.process(&ProcessContext::default(), &mut buffer);
+    println!("after choke: {:?}", &buffer[..4]);
+    assert!(buffer.iter().all(|sample| (*sample - 1.).abs() < 1e-6), "no fade remains: {buffer:?}");
+}
+
+#[test]
+fn mpe_a_voice_group_gated_by_an_outer_midi_gate_stays_on_ordinary_notes_and_sounds() {
+    use suhina_device_api::{NoteExpressionState, NoteInstanceEvent as E, NoteInstanceId};
+    // The voice outputs a constant 1 while it plays; the outer gate multiplies it.
+    let mut graph = expression_graph("gate");
+    graph.nodes.insert(1, N::new("gate", K::MidiGate));
+    graph.nodes.insert(2, N::new("amp", K::Multiply));
+    graph.connections =
+        vec![C::ports("group", "out", "amp", "a"), C::ports("gate", "out", "amp", "b"), C::new("amp", "out")];
+    let mut device = audio(&graph);
+    assert!(device.note_instances().is_none(), "an outer MIDI value reader withholds the endpoint");
+    // The chain then plays the note on the ordinary path; dispatching identified input to the
+    // device falls back the same way, and the outer gate opens.
+    let id = NoteInstanceId::from_parts(8, 1).unwrap();
+    let event = E::On { key: 60, velocity: 1., expression: NoteExpressionState::NEUTRAL };
+    assert!(suhina_device_api::dispatch_note_instance(&mut device, id, event).is_err());
+    device.event(NoteEvent::On { key: 60, velocity: 1. });
+    let mut buffer = [0.; 34];
+    device.process(&ProcessContext::default(), &mut buffer);
+    println!("gated: {:?}", &buffer[..4]);
+    assert!(buffer.iter().all(|sample| (*sample - 1.).abs() < 1e-6), "{buffer:?}");
 }

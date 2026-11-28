@@ -130,6 +130,57 @@ fn feedback_islands(nodes: &[Op], order: &[usize]) -> Vec<Island> {
 }
 
 impl PreparedEffect {
+    /// Private voices currently adapt their one occurrence to ordinary graph events plus
+    /// VoiceInput expression. Other native consumers can own independent note lifetimes;
+    /// do not advertise their admission/retirement until that routing is implemented.
+    pub(crate) fn supports_voice_expression(&self) -> bool {
+        self.nodes.iter().all(|node| {
+            (!matches!(node.state, State::Native(_))
+                || matches!(
+                    node.kind,
+                    NodeKind::VoiceInput { .. }
+                        | NodeKind::MidiController { .. }
+                        | NodeKind::PitchBend
+                        | NodeKind::Pressure
+                        | NodeKind::VoiceOutput
+                        | NodeKind::Adsr
+                        | NodeKind::Ad
+                ))
+                && node.event_source.is_none_or(|source| {
+                    self.nodes.get(source).is_some_and(|source| matches!(source.kind, NodeKind::MidiInput))
+                })
+        })
+    }
+
+    /// A single direct voice-group endpoint. Graphs with another native event consumer or
+    /// transformed event routing stay explicitly in ordinary compatibility until admission
+    /// and final retirement can be aggregated across every participating layer.
+    pub(crate) fn note_instances(&mut self) -> Option<&mut dyn suhina_device_api::NoteInstanceDevice> {
+        let mut selected = None;
+        for (index, node) in self.nodes.iter().enumerate() {
+            // These read the graph's own MIDI state, which only the ordinary event path keeps
+            // up to date: identified notes go straight to the group and would leave a gate
+            // closed or a key stale. Such a graph stays on ordinary-note compatibility.
+            if matches!(node.kind, NodeKind::MidiKey | NodeKind::MidiVelocity | NodeKind::MidiGate) {
+                return None;
+            }
+            if matches!(node.state, State::Native(_)) {
+                if selected.is_some() || !matches!(node.kind, NodeKind::VoiceGroup { .. }) {
+                    return None;
+                }
+                if let Some(source) = node.event_source
+                    && self.nodes.get(source).is_none_or(|source| !matches!(source.kind, NodeKind::MidiInput))
+                {
+                    return None;
+                }
+                selected = Some(index);
+            }
+        }
+        match &mut self.nodes.get_mut(selected?)?.state {
+            State::Native(native) => native.note_instances(),
+            _ => None,
+        }
+    }
     pub(crate) fn new(graph: &DeviceGraph, sample_rate: f64) -> Result<Self, DeviceSdkError> {
         Self::new_with_native(graph, sample_rate, &mut |id, _| {
             Err(DeviceSdkError(format!("unregistered native effect {id:?}")))
