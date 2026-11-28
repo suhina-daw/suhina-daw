@@ -1,0 +1,508 @@
+// Copyright (C) 2026 The Suhina contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! The shipped APC40 MkII script's device section, against a stand-in Suhina: the eight knobs
+//! turn the selected device's parameters in banks of eight, Bank left/right take the next or
+//! previous eight, and Device left/right step along the chain (`docs/spec/selection.md` › What
+//! controllers do with it, #1679). The script under test is the shipped file itself.
+#![allow(clippy::unwrap_used, clippy::expect_used)] // a test harness
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use mlua::{Lua, LuaString, Value, Variadic};
+
+/// One command the script asked for, with the fields the device section sends.
+#[derive(Debug, Default, Clone, PartialEq)]
+struct Command {
+    id: String,
+    track: Option<u32>,
+    track_name: Option<String>,
+    device: Option<String>,
+    param: Option<String>,
+    value: Option<f64>,
+    normalized: Option<f64>,
+    gesture: Option<String>,
+}
+
+/// What the script sent to its output port.
+type Sends = Rc<RefCell<Vec<(String, Vec<u8>)>>>;
+
+/// A stand-in Suhina: records commands and send-backs, and answers the script's subscriptions.
+struct Fake {
+    lua: Lua,
+    commands: Rc<RefCell<Vec<Command>>>,
+    sends: Sends,
+    quit_reset: Rc<RefCell<Vec<Vec<u8>>>>,
+}
+
+impl Fake {
+    fn new(script: &str) -> Self {
+        let lua = Lua::new();
+        let commands = Rc::new(RefCell::new(Vec::new()));
+        let sends = Rc::new(RefCell::new(Vec::new()));
+        let suhina = lua.create_table().unwrap();
+        // JSON null: a value that is neither nil nor false, as the runner's `suhina.null`.
+        suhina.set("null", lua.create_table().unwrap()).unwrap();
+        let quit_reset = Rc::new(RefCell::new(Vec::new()));
+        let reset = Rc::clone(&quit_reset);
+        suhina
+            .set(
+                "quit_reset",
+                lua.create_function(move |_, messages: mlua::Table| {
+                    let mut list = Vec::new();
+                    for message in messages.sequence_values::<LuaString>() {
+                        list.push(message?.as_bytes().to_vec());
+                    }
+                    *reset.borrow_mut() = list;
+                    Ok(true)
+                })
+                .unwrap(),
+            )
+            .unwrap();
+
+        let midi = lua.create_table().unwrap();
+        midi.set(
+            "parse",
+            lua.create_function(|lua, bytes: LuaString| {
+                let bytes = bytes.as_bytes();
+                let message = lua.create_table()?;
+                match bytes.first().copied() {
+                    Some(status) if status & 0xF0 == 0x90 => {
+                        message.set("kind", "note_on")?;
+                        message.set("channel", status & 0x0F)?;
+                        message.set("note", *bytes.get(1).unwrap_or(&0))?;
+                        message.set("velocity", *bytes.get(2).unwrap_or(&0))?;
+                    }
+                    Some(status) if status & 0xF0 == 0xB0 => {
+                        message.set("kind", "cc")?;
+                        message.set("channel", status & 0x0F)?;
+                        message.set("controller", *bytes.get(1).unwrap_or(&0))?;
+                        message.set("value", *bytes.get(2).unwrap_or(&0))?;
+                    }
+                    _ => return Ok(Value::Nil),
+                }
+                Ok(Value::Table(message))
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        midi.set(
+            "cc",
+            lua.create_function(|lua, (channel, controller, value): (u8, u8, u8)| {
+                lua.create_string([0xB0 | (channel & 0x0F), controller, value])
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        midi.set(
+            "note_on",
+            lua.create_function(|lua, (channel, note, velocity): (u8, u8, u8)| {
+                lua.create_string([0x90 | (channel & 0x0F), note, velocity])
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        suhina.set("midi", midi).unwrap();
+
+        let recorded = Rc::clone(&commands);
+        suhina
+            .set(
+                "command",
+                lua.create_function(move |_, args: Variadic<Value>| {
+                    let id = args.first().and_then(text).unwrap_or_default();
+                    let params = args.get(1).and_then(Value::as_table);
+                    let field = |key: &str| params.and_then(|t| t.get::<Value>(key).ok());
+                    let count = |key: &str| field(key).and_then(|v| number(&v)).map(|n| n as u32);
+                    let text_field = |key: &str| field(key).and_then(|v| text(&v));
+                    let device = field("device").and_then(|v| match v {
+                        Value::Integer(n) => Some(n.to_string()),
+                        Value::Number(n) => Some(format!("{n:?}")),
+                        Value::String(s) => Some(s.to_string_lossy().to_string()),
+                        _ => None,
+                    });
+                    recorded.borrow_mut().push(Command {
+                        id,
+                        track: count("track"),
+                        track_name: field("track").and_then(|v| text(&v)),
+                        device,
+                        param: text_field("param"),
+                        value: field("value").and_then(|v| number(&v)),
+                        normalized: field("normalized").and_then(|v| number(&v)),
+                        gesture: args.get(2).and_then(text),
+                    });
+                    Ok(true)
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let written = Rc::clone(&sends);
+        suhina
+            .set(
+                "send",
+                lua.create_function(move |_, (port, bytes): (String, LuaString)| {
+                    written.borrow_mut().push((port.clone(), bytes.as_bytes().to_vec()));
+                    Ok(true)
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        let next = Rc::new(RefCell::new(0u64));
+        suhina
+            .set(
+                "subscribe",
+                lua.create_function(move |_, _: Variadic<Value>| {
+                    let mut next = next.borrow_mut();
+                    *next += 1;
+                    Ok(*next)
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        suhina.set("unsubscribe", lua.create_function(|_, _: Value| Ok(())).unwrap()).unwrap();
+        suhina.set("read", lua.create_function(|_, _: Variadic<Value>| Ok((Value::Nil, Value::Nil))).unwrap()).unwrap();
+        for name in ["on_port_message", "on_state", "on_ports"] {
+            suhina
+                .set(
+                    name,
+                    lua.create_function(move |lua, handler: mlua::Function| {
+                        lua.set_named_registry_value(name, handler)
+                    })
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        lua.globals().set("suhina", suhina).unwrap();
+        lua.load(script).exec().unwrap();
+        Self { lua, commands, sends, quit_reset }
+    }
+
+    /// The ports opening, with one output to send LEDs on.
+    fn ports(&self) {
+        let inputs = self.lua.create_table().unwrap();
+        let outputs = self.lua.create_table().unwrap();
+        outputs.set(1, "APC40 mkII out").unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_ports").unwrap();
+        handler.call::<()>((inputs, outputs)).unwrap();
+    }
+
+    /// A selection state: `track`'s `device` with the Utility's parameters.
+    fn selection(&self, token: u64, track: u32, path: u32) {
+        self.selection_with_gain(token, track, path, 0.0);
+    }
+
+    /// The same with the first dial's Gain at `gain`, for the ring guard.
+    fn selection_with_gain(&self, token: u64, track: u32, path: u32, gain: f64) {
+        let selection = self.lua.create_table().unwrap();
+        selection.set("track", track).unwrap();
+        selection.set("track_name", "Drums").unwrap();
+        let device = self.lua.create_table().unwrap();
+        device.set("path", path).unwrap();
+        device.set("enabled", true).unwrap();
+        // Nine dials with switches and a choice between them, in parameter order; the dials
+        // list is the panel's own order, which a knob follows instead.
+        let params = [
+            ("gain", "continuous", -150.0, 35.0, gain),
+            ("mono", "toggle", 0.0, 1.0, 0.0),
+            ("balance", "continuous", -1.0, 1.0, 0.0),
+            ("width", "continuous", 0.0, 4.0, 1.0),
+            ("midSide", "continuous", -1.0, 1.0, 0.0),
+            ("bassMonoFrequency", "continuous", 50.0, 500.0, 120.0),
+            ("invertLeft", "toggle", 0.0, 1.0, 0.0),
+            ("invertRight", "toggle", 0.0, 1.0, 0.0),
+            ("channel", "choice", 0.0, 3.0, 0.0),
+            ("dial6", "continuous", 0.0, 1.0, 0.0),
+            ("dial7", "continuous", 0.0, 1.0, 0.0),
+            ("dial8", "continuous", 0.0, 1.0, 0.0),
+            ("dial9", "continuous", 0.0, 1.0, 0.0),
+            ("attack", "continuous", 0.0005, 60.0, 0.001),
+        ];
+        let list = self.lua.create_table().unwrap();
+        for (index, (id, kind, min, max, value)) in params.iter().enumerate() {
+            let param = self.lua.create_table().unwrap();
+            param.set("id", *id).unwrap();
+            param.set("kind", *kind).unwrap();
+            param.set("min", *min).unwrap();
+            param.set("max", *max).unwrap();
+            param.set("value", *value).unwrap();
+            let normalized = if *id == "attack" { 0.5 } else { (*value - *min) / (*max - *min) };
+            param.set("normalized", normalized).unwrap();
+            param.set("unit", "").unwrap();
+            list.set(index + 1, param).unwrap();
+        }
+        device.set("params", list).unwrap();
+        let dials = self.lua.create_table().unwrap();
+        for (index, id) in
+            ["dial6", "gain", "balance", "width", "midSide", "bassMonoFrequency", "dial7", "dial8", "dial9", "attack"]
+                .iter()
+                .enumerate()
+        {
+            dials.set(index + 1, *id).unwrap();
+        }
+        device.set("dials", dials).unwrap();
+        selection.set("device", device).unwrap();
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((token, selection)).unwrap();
+    }
+
+    /// One port message: CC 16 or a device-section note.
+    fn message(&self, bytes: &[u8]) {
+        let handler: mlua::Function = self.lua.named_registry_value("on_port_message").unwrap();
+        let bytes = self.lua.create_string(bytes).unwrap();
+        handler.call::<()>((bytes, "APC40 mkII in", 0u64)).unwrap();
+    }
+
+    /// The tracks the project's subscription lists, so the track select buttons have ids.
+    fn strips(&self, ids: &[u32]) {
+        self.strips_with_pan(ids, 0.0);
+    }
+
+    /// The same with every track's pan at `pan`, for the pan rings.
+    fn strips_with_pan(&self, ids: &[u32], pan: f64) {
+        let strips = self.lua.create_table().unwrap();
+        for (index, id) in ids.iter().enumerate() {
+            let strip = self.lua.create_table().unwrap();
+            strip.set("id", *id).unwrap();
+            strip.set("pan", pan).unwrap();
+            strips.set(index + 1, strip).unwrap();
+        }
+        let handler: mlua::Function = self.lua.named_registry_value("on_state").unwrap();
+        handler.call::<()>((3u64, strips)).unwrap();
+    }
+
+    fn last_command(&self) -> Command {
+        self.commands.borrow().last().cloned().unwrap_or_default()
+    }
+
+    fn commands(&self) -> Vec<String> {
+        self.commands.borrow().iter().map(|c| c.id.clone()).collect()
+    }
+
+    fn knob(&self, knob: u8, value: u8) {
+        self.message(&[0xB0, 16 + knob, value]);
+    }
+
+    fn press(&self, note: u8) {
+        self.message(&[0x90, note, 127]);
+    }
+}
+
+#[test]
+fn the_device_knobs_turn_the_selected_devices_parameters_in_banks_of_eight() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    // The selection the window and commands share: track 1, the Utility at path 0.
+    fake.selection(4, 1, 0);
+
+    // The first knob, full: the panel's first dial, not the parameter list's first.
+    fake.knob(0, 127);
+    let command = fake.last_command();
+    assert_eq!(command.id, "device.setParam", "{command:?}");
+    assert_eq!(command.track, Some(1), "{command:?}");
+    assert_eq!(command.device.as_deref(), Some("0"), "{command:?}");
+    assert_eq!(command.param.as_deref(), Some("dial6"), "{command:?}");
+    assert_eq!(command.value, None, "a dial with a normalized position: {command:?}");
+    assert!((command.normalized.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
+    assert_eq!(command.gesture.as_deref(), Some("apc40-mkii device 1:0:dial6"), "{command:?}");
+
+    // The panel's second dial is Gain; the switch between them in the parameter list is skipped.
+    fake.knob(1, 127);
+    let command = fake.last_command();
+    assert_eq!(command.param.as_deref(), Some("gain"), "{command:?}");
+    assert_eq!(command.value, None, "{command:?}");
+    assert!((command.normalized.unwrap_or_default() - 1.0).abs() < 1e-6, "{command:?}");
+    // Bank right, then the first knob: the ninth dial.
+    fake.press(61);
+    fake.knob(0, 127);
+    let command = fake.last_command();
+    assert_eq!(command.param.as_deref(), Some("dial9"), "{command:?}");
+    // Bank left, then the first knob at zero: the first dial at its minimum.
+    fake.press(60);
+    fake.knob(0, 0);
+    let command = fake.last_command();
+    assert_eq!(command.param.as_deref(), Some("dial6"), "{command:?}");
+    assert!(command.normalized.unwrap_or_default() < 0.001, "{command:?}");
+}
+
+/// A logarithmic dial sends the reading's normalized position, not a linear value: its knob
+/// position is the panel's, and its ring draws that same position (#1718).
+#[test]
+fn a_log_dial_sends_and_draws_its_normalized_position() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    // Bank right: its second knob is the stand-in's tenth dial, the logarithmic attack.
+    let before = fake.sends.borrow().len();
+    fake.press(61);
+    assert!(
+        fake.sends.borrow()[before..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
+        "the reading's 0.5 draws at 64: {:?}",
+        &fake.sends.borrow()[before..]
+    );
+    let after_knob = fake.sends.borrow().len();
+    fake.knob(1, 64);
+    let command = fake.last_command();
+    assert_eq!(command.param.as_deref(), Some("attack"), "{command:?}");
+    assert_eq!(command.value, None, "{command:?}");
+    assert!((command.normalized.unwrap_or_default() - 64.0 / 127.0).abs() < 1e-6, "{command:?}");
+    assert!(
+        !fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
+        "the turn does not write the ring: {:?}",
+        &fake.sends.borrow()[after_knob..]
+    );
+}
+
+#[test]
+fn the_device_arrows_select_the_previous_and_next_device() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    fake.press(59);
+    assert_eq!(fake.last_command().id, "device.selectNext", "{:?}", fake.commands());
+    fake.press(58);
+    assert_eq!(fake.last_command().id, "device.selectPrevious", "{:?}", fake.commands());
+}
+
+#[test]
+fn the_track_and_master_select_buttons_set_the_selection() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.strips(&[7, 8]);
+    // Track select button 1, then master: the commands the window and MCP run.
+    fake.press(51);
+    let command = fake.last_command();
+    assert_eq!(command.id, "track.select", "{command:?}");
+    assert_eq!(command.track, Some(7), "{command:?}");
+    fake.press(80);
+    let command = fake.last_command();
+    assert_eq!(command.id, "track.select", "{command:?}");
+    assert_eq!(command.track_name.as_deref(), Some("main"), "{command:?}");
+}
+
+/// The Application/Configuration mode hands every LED to the host, so a knob's ring follows its
+/// parameter without the device's own ring updates fighting it.
+#[test]
+fn the_program_uses_the_application_configuration_mode() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
+    assert!(
+        fake.sends.borrow().iter().any(|(_, bytes)| bytes.starts_with(&mode)),
+        "the Application/Configuration mode is sent: {:?}",
+        fake.sends.borrow()
+    );
+}
+
+/// The script registers its own quit reset: every note and controller off on every channel, so
+/// the host does not need this device's LED map (surface-programs.md › Quitting).
+#[test]
+fn the_script_registers_its_quit_reset() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    let reset = fake.quit_reset.borrow();
+    assert_eq!(reset.len(), 16 * (128 + 128), "every channel's notes and controllers");
+    assert!(reset.iter().any(|m| m.as_slice() == [0x90, 50, 0]), "the strip button's LED is reset");
+    assert!(reset.iter().any(|m| m.as_slice() == [0xB0, 0, 0]), "the first controller is zeroed");
+}
+
+#[test]
+fn a_knobs_own_report_is_not_written_back_to_its_ring() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    // The gain is the panel's second dial: its knob reports 64, and the session's gain trails
+    // with the same position on that knob's ring.
+    fake.knob(1, 64);
+    let after_knob = fake.sends.borrow().len();
+    let gain = -150.0 + (64.0 / 127.0) * 185.0;
+    // The turn has to settle before a reading can write; the knob's own position never is.
+    for _ in 0..12 {
+        fake.selection_with_gain(4, 1, 0, gain);
+    }
+    assert!(
+        !fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
+        "the knob's own ring is not yanked: {:?}",
+        &fake.sends.borrow()[after_knob..]
+    );
+    // A value the knob never reported — the window set the gain to its maximum — writes.
+    fake.selection_with_gain(4, 1, 0, 35.0);
+    assert!(
+        fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 127].as_slice()),
+        "a change from elsewhere writes the ring: {:?}",
+        &fake.sends.borrow()[after_knob..]
+    );
+}
+
+/// Once a turn has settled, its reports are no longer an echo guard: a later change that lands
+/// on one of those positions must still write the ring (#1719 review).
+#[test]
+fn a_settled_turn_forgets_its_reports() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    let gain = |position: f64| -150.0 + (position / 127.0) * 185.0;
+    fake.knob(1, 64);
+    fake.knob(1, 100);
+    for _ in 0..12 {
+        fake.selection_with_gain(4, 1, 0, gain(100.0));
+    }
+    let settled = fake.sends.borrow().len();
+    // The window sets the gain to the position the knob reported before its last turn: that is
+    // a change, not an echo, and the ring shows it.
+    fake.selection_with_gain(4, 1, 0, gain(64.0));
+    assert!(
+        fake.sends.borrow()[settled..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
+        "the settled turn's old report does not swallow a later change: {:?}",
+        &fake.sends.borrow()[settled..]
+    );
+}
+
+/// The pan encoder's ring has the same guard and the same clearing once its turn settles.
+#[test]
+fn a_settled_pan_turn_forgets_its_reports() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.strips(&[7]);
+    fake.message(&[0xB0, 48, 32]);
+    fake.message(&[0xB0, 48, 64]);
+    for _ in 0..12 {
+        fake.strips_with_pan(&[7], 0.0);
+    }
+    let settled = fake.sends.borrow().len();
+    fake.strips_with_pan(&[7], (32.0 - 64.0) / 63.5);
+    assert!(
+        fake.sends.borrow()[settled..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 48, 32].as_slice()),
+        "the settled pan turn's old report does not swallow a later change: {:?}",
+        &fake.sends.borrow()[settled..]
+    );
+}
+
+#[test]
+fn the_knobs_ring_shows_the_parameters_position() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    // The first knob's ring: the single-dot style, then the gain's position (0 dB of -150..35,
+    // about 109 of 127).
+    let sends = fake.sends.borrow();
+    let cc = |controller: u8, value: u8| {
+        sends.iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, controller, value].as_slice())
+    };
+    assert!(cc(24, 1), "the first knob's ring style: {:?}", *sends);
+    assert!(cc(16, 0), "the first dial's position: {:?}", *sends);
+    assert!(cc(17, 103), "the second dial, Gain, at 0 dB: {:?}", *sends);
+}
+
+fn text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.to_string_lossy().to_string()),
+        _ => None,
+    }
+}
+
+fn number(value: &Value) -> Option<f64> {
+    match value {
+        Value::Integer(n) => Some(*n as f64),
+        Value::Number(n) => Some(*n),
+        _ => None,
+    }
+}

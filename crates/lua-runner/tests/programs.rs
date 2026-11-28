@@ -431,6 +431,90 @@ fn a_script_error_is_reported_and_restart_brings_the_script_back() {
     assert_eq!(entry["lastError"], Value::Null, "{entry}");
 }
 
+/// The shipped APC40 MkII script through the real supervisor: its mode message goes out when
+/// the claimed ports open, and each of the four per-track strip buttons sends its command and
+/// the LED its state asks for. The device section is covered by the stand-in in `apc40.rs`.
+#[test]
+fn the_shipped_apc40_script_puts_each_strip_button_on_its_command() {
+    let mut fixture = Fixture::claiming("apc40-mkii", include_str!("../../../packs/apc40-mkii/script.lua"));
+    // The blank project's first track is the strip's channel 0.
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    let track = tracks[0]["id"].as_u64().expect("the first track's id");
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
+    fixture.pump_until(|f| f.midi.written_for("APC out").iter().any(|m| m.starts_with(&mode)), "the mode message");
+    fixture.pump_until(
+        |f| f.midi.written_for("APC out").iter().any(|m| m.as_slice() == [0x90, 50, 127]),
+        "the strip state",
+    );
+    // Clip stop: the command reaches the session, which refuses it without a player but still
+    // answers the script; the press is what this slice checks.
+    fixture.midi.play("APC in", 1, &[0x90, 52, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.stop" && params["track"] == json!(track)));
+    fixture.projects.poll_plugins();
+    // Activator: the track mutes, and the activator LED goes dark.
+    fixture.midi.play("APC in", 1, &[0x90, 50, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.setMute" && params["tracks"][0] == json!(track)));
+    fixture.projects.poll_plugins();
+    fixture.pump_until(|f| written_contains(f, [0x90, 50, 0]), "the muted activator's LED");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    assert_eq!(tracks[0]["mute"], json!(true), "{tracks}");
+    // Solo: the track solos, and the solo LED lights.
+    fixture.midi.play("APC in", 1, &[0x90, 49, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.setSolo" && params["tracks"][0] == json!(track)));
+    fixture.projects.poll_plugins();
+    fixture.pump_until(|f| written_contains(f, [0x90, 49, 127]), "the solo LED");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    assert_eq!(tracks[0]["solo"], json!(true), "{tracks}");
+    // Record arm: the track arms, and the arm LED goes red.
+    fixture.midi.play("APC in", 1, &[0x90, 48, 127]);
+    fixture.peek(|e| matches!(e, programs::Event::Command { id, params, .. } if id == "track.setArm" && params["track"] == json!(track)));
+    fixture.projects.poll_plugins();
+    fixture.pump_until(|f| written_contains(f, [0x90, 48, 5]), "the armed track's LED");
+    let tracks = fixture.projects.execute("project.tracks", &json!({})).expect("tracks read");
+    assert_eq!(tracks[0]["armed"], json!(true), "{tracks}");
+}
+
+/// Quitting turns a controller dark: the host sends every note and controller off before the
+/// claimed output closes, so the APC40's last LEDs do not stay lit after Suhina is gone.
+#[test]
+fn quitting_turns_the_claimed_controllers_lights_off() {
+    let mut fixture = Fixture::claiming("apc40-mkii", include_str!("../../../packs/apc40-mkii/script.lua"));
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
+    fixture.pump_until(|f| f.midi.written_for("APC out").iter().any(|m| m.starts_with(&mode)), "the mode message");
+    let before = fixture.midi.written_for("APC out").len();
+    // The bound is generous and not judged on: what the test checks is the reset the workers
+    // wrote, not how long a loaded machine took to close (AGENTS.md rule 7).
+    let _ = fixture.projects.close_all(std::time::Duration::from_secs(30));
+    let written = fixture.midi.written_for("APC out");
+    let reset = &written[before..];
+    assert!(reset.iter().any(|m| m.as_slice() == [0x90, 50, 0]), "the activator's LED is off: {reset:?}");
+    assert!(reset.iter().any(|m| m.as_slice() == [0xB0, 0, 0]), "the first controller is zeroed: {reset:?}");
+}
+
+/// A program that registers no reset gets the device-safe one: notes off and the channel-mode
+/// silences, never bank select or volume, which the host must not change on a device it does
+/// not know.
+#[test]
+fn a_program_without_its_own_reset_gets_a_safe_one() {
+    let mut fixture = Fixture::claiming("quiet", "suhina.on_port_message(function() end)\n");
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    let before = fixture.midi.written_for("APC out").len();
+    let _ = fixture.projects.close_all(std::time::Duration::from_secs(30));
+    let written = fixture.midi.written_for("APC out");
+    let reset = &written[before..];
+    for expected in [[0xB0, 123, 0], [0xB0, 120, 0], [0xB0, 121, 0]] {
+        assert!(reset.iter().any(|m| m.as_slice() == expected), "the safe reset's {expected:?}: {reset:?}");
+    }
+    assert!(!reset.iter().any(|m| m.as_slice() == [0xB0, 0, 0]), "no bank select: {reset:?}");
+    assert!(!reset.iter().any(|m| m.as_slice() == [0xB0, 7, 0]), "no volume change: {reset:?}");
+}
+
 /// A killed process is seen as crashed and restarted by the supervisor itself.
 #[test]
 fn a_killed_process_is_restarted() {
@@ -887,11 +971,30 @@ fn the_send_back_queue_holds_at_most_eight_mib() {
     fixture.expect(|e| *e == programs::Event::Running, "running");
     fixture.projects.poll_plugins();
     // Twenty one-MiB sends with no drain between them: the eighth queues, and the ninth's
-    // enqueue — the first past the byte budget — is the drop the wait is on.
-    for _ in 0..20 {
-        fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+    // enqueue — the first past the byte budget — is the drop the wait is on. A runner that
+    // went silent long enough to be restarted (a starved process on a loaded machine) takes
+    // the presses it never read with it; a crash is not the drop, so the storm is pressed
+    // again once it is back. The wait takes either answer on the queue's signal, never a clock.
+    loop {
+        for _ in 0..20 {
+            fixture.midi.play("APC in", 1, &[0x90, 0x3C, 0x7F]);
+        }
+        let answered = fixture
+            .projects
+            .test_extensions_wait_for(|e| matches!(e, programs::Event::Dropped(_) | programs::Event::Crashed(_)))
+            .unwrap_or_else(|reason| panic!("the program ended without the byte budget's drop: {reason}"));
+        if matches!(answered, programs::Event::Dropped(_)) {
+            break;
+        }
+        // The crash's presses went with the dead process: wait for the fresh one and the
+        // stand-in's port it claims, then press again.
+        fixture.projects.poll_plugins();
+        fixture.expect(|e| *e == programs::Event::Running, "running after the crash");
+        fixture.pump_until(|f| f.midi.raw_open("APC in"), "the port after the restart");
+        // The dead storm's send-backs are drained and written above; the cap is judged on the
+        // storm that produced the drop.
+        fixture.midi.forget_written();
     }
-    fixture.expect(|e| matches!(e, programs::Event::Dropped(_)), "the byte budget's drop");
     fixture.projects.poll_plugins();
     let written = fixture.midi.written_for("APC out");
     let bytes: usize = written.iter().map(|m| m.len()).sum();
@@ -1188,16 +1291,19 @@ impl MidiSystem for Midi {
 
     fn open(&self, name: &str, _: Arc<LiveInput>) -> Result<Box<dyn std::any::Any + Send>, String> {
         self.live.lock().unwrap().push(name.to_string());
+        programs::test_wake();
         Ok(Box::new(Keep { name: name.to_string(), open: Arc::clone(&self.live), closed: Arc::clone(&self.closed) }))
     }
 
     fn open_raw(&self, name: &str, sink: Arc<dyn RawSink>) -> Result<Box<dyn std::any::Any + Send>, String> {
         self.raw.lock().unwrap().push((name.to_string(), sink));
         self.raw_log.lock().unwrap().push(name.to_string());
+        programs::test_wake();
         Ok(Box::new(RawKeep { name: name.to_string(), open: Arc::clone(&self.raw), closed: Arc::clone(&self.closed) }))
     }
 
     fn open_output(&self, name: &str) -> Result<Box<dyn MidiOut>, String> {
+        programs::test_wake();
         Ok(Box::new(Out {
             name: name.to_string(),
             written: Arc::clone(&self.written),
@@ -1240,6 +1346,11 @@ impl Midi {
 
     fn written_for(&self, port: &str) -> Vec<Vec<u8>> {
         self.written.lock().unwrap().iter().filter(|(name, _)| name == port).map(|(_, bytes)| bytes.clone()).collect()
+    }
+
+    /// Forgets the writes so far: a storm judged after a restart counts only the fresh one.
+    fn forget_written(&self) {
+        self.written.lock().unwrap().clear();
     }
 
     /// Waits for the output port's write count to reach `count`, on the writes' signal —

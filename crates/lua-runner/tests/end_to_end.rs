@@ -15,6 +15,7 @@ use interprocess::TryClone;
 use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Stream, prelude::*};
 use serde_json::{Value, json};
 use suhina_plugins::parse_address;
+use suhina_plugins::surface::VERSION;
 
 static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
@@ -113,7 +114,7 @@ impl Harness {
         let (child, stream) = spawn_and_connect(&script_path, &address);
         let writer = stream.try_clone().unwrap();
         let mut harness = Self { child, reader: BufReader::new(stream), writer };
-        harness.send(json!({ "op": "hello", "version": 1 }));
+        harness.send(json!({ "op": "hello", "version": VERSION }));
         assert_eq!(harness.line()["op"], "hello", "the runner's hello");
         harness.ports();
         harness
@@ -367,13 +368,16 @@ fn a_wrong_version_is_refused() {
     // The runner speaks first: its hello, then the refusal of ours, then the exit.
     let mut line = String::new();
     reader.read_line(&mut line).unwrap();
-    assert_eq!(serde_json::from_str::<Value>(line.trim()).unwrap(), json!({ "op": "hello", "version": 1 }));
+    assert_eq!(serde_json::from_str::<Value>(line.trim()).unwrap(), json!({ "op": "hello", "version": VERSION }));
     writeln!(writer, r#"{{ "op": "hello", "version": 9 }}"#).unwrap();
     writer.flush().unwrap();
     let mut line = String::new();
     reader.read_line(&mut line).unwrap();
     let answer: Value = serde_json::from_str(line.trim()).unwrap();
-    assert_eq!(answer, json!({ "op": "error", "message": "version 9 is not spoken; this runner speaks 1" }));
+    assert_eq!(
+        answer,
+        json!({ "op": "error", "message": format!("version 9 is not spoken; this runner speaks {VERSION}") })
+    );
     let status = child.wait().unwrap();
     assert!(!status.success(), "the runner exits after the refusal");
 }

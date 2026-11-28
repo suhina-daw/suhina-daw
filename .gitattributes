@@ -12,7 +12,10 @@ crates/theme-package/src/core.css text eol=lf
 # Generated on main after every merge (.github/workflows/docs-generated.yml); collapsed in diffs.
 docs/INDEX.md linguist-generated=true
 docs/commands.md linguist-generated=true
-# The pack's files are shipped byte for byte (`packs/`): nothing converts them.
+# The pack's files are shipped byte for byte (`packs/`): nothing converts them. The shipped
+# surface programs' manifests pin their script's SHA-256, so a checkout that converted line
+# endings would fail the store's own check on Windows.
+packs/** -text
 *.nam -text
 *.wav -text
 

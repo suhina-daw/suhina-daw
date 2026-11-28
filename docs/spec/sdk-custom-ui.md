@@ -369,11 +369,15 @@ triplet/dotted suffixes and sixteenth-note step counts while retaining saved val
 
 ## Reusable functional widgets
 
-Dial also accepts optional `decimals` (default 0) and `format` (default `number`), and an optional
-`image`: the id of one of the canvas's image assets, drawn as the dial's face — a device's own
-knob. Such a dial draws, inside its bounds, its track and its value's arc (the theme's border and
-accent colors) around the image and the pointer over it (the theme's text color); its label
-and value keep their places. No theme's knob artwork replaces the image: the device has styled
+Dial also accepts optional `decimals` (default 0) and `format` (default `number`), an optional
+`readout`, and an optional `image`: the id of one of the canvas's image assets, drawn as the
+dial's face — a device's own knob. A `readout` (`{ "value": <expression>, "prefix": "", "suffix": "" }`)
+shows a number computed from the panel's parameters in place of the parameter's own value — an
+LFO rate in hertz from the position it stores — while the dial still turns its bound parameter;
+its expression is checked like a drawing's, against the panel's parameters. Such a dial draws,
+inside its bounds, its track and its value's arc (the theme's border and accent colors) around
+the image and the pointer over it (the theme's text color); its label and value keep their
+places. No theme's knob artwork replaces the image: the device has styled
 its knob, and the theme styles only what a device leaves unstyled. The pointer line takes
 `knob-pointer { color }` where the theme gives one (#1500).
 

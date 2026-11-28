@@ -145,6 +145,10 @@ impl Default for Queue {
 /// The program's shared queue, as the handle and the store hold it.
 pub(crate) type Shared = Arc<Queue>;
 
+/// A program's quit reset as the handle and the MIDI output share it: the messages the script
+/// registered, or none while it has not.
+pub(crate) type QuitReset = Arc<Mutex<Option<Vec<Vec<u8>>>>>;
+
 /// A running program's handle: the session's half. Dropping it stops the program. Each start
 /// carries a token of its own, so the MIDI router tells a restart's handle from the one it
 /// opened the ports for.
@@ -157,6 +161,8 @@ pub struct Handle {
     pid: Arc<std::sync::atomic::AtomicU32>,
     /// This handle's token: a new one at every [`start`], different for every restart.
     token: u64,
+    /// The messages the program registered for its quit reset, if any.
+    quit_reset: QuitReset,
 }
 
 /// The next handle's token.
@@ -184,6 +190,12 @@ impl Handle {
     /// ([`crate::extensions::Extensions::wait_for_event`]).
     pub(crate) fn shared(&self) -> Shared {
         Arc::clone(&self.events)
+    }
+
+    /// The messages the program registered for its quit reset, shared with its MIDI output: the
+    /// program may register them after the port opened.
+    pub(crate) fn quit_reset(&self) -> QuitReset {
+        Arc::clone(&self.quit_reset)
     }
 
     /// The claimed ports changed; the program hears the whole list again (the MIDI router
@@ -340,12 +352,14 @@ pub fn start(
     let thread_events = Arc::clone(&events);
     let pid = Arc::new(std::sync::atomic::AtomicU32::new(0));
     let thread_pid = Arc::clone(&pid);
+    let quit_reset: QuitReset = Arc::new(Mutex::new(None));
+    let thread_reset = Arc::clone(&quit_reset);
     let token = next_token();
     let thread = std::thread::Builder::new()
         .name("suhina-surface".into())
-        .spawn(move || run(&id, &runner, &script_path, from, &thread_events, &thread_pid, initial_ports))
+        .spawn(move || run(&id, &runner, &script_path, from, &thread_events, &thread_pid, &thread_reset, initial_ports))
         .map_err(|e| crate::CommandError::new(format!("the program's thread cannot be started: {e}")))?;
-    Ok(Handle { to, events, thread: Some(thread), pid, token })
+    Ok(Handle { to, events, thread: Some(thread), pid, token, quit_reset })
 }
 
 /// The thread: start the process, watch it, restart it when it dies or hangs, until stopped.
@@ -353,6 +367,7 @@ pub fn start(
 /// the program was started, so its first process hears it at its handshake — and what the
 /// session sends later is kept across the restarts: the new process hears it at its
 /// handshake, so a crash costs no port message.
+#[allow(clippy::too_many_arguments)]
 fn run(
     id: &str,
     runner: &Path,
@@ -360,6 +375,7 @@ fn run(
     from: Receiver<ToProgram>,
     events: &Shared,
     pid: &std::sync::atomic::AtomicU32,
+    quit_reset: &QuitReset,
     initial_ports: (Vec<String>, Vec<String>),
 ) {
     let mut crashes: Vec<Instant> = Vec::new();
@@ -377,7 +393,7 @@ fn run(
             give_up(events, &reason);
             return;
         }
-        match watch(runner, script, &from, events, pid, &mut ports, &mut pending) {
+        match watch(runner, script, &from, events, pid, quit_reset, &mut ports, &mut pending) {
             Ok(()) => {
                 suhina_plugins::trace!("surface {id} stopped cleanly");
                 give_up(events, "the program stopped");
@@ -612,12 +628,14 @@ fn is_request(message: &Message, events: &Shared, pending: &mut Pending) -> bool
 /// `Err` is why the process needs another one; `Ok` says the program was stopped. `ports` is
 /// what the session last sent, heard by the new process at its handshake; `pending` begins
 /// empty — the tokens begin again with each process, and a dead one's answers are dropped.
+#[allow(clippy::too_many_arguments)]
 fn watch(
     runner: &Path,
     script: &Path,
     from: &Receiver<ToProgram>,
     events: &Shared,
     pid: &std::sync::atomic::AtomicU32,
+    quit_reset: &QuitReset,
     ports: &mut (Vec<String>, Vec<String>),
     pending: &mut Pending,
 ) -> Result<(), String> {
@@ -733,6 +751,9 @@ fn watch(
                     // running loop's, taken when the program is running.
                     enqueue_send_back(events, port, bytes, &mut startup_dropped);
                 }
+                Some(Message::QuitReset { messages }) => {
+                    *quit_reset.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(messages);
+                }
                 other => {
                     suhina_plugins::trace!("programs handshake refused {other:?}");
                     let _ = link.send(&Message::Error { message: "not a message for the host".into() });
@@ -842,6 +863,9 @@ fn watch(
                         Some(Message::Pong { .. }) => {}
                         Some(Message::Send { port, bytes }) => {
                             enqueue_send_back(events, port, bytes, &mut dropped);
+                        }
+                        Some(Message::QuitReset { messages }) => {
+                            *quit_reset.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(messages);
                         }
                         Some(Message::ScriptError { handler, message }) => {
                             report(events, Event::ScriptError(format!("{handler}: {message}")));

@@ -119,6 +119,18 @@ fn knob(ui: &mut DeviceUi, id: &str, label: &str, b: [f32; 4], log: bool) {
     });
 }
 
+/// A dial's computed readout: the number its panel shows, with a prefix and suffix, in place of
+/// the bound parameter's own value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DialReadout {
+    pub value: UiValue,
+    #[serde(default)]
+    pub prefix: String,
+    #[serde(default)]
+    pub suffix: String,
+}
+
 /// Reusable functional UI nodes. Each instance uses its control's bindings and bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -167,6 +179,11 @@ pub enum Widget {
         /// the host draws the value's arc and the pointer. No theme's knob artwork replaces it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         image: Option<String>,
+        /// What the dial shows instead of its parameter's own value: a rate the range turns
+        /// into hertz, a ratio from two parameters. Its normalized position still turns the
+        /// bound parameter. Without it the dial shows the parameter in its `format`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        readout: Option<DialReadout>,
     },
     Stepper {
         decimals: usize,
@@ -443,7 +460,7 @@ impl Widget {
                 }
                 return out;
             }
-            Self::Dial { label, decimals, format, image } => {
+            Self::Dial { label, decimals, format, image, readout: shown } => {
                 let label_height = if label.is_empty() { 0. } else { 24. };
                 let room = ((height - label_height - 18.) / 2.).min(w / 2. - 2.).max(1.);
                 // The rim's width grows with the dial (3 up to a radius of 18), and the dark ring
@@ -459,7 +476,19 @@ impl Widget {
                 if let Draw::Text { size, .. } = &mut caption {
                     *size = 9.;
                 }
-                let mut value = readout(id, cx, height - 16., *decimals, TEXT, true);
+                let mut value = match shown {
+                    Some(DialReadout { value, prefix, suffix }) => Draw::Value {
+                        align: TextAlign::Center,
+                        position: [cx.into(), (height - 16.).into()],
+                        value: value.clone(),
+                        prefix: prefix.clone(),
+                        suffix: suffix.clone(),
+                        color: TEXT,
+                        size: 10.,
+                        decimals: *decimals,
+                    },
+                    None => readout(id, cx, height - 16., *decimals, TEXT, true),
+                };
                 if let Draw::Text { format: f, .. } = &mut value {
                     *f = *format;
                 }

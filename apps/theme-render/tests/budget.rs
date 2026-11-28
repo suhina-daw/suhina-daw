@@ -99,9 +99,16 @@ use suhina_theme_render::{Subject, scenes};
 /// The menu bar's titles (#1487 › P8) are elements a theme styles (`menu-bar bar-item[kind="menu"]`),
 /// 5 more nodes in each scene and no identity (474 and 721; 486 and 733 on Windows).
 ///
-/// On Windows the window's three buttons are `button` elements a sheet styles (they were egui
-/// buttons with no frame), 3 more nodes in the Launcher and 1 in the FM synth (489 and 734); their
-/// identities are shared with the other buttons', so the recorded identities stay.
+/// #1718 (the FM Synth's native dials) raised the expanded scene by 15 nodes and 6 identities,
+/// and the styles worked out after a theme change by 6 (and after a color change in the
+/// see-through theme by 6): its Output, Stereo, Voices and Pitch dials and the device row's LFO
+/// rate and Random amount are the SDK's native dial widget, which the style engine paints as knob
+/// elements, where the hand-drawn dial was a canvas drawing (736 and 715; 748 and 728 on
+/// Windows).
+///
+/// On Windows the window's three controls are `window-button` elements a sheet styles (they were
+/// egui buttons with no frame and are deliberately not `button`s), 3 more nodes in the Launcher
+/// and 1 in the FM synth on top of #1718's counts (489 and 749); the recorded identities stay.
 #[cfg(not(windows))]
 const RECORDED: [(&str, Counts); 2] = [
     (
@@ -125,19 +132,19 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 721,
-            identities: 709,
+            nodes: 736,
+            identities: 715,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 709,
+            theme_change_fresh: 715,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 710,
+            color_change_fresh: 716,
         },
     ),
 ];
@@ -167,19 +174,19 @@ const RECORDED: [(&str, Counts); 2] = [
     (
         "expanded-fm-synth",
         Counts {
-            nodes: 734,
-            identities: 722,
+            nodes: 749,
+            identities: 728,
             unstyled: 0,
             fresh: 0,
             paint_callbacks: 0,
             theme_change_frames: 2,
             theme_change_style_frames: 0,
-            theme_change_fresh: 722,
+            theme_change_fresh: 728,
             hover_frames: 4,
             hover_style_frames: 0,
             hover_fresh: 1,
             color_change_frames: 2,
-            color_change_fresh: 723,
+            color_change_fresh: 729,
         },
     ),
 ];
