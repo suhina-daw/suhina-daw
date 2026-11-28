@@ -37,7 +37,10 @@ impl Session {
         if id == "track.setArm" {
             return self.arm(params);
         }
-        self.run(id, params)
+        let result = self.run(id, params);
+        self.finish_instrument_analysis_command(result.is_ok());
+        self.refresh_instrument_analysis();
+        result
     }
 
     fn run(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {

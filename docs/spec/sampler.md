@@ -148,8 +148,12 @@ longer select an editor.
 Numeric values drag vertically, Shift gives precision, and double-click resets.
 All edits use the shared device parameter command, persistence and undo.
 
-Start/end and loop markers are fractions of the source. Empty or crossed ranges
-produce silence. Forward loops wrap at the boundary; ping-pong reflects the
+Start/end and loop markers are fractions of the source. Of a crossed pair the marker further
+right is always the end: Start past End plays from End to Start (and Loop start past Loop end
+loops between them), so dragging a marker over the other never silences the instrument. The
+waveform labels the left marker S and the right one E while it is dragged, and when the drag ends
+past the other marker the two values are swapped in the same undo step, so the fields read in
+order again. An empty range produces silence. Forward loops wrap at the boundary; ping-pong reflects the
 read head. Ping-pong remains readable in saved projects but has no panel control.
 Changing playback mode immediately silences existing voices; selecting the current
 mode leaves them playing. Gate releases on note-off; one-shot ignores note-off. Reset silences all
@@ -242,6 +246,64 @@ preview locally without preparing an audio graph per frame; releasing commits
 until release, then new notes use the edited map. View navigation
 never changes project data. The host resets the view when source audio changes.
 
+## Sustain playback
+
+**Sustain** (the Playback menu's fifth value, `playback` 4; the Instrument's Sample playback
+**Sustain**, its value 3) holds a note with the recording itself, as long as the key is down: a
+bowed, blown or sung tone, a pad or a texture keeps its real sound (its noise, its highs, its
+stereo and its own movement), which no model of sines gives back. In Sample mode, playing
+forward, the note plays from Start like Gate until it reaches Loop start; from there it holds in
+long **segments** of the loop region, joined by short crossfades (**seams**), the way a sampled
+instrument's sustain loop is made: most of the time one stretch of the recording plays as it was
+recorded, and only a seam mixes two. Segments held a cello's G4 (a 1 s held part), a whistle and a
+trombone convincingly. Other holds were heard on the same four sounds and set aside:
+
+- grains overlapping by half all the time (0.12..0.6 s) fluttered like an LFO however they were
+  lined up: two takes of a cello's vibrato and bow summed at every moment;
+- one loop from the region's start to its end, joined by a crossfade, was heard as a loop;
+- playing the region forward and backward in turn (a ping-pong loop) moved the level up and down
+  and clicked at the turns, where a waveform's partials do not all turn at once;
+- playing it on ever more slowly (waveform-similarity overlap and add at a third of the speed)
+  slowed the vibrato and the bow's movement with it, heard as a brake;
+- taking the pitch and level from a second pointer at full speed (the vibrato kept at its rate,
+  the timbre stretched, as in published vibrato-preserving time-stretching) sounded worse than
+  any of them.
+
+No hold made a cello's C convincing whose held part is the 0.4..0.6 s end of a slide: segments
+there play its distinct moments (a bow's rough spot) again at uneven intervals, heard as stutter.
+A short held part is the material's limit, not the hold's: a note recorded long enough holds, and
+a held tone beyond its recording is the work of a model (a bow driving the fitted resonances, or
+the held part's own statistics: [a held note continued past its
+recording](instrument-held-continuation.md)), not of a hold.
+
+- The first segment is the direct playback itself: the note plays on from Loop start, nothing is
+  cut or faded.
+- A segment plays from its start to a random point at least a third of the loop region on (but
+  early enough that its seam ends a period before Loop end), so the stretches and their order
+  vary and no loop repeats as one.
+- A seam is 50 ms (at least four periods of the root key's pitch, at most a sixth of the loop
+  region). The next segment starts at the best of eight random points of the loop region (leaving
+  room for a third of the region and a seam), each moved by up to one period of the root key to
+  where its waveform best continues the playing one there: the normalized correlation over 128
+  points of the mono sum an eighth of a period apart, spanning at least 0.12 s (so the vibrato's
+  phase and the pitch match too, not only one cycle's shape), less a quarter of the absolute log
+  of their energy ratio. The shift is searched every 1/32 period, then sample by sample around
+  the best.
+- The seam is a raised cosine (the two gains `cos²` and `sin²`) scaled so that the sum keeps unit
+  power for the two segments' correlation `r` there (`1 / sqrt(out² + in² + 2 r out in)`): two
+  waveforms that match sum like one, two that do not like an equal-power crossfade, so a seam
+  neither dips nor bulges. The incoming segment's gain matches its level at the seam to the
+  playing one's (the RMS over the seam, every fourth sample), by at most 12 dB either way.
+- A slow level follower (0.5 s) keeps the level where the hold took over, by at most 12 dB
+  either way: a held part that swells (a crescendo) would otherwise rise again at every seam,
+  while a tremolo or a bow's movement, faster than the follower, stays.
+- Note-off releases the envelope as for Gate; the segments go on through the release.
+- A loop region too short for a third of itself, a seam and a period plays as Gate. Reverse
+  turns Sustain off.
+
+The seeded random points and the per-sample counters make a render the same for every block
+split.
+
 ## LFO destinations and waveform handles
 
 One bipolar LFO drives independent depths: pitch (semitones), filter cutoff
@@ -253,7 +315,8 @@ wave * depth to the base pan and clamps to -1..1. All destinations use the same
 per-sample phase in both Sample and Grain, with no allocation or locking.
 
 There are no separate arrow handles for loops. In Sample/Loop playback, S/E edit
-loop_start/loop_end; otherwise S/E edit start/end. Grain always uses source
+loop_start/loop_end; otherwise S/E edit start/end. A crossed pair is labelled by position (see
+the marker rule above). Grain always uses source
 boundaries, since its scan reads the source region rather than a sample loop. Hover text explains the current
 role. Source and loop ranges remain independently editable through numeric fields.
 All SDK drag-value controls traverse their full normalized range in 400 logical

@@ -117,6 +117,15 @@ impl App {
                 });
             }
         }
+        // A focused control of the expanded device editor keeps its own keys and the shortcuts
+        // stay off, but the computer keyboard's letters, which no editor control uses, still play.
+        if crate::detail::device_canvas::owns_keyboard(ui.ctx())
+            && !ui.ctx().text_edit_focused()
+            && !self.dialog_holds_actions()
+            && !widgets::value_active(ui.ctx())
+        {
+            self.typing_keys(ui);
+        }
         // A prompt waiting on a stored edit (the ARA one) included: a key that changed the
         // project meanwhile would leave that edit naming what is gone.
         if ui.ctx().egui_wants_keyboard_input()

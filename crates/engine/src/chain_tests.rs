@@ -873,6 +873,28 @@ fn a_compressor_keyed_by_a_muted_track_ducks_and_its_render_does_not_depend_on_b
     assert!((tail(&render(&empty, 512)) - tail(&plain)).abs() < 1e-5);
 }
 
+#[test]
+fn modal_profile_identity_changes_without_losing_sample_identity() {
+    use suhina_dsp::modal::profile::{ModalProfile, ProfileMode};
+    let mut stored = device("instrument", &[("model_revision", 2.0)]);
+    stored.set_sample_file("sample.wav");
+    let audio = crate::AudioPool::default();
+    let factory = suhina_device_registry::factory();
+    let identity = |stored: &Device| crate::chain::device_identity("instrument", stored, &audio, &*factory, None);
+    let before = identity(&stored);
+    let make =
+        |hz| ModalProfile::new(60, hz, &[ProfileMode { ratio: 1.0, magnitude: 1.0, decay_seconds: 1.0 }]).unwrap();
+    stored.set_instrument_modal_profile(&make(263.1).encode()).unwrap();
+    let first = identity(&stored);
+    assert_ne!(before, first);
+    assert_eq!(first, identity(&stored.clone()));
+    stored.set_instrument_modal_profile(&make(337.0).encode()).unwrap();
+    assert_ne!(first, identity(&stored));
+    let second = identity(&stored);
+    stored.set_sample_file("different.wav");
+    assert_ne!(second, identity(&stored));
+}
+
 /// A key switched off (`DeviceInput::enabled`) is not read: the compressor hears its own input, as
 /// without a key, and switched back on it ducks again.
 #[test]

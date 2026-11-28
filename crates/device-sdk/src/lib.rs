@@ -36,6 +36,7 @@ pub mod native_node;
 mod nodes;
 mod runtime;
 pub mod sample_axis;
+pub mod sample_continuation;
 pub mod sample_instrument;
 pub mod sample_resource;
 pub mod ui;

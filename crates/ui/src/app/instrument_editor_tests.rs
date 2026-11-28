@@ -206,3 +206,27 @@ fn instrument_expanded_drop_plan_imports_and_undo_clears_both_presentations() {
     assert!(h.ctx.data(|data| data.get_temp::<Arc<suhina_engine::AudioData>>(source_id)).is_some());
     std::fs::remove_file(path).unwrap();
 }
+
+// Regression: turning a knob in the expanded editor left it focused, the editor kept the
+// keyboard, and the computer keyboard's letters stopped playing notes.
+#[test]
+fn the_computer_keyboard_still_plays_after_a_knob_in_the_editor_is_used() {
+    let mut h = editor();
+    h.get_by_label("Open editor").click();
+    h.run_steps(4);
+    h.get_by_label("Output gain").focus();
+    // A control locks the arrows once it has held the focus for a frame, as it always has by
+    // the time a person presses one.
+    h.run_steps(2);
+    h.key_press(egui::Key::ArrowUp);
+    h.run_steps(2);
+    assert!(crate::detail::device_canvas::owns_keyboard(&h.ctx), "the knob keeps the editor's keys");
+    h.state_mut().toggle_typing_keys();
+    h.step();
+    h.key_down(egui::Key::A);
+    h.run_steps(2);
+    assert_eq!(h.state().typing.held_count(), 1, "A plays a note while the knob is focused");
+    h.key_up(egui::Key::A);
+    h.run_steps(2);
+    assert_eq!(h.state().typing.held_count(), 0);
+}

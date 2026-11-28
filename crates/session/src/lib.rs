@@ -54,6 +54,9 @@ pub mod extensions;
 mod files;
 mod follow;
 mod history;
+mod instrument_analysis;
+mod instrument_folder;
+pub(crate) mod instrument_profile;
 mod lane_layout;
 mod launch;
 mod library;
@@ -109,6 +112,8 @@ pub use devices::reads_a_key;
 pub use export::{ExportData, ExportGather, export_from};
 pub use files::stage_and_rename;
 pub use files::{MAX_FILES, file_tempo};
+pub use instrument_analysis::{AnalysisKind, AnalysisPhase, AnalysisView, ContinuationSummary};
+pub use instrument_folder::{FileOutcome as FolderFileOutcome, FolderFile, FolderReport};
 pub use library::{
     Category, Found, PreparedSearch, file_info, library_commands, prepare_search, search_items, user_presets,
 };
@@ -132,6 +137,10 @@ pub use recording::{COUNT_IN_BARS, LiveTake, RECORDED_FOLDER};
 pub use relink::COLLECTED;
 pub use relink::{MAX_RELINK, search as find_candidates};
 pub use soundmap::{scope_files, sound_map_commands};
+pub use suhina_instrument_analysis::Outcome as SampleAnalysisOutcome;
+pub use suhina_instrument_analysis::modal::Engine as ModalFitEngine;
+pub use suhina_instrument_analysis::modal::Outcome as ModalFitOutcome;
+pub use suhina_instrument_analysis::{KeyCandidate as SampleKey, KeyMode as SampleKeyMode};
 pub use suhina_plugins::Placement;
 pub use suhina_project_file::{EXTENSION as PROJECT_EXTENSION, is_project_file};
 pub use zipped::{ZippedProject, default_extract_folder, extract_zipped_project, zipped_project};
@@ -258,6 +267,7 @@ pub struct ParamEdit {
 }
 
 pub struct Session {
+    analysis: instrument_analysis::Jobs,
     project: Project,
     source: Option<PathBuf>,
     history: history::History,
@@ -330,6 +340,7 @@ impl Session {
         // color it shows, once. Not an edit: nothing to undo.
         project.fill_track_colors();
         Self {
+            analysis: instrument_analysis::Jobs::default(),
             project,
             source: None,
             history: history::History::default(),

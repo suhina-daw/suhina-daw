@@ -16,6 +16,8 @@ use suhina_dsp::{
 };
 
 use crate::nodes::stretch as warp;
+use crate::sample_continuation::{ContinuationControls, ContinuationPlayer, ModelHold, fade_in, widen};
+use suhina_dsp::continuation::Continuation;
 
 #[cfg(test)]
 #[path = "sample_envelope_tests.rs"]
@@ -40,7 +42,7 @@ pub const PARAMS: &[ParamInfo] = &[
     continuous("pitch", "Semitones", -48., 48., 0., Unit::None),
     continuous("cents", "Cents", -100., 100., 0., Unit::None),
     ParamInfo::integer("poly", "Poly", (1, 32), 8, Unit::None),
-    ParamInfo::choice("playback", "Playback", &["Gate", "One shot", "Loop", "Slices"], 0),
+    ParamInfo::choice("playback", "Playback", &["Gate", "One shot", "Loop", "Slices", "Sustain"], 0),
     ParamInfo::toggle("ping_pong", "Ping pong", false),
     ParamInfo::toggle("reverse", "Reverse", false),
     continuous("attack", "Attack", 0., 10., 0.005, Unit::Seconds),
@@ -161,12 +163,212 @@ struct Grain {
     step: f64,
     pan: f64,
 }
+/// Sustain playback's hold: the loop region played on in long segments of the recording, each
+/// joined to the next with a short crossfade (a seam) where the next one's waveform continues it
+/// (`docs/spec/sampler.md` › Sustain).
+#[derive(Clone, Copy, Default)]
+struct Hold {
+    active: bool,
+    /// The segment playing and, during a seam, the one fading in: read position (source frames)
+    /// and the gain that keeps the seam's level.
+    current: (f64, f64),
+    incoming: (f64, f64),
+    /// Where the current segment's seam starts (source frames).
+    seam_at: f64,
+    /// During a seam: output samples into it, its length, and the two segments' correlation
+    /// there (0..1), which sets the crossfade's power law.
+    in_seam: bool,
+    seam: usize,
+    seam_length: usize,
+    correlation: f64,
+    /// The level the hold keeps: the mean square where it took over, the output's running mean
+    /// square, and the follower's coefficient per sample.
+    target: f64,
+    running: f64,
+    follow: f64,
+}
+
+/// Random points a seam's next segment is chosen from.
+const HOLD_CANDIDATES: usize = 8;
+/// Points a candidate is compared over: an eighth of a period apart, spanning at least
+/// `HOLD_REFERENCE` seconds, so a candidate matches the vibrato's phase and the pitch too.
+const HOLD_POINTS: usize = 128;
+const HOLD_REFERENCE: f64 = 0.12;
+/// A seam's crossfade (seconds); at least four periods, at most a sixth of the loop region.
+const HOLD_SEAM: f64 = 0.05;
+/// The shortest segment, as a share of the loop region.
+const HOLD_SHORTEST: f64 = 1. / 3.;
+/// The level follower's time (seconds): slow, so a tremolo or a bow's swell stays and only a
+/// drift (a crescendo looped over and over) is taken out.
+const HOLD_FOLLOW: f64 = 0.5;
+/// The gains a seam or the follower may apply: at most 12 dB either way.
+const HOLD_GAIN: (f64, f64) = (0.25, 4.0);
+/// The sound's period in source frames, for lining up a seam's segments.
+fn hold_period(source_rate: f64, root: f64) -> f64 {
+    (source_rate / (440. * 2f64.powf((root - 69.) / 12.))).clamp(16., 2048.)
+}
+
+/// What a hold reads: the source, the loop region (`low..end`), the last start a segment may
+/// take (`high`), the sound's period, the read step, and a seam's and the shortest segment's
+/// length in output samples.
+struct HoldSource<'a> {
+    source: &'a [f32],
+    channels: usize,
+    low: f64,
+    high: f64,
+    end: f64,
+    period: f64,
+    step: f64,
+    seam: usize,
+    shortest: usize,
+}
+
+impl HoldSource<'_> {
+    /// RMS of `length` output samples from `position` (every fourth sample).
+    fn level(&self, position: f64, length: usize) -> f64 {
+        let points = (length / 4).max(1);
+        let sum: f64 = (0..points).map(|n| self.mono(position + (4 * n) as f64 * self.step).powi(2)).sum();
+        (sum / points as f64).sqrt().max(1e-9)
+    }
+
+    /// Mono level at `position`, for lining up segments.
+    fn mono(&self, position: f64) -> f64 {
+        let [left, right] = read(self.source, self.channels, position);
+        left + right
+    }
+
+    /// Where a segment starting at `start` begins its seam: a random point from the shortest
+    /// segment on to the last that still ends its seam inside the loop region.
+    fn seam_after(&self, start: f64, seed: &mut u32) -> f64 {
+        let latest = self.end - self.seam as f64 * self.step - self.period - 2.;
+        let earliest = (start + self.shortest as f64 * self.step).min(latest);
+        earliest + (random(seed) + 1.) * 0.5 * (latest - earliest).max(0.)
+    }
+
+    /// Where the next segment starts and its correlation with the one now at `follow`: of
+    /// `HOLD_CANDIDATES` random points of the region, each moved within one period to where its
+    /// waveform best continues the one at `follow`, the one scoring highest. The score is the
+    /// normalized correlation over `HOLD_POINTS` points, less a quarter of the absolute log of
+    /// their energy ratio. The shift is searched every 1/32 period, then sample by sample around
+    /// the best.
+    fn start(&self, follow: f64, seed: &mut u32, source_rate: f64) -> (f64, f64) {
+        let spacing = (self.period / 8.).max(HOLD_REFERENCE * source_rate / HOLD_POINTS as f64).max(1.) * self.step;
+        let reference: [f64; HOLD_POINTS] = std::array::from_fn(|n| self.mono(follow + n as f64 * spacing));
+        let reference_energy = reference.iter().map(|r| r * r).sum::<f64>() + 1e-12;
+        let score = |start: f64| {
+            let (mut dot, mut energy) = (0., 1e-12);
+            for (n, r) in reference.iter().enumerate() {
+                let x = self.mono(start + n as f64 * spacing);
+                dot += x * r;
+                energy += x * x;
+            }
+            let correlation = dot / (energy * reference_energy).sqrt();
+            (correlation - 0.25 * (energy / reference_energy).ln().abs(), correlation)
+        };
+        let coarse = (self.period / 32.).max(1.) as usize;
+        let mut best = (f64::NEG_INFINITY, self.low, 0.);
+        for _ in 0..HOLD_CANDIDATES {
+            let candidate = self.low + (random(seed) + 1.) * 0.5 * (self.high - self.low);
+            let mut local = (f64::NEG_INFINITY, candidate, 0.);
+            for shift in (0..(self.period as usize).clamp(1, 2048)).step_by(coarse) {
+                let (value, correlation) = score(candidate + shift as f64);
+                if value > local.0 {
+                    local = (value, candidate + shift as f64, correlation);
+                }
+            }
+            let around = local.1;
+            for offset in 1..coarse {
+                for start in [around - offset as f64, around + offset as f64] {
+                    let (value, correlation) = score(start);
+                    if value > local.0 {
+                        local = (value, start, correlation);
+                    }
+                }
+            }
+            if local.0 > best.0 {
+                best = local;
+            }
+        }
+        (best.1.clamp(self.low, self.high + self.period), best.2.clamp(0., 1.))
+    }
+}
+
+impl Hold {
+    /// Takes over from direct playback at `position`: the recording plays on from there as the
+    /// first segment, at the level it has there.
+    fn enter(&mut self, from: &HoldSource<'_>, position: f64, rate: f64, seed: &mut u32) {
+        let target = from.level(position, from.shortest).powi(2);
+        *self = Self {
+            active: true,
+            current: (position, 1.),
+            incoming: (position, 1.),
+            seam_at: from.seam_after(position, seed),
+            in_seam: false,
+            seam: 0,
+            seam_length: from.seam.max(4),
+            correlation: 1.,
+            target,
+            running: target,
+            follow: 1. / (HOLD_FOLLOW * rate).max(1.),
+        };
+    }
+
+    /// The next output frame. The current segment plays until its seam, where the next one fades
+    /// in over a raised cosine whose sum is kept at unit power for the two segments' correlation;
+    /// a slow follower keeps the level the hold took over at.
+    fn next(&mut self, from: &HoldSource<'_>, seed: &mut u32, source_rate: f64) -> [f64; 2] {
+        let mut out = [0.; 2];
+        let (fade_out, fade_in) = if self.in_seam {
+            let angle = self.seam as f64 / self.seam_length as f64 * std::f64::consts::FRAC_PI_2;
+            let (fade_out, fade_in) = (angle.cos().powi(2), angle.sin().powi(2));
+            let power = fade_out * fade_out + fade_in * fade_in + 2. * self.correlation * fade_out * fade_in;
+            let norm = 1. / power.max(1e-6).sqrt();
+            (fade_out * norm, fade_in * norm)
+        } else {
+            (1., 0.)
+        };
+        let data = read(from.source, from.channels, self.current.0);
+        out[0] += data[0] * self.current.1 * fade_out;
+        out[1] += data[1] * self.current.1 * fade_out;
+        self.current.0 += from.step;
+        if self.in_seam {
+            let data = read(from.source, from.channels, self.incoming.0);
+            out[0] += data[0] * self.incoming.1 * fade_in;
+            out[1] += data[1] * self.incoming.1 * fade_in;
+            self.incoming.0 += from.step;
+            self.seam += 1;
+            if self.seam >= self.seam_length {
+                self.current = self.incoming;
+                self.in_seam = false;
+                self.seam_at = from.seam_after(self.current.0, seed);
+            }
+        } else if self.current.0 >= self.seam_at {
+            let (start, correlation) = from.start(self.current.0, seed, source_rate);
+            let gain = (self.current.1 * from.level(self.current.0, self.seam_length)
+                / from.level(start, self.seam_length))
+            .clamp(HOLD_GAIN.0, HOLD_GAIN.1);
+            self.incoming = (start, gain);
+            self.correlation = correlation;
+            self.in_seam = true;
+            self.seam = 0;
+        }
+        let mono = out[0] + out[1];
+        self.running += (mono * mono - self.running) * self.follow;
+        let gain = (self.target / self.running.max(1e-18)).sqrt().clamp(HOLD_GAIN.0, HOLD_GAIN.1);
+        [out[0] * gain, out[1] * gain]
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Voice {
     instance: Option<NoteInstanceId>,
     retiring_instance: Option<NoteInstanceId>,
     expression: NoteExpressionState,
     active: bool,
+    /// Sustain playback: the segments holding the note once it reaches the loop region.
+    hold: Hold,
+    /// Continue playback: the model taking over from the recording.
+    model: ModelHold,
     deferred_release: bool,
     age: f64,
     key: u8,
@@ -195,6 +397,8 @@ impl Default for Voice {
             retiring_instance: None,
             expression: NoteExpressionState::NEUTRAL,
             active: false,
+            hold: Hold::default(),
+            model: ModelHold::default(),
             deferred_release: false,
             age: 0.,
             key: 60,
@@ -251,6 +455,9 @@ pub struct Sampler {
     block_grain_gain: f64,
     block_gain: f64,
     pan: f64,
+    /// Continue playback (the Instrument's): the continuation and its controls.
+    continuation: Option<Box<ContinuationPlayer>>,
+    continuation_controls: ContinuationControls,
 }
 impl Default for Sampler {
     fn default() -> Self {
@@ -261,7 +468,8 @@ impl Sampler {
     /// Starts an ordinary note and returns the voice it plays on, or `None` when the key,
     /// velocity or slice map rejects it.
     fn start_note(&mut self, key: u8, velocity: f32) -> Option<usize> {
-        let p = self.values;
+        // Of a crossed pair of markers the one further right is the end (`docs/spec/sampler.md`).
+        let p = ordered(self.values);
         if f64::from(key) < p[31]
             || f64::from(key) > p[32]
             || f64::from(velocity) < p[33]
@@ -306,6 +514,9 @@ impl Sampler {
         let slot = self.voices.iter().take(count).position(|v| !v.active).unwrap_or(self.next_voice % count);
         self.next_voice = (slot + 1) % count;
         let frames = self.frames() as f64;
+        // Continue playback: forward Sustain with a continuation set.
+        let controls = self.continuation_controls;
+        let continuing = controls.enabled && p[0] == 0. && p[8] == 4. && p[10] == 0.;
         if let Some(v) = self.voices.get_mut(slot) {
             // A voice keeps one retiring tail. Taking it again before that tail retired ends
             // the older tail now, so its completion is never lost.
@@ -322,6 +533,9 @@ impl Sampler {
                 v.retiring_instance = retiring_instance;
                 v.expression = NoteExpressionState::NEUTRAL;
                 return Some(slot);
+            }
+            if let (Some(generator), Some(player)) = (v.model.generator, self.continuation.as_deref_mut()) {
+                player.free(generator);
             }
             let fade_from = v.last;
             if let Some(warp) = self.warp.get_mut(slot) {
@@ -344,6 +558,18 @@ impl Sampler {
                 ..Voice::default()
             };
             v.envelope.start();
+            if continuing && let Some(player) = self.continuation.as_deref_mut() {
+                let ratio = target_step * self.rate / self.source_rate;
+                let seed = (u64::from(self.seed) << 8) | u64::from(key);
+                self.seed = self.seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                v.model = ModelHold {
+                    on: true,
+                    generator: player.claim(slot, ratio, &controls, seed),
+                    join: player.join_frame(self.source_rate),
+                    step: target_step,
+                    ..ModelHold::default()
+                };
+            }
         }
         Some(slot)
     }
@@ -390,6 +616,8 @@ impl Sampler {
             block_grain_gain: 1.,
             block_gain: 1.,
             pan: 0.,
+            continuation: None,
+            continuation_controls: ContinuationControls::default(),
         }
     }
     fn frames(&self) -> usize {
@@ -400,6 +628,59 @@ impl Sampler {
     fn build_warp(&mut self) {
         self.warp = vec![warp::Voice::new(self.rate); VOICES];
     }
+
+    /// Sets the held-note continuation and the one it morphs toward (Continue playback), or
+    /// none; builds its generators for the current rate. Off the audio thread: allocates.
+    pub fn set_continuation(&mut self, own: Option<Arc<Continuation>>, other: Option<Arc<Continuation>>) {
+        for voice in &mut self.voices {
+            voice.model.generator = None;
+        }
+        self.continuation = own.map(|own| Box::new(ContinuationPlayer::new(own, other, self.rate)));
+    }
+
+    /// Whether a continuation is set.
+    pub fn has_continuation(&self) -> bool {
+        self.continuation.is_some()
+    }
+
+    /// Continue playback on or off, and the controls a continuing note follows. Real-time safe;
+    /// the morph applies to the next note.
+    pub fn set_continuation_controls(&mut self, controls: ContinuationControls) {
+        self.continuation_controls = controls;
+    }
+
+    /// Frees generators whose voice no longer plays them, and passes the vibrato controls on.
+    fn tend_continuation(&mut self) {
+        let Some(player) = self.continuation.as_deref_mut() else { return };
+        let controls = self.continuation_controls;
+        for slot in 0..crate::sample_continuation::POOL {
+            let owner = player.owners.get(slot).copied().flatten();
+            let playing = owner
+                .and_then(|voice| self.voices.get(voice))
+                .is_some_and(|voice| voice.active && voice.model.generator == Some(slot));
+            if owner.is_some() && !playing {
+                player.free(slot);
+            } else if playing && let Some(generator) = player.generators.get_mut(slot) {
+                generator.set_vibrato(controls.depth, controls.rate);
+            }
+        }
+    }
+
+    /// Plans the release splice of voice `index`, when it plays its model and the recording has
+    /// a release of its own.
+    fn plan_splice(&mut self, index: usize) {
+        let Some(player) = self.continuation.as_deref_mut() else { return };
+        let Some(v) = self.voices.get_mut(index) else { return };
+        let Some(slot) = v.model.generator.filter(|_| v.model.joined && v.model.splice.is_none()) else { return };
+        let source = self.source.as_ref().as_ref();
+        if let Some(splice) = player.splice(slot, source, self.channels, self.source_rate, v.step) {
+            v.model.splice = Some(splice);
+        }
+    }
+}
+/// The frame at `position` (source frames) of an interleaved source, linearly interpolated.
+pub(crate) fn read_frame(source: &[f32], channels: usize, position: f64) -> [f64; 2] {
+    read(source, channels, position)
 }
 fn read(source: &[f32], channels: usize, position: f64) -> [f64; 2] {
     let frames = source.len() / channels.max(1);
@@ -417,6 +698,71 @@ fn read(source: &[f32], channels: usize, position: f64) -> [f64; 2] {
         if value.is_finite() { value } else { 0. }
     })
 }
+/// One sample of a continuing voice once its model has taken over: the model, crossfaded in
+/// from the recording over the join and out into the recording's release at a splice. None
+/// before the join, after a splice and without a generator: the recording plays as before.
+/// Before the join, generates the model ahead.
+fn continue_voice(
+    v: &mut Voice,
+    player: Option<&mut ContinuationPlayer>,
+    source: &[f32],
+    channels: usize,
+    width: f64,
+) -> Option<[f64; 2]> {
+    let slot = v.model.generator?;
+    let player = player?;
+    let crossfade = player.crossfade();
+    let generator = player.generators.get_mut(slot)?;
+    generator.set_pitch_ratio(v.step / v.model.step.max(1e-12));
+    if !v.model.joined && v.position >= v.model.join {
+        v.model.joined = true;
+        v.model.fade = 0;
+    }
+    if !v.model.joined {
+        // Two control frames per control frame's time: the lookahead fills before the join.
+        if v.model.tick.is_multiple_of((generator.control_samples() / 2).max(1)) {
+            generator.produce(1);
+        }
+        v.model.tick = v.model.tick.wrapping_add(1);
+        return None;
+    }
+    let [mid, side] = generator.next_sample();
+    let (mid, side) = (f64::from(mid), f64::from(side) * width);
+    let mut out = [mid + side, mid - side];
+    if v.model.fade < crossfade {
+        let recording = widen(read(source, channels, v.position), width);
+        v.position += v.step;
+        let w = fade_in(v.model.fade, crossfade);
+        out = [recording[0] * (1.0 - w) + out[0] * w, recording[1] * (1.0 - w) + out[1] * w];
+        v.model.fade += 1;
+    }
+    if let Some((countdown, gain, start)) = v.model.splice {
+        if countdown == 0 {
+            v.model.splice = None;
+            v.model.splicing = Some(0);
+            v.model.gain = gain;
+            v.position = start;
+        } else {
+            v.model.splice = Some((countdown - 1, gain, start));
+        }
+    }
+    if let Some(k) = v.model.splicing {
+        let recording = widen(read(source, channels, v.position), width).map(|s| s * v.model.gain);
+        v.position += v.step;
+        let w = fade_in(k, crossfade);
+        out = [out[0] * (1.0 - w) + recording[0] * w, out[1] * (1.0 - w) + recording[1] * w];
+        if k + 1 >= crossfade {
+            // The recording carries on from here; the generator is free for another note.
+            v.model.splicing = None;
+            v.model.generator = None;
+            v.model.joined = false;
+            player.free(slot);
+        } else {
+            v.model.splicing = Some(k + 1);
+        }
+    }
+    Some(out)
+}
 fn source_fade(position: f64, start: f64, end: f64, fade_in: f64, fade_out: f64, rate: f64) -> f64 {
     let fade = |distance: f64, ms: f64| if ms > 0. { (distance / (ms * rate / 1000.)).clamp(0., 1.) } else { 1. };
     fade(position - start, fade_in) * fade(end - 1. - position, fade_out)
@@ -424,6 +770,21 @@ fn source_fade(position: f64, start: f64, end: f64, fade_in: f64, fade_out: f64,
 fn random(seed: &mut u32) -> f64 {
     crate::nodes::random::bipolar(seed)
 }
+/// The values with each crossed pair in order: of Start and End, and of Loop start and Loop end,
+/// the marker further right is always the end (`docs/spec/sampler.md`). Playback reads these, the
+/// stored values stay as they were set.
+fn ordered(mut p: [f64; PARAMS.len()]) -> [f64; PARAMS.len()] {
+    for (a, b) in [(1, 2), (3, 4)] {
+        if let (Some(&low), Some(&high)) = (p.get(a), p.get(b))
+            && low > high
+            && let Ok([first, second]) = p.get_disjoint_mut([a, b])
+        {
+            std::mem::swap(first, second);
+        }
+    }
+    p
+}
+
 impl SampleSource for Sampler {
     fn sample_position(&self) -> Option<f32> {
         self.sample_positions().into_iter().flatten().next()
@@ -432,12 +793,13 @@ impl SampleSource for Sampler {
         let frames = self.frames();
         std::array::from_fn(|i| {
             let v = self.voices.get(i).filter(|v| v.active && frames > 0)?;
-            let position = if self.values[0] != 1. {
+            let p = ordered(self.values);
+            let position = if p[0] != 1. {
                 v.position
             } else {
-                let start = self.values[1] * frames as f64;
-                let span = (self.values[2] - self.values[1]) * frames as f64;
-                start + (self.values[20] * span + v.scan).rem_euclid(span.max(1.))
+                let start = p[1] * frames as f64;
+                let span = (p[2] - p[1]) * frames as f64;
+                start + (p[20] * span + v.scan).rem_euclid(span.max(1.))
             };
             Some((position / frames as f64) as f32)
         })
@@ -497,6 +859,14 @@ impl Device for Sampler {
         if moved && self.frames() > 0 {
             self.build_warp();
         }
+        if let Some(player) = self.continuation.take() {
+            // Generators are built for one rate.
+            self.continuation = Some(if player.rate == rate {
+                player
+            } else {
+                Box::new(ContinuationPlayer::new(player.own.clone(), player.other.clone(), rate))
+            });
+        }
         self.reset();
         Ok(())
     }
@@ -505,6 +875,11 @@ impl Device for Sampler {
         self.voices.fill(Voice::default());
         for voice in &mut self.warp {
             voice.restart();
+        }
+        if let Some(player) = self.continuation.as_deref_mut() {
+            for slot in 0..crate::sample_continuation::POOL {
+                player.free(slot);
+            }
         }
         self.next_voice = 0;
         self.seed = 1;
@@ -576,7 +951,8 @@ impl Device for Sampler {
             NoteEvent::Off { key, .. } | NoteEvent::On { key, velocity: 0. } => {
                 let slicing = self.values[0] == 2. || self.values[0] == 0. && self.values[8] == 3.;
                 if slicing && self.values[84] > 0. || !slicing && self.values[8] != 1. && self.values[8] != 3. {
-                    for v in &mut self.voices {
+                    for index in 0..self.voices.len() {
+                        let Some(v) = self.voices.get_mut(index) else { continue };
                         if v.key == key && v.active && v.instance.is_none() {
                             if self.pedal {
                                 // A released tail keeps advancing; pedal-up must not recapture it.
@@ -585,6 +961,7 @@ impl Device for Sampler {
                                 }
                             } else {
                                 v.release();
+                                self.plan_splice(index);
                             }
                         }
                     }
@@ -592,17 +969,22 @@ impl Device for Sampler {
             }
             NoteEvent::AllNotesOff => {
                 self.pedal = false;
-                for v in &mut self.voices {
-                    v.release();
+                for index in 0..self.voices.len() {
+                    if let Some(v) = self.voices.get_mut(index) {
+                        v.release();
+                        self.plan_splice(index);
+                    }
                 }
             }
             NoteEvent::Controller { number: 64, value } if value.is_finite() => {
                 let was_down = self.pedal;
                 self.pedal = value >= 0.5;
                 if was_down && !self.pedal {
-                    for voice in &mut self.voices {
+                    for index in 0..self.voices.len() {
+                        let Some(voice) = self.voices.get_mut(index) else { continue };
                         if voice.deferred_release {
                             voice.release();
+                            self.plan_splice(index);
                         }
                     }
                 }
@@ -660,11 +1042,12 @@ impl NoteInstanceDevice for Sampler {
             self.lifetimes.finish(id);
             return Ok(());
         }
-        let voice = self
+        let index = self
             .voices
-            .iter_mut()
-            .find(|v| v.instance == Some(id) && v.active)
+            .iter()
+            .position(|v| v.instance == Some(id) && v.active)
             .ok_or(NoteInstanceDispatchError::UnknownInstance)?;
+        let voice = self.voices.get_mut(index).ok_or(NoteInstanceDispatchError::UnknownInstance)?;
         match event {
             NoteInstanceEvent::Expression { kind, value } => {
                 voice.expression.set(kind, value);
@@ -673,6 +1056,7 @@ impl NoteInstanceDevice for Sampler {
                 let slicing = self.values[0] == 2. || self.values[0] == 0. && self.values[8] == 3.;
                 if slicing && self.values[84] > 0. || !slicing && self.values[8] != 1. && self.values[8] != 3. {
                     voice.release();
+                    self.plan_splice(index);
                 }
             }
             NoteInstanceEvent::Choke { .. } => {
@@ -932,16 +1316,21 @@ impl Sampler {
         self.block_grain_limit = grain_limit;
         self.block_grain_gain = target_grain_gain;
         self.block_gain = target_gain;
+        self.tend_continuation();
     }
 
     pub(crate) fn process_prepared(&mut self, buffer: &mut [f32]) {
-        let p = self.values;
+        let p = ordered(self.values);
         let total = self.frames() as f64;
         let start = p[1] * total;
         let end = p[2] * total;
         let lo = (p[3] * total).max(start);
         let hi = (p[4] * total).min(end);
         let looping = p[0] != 2. && p[8] == 2. && hi > lo + 1.;
+        // Sustain: the note plays from its start, then holds in segments of the loop region.
+        let sustaining = p[0] == 0. && p[8] == 4. && p[10] == 0.;
+        let period = hold_period(self.source_rate, p[30]);
+        let width = self.continuation_controls.width;
         let grain_limit = self.block_grain_limit;
         let target_grain_gain = self.block_grain_gain;
         let target_gain = self.block_gain;
@@ -1005,7 +1394,42 @@ impl Sampler {
                     / self.rate;
                 v.step += (target_step - v.step) / (p[29] * self.rate).max(1.);
                 let mut signal = [0.; 2];
-                if p[0] != 1. {
+                // The hold's segments: a seam of 50 ms (at least four periods, at most a sixth of
+                // the loop region) and segments at least a third of the region long.
+                let region = (hi - lo) / v.step.max(1e-6);
+                let seam = (HOLD_SEAM * self.rate).max(4. * period / v.step.max(1e-6)).min(region / 6.) as usize;
+                let shortest = (region * HOLD_SHORTEST) as usize;
+                // The last start a segment may take and still play its shortest and its seam.
+                let hold_high = hi - (shortest + seam) as f64 * v.step - period - 2.;
+                let from = HoldSource {
+                    source: self.source.as_ref().as_ref(),
+                    channels: self.channels,
+                    low: lo,
+                    high: hold_high.max(lo),
+                    end: hi,
+                    period,
+                    step: v.step,
+                    seam,
+                    shortest,
+                };
+                let continued = continue_voice(
+                    v,
+                    self.continuation.as_deref_mut(),
+                    self.source.as_ref().as_ref(),
+                    self.channels,
+                    width,
+                );
+                if sustaining && !v.hold.active && v.model.generator.is_none() && hold_high > lo && v.position >= lo {
+                    v.hold.enter(&from, v.position, self.rate, &mut self.seed);
+                }
+                if let Some(model) = continued {
+                    signal = model;
+                } else if v.hold.active {
+                    signal = v.hold.next(&from, &mut self.seed, self.source_rate);
+                    if v.model.on {
+                        signal = widen(signal, width);
+                    }
+                } else if p[0] != 1. {
                     if v.position < start || v.position >= end {
                         v.active = false;
                         continue;
@@ -1050,6 +1474,11 @@ impl Sampler {
                         if looping && v.position >= lo && v.position < hi { (lo, hi) } else { (start, end) };
                     let fade = source_fade(v.position, fade_start, fade_end, p[57], p[58], self.source_rate);
                     signal.iter_mut().for_each(|sample| *sample *= fade);
+                    if v.model.on {
+                        // A continuing note's recording, widened as its model is, and after a
+                        // release splice at the splice's gain.
+                        signal = widen(signal, width).map(|sample| sample * v.model.gain);
+                    }
                     v.position +=
                         if warped { speed * self.source_rate / self.rate * v.direction } else { v.step * v.direction };
                     let boundary = if p[9] > 0. { hi - 1. } else { hi };

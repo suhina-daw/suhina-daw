@@ -150,7 +150,7 @@ from deterministic correctness gates.
 ## Not yet
 
 The comprehensive instrument itself, shared voice/modulation engines, additional envelope families,
-new SDK synthesis nodes, sample-to-instrument analysis, MPE event/persistence/editor changes, acoustic
+new SDK synthesis nodes, model-fitting stages beyond the [local root analysis](instrument-analysis.md), MPE event/persistence/editor changes, acoustic
 model families, factory data, portable instrument packages, expanded UI and export adapters remain
 planned. This first DSP boundary does not mark those milestones complete. In particular, a
 block-stepped FM envelope is not substituted for the SDK's per-sample ADSR: their semantics differ.

@@ -25,6 +25,7 @@
 
 pub mod analyser;
 pub mod biquad;
+pub mod continuation;
 pub mod convolver;
 pub mod crossover;
 pub mod dc;
@@ -41,6 +42,7 @@ pub mod modal;
 pub mod multimode;
 pub mod oversample;
 pub mod pan;
+pub mod pitch;
 pub mod resampler;
 pub mod shape;
 pub mod smooth;

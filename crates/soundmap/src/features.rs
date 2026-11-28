@@ -444,7 +444,10 @@ fn envelope(signal: &[f32]) -> [f32; 4] {
 /// The median fundamental of the voiced frames (as a MIDI note number, 0 when none is voiced)
 /// and the share of loud frames that are voiced, by the YIN method.
 fn pitch(signal: &[f32]) -> (f32, f32) {
-    let mut yin = Yin::new();
+    let Some(mut yin) = suhina_dsp::pitch::Yin::new(RATE as f32, FRAME, PITCH_MIN_HZ, PITCH_MAX_HZ, YIN_THRESHOLD)
+    else {
+        return (0.0, 0.0);
+    };
     let loudest = signal.chunks(PITCH_HOP).map(|b| b.iter().map(|s| s * s).sum::<f32>()).fold(0.0f32, f32::max);
     let floor = loudest * 10f32.powf(-ACTIVE_RANGE_DB / 10.0);
     let mut notes = Vec::new();
@@ -458,8 +461,8 @@ fn pitch(signal: &[f32]) -> (f32, f32) {
             continue;
         }
         frames += 1;
-        if let Some(note) = yin.note(frame) {
-            notes.push(note);
+        if let Some(pitch) = yin.estimate(frame) {
+            notes.push(pitch.midi_note());
         }
     }
     if notes.is_empty() || frames == 0 {
@@ -507,67 +510,6 @@ fn glide(spectra: &Spectra, active: &[usize]) -> f32 {
     match (notes.first(), notes.last()) {
         (Some(first), Some(last)) if notes.len() >= 2 => (first - last).clamp(-MAX_GLIDE, MAX_GLIDE),
         _ => 0.0,
-    }
-}
-
-/// A YIN pitch estimate of one frame, with its working buffers.
-struct Yin {
-    tau_min: usize,
-    tau_max: usize,
-    difference: Vec<f32>,
-    normalized: Vec<f32>,
-}
-
-impl Yin {
-    fn new() -> Self {
-        let tau_max = (RATE as f32 / PITCH_MIN_HZ) as usize;
-        Yin {
-            tau_min: (RATE as f32 / PITCH_MAX_HZ) as usize,
-            tau_max,
-            difference: vec![0.0; tau_max + 1],
-            normalized: vec![1.0; tau_max + 1],
-        }
-    }
-
-    /// The frame's fundamental as a MIDI note number, when it is voiced. `frame` is [`FRAME`]
-    /// samples long.
-    fn note(&mut self, frame: &[f32]) -> Option<f32> {
-        let (tau_min, tau_max) = (self.tau_min, self.tau_max);
-        let width = FRAME.saturating_sub(tau_max);
-        for (tau, slot) in self.difference.iter_mut().enumerate() {
-            *slot = frame.iter().take(width).zip(frame.iter().skip(tau)).map(|(a, b)| (a - b) * (a - b)).sum();
-        }
-        // Cumulative mean normalized difference.
-        let normalized = &mut self.normalized;
-        let mut running = 0.0;
-        for tau in 1..=tau_max {
-            let d = self.difference.get(tau).copied().unwrap_or(0.0);
-            running += d;
-            if let Some(slot) = normalized.get_mut(tau) {
-                *slot = if running > 0.0 { d * tau as f32 / running } else { 1.0 };
-            }
-        }
-        let value = |tau: usize| normalized.get(tau).copied().unwrap_or(1.0);
-        let mut tau = tau_min.max(2);
-        let mut found = None;
-        while tau < tau_max {
-            if value(tau) < YIN_THRESHOLD {
-                while tau + 1 < tau_max && value(tau + 1) < value(tau) {
-                    tau += 1;
-                }
-                found = Some(tau);
-                break;
-            }
-            tau += 1;
-        }
-        let tau = found?;
-        // Parabolic interpolation around the minimum.
-        let (a, b, c) = (value(tau - 1), value(tau), value(tau + 1));
-        let denominator = a - 2.0 * b + c;
-        let shift = if denominator.abs() > 1e-9 { 0.5 * (a - c) / denominator } else { 0.0 };
-        let period = tau as f32 + shift.clamp(-1.0, 1.0);
-        let hz = RATE as f32 / period;
-        Some(69.0 + 12.0 * (hz / 440.0).log2())
     }
 }
 

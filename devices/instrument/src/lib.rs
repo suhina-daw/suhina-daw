@@ -2,16 +2,31 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Public native Instrument runtime, shared by stock and export adapters. The struck-modal
-//! model is experimental revision 1. Sample playback uses the existing SDK runtime.
+//! model is experimental revision 1; accepted modal profiles use revision 2; fitted model sets
+//! (recordings fused in parameter space, with attacks) use revision 4. Sample playback uses the
+//! existing SDK runtime.
 
+use std::sync::Arc;
 use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, NoteEvent, ParamBank, ParamInfo, ProcessContext, Role,
     SampleSource, Scale, Unit, check_sample_rate,
 };
+use suhina_device_sdk::sample_continuation::ContinuationControls;
 use suhina_device_sdk::sample_instrument::{self, Sampler};
+use suhina_dsp::continuation::Continuation;
 use suhina_dsp::{
     Smoother,
-    modal::{ModalBank, Mode},
+    envelope::{LinearEnvelope, LinearEnvelopeSettings},
+    modal::{
+        ModalBank, Mode,
+        glide::{Glide, MAX_GLIDE_CENTS},
+        model::{
+            Controls, MAX_VOICE_SINES, MODEL_MAGIC, MODEL_REVISION as SET_MODEL_REVISION, ModelSet, Voice as SetVoice,
+        },
+        profile::{ModalProfile, PROFILE_MODEL_REVISION},
+        sustain::{CONTROL, Performer},
+        tail::TailPlayer,
+    },
 };
 
 pub mod panel;
@@ -44,7 +59,24 @@ pub mod param {
     pub const SUSTAIN: usize = 19;
     pub const VELOCITY_LOW: usize = 20;
     pub const VELOCITY_HIGH: usize = 21;
-    pub const COUNT: usize = 22;
+    /// Amplitude envelope decay, shared by the Sample layer and fitted models.
+    pub const ENVELOPE_DECAY: usize = 22;
+    pub const MORPH: usize = 23;
+    pub const VELOCITY_BRIGHTNESS: usize = 24;
+    pub const DAMPER_NOISE: usize = 25;
+    pub const PEDAL_RESONANCE: usize = 26;
+    pub const SOFT_PEDAL: usize = 27;
+    pub const MODEL_TUNE: usize = 28;
+    /// Legato notes glide from the held note's pitch, over Glide time.
+    pub const GLIDE: usize = 29;
+    pub const GLIDE_TIME: usize = 30;
+    /// Continue playback: the side's scale, the vibrato's depth (a factor) and rate (Hz, 0 for
+    /// the recorded), and the morph toward the second continuation.
+    pub const WIDTH: usize = 31;
+    pub const VIBRATO_DEPTH: usize = 32;
+    pub const VIBRATO_RATE: usize = 33;
+    pub const CONTINUATION_MORPH: usize = 34;
+    pub const COUNT: usize = 35;
 }
 
 const fn control(id: &'static str, name: &'static str, range: (f64, f64), default: f64, unit: Unit) -> ParamInfo {
@@ -62,18 +94,31 @@ pub static PARAMS: [ParamInfo; param::COUNT] = [
     control("release", "Release", (0.005, 10.0), 0.25, Unit::Seconds),
     control("blend", "Hybrid sample blend", (0.0, 1.0), 0.5, Unit::Percent),
     control("gain", "Gain", (-60.0, 12.0), -6.0, Unit::Decibels),
-    ParamInfo::integer("root", "Sample root key", (0, 127), 60, Unit::None),
-    ParamInfo::integer("key_low", "Lowest key", (0, 127), 0, Unit::None),
-    ParamInfo::integer("key_high", "Highest key", (0, 127), 127, Unit::None),
+    ParamInfo::integer("root", "Sample root key", (0, 127), 60, Unit::Key),
+    ParamInfo::integer("key_low", "Lowest key", (0, 127), 0, Unit::Key),
+    ParamInfo::integer("key_high", "Highest key", (0, 127), 127, Unit::Key),
     control("start", "Sample start", (0.0, 1.0), 0.0, Unit::Percent),
     control("end", "Sample end", (0.0, 1.0), 1.0, Unit::Percent),
     control("loop_start", "Loop start", (0.0, 1.0), 0.0, Unit::Percent),
     control("loop_end", "Loop end", (0.0, 1.0), 1.0, Unit::Percent),
-    ParamInfo::choice("playback", "Sample playback", &["Gate", "One shot", "Loop"], 0),
-    control("attack", "Sample attack", (0.0, 10.0), 0.005, Unit::Seconds),
-    control("sustain", "Sample sustain", (0.0, 1.0), 1.0, Unit::Percent),
+    ParamInfo::choice("playback", "Sample playback", &["Gate", "One shot", "Loop", "Sustain", "Continue"], 0),
+    control("attack", "Attack", (0.0, 10.0), 0.005, Unit::Seconds),
+    control("sustain", "Sustain", (0.0, 1.0), 1.0, Unit::Percent),
     control("velocity_low", "Lowest velocity", (0.0, 1.0), 0.0, Unit::Percent),
     control("velocity_high", "Highest velocity", (0.0, 1.0), 1.0, Unit::Percent),
+    control("decay", "Decay", (0.0, 10.0), 0.2, Unit::Seconds),
+    control("morph", "Source morph", (0.0, 1.0), 0.5, Unit::Percent),
+    control("velocity_brightness", "Velocity to brightness", (0.0, 1.0), 0.35, Unit::Percent),
+    control("damper_noise", "Damper noise", (0.0, 1.0), 0.2, Unit::Percent),
+    control("pedal_resonance", "Pedal resonance", (0.0, 1.0), 0.3, Unit::Percent),
+    ParamInfo::toggle("soft_pedal", "Soft pedal", false),
+    control("model_tune", "Model tune", (-24.0, 24.0), 0.0, Unit::Semitones),
+    ParamInfo::toggle("glide", "Legato glide", false),
+    control("glide_time", "Glide time", (0.01, 2.0), 0.15, Unit::Seconds),
+    control("width", "Width", (0.0, 2.0), 1.0, Unit::Percent),
+    control("vibrato_depth", "Vibrato depth", (0.0, 4.0), 1.0, Unit::None),
+    control("vibrato_rate", "Vibrato rate", (0.0, 10.0), 0.0, Unit::Hertz),
+    control("continuation_morph", "Hold morph", (0.0, 1.0), 0.0, Unit::Percent),
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experimental)", Role::Instrument, &PARAMS);
@@ -81,13 +126,36 @@ pub static INFO: DeviceInfo = DeviceInfo::new("instrument", "Instrument (experim
 #[derive(Clone, Copy)]
 struct Voice {
     bank: ModalBank<MAX_MODES>,
+    /// Revision 4: fused fitted sines with their phases.
+    fitted: ModalBank<MAX_VOICE_SINES>,
+    /// Revision 4: (recording, read position, step) of the attack still playing.
+    attack: Option<(usize, f64, f64)>,
+    attack_gain: f32,
+    /// Revision 4: the held layer (vibrato, per-partial onsets, noise) playing on `fitted`.
+    layer: Performer,
+    /// Revision 4: the recording's decaying noise tail, fitted channel and other channel.
+    tail: TailPlayer,
+    /// Revision 4: the recording's glide into the note, the samples since the note-on, and the
+    /// glide's current offset in semitones and as a frequency ratio (for the attack's reading).
+    glide: Glide,
+    glide_at: u32,
+    glide_semitones: f64,
+    glide_ratio: f64,
+    /// Revision 4: the amplitude envelope's attack, decay and sustain; its release is the damper.
+    envelope: LinearEnvelope,
+    fitted_voice: bool,
+    damped: bool,
+    damper: Option<Damper>,
     key: u8,
     held: bool,
     serial: u64,
     amplitude: f32,
     gate: Smoother,
-    last_output: f32,
-    stolen_tail: f32,
+    /// Revision 4: the channel the fitted sines and the attack play in (0 left, 1 right); the
+    /// other channel plays them with the recording's stereo weights.
+    reference: u8,
+    last_output: [f32; 2],
+    stolen_tail: [f32; 2],
     stolen_fade: Smoother,
 }
 
@@ -95,14 +163,112 @@ impl Default for Voice {
     fn default() -> Self {
         Self {
             bank: ModalBank::default(),
+            fitted: ModalBank::default(),
+            attack: None,
+            attack_gain: 1.0,
+            layer: Performer::default(),
+            tail: TailPlayer::default(),
+            glide: Glide::NONE,
+            glide_at: 0,
+            glide_semitones: 0.0,
+            glide_ratio: 1.0,
+            envelope: LinearEnvelope::default(),
+            fitted_voice: false,
+            damped: false,
+            damper: None,
             key: 0,
             held: false,
             serial: 0,
             amplitude: 0.0,
             gate: Smoother::new(0.0, 1),
-            last_output: 0.0,
-            stolen_tail: 0.0,
+            reference: 0,
+            last_output: [0.0; 2],
+            stolen_tail: [0.0; 2],
             stolen_fade: Smoother::new(0.0, 1),
+        }
+    }
+}
+
+/// The glide of a note played legato `offset` semitones from the held note, over `seconds`
+/// (Glide time): the recorded glide's shape, its times stretched to `seconds` and each point's
+/// cents scaled so it starts at `offset` (its cents over its start, clamped to 0..1, so an
+/// overshoot holds at the held note's pitch); without a recorded glide, or one that starts
+/// within a cent of its note, a straight line from `offset` to the note. None without an offset.
+fn legato_glide(recorded: &Glide, offset: Option<f64>, seconds: f64) -> Glide {
+    let Some(offset) = offset.filter(|o| o.is_finite() && o.abs() >= 0.01) else { return Glide::NONE };
+    let seconds = if seconds.is_finite() { seconds.clamp(0.01, 2.0) } else { 0.15 };
+    let target = (offset * 100.0).clamp(-f64::from(MAX_GLIDE_CENTS), f64::from(MAX_GLIDE_CENTS));
+    let start = recorded.cents_at(0.0);
+    if recorded.is_empty() || start.abs() < 1.0 || recorded.end() <= 0.0 {
+        return Glide::from_points(&[(0.0, target as f32), (seconds as f32, 0.0)]);
+    }
+    let stretch = seconds / recorded.end();
+    let mut glide = *recorded;
+    let count = usize::from(glide.count);
+    for (time, cents) in glide.times.iter_mut().zip(glide.cents.iter_mut()).take(count) {
+        *time = (f64::from(*time) * stretch) as f32;
+        *cents = ((f64::from(*cents) / start).clamp(0.0, 1.0) * target) as f32;
+    }
+    glide
+}
+
+/// The noise of a damper landing: 40 ms of low-passed noise fading out.
+#[derive(Clone, Copy)]
+struct Damper {
+    remaining: u32,
+    total: u32,
+    level: f32,
+    lowpass: f32,
+    seed: u32,
+}
+
+impl Voice {
+    /// Moves the fitted sines to `semitones` (bend and Model tune) plus the glide's offset,
+    /// through the held layer when it plays, keeping their phase.
+    fn tune_fitted(&mut self, sample_rate: f64, semitones: f64) {
+        let total = semitones + self.glide_semitones;
+        if self.layer.is_active() {
+            self.layer.bend(&mut self.fitted, total);
+        } else {
+            self.fitted.transpose(sample_rate, total);
+        }
+    }
+
+    /// Ends the glide: the note holds its pitch.
+    fn stop_glide(&mut self) {
+        self.glide = Glide::NONE;
+        self.glide_at = 0;
+        self.glide_semitones = 0.0;
+        self.glide_ratio = 1.0;
+    }
+
+    /// Whether any modal layer of this voice still sounds.
+    fn sounding(&self) -> bool {
+        self.bank.is_active()
+            || self.fitted.is_active()
+            || self.attack.is_some()
+            || self.damper.is_some()
+            || self.layer.sounding()
+            || self.tail.is_active()
+    }
+
+    /// A revision-4 damper lands once: every sine's T60 is capped at `release`, and its noise
+    /// starts at `noise * 0.05` of the voice's level now.
+    fn damp(&mut self, sample_rate: f64, release: f64, noise: f64) {
+        if self.damped {
+            return;
+        }
+        self.damped = true;
+        // A held recording's measured release, scaled by Release against its default, caps the
+        // sines instead; its noise layer fades with the same T60.
+        let cap = self.layer.release(release);
+        self.fitted.cap_decay(sample_rate, cap);
+        self.tail.cap_decay(sample_rate, cap);
+        let level = (f64::from(self.amplitude) * self.envelope.value() * noise * 0.05).abs() as f32;
+        let total = (0.04 * sample_rate) as u32;
+        if level > 0.0 && total > 0 {
+            self.damper =
+                Some(Damper { remaining: total, total, level, lowpass: 0.0, seed: 0x9e37_79b9 ^ (self.serial as u32) });
         }
     }
 }
@@ -114,13 +280,24 @@ pub struct Instrument {
     params: ParamBank<{ param::COUNT }>,
     sampler: Sampler,
     sample_silent: bool,
-    voices: [Voice; MAX_VOICES],
+    /// On the heap, allocated once at construction: sixteen voices are about 240 KB, which a
+    /// debug build copying the Instrument through its constructors would put on the stack
+    /// several times over (a plug-in scanner's 1 MB stack overflowed).
+    voices: Box<[Voice]>,
     serial: u64,
     pedal: bool,
     bend_semitones: f64,
     gain: Smoother,
     sample_mix: Smoother,
     modal_mix: Smoother,
+    profile: Option<ModalProfile>,
+    /// The soft pedal (controller 67) is down.
+    soft_pedal: bool,
+    /// Revision 4. Prepared off the audio thread; the callback only reads it.
+    set: Option<Arc<ModelSet>>,
+    /// Scratch for a revision-4 note-on: no allocation in the callback.
+    set_voice: SetVoice,
+    invalid_profile: bool,
 }
 
 impl Default for Instrument {
@@ -146,13 +323,18 @@ impl Instrument {
             params: ParamBank::new(&PARAMS),
             sampler,
             sample_silent: true,
-            voices: [Voice::default(); MAX_VOICES],
+            voices: vec![Voice::default(); MAX_VOICES].into_boxed_slice(),
             serial: 0,
             pedal: false,
             bend_semitones: 0.0,
             gain: Smoother::new(0.0, ramp),
             sample_mix: Smoother::new(0.0, ramp),
             modal_mix: Smoother::new(1.0, ramp),
+            profile: None,
+            soft_pedal: false,
+            set: None,
+            set_voice: SetVoice::default(),
+            invalid_profile: false,
         };
         core.set_sample_parameter("poly", MAX_VOICES as f64);
         for (index, info) in PARAMS.iter().enumerate() {
@@ -162,9 +344,38 @@ impl Instrument {
         core
     }
 
+    /// What a continuing note follows: Continue playback on, and its controls.
+    fn continuation_controls(&self) -> ContinuationControls {
+        ContinuationControls {
+            enabled: self.params.get(param::PLAYBACK) == 4.0,
+            width: self.params.get(param::WIDTH),
+            depth: self.params.get(param::VIBRATO_DEPTH),
+            rate: self.params.get(param::VIBRATO_RATE),
+            morph: self.params.get(param::CONTINUATION_MORPH),
+        }
+    }
+
     fn set_sample_parameter(&mut self, id: &str, value: f64) {
         if let Some(index) = sample_instrument::PARAMS.iter().position(|info| info.id == id) {
             self.sampler.set_param(index, value);
+        }
+    }
+
+    /// Semitones every modal voice is moved by: the pitch wheel's bend plus Model tune.
+    fn modal_shift(&self) -> f64 {
+        self.bend_semitones + self.params.get(param::MODEL_TUNE)
+    }
+
+    /// Moves the sounding modal voices to the current bend and Model tune, keeping their phase.
+    fn retune(&mut self) {
+        let shift = self.modal_shift();
+        for voice in &mut self.voices {
+            if voice.bank.is_active() {
+                voice.bank.transpose(self.sample_rate, shift);
+            }
+            if voice.fitted.is_active() {
+                voice.tune_fitted(self.sample_rate, shift);
+            }
         }
     }
 
@@ -182,17 +393,56 @@ impl Instrument {
     /// Whether the persisted model revision is supported. Unsupported modal bodies remain
     /// silent instead of silently changing their sound; sample playback remains available.
     pub fn model_supported(&self) -> bool {
-        self.params.get(param::REVISION) == f64::from(MODEL_REVISION)
+        if self.invalid_profile {
+            return false;
+        }
+        match self.params.get(param::REVISION) as u16 {
+            MODEL_REVISION => self.profile.is_none() && self.set.is_none(),
+            PROFILE_MODEL_REVISION => self.profile.is_some(),
+            SET_MODEL_REVISION => self.set.is_some(),
+            _ => false,
+        }
+    }
+
+    /// Adopt validated modes off the audio thread. Preparation and reset retain this profile.
+    pub fn set_modal_profile(&mut self, profile: ModalProfile) {
+        self.profile = Some(profile);
+        self.set = None;
+        self.invalid_profile = false;
+        let _ = self.params.set(param::REVISION, f64::from(PROFILE_MODEL_REVISION));
+        self.reset();
+    }
+
+    pub fn modal_profile(&self) -> Option<&ModalProfile> {
+        self.profile.as_ref()
+    }
+
+    /// Adopt a fitted model set off the audio thread (revision 4); any profile is cleared.
+    pub fn set_model_set(&mut self, set: ModelSet) {
+        self.set = Some(Arc::new(set));
+        self.profile = None;
+        self.invalid_profile = false;
+        let _ = self.params.set(param::REVISION, f64::from(SET_MODEL_REVISION));
+        self.reset();
+    }
+
+    pub fn model_set(&self) -> Option<&ModelSet> {
+        self.set.as_deref()
     }
 
     fn release(&mut self, key: Option<u8>) {
         let frames = Smoother::ramp_frames(self.params.get(param::RELEASE), self.sample_rate);
+        let (release, noise) = (self.params.get(param::RELEASE), self.params.get(param::DAMPER_NOISE));
         for voice in &mut self.voices {
             if key.is_none_or(|key| key == voice.key) {
                 voice.held = false;
                 if !self.pedal {
-                    voice.gate.set_ramp(frames);
-                    voice.gate.set_target(0.0);
+                    if voice.fitted_voice {
+                        voice.damp(self.sample_rate, release, noise);
+                    } else {
+                        voice.gate.set_ramp(frames);
+                        voice.gate.set_target(0.0);
+                    }
                 }
             }
         }
@@ -202,37 +452,149 @@ impl Instrument {
         if !self.model_supported() {
             return;
         }
+        // Revision 4: the set fuses its recordings for this key and velocity.
+        let fitted = if let Some(set) = self.set.as_deref() {
+            let controls = Controls {
+                decay: self.params.get(param::DECAY),
+                brightness: self.params.get(param::BRIGHTNESS),
+                structure: self.params.get(param::STRUCTURE),
+                strike: self.params.get(param::STRIKE),
+                sines: if self.params.get(param::QUALITY) < 0.5 { MAX_VOICE_SINES / 2 } else { MAX_VOICE_SINES },
+                morph: self.params.get(param::MORPH),
+                velocity_brightness: self.params.get(param::VELOCITY_BRIGHTNESS),
+                pedal_resonance: if self.pedal { self.params.get(param::PEDAL_RESONANCE) } else { 0.0 },
+                // Controller 67 or the switch: either holds the soft pedal down.
+                soft: self.soft_pedal || self.params.get(param::SOFT_PEDAL) >= 0.5,
+            };
+            set.voice(key, velocity, &controls, self.sample_rate, &mut self.set_voice);
+            true
+        } else {
+            false
+        };
         let mut modes = [Mode { frequency_hz: 0.0, decay_seconds: 0.0, amplitude: 0.0 }; MAX_MODES];
         let fundamental = 440.0 * 2.0_f64.powf((f64::from(key) - 69.0) / 12.0);
         let structure = self.params.get(param::STRUCTURE);
         let count = if self.params.get(param::QUALITY) < 0.5 { 8 } else { MAX_MODES };
-        for (index, mode) in modes.iter_mut().take(count).enumerate() {
-            let harmonic = (index + 1) as f64;
-            mode.frequency_hz =
-                fundamental * harmonic * ((1.0 + structure * harmonic * harmonic) / (1.0 + structure)).sqrt();
-            mode.decay_seconds = self.params.get(param::DECAY) / (1.0 + 0.12 * (harmonic - 1.0));
-            mode.amplitude = (std::f64::consts::PI * harmonic * self.params.get(param::STRIKE)).sin()
-                / harmonic.powf(2.0 - 1.5 * self.params.get(param::BRIGHTNESS));
+        if self.profile.is_none() {
+            for (index, mode) in modes.iter_mut().take(count).enumerate() {
+                let harmonic = (index + 1) as f64;
+                mode.frequency_hz =
+                    fundamental * harmonic * ((1.0 + structure * harmonic * harmonic) / (1.0 + structure)).sqrt();
+                mode.decay_seconds = self.params.get(param::DECAY) / (1.0 + 0.12 * (harmonic - 1.0));
+                mode.amplitude = (std::f64::consts::PI * harmonic * self.params.get(param::STRIKE)).sin()
+                    / harmonic.powf(2.0 - 1.5 * self.params.get(param::BRIGHTNESS));
+            }
         }
+        if let Some(profile) = self.profile.as_ref() {
+            modes.fill(Mode { frequency_hz: 0.0, decay_seconds: 0.0, amplitude: 0.0 });
+            let reference =
+                profile.reference_hz() * 2.0_f64.powf((f64::from(key) - f64::from(profile.reference_key())) / 12.0);
+            let mut magnitude_sum = 0.0;
+            for (index, (mode, fitted)) in modes.iter_mut().take(count).zip(profile.modes()).enumerate() {
+                let ratio = fitted.ratio;
+                let dispersion = |s: f64| ((1.0 + s * ratio * ratio) / (1.0 + s)).sqrt();
+                let excitation =
+                    |strike: f64| 0.25 + 0.75 * (std::f64::consts::PI * (index + 1) as f64 * strike).sin().abs();
+                mode.frequency_hz = reference * ratio * dispersion(structure) / dispersion(0.002);
+                mode.decay_seconds = fitted.decay_seconds * self.params.get(param::DECAY) / 2.0;
+                mode.amplitude = fitted.magnitude
+                    * ratio.powf(1.5 * (self.params.get(param::BRIGHTNESS) - 0.5))
+                    * excitation(self.params.get(param::STRIKE))
+                    / excitation(0.25);
+                magnitude_sum += mode.amplitude;
+            }
+            for mode in &mut modes {
+                mode.amplitude /= magnitude_sum.max(1.0);
+            }
+        }
+        let shift = self.modal_shift();
+        // Legato with Glide on: the newest key still held, a fitted note sounding, and where its
+        // pitch is now.
+        let legato_from = (self.params.get(param::GLIDE) >= 0.5)
+            .then(|| {
+                self.voices
+                    .iter()
+                    .filter(|v| v.held && v.fitted_voice && v.fitted.is_active() && v.key != key)
+                    .max_by_key(|v| v.serial)
+                    .map(|v| f64::from(v.key) + v.glide_semitones)
+            })
+            .flatten();
+        let glide_time = self.params.get(param::GLIDE_TIME);
         let slot =
-            self.voices.iter().position(|voice| !voice.bank.is_active()).or_else(|| {
+            self.voices.iter().position(|voice| !voice.sounding()).or_else(|| {
                 self.voices.iter().enumerate().min_by_key(|(_, voice)| voice.serial).map(|(index, _)| index)
             });
         self.serial = self.serial.saturating_add(1);
         if let Some(voice) = slot.and_then(|index| self.voices.get_mut(index)) {
             voice.stolen_tail = voice.last_output;
             voice.stolen_fade = Smoother::new(
-                if voice.last_output == 0.0 { 0.0 } else { 1.0 },
+                if voice.last_output == [0.0; 2] { 0.0 } else { 1.0 },
                 Smoother::ramp_frames(0.002, self.sample_rate),
             );
             voice.stolen_fade.set_target(0.0);
-            voice.bank.strike(self.sample_rate, &modes);
-            voice.bank.transpose(self.sample_rate, self.bend_semitones);
+            if fitted {
+                let count = self.set_voice.count;
+                voice.bank.reset();
+                voice.fitted.strike_phased_exact(
+                    self.sample_rate,
+                    self.set_voice.modes.get(..count).unwrap_or(&[]),
+                    self.set_voice.phases.get(..count).unwrap_or(&[]),
+                );
+                voice.fitted.set_other(self.set_voice.other.get(..count).unwrap_or(&[]));
+                voice.reference = self.set_voice.reference;
+                // Played legato, the note glides from the held note's pitch with the shape of the
+                // recorded glide; otherwise it starts on its pitch.
+                voice.stop_glide();
+                voice.glide =
+                    legato_glide(&self.set_voice.glide, legato_from.map(|from| from - f64::from(key)), glide_time);
+                voice.glide_semitones = voice.glide.cents_at(0.0) / 100.0;
+                voice.glide_ratio = 2.0_f64.powf(voice.glide_semitones / 12.0);
+                voice.fitted.transpose(self.sample_rate, shift + voice.glide_semitones);
+                voice.attack = self.set_voice.attack.map(|(recording, step)| (recording, 0.0, step));
+                voice.attack_gain = self.set_voice.attack_gain as f32;
+                // Seeded by the note's serial and key, so a render repeats exactly.
+                let seed = (self.serial as u32).wrapping_mul(0x0100_0193) ^ u32::from(key);
+                voice.layer.start(&self.set_voice.held, self.sample_rate, shift + voice.glide_semitones, seed);
+                // The tail comes in over the attack's second half, as the attack fades out.
+                let fade = match (self.set_voice.attack, self.set.as_deref()) {
+                    (Some((recording, step)), Some(set)) if step > 0.0 => {
+                        let end = (set.attack(recording).len() as f64 / step) as usize;
+                        (end / 2, end)
+                    }
+                    _ => (0, 0),
+                };
+                voice.tail.start(
+                    &self.set_voice.tail,
+                    self.set_voice.tail_decay_scale,
+                    self.sample_rate,
+                    fade,
+                    self.set_voice.tail_stereo,
+                    seed ^ 0x5bd1_e995,
+                );
+                voice.envelope.start();
+                voice.fitted_voice = true;
+                voice.damped = false;
+                voice.damper = None;
+                voice.amplitude = (f64::from(velocity) * self.set_voice.level) as f32;
+                // The attack reproduces the recorded onset; only a click guard remains.
+                voice.gate = Smoother::new(0.0, Smoother::ramp_frames(0.00025, self.sample_rate));
+            } else {
+                voice.fitted.reset();
+                voice.reference = 0;
+                voice.attack = None;
+                voice.layer = Performer::default();
+                voice.stop_glide();
+                voice.tail.reset();
+                voice.fitted_voice = false;
+                voice.damper = None;
+                voice.bank.strike(self.sample_rate, &modes);
+                voice.bank.transpose(self.sample_rate, shift);
+                voice.amplitude = velocity * 0.25;
+                voice.gate = Smoother::new(0.0, Smoother::ramp_frames(0.002, self.sample_rate));
+            }
             voice.key = key;
             voice.held = true;
             voice.serial = self.serial;
-            voice.amplitude = velocity * 0.25;
-            voice.gate = Smoother::new(0.0, Smoother::ramp_frames(0.002, self.sample_rate));
             voice.gate.set_target(1.0);
         }
     }
@@ -241,6 +603,35 @@ impl Instrument {
 impl Device for Instrument {
     fn info(&self) -> &DeviceInfo {
         &INFO
+    }
+    fn load_model_state(&mut self, state: &[u8]) -> Result<(), DeviceError> {
+        let loaded = if state.starts_with(MODEL_MAGIC) {
+            ModelSet::decode(state).map(|set| self.set_model_set(set)).map_err(|error| error.0)
+        } else {
+            ModalProfile::decode(state).map(|profile| self.set_modal_profile(profile)).map_err(|error| error.0)
+        };
+        loaded.map_err(|error| {
+            self.profile = None;
+            self.set = None;
+            self.invalid_profile = true;
+            self.reset();
+            DeviceError::InvalidModelState(error)
+        })
+    }
+    fn load_continuation_state(&mut self, state: &[u8], morph: Option<&[u8]>) -> Result<(), DeviceError> {
+        match Continuation::decode(state) {
+            Ok(own) => {
+                // A morph target that does not decode is left out; the note plays its own.
+                let other = morph.and_then(|bytes| Continuation::decode(bytes).ok()).map(Arc::new);
+                self.sampler.set_continuation(Some(Arc::new(own)), other);
+                self.sampler.set_continuation_controls(self.continuation_controls());
+                Ok(())
+            }
+            Err(error) => {
+                self.sampler.set_continuation(None, None);
+                Err(DeviceError::InvalidModelState(error.0))
+            }
+        }
     }
     fn samples(&mut self) -> Option<&mut dyn SampleSource> {
         Some(&mut self.sampler)
@@ -289,13 +680,22 @@ impl Device for Instrument {
             self.modal_mix.set_target(modal);
         }
         // Native sample controls keep the SDK's names/semantics; global gain is applied once.
-        if matches!(index, param::RELEASE | param::ROOT..=param::VELOCITY_HIGH)
+        if matches!(index, param::RELEASE | param::ROOT..=param::VELOCITY_HIGH | param::ENVELOPE_DECAY)
             && let Some(info) = PARAMS.get(index)
         {
+            // The Sample layer's Sustain is the sampler's fifth playback (after its Slices);
+            // Continue is Sustain with the continuation taking over.
+            let value = if index == param::PLAYBACK && value >= 3.0 { 4.0 } else { value };
             self.set_sample_parameter(&info.id, value);
+        }
+        if matches!(index, param::PLAYBACK | param::WIDTH..=param::CONTINUATION_MORPH) {
+            self.sampler.set_continuation_controls(self.continuation_controls());
         }
         if index == param::REVISION && !self.model_supported() {
             self.voices.fill(Voice::default());
+        }
+        if index == param::MODEL_TUNE {
+            self.retune();
         }
     }
 
@@ -315,31 +715,115 @@ impl Device for Instrument {
                 frame.fill(0.0);
             }
         }
+        // The attack is read at the modal voices' pitch: the wheel's bend plus Model tune, and
+        // each voice's glide.
+        let shift = self.modal_shift();
+        let bend_ratio = 2.0_f64.powf(shift / 12.0);
+        let set = self.set.as_deref();
+        let envelope = LinearEnvelopeSettings {
+            attack: self.params.get(param::ATTACK),
+            decay: self.params.get(param::ENVELOPE_DECAY),
+            sustain: self.params.get(param::SUSTAIN),
+            release: 0.0,
+        };
+        let damper_lowpass = (1.0 - (-std::f64::consts::TAU * 600.0 / self.sample_rate).exp()) as f32;
         for frame in buffer.as_chunks_mut::<2>().0 {
-            let mut modal = 0.0;
+            let mut modal = [0.0_f32; 2];
             for voice in &mut self.voices {
-                if !voice.bank.is_active() && voice.stolen_fade.current() == 0.0 {
+                if !voice.sounding() && voice.stolen_fade.current() == 0.0 {
                     continue;
                 }
                 let gate = voice.gate.next_value();
                 if gate == 0.0 && voice.gate.is_settled() {
                     voice.bank.reset();
+                    voice.fitted.reset();
+                    voice.attack = None;
+                    voice.damper = None;
+                    voice.layer = Performer::default();
+                    voice.stop_glide();
+                    voice.tail.reset();
                 }
-                voice.last_output = voice.bank.next_sample() * gate * voice.amplitude
-                    + voice.stolen_tail * voice.stolen_fade.next_value();
-                modal += voice.last_output;
+                // The glide moves the fitted sines every CONTROL samples until the note holds.
+                if !voice.glide.is_empty() {
+                    if voice.glide_at.is_multiple_of(CONTROL as u32) {
+                        let t = f64::from(voice.glide_at) / self.sample_rate;
+                        voice.glide_semitones = voice.glide.cents_at(t) / 100.0;
+                        voice.glide_ratio = 2.0_f64.powf(voice.glide_semitones / 12.0);
+                        if voice.fitted.is_active() {
+                            voice.tune_fitted(self.sample_rate, shift);
+                        }
+                        if t >= voice.glide.end() {
+                            voice.stop_glide();
+                        }
+                    }
+                    voice.glide_at = voice.glide_at.saturating_add(1);
+                }
+                let shape =
+                    if voice.fitted_voice { voice.envelope.next(&envelope, self.sample_rate) as f32 } else { 1.0 };
+                // Without a held layer the performer plays the fitted bank unchanged: the
+                // reference channel and the other channel with the recording's stereo weights.
+                let plain = voice.bank.next_sample();
+                let [mut reference, mut other] = voice.layer.next_stereo(&mut voice.fitted);
+                let [tail_reference, tail_other] = voice.tail.next_frame();
+                reference += tail_reference;
+                other += tail_other;
+                let mut attack_done = false;
+                if let Some((recording, position, step)) = voice.attack.as_mut() {
+                    let (first, second) =
+                        set.map_or((&[][..], &[][..]), |set| (set.attack(*recording), set.attack_other(*recording)));
+                    let index = *position as usize;
+                    let fraction = (*position - index as f64) as f32;
+                    let read = |x: &[f32]| match (x.get(index), x.get(index + 1)) {
+                        (Some(a), Some(b)) => Some(a + (b - a) * fraction),
+                        _ => None,
+                    };
+                    if let (Some(a), Some(b)) = (read(first), read(second)) {
+                        reference += a * voice.attack_gain;
+                        other += b * voice.attack_gain;
+                        *position += *step * bend_ratio * voice.glide_ratio;
+                    } else {
+                        attack_done = true;
+                    }
+                }
+                let body = if voice.reference == 1 {
+                    [plain + other, plain + reference]
+                } else {
+                    [plain + reference, plain + other]
+                };
+                if attack_done {
+                    voice.attack = None;
+                }
+                let mut noise = 0.0;
+                let mut damper_done = false;
+                if let Some(damper) = voice.damper.as_mut() {
+                    damper.seed = damper.seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    let white = (damper.seed >> 8) as f32 / 8_388_608.0 - 1.0;
+                    damper.lowpass += damper_lowpass * (white - damper.lowpass);
+                    noise = damper.lowpass * damper.level * damper.remaining as f32 / damper.total as f32;
+                    damper.remaining = damper.remaining.saturating_sub(1);
+                    damper_done = damper.remaining == 0;
+                }
+                if damper_done {
+                    voice.damper = None;
+                }
+                let stolen = voice.stolen_fade.next_value();
+                for ((output, body), tail) in voice.last_output.iter_mut().zip(body).zip(voice.stolen_tail) {
+                    *output = (body * shape * voice.amplitude + noise) * gate + tail * stolen;
+                }
+                modal[0] += voice.last_output[0];
+                modal[1] += voice.last_output[1];
             }
             let sample_mix = self.sample_mix.next_value();
-            let modal = modal * self.modal_mix.next_value();
+            let modal_mix = self.modal_mix.next_value();
             let gain = self.gain.next_value();
-            for sample in frame {
+            for (sample, modal) in frame.iter_mut().zip(modal) {
                 // Imported float audio may already reach the finite f32 limit. Preserve normal
                 // mixing exactly, but saturate an overflow from the final positive gain.
-                *sample = ((*sample * sample_mix + modal) * gain).clamp(-f32::MAX, f32::MAX);
+                *sample = ((*sample * sample_mix + modal * modal_mix) * gain).clamp(-f32::MAX, f32::MAX);
             }
             if !hybrid && self.modal_mix.current() == 0.0 && self.modal_mix.is_settled() {
                 for voice in &mut self.voices {
-                    if voice.bank.is_active() || voice.stolen_fade.current() != 0.0 {
+                    if voice.sounding() || voice.stolen_fade.current() != 0.0 {
                         *voice = Voice::default();
                     }
                 }
@@ -390,13 +874,22 @@ impl Device for Instrument {
                 self.pedal = value >= 0.5;
                 if old && !self.pedal {
                     let frames = Smoother::ramp_frames(self.params.get(param::RELEASE), self.sample_rate);
+                    let (release, noise) = (self.params.get(param::RELEASE), self.params.get(param::DAMPER_NOISE));
                     for voice in &mut self.voices {
                         if !voice.held {
-                            voice.gate.set_ramp(frames);
-                            voice.gate.set_target(0.0);
+                            if voice.fitted_voice {
+                                voice.damp(self.sample_rate, release, noise);
+                            } else {
+                                voice.gate.set_ramp(frames);
+                                voice.gate.set_target(0.0);
+                            }
                         }
                     }
                 }
+            }
+            NoteEvent::Controller { number: 67, value } if value.is_finite() => {
+                // The soft pedal changes the notes struck while it is down.
+                self.soft_pedal = value >= 0.5;
             }
             NoteEvent::AllNotesOff => {
                 self.pedal = false;
@@ -404,11 +897,7 @@ impl Device for Instrument {
             }
             NoteEvent::PitchBend(value) if value.is_finite() => {
                 self.bend_semitones = f64::from(value.clamp(-1.0, 1.0)) * 2.0;
-                for voice in &mut self.voices {
-                    if voice.bank.is_active() {
-                        voice.bank.transpose(self.sample_rate, self.bend_semitones);
-                    }
-                }
+                self.retune();
             }
             _ => {}
         }
@@ -417,3 +906,9 @@ impl Device for Instrument {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod profile_tests;
+
+#[cfg(test)]
+mod set_tests;

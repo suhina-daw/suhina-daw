@@ -490,6 +490,13 @@ impl App {
         }
     }
 
+    /// Whether the device at `device` on `track`'s chain is an Instrument (which can fit samples).
+    fn is_instrument(&self, track: TrackId, device: usize) -> bool {
+        self.session()
+            .and_then(|s| s.project().channel_of_track(track).and_then(|ch| ch.devices.get(device)))
+            .is_some_and(|d| matches!(&d.kind, suhina_engine::model::DeviceKind::Builtin(id) if id == "instrument"))
+    }
+
     /// The target the views found under the pointer, or the detail area's track for devices.
     pub(super) fn drop_target(&self, items: &[BrowserItem], pointer: Option<Pos2>) -> Option<DropTarget> {
         if let Some(pointer) = pointer
@@ -498,6 +505,15 @@ impl App {
             && let Some((_, track, device)) = self.sample_drops.iter().find(|(area, _, _)| area.contains(pointer))
         {
             return Some(DropTarget::Sampler { track: *track, device: *device });
+        }
+        // Several samples on an Instrument's waveform fit into one model instead.
+        if let Some(pointer) = pointer
+            && items.len() >= 2
+            && items.iter().all(|i| i.kind == crate::interaction::drop::ItemKind::Sample)
+            && let Some((_, track, device)) = self.sample_drops.iter().find(|(area, _, _)| area.contains(pointer))
+            && self.is_instrument(*track, *device)
+        {
+            return Some(DropTarget::InstrumentFit { track: *track, device: *device });
         }
         let target = match self.shown {
             View::Session => self.view.drop.as_ref().and_then(|p| p.target),

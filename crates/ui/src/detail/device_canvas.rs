@@ -165,7 +165,7 @@ pub(crate) fn owns_keyboard(ctx: &egui::Context) -> bool {
         })
 }
 
-fn remember_keyboard_owner(response: &egui::Response) {
+pub(super) fn remember_keyboard_owner(response: &egui::Response) {
     let in_editor = response.ctx.data_mut(|data| {
         let collecting = data.get_temp::<bool>(keyboard_owner_id().with("collecting")).unwrap_or(false);
         if collecting {
@@ -356,8 +356,16 @@ fn sample_waveform(
     };
     let value = |id: &str| parameters.iter().find(|p| p.id == id).map_or(0., |p| p.value) as f32;
     let edit_loop = value("mode") == 0. && value("playback") == 2.;
-    let active_start = f64::from(value(if edit_loop { "loop_start" } else { "start" }));
-    let active_end = f64::from(value(if edit_loop { "loop_end" } else { "end" }));
+    // Of a crossed pair the marker further right is the end (`docs/spec/sampler.md`).
+    let (first, second) = (
+        f64::from(value(if edit_loop { "loop_start" } else { "start" })),
+        f64::from(value(if edit_loop { "loop_end" } else { "end" })),
+    );
+    let (active_start, active_end) = (first.min(second), first.max(second));
+    let (source_start, source_end) = {
+        let (a, b) = (value("start"), value("end"));
+        (a.min(b), a.max(b))
+    };
     // Where a boundary can be moved to, kept off the edges: the values here are rounded to f32.
     let boundary_low = active_start + 1e-6;
     let boundary_high = (active_end - 1e-6).max(boundary_low);
@@ -902,7 +910,7 @@ fn sample_waveform(
             for (i, peak) in peaks.iter().enumerate() {
                 let x = field.left() + i as f32 / 1024. * field.width();
                 let point = view.point(x, field);
-                let color = if point < f64::from(value("start")) || point > f64::from(value("end")) {
+                let color = if point < f64::from(source_start) || point > f64::from(source_end) {
                     look.text_primary.gamma_multiply(0.18)
                 } else {
                     look.accent
@@ -990,16 +998,19 @@ fn sample_waveform(
             Stroke::new(1., look.text_primary),
         );
     }
+    let (start_id, end_id) = if edit_loop { ("loop_start", "loop_end") } else { ("start", "end") };
+    let crossed = value(start_id) > value(end_id);
+    // The left marker reads S and the right one E, also while one is dragged over the other.
     for (id, caption, offset) in [
-        (if edit_loop { "loop_start" } else { "start" }, "S", 0.),
-        (if edit_loop { "loop_end" } else { "end" }, "E", 0.),
+        (start_id, if crossed { "E" } else { "S" }, 0.),
+        (end_id, if crossed { "S" } else { "E" }, 0.),
         ("position", "G", 40.),
     ] {
         if id == "position" && value("mode") != 1. {
             continue;
         }
         let (origin, span) =
-            if id == "position" { (value("start"), (value("end") - value("start")).max(1e-6)) } else { (0., 1.) };
+            if id == "position" { (source_start, (source_end - source_start).max(1e-6)) } else { (0., 1.) };
         let x = view.x(f64::from(origin + value(id) * span), field);
         if x < field.left() || x > field.right() {
             continue;
@@ -1033,7 +1044,28 @@ fn sample_waveform(
         } else if (response.dragged() || response.drag_stopped())
             && let Some(pos) = response.interact_pointer_pos()
         {
-            actions.push(Action::new("device.setParam", json!({"track": track.0, "device": address, "param": id, "value": ((snap(view.point(pos.x,field)) - f64::from(origin)) / f64::from(span)).clamp(0., 1.), "gesture": crate::interaction::commands::gesture(format_args!("param:{}:{address}:{id}", track.0))})));
+            let dropped = ((snap(view.point(pos.x, field)) - f64::from(origin)) / f64::from(span)).clamp(0., 1.);
+            let gesture = crate::interaction::commands::gesture(format_args!("param:{}:{address}:{id}", track.0));
+            actions.push(Action::new(
+                "device.setParam",
+                json!({"track": track.0, "device": address, "param": id, "value": dropped, "gesture": gesture}),
+            ));
+            // A drag that ends past the other marker swaps the pair in the same undo step, so the
+            // marker on the right is the end in the fields too.
+            if response.drag_stopped() && id != "position" {
+                let other = if id == start_id { end_id } else { start_id };
+                let other_value = f64::from(value(other));
+                let (start_value, end_value) =
+                    if id == start_id { (dropped, other_value) } else { (other_value, dropped) };
+                if start_value > end_value {
+                    for (param, value) in [(start_id, end_value), (end_id, start_value)] {
+                        actions.push(Action::new(
+                            "device.setParam",
+                            json!({"track": track.0, "device": address, "param": param, "value": value, "gesture": gesture}),
+                        ));
+                    }
+                }
+            }
         }
     }
     if inline_recording {
@@ -1879,6 +1911,7 @@ fn paint_scaled(
                         TextFormat::Balance => {
                             format!("{text}{} {}", fixed(p.value.abs() * 100., 0), if p.value < 0. { "L" } else { "R" })
                         }
+                        TextFormat::Key => format!("{text}{}", key_text(p.value)),
                         _ => format!(
                             "{text}{}{}{}",
                             fixed(p.value, *decimals),
@@ -2450,6 +2483,10 @@ pub(crate) fn show(
             sample_recording(ui, bounds, track, device, actions);
             continue;
         }
+        if matches!(control.widget, Some(Widget::SampleAnalysis)) {
+            super::instrument_analysis::show(ui, bounds, track, at, actions);
+            continue;
+        }
         if matches!(control.widget, Some(Widget::DeviceSwitch)) {
             let _role = crate::kit::element::BUTTON.enter();
             crate::detail::device_widgets::switch(ui, bounds, state, track, at, actions);
@@ -2610,7 +2647,7 @@ pub(crate) fn show(
             }
             response.widget_info(|| {
                 let mut info = egui::WidgetInfo::labeled(egui::Role::SpinButton, true, &control.name);
-                info.current_text_value = Some(format!("{}: {} {}", p.name, p.value, p.unit));
+                info.current_text_value = Some(spoken_value(p));
                 info
             });
             continue;
@@ -2852,6 +2889,14 @@ pub(crate) fn show(
         }
         let focused = response.has_focus();
         remember_keyboard_owner(&response);
+        if focused {
+            // The arrows step the focused control instead of also moving the focus on, which
+            // took the keyboard away from the editor.
+            ui.memory_mut(|m| {
+                let arrows = egui::EventFilter { horizontal_arrows: true, vertical_arrows: true, ..Default::default() };
+                m.set_focus_lock_filter(response.id, arrows);
+            });
+        }
         let (dx, dy, button, fine) = ui.input(|i| {
             (
                 i32::from(focused && i.key_pressed(egui::Key::ArrowRight))
@@ -2874,7 +2919,7 @@ pub(crate) fn show(
         for (axis, binding) in [control.x.as_ref(), control.y.as_ref()].into_iter().enumerate() {
             let Some(binding) = binding else { continue };
             let Some(p) = parameters.iter().find(|p| p.id == binding.parameter) else { continue };
-            descriptions.push(format!("{}: {} {}", p.name, p.value, p.unit));
+            descriptions.push(spoken_value(p));
             if control.gesture == UiGesture::Menu {
                 let key_open =
                     focused && ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space));
@@ -3155,3 +3200,17 @@ mod tests;
 #[allow(clippy::duplicate_mod)]
 #[path = "../../../device-sdk/examples/delay.rs"]
 mod delay_example;
+
+/// A MIDI key parameter's value as its note name (60 is C3), the way the host names keys.
+fn key_text(value: f64) -> String {
+    crate::interaction::key_name::key_name(value.round().clamp(0.0, 127.0) as u8)
+}
+
+/// What a screen reader hears for a bound parameter: a key by its note name, others with their unit.
+fn spoken_value(p: &GraphParameter) -> String {
+    if p.unit == "key" {
+        format!("{}: {}", p.name, key_text(p.value))
+    } else {
+        format!("{}: {} {}", p.name, p.value, p.unit)
+    }
+}

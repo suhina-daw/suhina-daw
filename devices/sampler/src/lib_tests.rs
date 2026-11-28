@@ -742,9 +742,22 @@ fn pitch_reverse_and_region_golden() {
     set(&mut s, "reverse", 1.);
     note(&mut s, 60);
     assert_eq!(render(&mut s, 3, 1), vec![0.99, 0.99, 0.98, 0.98, 0.97, 0.97]);
+    // A crossed pair plays between the markers: the one further right is the end.
     s.reset();
     set(&mut s, "start", 0.9);
     set(&mut s, "end", 0.1);
+    note(&mut s, 60);
+    let crossed = render(&mut s, 32, 7);
+    assert!(crossed.iter().any(|v| *v != 0.));
+    s.reset();
+    set(&mut s, "start", 0.1);
+    set(&mut s, "end", 0.9);
+    note(&mut s, 60);
+    assert_eq!(crossed, render(&mut s, 32, 7));
+    // An empty range is still silent.
+    s.reset();
+    set(&mut s, "start", 0.5);
+    set(&mut s, "end", 0.5);
     note(&mut s, 60);
     assert!(render(&mut s, 32, 7).iter().all(|v| *v == 0.));
 }
@@ -842,4 +855,43 @@ fn fractional_ping_pong_never_reads_past_the_region_boundary() {
     }
     note(&mut s, 60);
     assert!(render(&mut s, 1000, 17).iter().all(|v| *v == 1.));
+}
+
+/// Sustain playback holds a note past its source in segments of the loop region: the level and
+/// the pitch stay, the seams join without clicks, and a block split renders the same.
+#[test]
+fn sustain_holds_a_note_in_segments_of_the_loop_region() {
+    let make = || {
+        let mut sampler = loaded();
+        sampler.prepare(48000.).unwrap();
+        for (id, value) in [
+            ("playback", 4.),
+            ("loop_start", 0.3),
+            ("loop_end", 0.8),
+            ("root", 57.),
+            ("attack", 0.),
+            ("sustain", 1.),
+            ("release", 0.1),
+        ] {
+            set(&mut sampler, id, value);
+        }
+        note(&mut sampler, 57);
+        sampler
+    };
+    // Three seconds from a one-second source.
+    let out = render(&mut make(), 144_000, 64);
+    let left: Vec<f32> = out.chunks(2).map(|frame| frame[0]).collect();
+    let rms = |part: &[f32]| (part.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / part.len() as f64).sqrt();
+    let before = rms(&left[12_000..24_000]);
+    let held = rms(&left[96_000..144_000]);
+    assert!((20.0 * (held / before).log10()).abs() < 1.0, "{before} {held}");
+    // Still 220 Hz: crossings per second.
+    let part = &left[96_000..144_000];
+    let crossings = part.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count();
+    let hz = crossings as f64 * 48000.0 / (2.0 * (part.len() - 1) as f64);
+    assert!((hz - 220.0).abs() < 2.0, "{hz}");
+    // No click: no step much larger than a 220 Hz sine of this level makes.
+    let largest = left.windows(2).skip(240).map(|w| (w[1] - w[0]).abs()).fold(0.0_f32, f32::max);
+    assert!(largest < 0.2 * std::f32::consts::TAU * 220.0 / 48000.0 * 1.5, "{largest}");
+    assert_eq!(out, render(&mut make(), 144_000, 37));
 }

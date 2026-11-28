@@ -73,32 +73,78 @@ fn the_counter_counts_this_threads_allocations() {
 
 #[test]
 fn instrument_render_events_and_reset_allocate_and_free_nothing() {
-    let mut instrument = with_test_sample(create("instrument", 48000.0).unwrap());
-    let source = instrument.info().param_index("source").unwrap();
-    let blend = instrument.info().param_index("blend").unwrap();
-    let mut buffer = [0.0; 128];
-    let counted = allocation_counter::measure(|| {
-        for mode in [0.0, 1.0, 2.0] {
-            instrument.set_param(source, mode);
-            instrument.reset();
-            for key in 0..127 {
-                instrument.event(NoteEvent::Controller { number: 64, value: 1.0 });
-                instrument.event(NoteEvent::On { key, velocity: 0.8 });
-                instrument.set_param(blend, f64::from(key) / 127.0);
-                instrument.event(NoteEvent::PitchBend(f32::from(key) / 127.0));
-                instrument.process(&ProcessContext::default(), &mut buffer);
-                instrument.event(NoteEvent::Off { key, velocity: 0.0 });
-                instrument.event(NoteEvent::On { key, velocity: 0.8 });
-                instrument.event(NoteEvent::Controller { number: 64, value: 0.0 });
-                instrument.process(&ProcessContext::default(), &mut buffer);
-                instrument.event(NoteEvent::Off { key, velocity: 0.0 });
-            }
-            instrument.event(NoteEvent::AllNotesOff);
-            instrument.reset();
+    for model in 0..3 {
+        let mut instrument = with_test_sample(create("instrument", 48000.0).unwrap());
+        if model == 2 {
+            // A fitted set with a held layer: vibrato, drift, onsets, noise and a release.
+            use suhina_dsp::modal::{
+                model::{ModelMode, ModelRecording, ModelSet},
+                sustain::Sustain,
+            };
+            let mut layer = Sustain {
+                vibrato_hz: 5.5,
+                vibrato_cents: 30.0,
+                drift_cents: 2.0,
+                drift_hz: 2.0,
+                release_seconds: 0.4,
+                body_fixed: 1.0,
+                ..Sustain::default()
+            };
+            layer.noise = [1e-4; suhina_dsp::modal::sustain::NOISE_BANDS];
+            layer.rise[0] = 0.1;
+            let recording = ModelRecording {
+                key: 60,
+                source: 0,
+                velocity: 0.8,
+                level: 0.5,
+                modes: vec![ModelMode::plain(1.0, 0.5, 60.0), ModelMode::plain(2.0, 0.3, 60.0)],
+                attack_rate: 0,
+                attack: Vec::new(),
+                sustain: Some(layer),
+                stereo: None,
+                tail: None,
+                glide: None,
+            };
+            instrument.load_model_state(&ModelSet::new(vec![recording]).unwrap().encode()).unwrap();
         }
-    });
-    assert_eq!(counted.count_total, 0, "callback allocated: {counted:?}");
-    assert_eq!(counted.count_current, 0, "callback freed existing storage: {counted:?}");
+        if model == 1 {
+            use suhina_dsp::modal::profile::{ModalProfile, ProfileMode};
+            let modes: Vec<_> = (1..=16)
+                .map(|index| ProfileMode {
+                    ratio: index as f64 * 1.03,
+                    magnitude: 1.0 / index as f64,
+                    decay_seconds: 0.5,
+                })
+                .collect();
+            let profile = ModalProfile::new(60, 263.1, &modes).unwrap();
+            instrument.load_model_state(&profile.encode()).unwrap();
+        }
+        let source = instrument.info().param_index("source").unwrap();
+        let blend = instrument.info().param_index("blend").unwrap();
+        let mut buffer = [0.0; 128];
+        let counted = allocation_counter::measure(|| {
+            for mode in [0.0, 1.0, 2.0] {
+                instrument.set_param(source, mode);
+                instrument.reset();
+                for key in 0..127 {
+                    instrument.event(NoteEvent::Controller { number: 64, value: 1.0 });
+                    instrument.event(NoteEvent::On { key, velocity: 0.8 });
+                    instrument.set_param(blend, f64::from(key) / 127.0);
+                    instrument.event(NoteEvent::PitchBend(f32::from(key) / 127.0));
+                    instrument.process(&ProcessContext::default(), &mut buffer);
+                    instrument.event(NoteEvent::Off { key, velocity: 0.0 });
+                    instrument.event(NoteEvent::On { key, velocity: 0.8 });
+                    instrument.event(NoteEvent::Controller { number: 64, value: 0.0 });
+                    instrument.process(&ProcessContext::default(), &mut buffer);
+                    instrument.event(NoteEvent::Off { key, velocity: 0.0 });
+                }
+                instrument.event(NoteEvent::AllNotesOff);
+                instrument.reset();
+            }
+        });
+        assert_eq!(counted.count_total, 0, "callback allocated: {counted:?}");
+        assert_eq!(counted.count_current, 0, "callback freed existing storage: {counted:?}");
+    }
 }
 
 #[test]

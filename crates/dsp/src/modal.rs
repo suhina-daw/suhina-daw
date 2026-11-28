@@ -6,6 +6,12 @@
 
 use std::f64::consts::TAU;
 
+pub mod glide;
+pub mod model;
+pub mod profile;
+pub mod sustain;
+pub mod tail;
+
 /// One exponentially decaying mode, expressed in physical units.
 #[derive(Debug, Clone, Copy)]
 pub struct Mode {
@@ -15,7 +21,7 @@ pub struct Mode {
     pub amplitude: f64,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 struct Resonance {
     real: f64,
     imaginary: f64,
@@ -23,6 +29,15 @@ struct Resonance {
     sine: f64,
     frequency_hz: f64,
     radius: f64,
+    /// The second output's weights on the sine (imaginary) and cosine (real) parts: `[1, 0]`
+    /// plays the same sine, `[g cos d, g sin d]` plays it `g` times as loud and `d` later.
+    other: [f32; 2],
+}
+
+impl Default for Resonance {
+    fn default() -> Self {
+        Self { real: 0.0, imaginary: 0.0, cosine: 0.0, sine: 0.0, frequency_hz: 0.0, radius: 0.0, other: [1.0, 0.0] }
+    }
 }
 
 /// At most `N` modes. Invalid or inaudible modes are silent; amplitudes are normalized so
@@ -43,6 +58,10 @@ impl<const N: usize> ModalBank<N> {
     /// Replace the previous strike. Frequencies must be positive and below 0.45 of the
     /// sample rate. Decay is capped at 60 seconds; amplitude at unity before normalization.
     pub fn strike(&mut self, sample_rate: f64, modes: &[Mode]) {
+        self.strike_with(sample_rate, modes, true);
+    }
+
+    fn strike_with(&mut self, sample_rate: f64, modes: &[Mode], normalize: bool) {
         self.reset();
         if !sample_rate.is_finite() || !(1000.0..=384000.0).contains(&sample_rate) {
             return;
@@ -67,9 +86,11 @@ impl<const N: usize> ModalBank<N> {
             target.radius = radius;
             amplitude_sum += target.real.abs();
         }
-        let normalization = amplitude_sum.max(1.0);
-        for mode in &mut self.modes {
-            mode.real /= normalization;
+        if normalize {
+            let normalization = amplitude_sum.max(1.0);
+            for mode in &mut self.modes {
+                mode.real /= normalization;
+            }
         }
         self.active = amplitude_sum > 0.0;
     }
@@ -119,6 +140,88 @@ impl<const N: usize> ModalBank<N> {
         output as f32
     }
 
+    /// Like [`next_sample`](Self::next_sample), with mode `i` weighted by `gains[i]`, which then
+    /// moves by `steps[i]`: per-mode levels ramped by the caller without touching phase or decay.
+    /// All gains 1 and steps 0 give exactly `next_sample`.
+    pub fn next_sample_gained(&mut self, gains: &mut [f32; N], steps: &[f32; N]) -> f32 {
+        if !self.active {
+            return 0.0;
+        }
+        let mut output = 0.0;
+        let mut active = false;
+        for ((mode, gain), step) in self.modes.iter_mut().zip(gains.iter_mut()).zip(steps) {
+            if mode.real.abs() + mode.imaginary.abs() < 1e-12 {
+                mode.real = 0.0;
+                mode.imaginary = 0.0;
+                continue;
+            }
+            output += mode.imaginary * f64::from(*gain);
+            *gain += *step;
+            let real = mode.real * mode.cosine - mode.imaginary * mode.sine;
+            mode.imaginary = mode.real * mode.sine + mode.imaginary * mode.cosine;
+            mode.real = real;
+            active = true;
+        }
+        self.active = active;
+        output as f32
+    }
+
+    /// Sets mode `i`'s second output to `weights[i]` (see [`next_stereo`](Self::next_stereo)):
+    /// `[g cos d, g sin d]` plays the mode `g` times as loud and `d` radians later. Modes without
+    /// an entry keep `[1, 0]`, the same sine. Nonfinite weights are `[1, 0]`.
+    pub fn set_other(&mut self, weights: &[[f32; 2]]) {
+        for (index, mode) in self.modes.iter_mut().enumerate() {
+            mode.other = weights.get(index).copied().filter(|w| w.iter().all(|v| v.is_finite())).unwrap_or([1.0, 0.0]);
+        }
+    }
+
+    /// Like [`next_sample`](Self::next_sample), with a second output: `[first, second]`, where
+    /// the second weighs each mode by its [`set_other`](Self::set_other) weights. Without them
+    /// both outputs equal `next_sample`.
+    pub fn next_stereo(&mut self) -> [f32; 2] {
+        self.next_pair(None)
+    }
+
+    /// [`next_sample_gained`](Self::next_sample_gained) into two outputs, as
+    /// [`next_stereo`](Self::next_stereo).
+    pub fn next_stereo_gained(&mut self, gains: &mut [f32; N], steps: &[f32; N]) -> [f32; 2] {
+        self.next_pair(Some((gains, steps)))
+    }
+
+    fn next_pair(&mut self, mut gains: Option<(&mut [f32; N], &[f32; N])>) -> [f32; 2] {
+        if !self.active {
+            return [0.0; 2];
+        }
+        let (mut first, mut second) = (0.0, 0.0);
+        let mut active = false;
+        for (index, mode) in self.modes.iter_mut().enumerate() {
+            if mode.real.abs() + mode.imaginary.abs() < 1e-12 {
+                mode.real = 0.0;
+                mode.imaginary = 0.0;
+                continue;
+            }
+            let gain = match gains.as_mut() {
+                Some((gains, steps)) => match (gains.get_mut(index), steps.get(index)) {
+                    (Some(gain), Some(step)) => {
+                        let value = f64::from(*gain);
+                        *gain += *step;
+                        value
+                    }
+                    _ => 1.0,
+                },
+                None => 1.0,
+            };
+            first += mode.imaginary * gain;
+            second += (mode.imaginary * f64::from(mode.other[0]) + mode.real * f64::from(mode.other[1])) * gain;
+            let real = mode.real * mode.cosine - mode.imaginary * mode.sine;
+            mode.imaginary = mode.real * mode.sine + mode.imaginary * mode.cosine;
+            mode.real = real;
+            active = true;
+        }
+        self.active = active;
+        [first as f32, second as f32]
+    }
+
     pub fn is_active(&self) -> bool {
         self.active
     }
@@ -127,62 +230,51 @@ impl<const N: usize> ModalBank<N> {
         self.modes.fill(Resonance::default());
         self.active = false;
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn one_mode_matches_the_analytical_decay_and_pitch() {
-        let mut bank = ModalBank::<1>::default();
-        bank.strike(48000.0, &[Mode { frequency_hz: 440.0, decay_seconds: 0.25, amplitude: 0.5 }]);
-        for n in 0..24000 {
-            let expected =
-                0.5 * (-1000.0_f64.ln() * n as f64 / 12000.0).exp() * (TAU * 440.0 * n as f64 / 48000.0).sin();
-            assert!((f64::from(bank.next_sample()) - expected).abs() < 2e-8);
+    /// Caps every mode's T60 at `seconds` (0.001..60), keeping its phase and current frequency,
+    /// as a damper stops a ringing string. Modes already shorter are left alone. Allocation-free.
+    pub fn cap_decay(&mut self, sample_rate: f64, seconds: f64) {
+        if !sample_rate.is_finite() || !(1000.0..=384000.0).contains(&sample_rate) || !seconds.is_finite() {
+            return;
         }
-    }
-
-    #[test]
-    fn hostile_modes_are_silent_and_strikes_are_bounded() {
-        let mut bank = ModalBank::<16>::default();
-        for rate in [f64::NAN, f64::INFINITY, -1.0, 0.0, 8000.0, 48000.0, 384000.0] {
-            for frequency in [f64::NAN, f64::INFINITY, -1.0, 0.0, 440.0, 200000.0] {
-                bank.strike(rate, &[Mode { frequency_hz: frequency, decay_seconds: 0.01, amplitude: 1.0 }; 32]);
-                for _ in 0..8192 {
-                    let output = bank.next_sample();
-                    assert!(output.is_finite() && output.abs() <= 1.00001);
-                }
-                bank.reset();
-                assert_eq!(bank.next_sample(), 0.0);
-                assert!(!bank.is_active());
+        let cap = (-1000.0_f64.ln() / (sample_rate * seconds.clamp(0.001, 60.0))).exp();
+        for mode in &mut self.modes {
+            if mode.radius > cap {
+                let scale = cap / mode.radius;
+                mode.cosine *= scale;
+                mode.sine *= scale;
+                mode.radius = cap;
             }
         }
     }
 
-    #[test]
-    fn modes_above_the_anti_alias_margin_are_not_folded_down() {
-        let mut bank = ModalBank::<1>::default();
-        bank.strike(8000.0, &[Mode { frequency_hz: 3600.0, decay_seconds: 1.0, amplitude: 1.0 }]);
-        assert!(!bank.is_active());
-        assert_eq!(bank.next_sample(), 0.0);
+    /// Like [`strike`](Self::strike), with mode `i` starting at `phases[i]` radians: its output
+    /// is `amplitude * radius^n * sin(omega * n + phase)`. A missing or nonfinite phase is zero,
+    /// which is `strike`. The first output sample is therefore not zero unless every phase is;
+    /// the caller ramps its gate.
+    pub fn strike_phased(&mut self, sample_rate: f64, modes: &[Mode], phases: &[f64]) {
+        self.strike(sample_rate, modes);
+        self.set_phases(phases);
     }
 
-    #[test]
-    fn retuning_keeps_phase_and_applies_an_absolute_pitch_offset() {
-        let mut bank = ModalBank::<1>::default();
-        bank.strike(48000.0, &[Mode { frequency_hz: 440.0, decay_seconds: 1.0, amplitude: 0.5 }]);
-        for _ in 0..100 {
-            bank.next_sample();
-        }
-        bank.transpose(48000.0, 12.0);
-        bank.transpose(48000.0, 12.0);
-        for n in 0..100 {
-            let expected = 0.5
-                * (-1000.0_f64.ln() * (100 + n) as f64 / 48000.0).exp()
-                * (TAU * (440.0 * 100.0 + 880.0 * n as f64) / 48000.0).sin();
-            assert!((f64::from(bank.next_sample()) - expected).abs() < 2e-8);
+    /// Like [`strike_phased`](Self::strike_phased) with each amplitude as given (still at most 1),
+    /// not normalized to a sum of 1: a fitted voice's sines are its recording's own levels, and an
+    /// aftersound in opposite phase makes their absolute sum exceed their sum.
+    pub fn strike_phased_exact(&mut self, sample_rate: f64, modes: &[Mode], phases: &[f64]) {
+        self.strike_with(sample_rate, modes, false);
+        self.set_phases(phases);
+    }
+
+    fn set_phases(&mut self, phases: &[f64]) {
+        for (target, phase) in self.modes.iter_mut().zip(phases) {
+            let phase = if phase.is_finite() { *phase } else { 0.0 };
+            let amplitude = target.real;
+            target.real = amplitude * phase.cos();
+            target.imaginary = amplitude * phase.sin();
         }
     }
 }
+
+#[cfg(test)]
+#[path = "modal_tests.rs"]
+mod tests;
