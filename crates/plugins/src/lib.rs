@@ -40,6 +40,7 @@ pub mod offline;
 pub mod protocol;
 pub mod scan;
 pub mod scan_pool;
+pub mod surface;
 pub mod trace;
 pub mod vst2;
 
@@ -1770,8 +1771,10 @@ fn take_in_edit(edits: &EditInbox, instance: u32, id: u32, value: f64) {
     }
 }
 
-/// Wakes the control window after asynchronous host or retained-engine work completes.
-/// Control threads only: this reads the registered callback under a lock.
+/// Wakes the control window after asynchronous host or retained-engine work completes, or when
+/// a surface program's event (a controller's command, a send-back) arrived for the next look.
+/// Control threads only: this reads the registered callback under a lock. A no-op when nothing
+/// installed a waker (the tests).
 pub fn wake() {
     if let Some(waker) = lock(&WAKER).clone() {
         waker();

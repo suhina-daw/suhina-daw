@@ -50,6 +50,7 @@ mod devices;
 mod editing;
 mod execute;
 mod export;
+pub mod extensions;
 mod files;
 mod follow;
 mod history;
@@ -118,7 +119,7 @@ pub use library::{
 };
 pub use mapping::{MAX_MAPPINGS, mapped_command, target_exists};
 pub use metronome_sounds::{MetronomeState, library_folder as metronome_folder};
-pub use midi::{LiveInput, MidiSystem, midi_commands};
+pub use midi::{LiveInput, MidiOut, MidiSystem, RawSink, midi_commands};
 pub use mpe_config::{MpeConfig, MpeMode};
 pub use notes::{MAX_NOTES_PER_CLIP, MAX_NOTES_PER_COMMAND, midi_velocity};
 pub use player::{OutputHandle, Player};

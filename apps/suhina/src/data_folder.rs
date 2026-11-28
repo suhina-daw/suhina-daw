@@ -12,6 +12,7 @@ const POINTER: &str = "data-location.txt";
 /// What is copied into a new folder: the settings, keys, recent projects and themes.
 const FILES: &[&str] = &["settings.txt", "keymap.json", "recent.txt"];
 const THEMES: &str = "themes";
+const EXTENSIONS: &str = "extensions";
 /// The most files and folders a copy walks, so a wrong folder cannot keep it busy.
 const MAX_ENTRIES: usize = 20_000;
 
@@ -65,11 +66,18 @@ fn copy_over_keeping(from: &Path, to: &Path, links: &mut Vec<PathBuf>) -> Result
 }
 
 /// Moves Suhina's data (the settings, keys, recent projects and themes; `only_themes` for the
-/// themes folder alone) from `from` into `to`: a backup of it is made first, beside `from`
+/// themes folder alone; the extension store rides too when `extensions_rides` — the store is
+/// the settings folder's own, and an independent `SUHINA_EXTENSIONS` root keeps its place)
+/// from `from` into `to`: a backup of it is made first, beside `from`
 /// (`<name>-backup-<date and time>`), then it is copied into `to`, keeping what `to` has
 /// already, and only then taken out of `from`. Returns the backup's folder and how many files
 /// moved.
-pub fn move_data(from: &Path, to: &Path, only_themes: bool) -> Result<(PathBuf, usize), String> {
+pub fn move_data(
+    from: &Path,
+    to: &Path,
+    only_themes: bool,
+    extensions_rides: bool,
+) -> Result<(PathBuf, usize), String> {
     if from == to || to.starts_with(from) {
         return Err(format!("{} is inside the folder it would move from", to.display()));
     }
@@ -89,6 +97,21 @@ pub fn move_data(from: &Path, to: &Path, only_themes: bool) -> Result<(PathBuf, 
         remove_except(from, &links)?;
     } else {
         copy_over_keeping(from, &backup, &mut Vec::new())?;
+        // The extension store rides with the settings: backed up, copied, then taken out, the
+        // themes' way. Links in it are never followed, so nothing is taken out that `to` and
+        // the backup do not hold.
+        let extensions = from.join(EXTENSIONS);
+        if extensions_rides && std::fs::symlink_metadata(&extensions).is_ok_and(|m| m.is_dir()) {
+            copy_tree(&extensions, &backup.join(EXTENSIONS), &mut copied, &mut seen, &mut Vec::new())?;
+            copied = 0;
+            seen = 0;
+            copy_tree(&extensions, &to.join(EXTENSIONS), &mut copied, &mut seen, &mut links)?;
+            remove_except(&extensions, &links)?;
+            if !links.iter().any(|link| link.starts_with(&extensions)) {
+                std::fs::remove_dir(&extensions)
+                    .map_err(|e| format!("could not remove {}: {e}", extensions.display()))?;
+            }
+        }
         copied = copy_over_keeping(from, to, &mut links)?;
         for name in FILES {
             remove_file(&from.join(name))?;
@@ -201,10 +224,26 @@ mod tests {
         assert_eq!(pointed(&default), None);
         // Moving: a backup beside the old folder, the files in the new one, none left behind.
         let moved = base.join("moved");
-        let (backup, count) = move_data(&default, &moved, false).unwrap();
+        let (backup, count) = move_data(&default, &moved, false, true).unwrap();
         assert!(count >= 1 && backup.join("settings.txt").is_file() && moved.join("settings.txt").is_file());
         assert!(!default.join("settings.txt").exists() && !default.join("themes").exists());
-        assert!(move_data(&moved, &moved.join("inside"), false).is_err());
+        assert!(move_data(&moved, &moved.join("inside"), false, true).is_err());
+        // The extension store rides when it is the settings folder's own: moved whole, backed
+        // up, none left behind.
+        std::fs::create_dir_all(default.join("extensions/apc40")).unwrap();
+        std::fs::write(default.join("extensions/apc40/extension.json"), "{}").unwrap();
+        let moved2 = base.join("moved2");
+        let (backup2, _) = move_data(&default, &moved2, false, true).unwrap();
+        assert!(moved2.join("extensions/apc40/extension.json").is_file());
+        assert!(backup2.join("extensions/apc40/extension.json").is_file());
+        assert!(!default.join("extensions").exists(), "the store is not left behind");
+        // An independent store keeps its place: nothing moves.
+        std::fs::create_dir_all(default.join("extensions/apc40")).unwrap();
+        std::fs::write(default.join("extensions/apc40/extension.json"), "{}").unwrap();
+        let moved3 = base.join("moved3");
+        move_data(&default, &moved3, false, false).unwrap();
+        assert!(!moved3.join("extensions").exists(), "the store the env named is not the settings' to move");
+        assert!(default.join("extensions/apc40/extension.json").is_file());
         // A folder that is gone is not used.
         point(&default, Some(&base.join("gone"))).unwrap();
         assert_eq!(pointed(&default), None);
@@ -225,7 +264,7 @@ mod tests {
         std::fs::write(elsewhere.join("theme.css"), ":root {}").unwrap();
         std::os::unix::fs::symlink(&elsewhere, themes.join("linked")).unwrap();
         let moved = base.join("moved");
-        let (backup, _) = move_data(&themes, &moved, true).unwrap();
+        let (backup, _) = move_data(&themes, &moved, true, false).unwrap();
         assert!(moved.join("night/theme.css").is_file() && backup.join("night/theme.css").is_file());
         assert!(!themes.join("night").exists(), "what was copied leaves");
         assert!(std::fs::symlink_metadata(themes.join("linked")).is_ok_and(|m| m.file_type().is_symlink()));
@@ -235,7 +274,7 @@ mod tests {
         std::fs::create_dir_all(data.join("themes")).unwrap();
         std::fs::write(data.join("settings.txt"), "theme = night\n").unwrap();
         std::os::unix::fs::symlink(&elsewhere, data.join("themes/linked")).unwrap();
-        move_data(&data, &base.join("data-moved"), false).unwrap();
+        move_data(&data, &base.join("data-moved"), false, true).unwrap();
         assert!(!data.join("settings.txt").exists());
         assert!(std::fs::symlink_metadata(data.join("themes/linked")).is_ok_and(|m| m.file_type().is_symlink()));
         assert!(elsewhere.join("theme.css").is_file());
