@@ -2154,31 +2154,6 @@
       "workInProgress": false
     },
     {
-      "id": "ClipEditor/MPE/piano_bent_notes",
-      "page": "ClipEditor",
-      "section": "MPE",
-      "name": "Pitch bends drawn as",
-      "note": "Choose how a note whose pitch bends is drawn in the piano roll.",
-      "keys": [
-        "piano_bent_notes"
-      ],
-      "sourceFingerprint": "db4442a7d5fd338ea0ba783ff2584acc84a1063dadcc3d8629e4700efe9293dd",
-      "helpStatus": "reviewed",
-      "description": "A note can carry its own pitch curve, made with the piano roll's MPE editing or by the MPE LFO, that slides it up or down while it plays.\n\nWith Bent notes, such a note is drawn as a band that follows its curve, as tall as a row, and the row it starts in stays faint behind it. The band is the note: a press on it selects the note, dragging it moves the note with its bend, and its ends resize it. With MPE on and the note selected, its points are handles on the band, a double-click on the band adds a point, and each bend has a handle in its middle that curves it when dragged.\n\nWith Lines, the note stays in its row and its curve is drawn as a thin line over it while MPE is on; a click on the line adds a point and a drag on it curves it.\n\nThe same choice is in the piano roll's right-click menu while MPE is on (Draw bends as lines, Draw bends as bent notes).",
-      "options": [
-        {
-          "name": "Bent notes",
-          "description": "A bending note is drawn and edited as a band along its curve. This is the default."
-        },
-        {
-          "name": "Lines",
-          "description": "A bending note stays in its row, its curve a line over it."
-        }
-      ],
-      "whenToChange": "Choose Lines for close work on dense curves, such as a fast vibrato, where a thin line is easier to read than a band.",
-      "workInProgress": false
-    },
-    {
       "id": "ClipEditor/Piano roll/piano_key_style",
       "page": "ClipEditor",
       "section": "Piano roll",
@@ -2285,6 +2260,31 @@
         }
       ],
       "whenToChange": "Pick the key you write in most, so a clip's scale is right the moment you switch it on.",
+      "workInProgress": false
+    },
+    {
+      "id": "ClipEditor/MPE/piano_bent_notes",
+      "page": "ClipEditor",
+      "section": "MPE",
+      "name": "Pitch bends drawn as",
+      "note": "Choose how a note whose pitch bends is drawn in the piano roll.",
+      "keys": [
+        "piano_bent_notes"
+      ],
+      "sourceFingerprint": "db4442a7d5fd338ea0ba783ff2584acc84a1063dadcc3d8629e4700efe9293dd",
+      "helpStatus": "reviewed",
+      "description": "A note can carry its own pitch curve, made with the piano roll's MPE editing or by the MPE LFO, that slides it up or down while it plays.\n\nWith Bent notes, such a note is drawn as a band that follows its curve, as tall as a row, and the row it starts in stays faint behind it. The band is the note: a press on it selects the note, dragging it moves the note with its bend, and its ends resize it. With MPE on and the note selected, its points are handles on the band, a double-click on the band adds a point, and each bend has a handle in its middle that curves it when dragged.\n\nWith Lines, the note stays in its row and its curve is drawn as a thin line over it while MPE is on; a click on the line adds a point and a drag on it curves it.\n\nThe same choice is in the piano roll's right-click menu while MPE is on (Draw bends as lines, Draw bends as bent notes).",
+      "options": [
+        {
+          "name": "Bent notes",
+          "description": "A bending note is drawn and edited as a band along its curve. This is the default."
+        },
+        {
+          "name": "Lines",
+          "description": "A bending note stays in its row, its curve a line over it."
+        }
+      ],
+      "whenToChange": "Choose Lines for close work on dense curves, such as a fast vibrato, where a thin line is easier to read than a band.",
       "workInProgress": false
     },
     {
