@@ -298,6 +298,43 @@ fn hostile_values_do_not_panic() {
     assert!(empty.project.tracks.is_empty());
 }
 
+/// An audio track whose arrangement holds one clip for each `SampleVolume`, four beats apart.
+fn audio_clips_set(volumes: &[&str]) -> String {
+    let clips: String = volumes
+        .iter()
+        .enumerate()
+        .map(|(i, volume)| {
+            let (start, end) = (i * 4, i * 4 + 4);
+            format!(
+                r#"<AudioClip Id="{i}" Time="{start}">
+                     <CurrentStart Value="{start}"/><CurrentEnd Value="{end}"/>
+                     <Loop><LoopStart Value="0"/><LoopEnd Value="4"/><StartRelative Value="0"/>
+                           <LoopOn Value="false"/><OutMarker Value="4"/></Loop>
+                     <Name Value="Vox"/><IsWarped Value="true"/>
+                     <SampleRef><FileRef><RelativePath Value="Samples/vox.wav"/></FileRef></SampleRef>
+                     <SampleVolume Value="{volume}"/>
+                   </AudioClip>"#
+            )
+        })
+        .collect();
+    format!(
+        r#"<Ableton><LiveSet><Tracks><AudioTrack Id="1"><Name><EffectiveName Value="Vox"/></Name>
+           <DeviceChain><MainSequencer><Sample><ArrangerAutomation><Events>{clips}</Events></ArrangerAutomation></Sample>
+           </MainSequencer></DeviceChain></AudioTrack></Tracks></LiveSet></Ableton>"#
+    )
+}
+
+/// Live writes its top clip gain, +24 dB, in single precision (15.8489332), a hair over the
+/// model's +24 dB: it is read as +24 dB, as is anything over it, so the project saves into a file
+/// that opens again; a gain under the top is read as it is.
+#[test]
+fn a_clip_gain_at_lives_top_is_read_as_the_highest_a_clip_takes() {
+    let project = read_xml(&audio_clips_set(&["15.8489332", "0.5011872053", "100"])).unwrap().project;
+    let gains: Vec<f64> = project.arrangement.lanes[0].clips.iter().map(|c| c.audio.gain).collect();
+    assert_eq!(gains, vec![suhina_model::max_clip_gain(), 0.5011872053, suhina_model::max_clip_gain()]);
+    assert!(project.arrangement.lanes[0].clips.iter().all(|c| c.audio.is_valid()));
+}
+
 #[test]
 fn reads_plugins_and_placeholders() {
     use suhina_model::DeviceKind;
