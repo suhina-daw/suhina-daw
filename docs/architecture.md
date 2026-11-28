@@ -14,6 +14,7 @@ covers:
   - crates/engine/src/launcher.rs
   - crates/engine/src/swap.rs
   - crates/engine/src/ahead.rs
+  - crates/engine/src/render_path_probe.rs
   - crates/engine/src/cpu.rs
   - crates/session/src/projects.rs
   - crates/session/src/rack.rs
@@ -80,7 +81,12 @@ session will hold it and `media` will write its stems (planned, #146). The built
 The engine runs them in chains on tracks. It knows no device itself: it makes them with a
 `DeviceFactory` (`device-sdk`) it is handed in `RenderInputs`, and the session hands it the
 registry's (`suhina_session::devices()`, #1147). The engine depends on `device-registry` only for
-its tests.
+its tests and laboratory examples.
+
+The engine's optional `render-path-prototype` feature exposes a
+[single-chain laboratory](spec/render-path-prototype.md) for separating device rendering from
+play-time mixing. It is exercised by an example and deterministic tests; the desktop does not
+enable it or use its queue.
 
 | Crate | Owns | Depends on |
 |---|---|---|
@@ -90,7 +96,7 @@ its tests.
 | `als` | Reading Live Sets into `model`, with warnings for what it skips ([spec](spec/als-format.md)). One crate per format later. | model, plugins |
 | `flp` | Reading an FL Studio project's container and event stream: the `FLhd` header, the `FLdt` chunk, events with typed values and strings in the encoding the version event decides, every error with its offset ([spec](spec/flp-format.md)). Partial project import: shared note patterns, playlist placements and basic samplers, with retained source and warnings ([mapping](spec/flp-model-mapping.md)). | model, media, plugins |
 | `project-file` | Suhina's own project file (`.suhina`): the model as versioned JSON, written and read with nothing lost, every value checked; which paths are project files (`is_project_file`); audio paths moved when a project is saved elsewhere ([ADR 0010](decisions/0010-project-files.md), [spec](spec/suhina-format.md)). | model, fs |
-| `engine` | Turns a project into audio: note voices, audio clips with real-time stretching ([ADR 0003](decisions/0003-time-stretching.md)), the clip launcher ([spec](spec/clip-launching.md)), device chains with plug-in slots ([ADR 0004](decisions/0004-built-in-devices.md), [device chains](spec/device-chains.md)), the tempo map ([spec](spec/tempo-map.md)), latency compensation, sends, the preview voice ([ADR 0011](decisions/0011-preview-and-added-audio.md)), live notes and audio input ([ADR 0017](decisions/0017-inputs-and-latency.md)) and the cue bus. Main types: `Renderer`, `Controller`, `PluginProcessor`. Never touches files and never loads a plug-in. | model, stretch, dsp, device-api, device-sdk, ipc (only to wait for several plug-ins' answers at once, #1256), realtime (the render workers' priority, [ADR 0038](decisions/0038-rendering-on-several-cores.md); `device-registry` for its tests only) |
+| `engine` | Turns a project into audio: note voices, audio clips with real-time stretching ([ADR 0003](decisions/0003-time-stretching.md)), the clip launcher ([spec](spec/clip-launching.md)), device chains with plug-in slots ([ADR 0004](decisions/0004-built-in-devices.md), [device chains](spec/device-chains.md)), the tempo map ([spec](spec/tempo-map.md)), latency compensation, sends, the preview voice ([ADR 0011](decisions/0011-preview-and-added-audio.md)), live notes and audio input ([ADR 0017](decisions/0017-inputs-and-latency.md)) and the cue bus. Main types: `Renderer`, `Controller`, `PluginProcessor`. Never touches files and never loads a plug-in. | model, stretch, dsp, device-api, device-sdk, ipc (only to wait for several plug-ins' answers at once, #1256), realtime (the render workers' priority, [ADR 0038](decisions/0038-rendering-on-several-cores.md); `device-registry` for tests and laboratory examples) |
 | `media` | Finds and decodes a project's audio (symphonia, on all cores) into an `AudioPool`; reads what a browser file is (`info`), MIDI files (`midi`), loop tempo (`tempo`) and Stems files (`stems`, [spec](spec/stems-format.md)); writes what an export renders (`write`: WAV, FLAC, Ogg Vorbis, MP3; [export](spec/export.md) › Formats). | model, mp3 (its tests: devices/compressor, devices/limiter) |
 | `mp3` | MP3 encoding through LAME 3.100's encoder, vendored as C source in `third_party/lame/` and compiled into a static library by the build ([ADR 0029](decisions/0029-mp3-encoder.md)): the settings, the encoder behind a safe API that owns and frees the C handle, the stream's blocks and flush, the LAME tag frame, and putting the finished file's bytes together. Never touches files; encoding runs on an export's path only, never in the audio callback. One of the three crates allowed `unsafe`. | nothing (cc) |
 | `library` | The browser's library ([ADR 0012](decisions/0012-file-library.md)): the folders the user added, an index of their samples, MIDI files, presets and projects kept on disk and up to date (checked at start, then watched with `notify` or polled), search, pins, recent items and color tags in `browser.json`; finding files by name in the index or by walking a folder (`find`, for missing files). | media, fs |

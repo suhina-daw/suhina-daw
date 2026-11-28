@@ -122,5 +122,7 @@ line gives the late blocks, the track and the thread count.
   plug-ins of one process on different chains, now on different threads, each take a round trip
   of their own, as before.
 - The threshold of four chains, measured ([#1512](https://github.com/suhina-daw/suhina-daw/issues/1512)).
-- Rendering ahead, Live and Studio mode, and the live path's meters (phases 3 and 4).
+- Rendering ahead in the application, Live and Studio mode, and the live path's meters
+  (phases 3 and 4). The opt-in [single-chain laboratory](render-path-prototype.md) exercises
+  queue draining and catch-up before those paths are integrated with transport.
 - On by default (phase 5).

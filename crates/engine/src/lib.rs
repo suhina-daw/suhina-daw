@@ -93,6 +93,8 @@ mod preview_tests;
 mod record;
 #[cfg(test)]
 mod record_tests;
+#[cfg(any(test, feature = "render-path-prototype"))]
+pub mod render_path_probe;
 mod sends;
 #[cfg(test)]
 mod sends_tests;

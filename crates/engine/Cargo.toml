@@ -5,6 +5,14 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+# Laboratory only; does not enable render-ahead in the desktop application.
+render-path-prototype = []
+
+[[example]]
+name = "render_path_probe"
+required-features = ["render-path-prototype"]
+
 [dependencies]
 suhina-model.workspace = true
 suhina-stretch.workspace = true
