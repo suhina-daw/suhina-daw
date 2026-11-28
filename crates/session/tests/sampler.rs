@@ -120,6 +120,11 @@ fn loading_samples_initializes_original_tempo_instead_of_forcing_four_beats() {
         session.execute("device.setParam", &json!({"track":1,"device":0,"param":"source_bpm","value":200.})).unwrap();
         session.execute("device.setParam", &json!({"track":1,"device":0,"param":"source_bpm","value":0.})).unwrap();
         assert_eq!(param(&session, "source_bpm"), bpm, "Auto must re-detect the original BPM");
+        session.execute("device.setParam", &json!({"track":1,"device":0,"param":"source_bpm","value":200.})).unwrap();
+        session
+            .execute("device.setParam", &json!({"track":1,"device":0,"param":"source_bpm","normalized":0.}))
+            .unwrap();
+        assert_eq!(param(&session, "source_bpm"), bpm, "the normalized zero must re-detect too");
         session.execute("edit.undo", &json!({})).unwrap();
         session.execute("edit.undo", &json!({})).unwrap();
         std::fs::remove_file(file).unwrap();

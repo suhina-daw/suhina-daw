@@ -126,6 +126,83 @@ fn a_group_chain_keeps_the_children_s_assigns() {
     assert!(group_a < 1e-4, "the group's A assign governs both children: {group_a}");
 }
 
+/// A presentation folder plays nothing: its assign has no effect, even with children under it.
+#[test]
+fn a_presentation_folder_assign_has_no_effect() {
+    let render = |folder: CrossfadeAssign| {
+        let project = ProjectBuilder::new()
+            .midi_track(1, "A")
+            .midi_track(2, "B")
+            .notes(1, "n", 1.0, vec![Note::new(0.0, 1.0, 69, 1.0)])
+            .clip(1, Clip::new(ContentId(1), 0.0, 1.0))
+            .clip(2, Clip::new(ContentId(1), 0.0, 1.0))
+            .channel(Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(100), "Main") })
+            .track(
+                Track {
+                    id: TrackId(3),
+                    name: "Folder".into(),
+                    color: None,
+                    content: ContentKinds::default(),
+                    channel: None,
+                    parent: None,
+                    midi_input: MidiInput::default(),
+                    audio_input: AudioInput::default(),
+                    folder: true,
+                    crossfade_assign: folder,
+                    extensions: Extensions::default(),
+                },
+                None,
+            )
+            .parent(1, 3)
+            .parent(2, 3)
+            .with(|p| {
+                p.tracks[0].crossfade_assign = CrossfadeAssign::Off;
+                p.tracks[1].crossfade_assign = CrossfadeAssign::Off;
+                p.crossfader = Crossfader(0.0);
+            })
+            .build();
+        peak(&render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap())
+    };
+    let off = render(CrossfadeAssign::Off);
+    let b = render(CrossfadeAssign::B);
+    assert!(off > 1e-3, "the children play under an off folder");
+    assert!((b - off).abs() < 0.01 * off, "the folder's B assign is ignored: {off} vs {b}");
+}
+
+/// A child routed past its assigned parent group is not part of that group's summed sound, so
+/// the group's chain cannot fade it: the last chain before its own output takes the assign.
+#[test]
+fn a_track_routed_past_its_assigned_group_still_takes_the_fade() {
+    let mut project = ProjectBuilder::new()
+        .midi_track(1, "A")
+        .midi_track(2, "B")
+        .bus_track(3, "G", ChannelRole::Submix)
+        .notes(1, "n", 1.0, vec![Note::new(0.0, 1.0, 69, 1.0)])
+        .clip(1, Clip::new(ContentId(1), 0.0, 1.0))
+        .clip(2, Clip::new(ContentId(1), 0.0, 1.0))
+        .channel(Channel { role: ChannelRole::Master, ..Channel::new(ChannelId(100), "Main") })
+        .parent(1, 3)
+        .parent(2, 3)
+        // Track 1 skips the group and plays straight into Main; track 2 goes through it.
+        .output(1, 100)
+        .output(2, 3)
+        .with(|p| {
+            p.tracks[0].crossfade_assign = CrossfadeAssign::Off;
+            p.tracks[1].crossfade_assign = CrossfadeAssign::B;
+            p.tracks[2].crossfade_assign = CrossfadeAssign::A;
+            p.crossfader = Crossfader(1.0);
+        })
+        .build();
+    // The group runs a chain, which is what made the old walk defer the child's fade to it.
+    let channel = project.channels.iter_mut().find(|c| c.id == ChannelId(3)).unwrap_or_else(|| {
+        panic!("the group's channel");
+    });
+    channel.devices.push(crate::chain_tests::device("utility", &[]));
+    project.arrangement.lanes.retain(|lane| lane.track != Some(TrackId(2)));
+    let level = peak(&render_offline(&project, SR, 256, suhina_device_registry::factory()).unwrap());
+    assert!(level < 1e-4, "the bypassing child of the A group is silent at B: {level}");
+}
+
 /// The crossfader moves while the engine plays, as a message: no new graph, and the A track
 /// fades out as the value reaches B.
 #[test]

@@ -432,10 +432,17 @@ local function refresh_device()
             -- value from elsewhere writes, once the turn has settled.
             if shown ~= knob_shown[controller] then
                 led_cc(controller, position)
+                knob_recent[controller] = nil
                 knob_reported(controller, position)
                 knob_turn[controller] = 0
             elseif turning > 0 then
                 knob_turn[controller] = turning - 1
+                if turning == 1 then
+                    -- The echo window closes with the settle: a value that comes back to a
+                    -- position the knob passed through is a change from elsewhere, not this
+                    -- knob's echo, and writes the ring again.
+                    knob_recent[controller] = nil
+                end
             elseif not knob_saw(controller, position) then
                 led_cc(controller, position)
                 knob_reported(controller, position)
@@ -446,6 +453,7 @@ local function refresh_device()
             led_cc(16 + knob, 0)
             knob_shown[controller] = nil
             knob_turn[controller] = nil
+            knob_recent[controller] = nil
         end
     end
     led(0, DEVICE_LEFT, device ~= nil and ON or OFF_BUTTON)
@@ -684,8 +692,13 @@ suhina.on_ports(function(inputs, outputs)
     if out ~= nil then
         suhina.send(out, LIVE_MODE)
     end
-    -- The device may hold LEDs from before: send every control again, whatever changed.
+    -- The device may hold LEDs from before: send every control again, whatever changed. The
+    -- rings' ownership, turn and echo history go with it, or a ring the controller lost keeps
+    -- its old position because the script thinks it still shows it.
     leds = {}
+    knob_shown = {}
+    knob_turn = {}
+    knob_recent = {}
     refresh()
 end)
 

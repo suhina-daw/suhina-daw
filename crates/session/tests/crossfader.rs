@@ -25,12 +25,20 @@ fn the_crossfader_and_the_assign_are_project_state_with_undo() {
     assert_eq!(entry["crossfade_assign"], "b");
     // The command's answer names the track.
     assert_eq!(assign["tracks"], json!([track.0]));
-    // One gesture is one undo step: the second value joins the first.
+    // Two frames of one drag are one undo step: the second value joins the first, and one undo
+    // is back to where the drag began; a redo takes the drag's last value again.
+    run(&mut session, "mixer.setCrossfader", json!({ "value": 0.5, "gesture": "crossfader" })).unwrap();
     run(&mut session, "mixer.setCrossfader", json!({ "value": 0.8, "gesture": "crossfader" })).unwrap();
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert!((session.project().crossfader.0 - 0.25).abs() < 1e-9, "one drag back to where it began");
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert!((session.project().crossfader.0 - 0.8).abs() < 1e-9, "the redo takes the drag's last value");
+    run(&mut session, "edit.undo", json!({})).unwrap();
+    assert!((session.project().crossfader.0 - 0.25).abs() < 1e-9);
     run(&mut session, "edit.undo", json!({})).unwrap();
     assert_eq!(session.project().track(track).map(|t| t.crossfade_assign), Some(CrossfadeAssign::Off));
+    run(&mut session, "edit.redo", json!({})).unwrap();
+    assert_eq!(session.project().track(track).map(|t| t.crossfade_assign), Some(CrossfadeAssign::B));
 }
 
 #[test]
@@ -44,10 +52,34 @@ fn a_bad_crossfader_value_or_assign_is_refused() {
         );
     }
     assert!(run(&mut session, "mixer.setCrossfader", json!({})).is_err(), "value is missing");
+    for value in [json!("0.5"), json!(null), json!([0.5]), json!({ "value": 0.5 })] {
+        assert!(
+            run(&mut session, "mixer.setCrossfader", json!({ "value": value })).is_err(),
+            "value {value} is not a number"
+        );
+    }
     for assign in ["c", "A", ""] {
         assert!(
             run(&mut session, "track.setCrossfadeAssign", json!({ "tracks": [track.0], "assign": assign })).is_err(),
             "assign {assign:?} is not a, b or off"
         );
     }
+    for assign in [json!(1), json!(null), json!(["b"])] {
+        assert!(
+            run(&mut session, "track.setCrossfadeAssign", json!({ "tracks": [track.0], "assign": assign })).is_err(),
+            "assign {assign} is not text"
+        );
+    }
+    for tracks in [json!(null), json!(track.0), json!([]), json!([track.0, "no such track"]), json!([{}])] {
+        assert!(
+            run(&mut session, "track.setCrossfadeAssign", json!({ "tracks": tracks, "assign": "a" })).is_err(),
+            "tracks {tracks} is not a non-empty list of existing tracks"
+        );
+    }
+    assert!(run(&mut session, "track.setCrossfadeAssign", json!({ "assign": "a" })).is_err(), "tracks is missing");
+    assert_eq!(
+        session.project().track(track).map(|t| t.crossfade_assign),
+        Some(CrossfadeAssign::Off),
+        "no refused call moved the assign"
+    );
 }

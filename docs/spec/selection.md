@@ -64,9 +64,11 @@ agent attached to the app may run them (the selection is project state, not sett
 
 ## A removal clears it
 
-- When the selected track or the selected device is removed, nothing is selected: the window's
-  highlight is gone and `project.selection` answers with nothing. Undoing the removal does not
-  bring the selection back — the selection is not an edit.
+- When the selected track is removed, nothing is selected: the window's highlight is gone and
+  `project.selection` answers with nothing.
+- When the selected device is removed, only the device is cleared: the track stays selected and
+  `project.selection` answers that track with no device.
+- Undoing either removal does not bring the selection back — the selection is not an edit.
 
 ## The reading
 

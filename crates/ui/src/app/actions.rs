@@ -1440,17 +1440,20 @@ impl App {
     pub(super) fn follow_session_selection(&mut self) {
         let Some(session) = self.session() else { return };
         let Some(track) = session.selected_track() else {
-            // An empty selection clears a window highlight whose track has gone, as a removal
-            // does. A window pick of a track that exists stays until the frame publishes it.
-            if let Some(shown) = self.selected_track()
-                && session.project().track(shown).is_none()
-            {
+            // An empty selection clears the window highlight the session last knew — even when
+            // an undo has already brought the removed track back: undo does not restore the
+            // selection (`docs/spec/selection.md`). A pick made since, not that synchronized
+            // one, waits for its publish; one whose track has gone goes too.
+            let shown = self.window_selection();
+            let gone = shown.0.is_some_and(|shown| session.project().track(shown).is_none());
+            if shown == self.synced_selection || gone {
                 self.arrangement.selected_tracks.clear();
                 self.view.selected = None;
                 self.view.selected_tracks.clear();
                 self.view.selected_slot = None;
                 self.selected_device = None;
                 self.device_picks.clear();
+                self.synced_selection = (None, None);
             }
             return;
         };
@@ -1468,6 +1471,7 @@ impl App {
             self.selected_device = picked.clone();
             self.device_picks = picked.into_iter().collect();
         }
+        self.synced_selection = self.window_selection();
     }
 
     /// Sets the session's selection from the window's, after a click or a key moved it
@@ -1478,7 +1482,14 @@ impl App {
     pub(super) fn publish_session_selection(
         &mut self,
         window_before: (Option<TrackId>, Option<(TrackId, detail_view::DeviceAt)>),
+        project: Option<ProjectId>,
     ) {
+        // A `project.switch` this frame moves the active session: the pick was the outgoing
+        // project's, and publishing it would replace the new project's selection
+        // (docs/spec/selection.md › The window follows).
+        if self.projects.active() != project {
+            return;
+        }
         // A command the frame ran — a surface program's, the CLI's, MCP's — can move the
         // session's selection before the window has followed it. The window still shows the old
         // one, and publishing that would undo the command (a controller's Device arrow would
@@ -1494,11 +1505,15 @@ impl App {
         }
         // A device clicked on another track goes in the same frame as that track's selection;
         // otherwise the next frame would follow the track's first device and replace it.
-        let Some((picked_track, at)) = self.selected_device.clone().filter(|(t, _)| *t == track) else { return };
+        let Some((picked_track, at)) = self.selected_device.clone().filter(|(t, _)| *t == track) else {
+            self.synced_selection = self.window_selection();
+            return;
+        };
         let now = self.session().and_then(Session::selected_device_path);
         if now.as_deref() != Some(at.0.as_slice()) {
             self.run(&Action::new("device.select", json!({ "track": picked_track.0, "device": at.value() })));
         }
+        self.synced_selection = self.window_selection();
     }
 
     /// What the window points at for the selection: its primary track and the device picked in

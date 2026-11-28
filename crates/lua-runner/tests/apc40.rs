@@ -455,10 +455,35 @@ fn a_knobs_own_report_is_not_written_back_to_its_ring() {
     );
     // A value the knob never reported — the window set the gain to its maximum — writes.
     fake.selection_with_gain(4, 1, 0, 35.0);
+    let after_max = fake.sends.borrow().len();
     assert!(
         fake.sends.borrow()[after_knob..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 127].as_slice()),
         "a change from elsewhere writes the ring: {:?}",
         &fake.sends.borrow()[after_knob..]
+    );
+    // The history is the turn's echo window, not forever: a settled value that comes back to a
+    // position the knob passed through writes the ring again.
+    fake.selection_with_gain(4, 1, 0, gain);
+    assert!(
+        fake.sends.borrow()[after_max..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 64].as_slice()),
+        "a later change back to an old position writes the ring: {:?}",
+        &fake.sends.borrow()[after_max..]
+    );
+}
+
+/// A controller that reconnects may have lost its rings: reopening the ports sends every ring
+/// position again, though the same dial is still shown.
+#[test]
+fn a_port_reopen_sends_the_rings_again() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    fake.ports();
+    fake.selection(4, 1, 0);
+    let before = fake.sends.borrow().len();
+    fake.ports();
+    assert!(
+        fake.sends.borrow()[before..].iter().any(|(_, bytes)| bytes.as_slice() == [0xB0, 17, 103].as_slice()),
+        "the gain's ring is sent again after the ports reopen: {:?}",
+        &fake.sends.borrow()[before..]
     );
 }
 

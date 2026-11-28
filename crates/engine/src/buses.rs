@@ -453,7 +453,9 @@ pub(crate) fn cue_gains(project: &Project, track: TrackId, pan: bool) -> Option<
 /// (`docs/spec/crossfader.md`).
 fn crossfade_governing(project: &Project, track: TrackId) -> Option<(suhina_model::CrossfadeAssign, TrackId)> {
     use suhina_model::CrossfadeAssign;
-    let mut assign = project.track(track)?.crossfade_assign;
+    // A presentation folder plays nothing, so its assign has no effect and never governs a
+    // child (`docs/spec/crossfader.md` › The assign).
+    let mut assign = project.track(track).filter(|t| !t.folder)?.crossfade_assign;
     let mut owner = track;
     let mut parent = project.track(track).and_then(|t| t.parent);
     let mut hops = 0;
@@ -461,7 +463,7 @@ fn crossfade_governing(project: &Project, track: TrackId) -> Option<(suhina_mode
         if hops > suhina_model::MAX_GROUP_DEPTH {
             break;
         }
-        if let Some(found) = project.track(group).map(|t| t.crossfade_assign)
+        if let Some(found) = project.track(group).filter(|t| !t.folder).map(|t| t.crossfade_assign)
             && found != CrossfadeAssign::Off
         {
             assign = found;
@@ -486,10 +488,25 @@ fn crossfade_chain_assign(
     if owner == track {
         return Some(assign);
     }
+    // A group's chain scales a track only when the track's output reaches it: a track routed
+    // past its parent is not part of that group's summed sound, so the fade belongs to the last
+    // chain before its own output instead.
+    let feeds = |group: TrackId| {
+        let Some(channel) = project.track(track).and_then(|t| t.channel) else {
+            return false;
+        };
+        let Some(group_channel) = project.track(group).and_then(|t| t.channel) else {
+            return false;
+        };
+        project.output_chain(channel).any(|id| id == group_channel)
+    };
     let mut parent = project.track(track).and_then(|t| t.parent);
     let mut hops = 0;
     while let Some(group) = parent {
-        if hops > suhina_model::MAX_GROUP_DEPTH || chained.contains(&group) {
+        if hops > suhina_model::MAX_GROUP_DEPTH {
+            return None;
+        }
+        if chained.contains(&group) && feeds(group) {
             return None;
         }
         if group == owner {

@@ -1416,7 +1416,13 @@ pub fn main_crossfader(
             actions.push(send(v, false));
             committed = Some(v);
         }
-        Drag::None => {}
+        Drag::None => {
+            // A drag that ended without a value has no preview to keep: the fader shows the
+            // project's, as the volume and main faders do (#1720 review).
+            if matches!(state.drag, Some((t, Control::Crossfader, _)) if t == MAIN) {
+                state.drag = None;
+            }
+        }
     }
     let shown = match state.drag {
         Some((t, Control::Crossfader, v)) if t == MAIN => v,
