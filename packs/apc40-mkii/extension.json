@@ -12,11 +12,11 @@
   "license_source": "https://creativecommons.org/publicdomain/zero/1.0/",
   "license_checked": "2026-11-21",
   "source": "https://github.com/suhina-daw/suhina-daw",
-  "protocol": 1,
+  "protocol": 2,
   "programs": [
     {
       "path": "script.lua",
-      "sha256": "b3ea63544642b427620a001c88e5b11e9dee73a3a9dfc9232a846c10ee8ec4ef"
+      "sha256": "d162e9349d13045903510931c8abaa16b049d8e6ba0fc6e8416cd2fb48b612b8"
     }
   ],
   "ports": [

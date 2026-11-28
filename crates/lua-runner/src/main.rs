@@ -335,6 +335,8 @@ fn step_message(
         }
         Message::Ping { id } => emit(link, runner, &Message::Pong { id: *id })?,
         Message::Pong { .. } => {}
+        // The program's own message to the host; the host never sends one.
+        Message::QuitReset { .. } => {}
         Message::Ports { inputs, outputs } => {
             let call = {
                 let mut runner = runner.borrow_mut();
@@ -598,6 +600,39 @@ fn register_api(lua: &Lua, runner: &Shared<Run>, link: &Shared<Link>) -> Result<
         .map_err(|e| e.to_string())
     }?;
     set(&suhina, "send", send)?;
+
+    let quit_reset = {
+        let runner = Rc::clone(runner);
+        let link = Rc::clone(link);
+        lua.create_function(move |_, messages: mlua::Table| {
+            // The controller's own reset, a list of raw messages the host writes once at quit:
+            // the session does not know one device's LED map (docs/spec/surface-programs.md ›
+            // Quitting). Bounded like a send-back burst.
+            let mut list: Vec<Vec<u8>> = Vec::new();
+            let mut total = 0usize;
+            for message in messages.sequence_values::<mlua::LuaString>() {
+                let message = message.map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                let bytes = message.as_bytes().to_vec();
+                if bytes.is_empty() || bytes.len() > surface::MAX_MESSAGE_BYTES {
+                    return Ok(false);
+                }
+                total = total.saturating_add(bytes.len());
+                if total > surface::MAX_QUIT_RESET_BYTES {
+                    return Ok(false);
+                }
+                list.push(bytes);
+            }
+            if list.is_empty() || list.len() > surface::MAX_QUIT_RESET_MESSAGES {
+                return Ok(false);
+            }
+            match emit(&link, &runner, &Message::QuitReset { messages: list }) {
+                Ok(()) => Ok(true),
+                Err(e) => Err(mlua::Error::runtime(e)),
+            }
+        })
+        .map_err(|e| e.to_string())?
+    };
+    set(&suhina, "quit_reset", quit_reset)?;
 
     let command = {
         let runner = Rc::clone(runner);

@@ -18,6 +18,7 @@ fn a_stop_before_the_process_exists_starts_nothing() {
         &from,
         &events,
         &pid,
+        &QuitReset::default(),
         &mut ports,
         &mut Pending::default(),
     );
@@ -71,6 +72,7 @@ fn a_stop_while_the_runner_connects_ends_the_start_without_a_crash() {
                 &from,
                 &thread_events,
                 &thread_pid,
+                &QuitReset::default(),
                 &mut ports,
                 &mut Pending::default(),
             ));

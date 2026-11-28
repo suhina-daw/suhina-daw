@@ -9,15 +9,15 @@
 -- Suhina's own, written from public documentation alone (the repository's clean-room rules):
 -- Akai's public *APC40 Mk2 Communication Protocol v1.2* (January 19, 2015) for the note and CC
 -- map, the RGB values and the Application/Configuration message that puts the device in the
--- mode the document names Ableton Live (0x41), and Akai's public MIDI implementation chart for
--- the control map. See README.md beside this file. Suhina content: CC0-1.0.
+-- mode the document names (0x41), and Akai's public MIDI implementation chart for the control
+-- map. See README.md beside this file. Suhina content: CC0-1.0.
 
 local TRACKS = 8
 local SCENES = 5
 
 -- The device wakes in its Generic mode, where the activator, solo and record-arm buttons are
--- latching toggles that drive their own lights. Ableton Live mode (0x41) makes every button
--- momentary — a press is always note-on 127, a release note-off —
+-- latching toggles that drive their own lights. The Application/Configuration mode (0x41)
+-- makes every button momentary — a press is always note-on 127, a release note-off —
 -- and hands the buttons' LEDs to the host; the knobs' rings ride the hardware, and the script
 -- writes a ring only for a value the knob did not just report, so a session value trailing a
 -- turn cannot yank it back. The message is the Application/Configuration identifier of
@@ -659,3 +659,17 @@ kinds[suhina.subscribe("project.launcher")] = "grid"
 kinds[suhina.subscribe("launcher.state")] = "state"
 kinds[suhina.subscribe("project.tracks")] = "strips"
 kinds[suhina.subscribe("project.selection")] = "selection"
+
+-- The controller's own quit reset: the host writes it when the app quits, so the session does
+-- not have to know this device's LED map (docs/spec/surface-programs.md › Quitting). Every
+-- note and controller off on every channel, as the script's own LED writes are.
+local quit_reset = {}
+for channel = 0, 15 do
+    for note = 0, 127 do
+        quit_reset[#quit_reset + 1] = suhina.midi.note_on(channel, note, 0)
+    end
+    for controller = 0, 127 do
+        quit_reset[#quit_reset + 1] = suhina.midi.cc(channel, controller, 0)
+    end
+end
+suhina.quit_reset(quit_reset)

@@ -1066,13 +1066,21 @@ fn remove(projects: &mut Projects, params: &Value) -> Result<Value, CommandError
         return Err(format!("the extension's folder cannot be removed: {e}").into());
     }
     // A shipped script's removal is remembered: later starts do not install it again
-    // (docs/spec/shipped-scripts.md › Where it lands, and what runs).
-    if let Some(root) = &projects.extensions.root {
-        crate::shipped_scripts::note_removed(root, id);
+    // (docs/spec/shipped-scripts.md › Where it lands, and what runs). A record that cannot be
+    // written is said, after the store and the router are back in order, so a later start
+    // does not quietly install the script again.
+    let mut record_error = None;
+    if let Some(root) = &projects.extensions.root
+        && let Err(e) = crate::shipped_scripts::note_removed(root, id)
+    {
+        record_error = Some(format!("the removal could not be remembered: {e}"));
     }
     projects.extensions.reload();
     // The program's ports go back to the usual path at once: this look syncs the claims.
     projects.poll_plugins();
+    if let Some(error) = record_error {
+        return Err(error.into());
+    }
     Ok(json!({ "id": id, "removed": true }))
 }
 
