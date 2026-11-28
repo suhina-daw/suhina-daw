@@ -5,7 +5,17 @@ use super::*;
 use crate::demo::demo_project;
 
 fn note(time: f64, duration: f64, key: u8) -> Note {
-    Note { time, duration, key, velocity: 0.8, release_velocity: 0.5, channel: 0, muted: false, velocity_range: 0 }
+    Note {
+        time,
+        duration,
+        key,
+        velocity: 0.8,
+        release_velocity: 0.5,
+        channel: 0,
+        muted: false,
+        velocity_range: 0,
+        expression: None,
+    }
 }
 
 fn at(start: f64, length: f64, offset: f64, loop_range: Option<(f64, f64)>) -> Placement {

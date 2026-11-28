@@ -4,6 +4,7 @@
 //! The piano roll's state: its tool, zoom and scroll, the selection, the gesture under way, and what it was given.
 
 use super::*;
+use suhina_engine::model::ExpressionKind;
 
 /// The furthest the piano roll reaches, in beats: the engine's furthest start.
 pub(super) const BEAT_LIMIT: f32 = 120_000.0;
@@ -192,6 +193,13 @@ pub struct PianoRollState {
     pub key_height: f32,
     /// Indices of the selected notes.
     pub selected: BTreeSet<usize>,
+    /// MPE on: which of the notes' own curves the lane below shows and edits; the pitch curves
+    /// are drawn over the notes whichever it is (#930). `None` while off.
+    pub expression: Option<ExpressionKind>,
+    /// A curve point being dragged, and where it is now.
+    pub(crate) expression_drag: Option<super::expression::PointDrag>,
+    /// The MPE editor's lanes, point selection, menu and settings.
+    pub(crate) mpe: super::expression::MpeState,
     /// The selected notes as the last frame left them, each index with its note's id, so the
     /// selection follows its notes when another writer (an agent, a script, undo) adds, deletes or
     /// moves notes between frames (#1182); `None` when the last frame's own edit set the selection
@@ -354,6 +362,19 @@ pub struct PianoRollState {
     pub(super) menu_waiting: Option<(f64, MenuAt)>,
 }
 
+impl PianoRollState {
+    /// Which MPE lanes show below the notes: Slide, Pressure, Velocity and Release, in that
+    /// order (› MPE).
+    pub fn show_mpe_lanes(&mut self, lanes: [bool; 4]) {
+        self.mpe.lanes = lanes;
+    }
+
+    /// Which of its note's LFOs the picked kept LFO is, if one is picked.
+    pub fn mpe_kept(&self) -> Option<usize> {
+        self.mpe.kept.map(|(_, lfo)| lfo)
+    }
+}
+
 impl Default for PianoRollState {
     fn default() -> Self {
         Self {
@@ -363,6 +384,9 @@ impl Default for PianoRollState {
             zoom_reach: 0.0,
             key_height: DEFAULT_KEY_HEIGHT,
             selected: BTreeSet::new(),
+            expression: None,
+            expression_drag: None,
+            mpe: super::expression::MpeState::default(),
             selected_ids: None,
             span: None,
             live_span: None,
@@ -562,7 +586,7 @@ impl PianoRollState {
             self.settle_selection(&clip.notes);
         }
         let acting = self.acting().clone();
-        let chosen: Vec<Note> = acting.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
+        let chosen: Vec<Note> = acting.iter().filter_map(|i| clip.notes.get(*i).cloned()).collect();
         let count = clip.notes.len();
         let mut params = clip.address.clone();
         if action == "selection.paste" {
@@ -598,7 +622,10 @@ impl PianoRollState {
         }
         match action {
             "pianoRoll.selectAll" => {
-                self.selected = (0..count).collect();
+                // While MPE is on with one note selected, its curve's points (› MPE).
+                if !super::expression::select_all_points(clip, self) {
+                    self.selected = (0..count).collect();
+                }
                 return None;
             }
             "pianoRoll.deselect" => {
@@ -674,6 +701,7 @@ impl PianoRollState {
                     notes: &clip.notes,
                     selected: &acting,
                     length: clip.length,
+                    bar_beats: clip.bar_beats,
                     nothing,
                 };
                 let mut params = tools.params();
@@ -1028,6 +1056,7 @@ impl PianoRollState {
             channel: 0,
             muted: false,
             velocity_range: 0,
+            expression: None,
         })
     }
 }
@@ -1090,6 +1119,11 @@ pub struct Options {
     /// The workflow settings: what clicks, right-clicks and double-clicks do (› Workflow modes in
     /// `docs/spec/ui-clip-editor.md`).
     pub workflow: Workflow,
+    /// A note whose pitch bends is drawn bent along its curve (Settings › Clip editor › MPE ›
+    /// Pitch bends drawn as).
+    pub bent_notes: bool,
+    /// How much of a row's height a bent note's band takes, in percent (› Bent note thickness).
+    pub bent_width: u8,
 }
 
 /// What the piano roll needs from the window besides its own state, for one frame: the settings

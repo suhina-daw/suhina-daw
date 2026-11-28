@@ -14,6 +14,9 @@ pub(crate) struct Graph {
     pub(crate) inputs: Vec<input::InputRoute>,
     pub(crate) inputs_heard: Vec<bool>,
     pub(crate) events: Vec<ArrangedNote>,
+    /// The arrangement notes' expression curves ([`chain::mpe`]): prepared here, read on the
+    /// audio thread, freed with the graph.
+    pub(crate) curves: Vec<chain::mpe::CurveChange>,
     pub(crate) audio_events: Vec<ArrangedAudio>,
     /// Warped clips stretched as they play (ADR 0003), rendered ahead and mixed block by block.
     pub(crate) stretch_events: Vec<StretchEvent>,
@@ -151,6 +154,7 @@ impl Graph {
             buffer: vec![0.0; MAX_BLOCK * 2],
         });
         let mut events = Vec::new();
+        let mut curves = chain::mpe::Curves::default();
         let mut audio_events = Vec::new();
         let mut stretch_events = Vec::new();
         let mut stretch_voices = Vec::new();
@@ -182,7 +186,7 @@ impl Graph {
                             (track, gain_left, gain_right, column, bus, meter),
                             musical_scale(content.scale),
                             clip.swing.effective(project.transport.swing),
-                            &mut events,
+                            (&mut events, &mut curves),
                         ),
                         LaneData::Audio(region) => {
                             let Some(data) = audio.files.get(region.pool_key().as_ref()) else { continue };
@@ -312,6 +316,14 @@ impl Graph {
         let launcher_began = std::time::Instant::now();
         let launcher = ClipLauncher::new(project, audio, sample_rate, &chains, Arc::clone(&tempo));
         let launcher_took = launcher_began.elapsed();
+        // A chain whose notes carry curves plays them as MPE, when it can (`chain::mpe`).
+        let mut chains = chains;
+        let curved = events.iter().filter(|e| !e.curve.is_empty()).map(|e| e.bus).chain(launcher.curved_buses());
+        for bus in curved {
+            if let Some(chain) = bus_chain(&mut chains, bus) {
+                chain.enable_mpe();
+            }
+        }
         let levels_began = std::time::Instant::now();
         let levels = meters::Levels::build(project, &chains);
         let levels_took = levels_began.elapsed();
@@ -339,6 +351,7 @@ impl Graph {
             inputs_heard: vec![false; inputs.len()],
             inputs,
             events,
+            curves: curves.changes,
             audio_events,
             stretch_events,
             hosted,

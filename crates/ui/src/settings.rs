@@ -413,6 +413,10 @@ impl Descriptions {
 /// otherwise the threads (`audio.setRenderThreads`).
 pub const RENDER_THREAD_CHOICES: [u32; 5] = [1, 0, 2, 4, 8];
 
+/// The choices of Settings › Clip editor › MPE › Bent note thickness, as saved: how much of a
+/// row's height a bent note's band takes, in percent, with their names.
+pub const BENT_WIDTHS: [(&str, u8); 3] = [("Thin", 30), ("Medium", 50), ("Full row", 100)];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     /// User-owned PNG beneath translucent surfaces; never captures the desktop.
@@ -464,6 +468,11 @@ pub struct Settings {
     pub default_scale_mode: suhina_engine::model::ScaleMode,
     /// Whether the piano roll tints the rows of the clip's scale (the toolbar's Highlight).
     pub highlight_scale: bool,
+    /// A note whose pitch bends is drawn bent along its curve, its row kept faint behind it; off,
+    /// the note stays in its row with the curve drawn as a line over it (› MPE).
+    pub bent_notes: bool,
+    /// How much of a row's height a bent note's band takes, in percent: one of [`BENT_WIDTHS`].
+    pub bent_width: u8,
     /// A track's volume and pan as a field or as a knob (Settings › Launcher and mixer).
     pub mixer_controls: MixerControls,
     /// Where plug-in editors open.
@@ -606,6 +615,8 @@ impl Default for Settings {
             default_scale_root: 0,
             default_scale_mode: suhina_engine::model::ScaleMode::Major,
             highlight_scale: true,
+            bent_notes: true,
+            bent_width: 50,
             mixer_controls: MixerControls::Field,
             plugin_editors: EditorPlacement::Window,
             theme: crate::kit::theme::BUILT_IN.into(),

@@ -1295,6 +1295,7 @@ fn composed_sampler_persists_relocates_and_renders_through_the_project_chain() {
                     channel: 0,
                     muted: false,
                     velocity_range: 0,
+                    expression: None,
                 }]
                 .into(),
             ),

@@ -19,6 +19,10 @@ pub(super) struct Layout {
     pub(super) key_height: f32,
     /// The key rows shown, from the top: every key, or the keys a fold leaves (› Scale and key).
     pub(super) rows: KeyRows,
+    /// A note whose pitch bends is drawn, and pressed, along its curve (› MPE › Bent notes).
+    pub(super) bent: bool,
+    /// How much of a row's height a bent note's band takes, 0 to 1.
+    pub(super) bent_width: f32,
 }
 
 impl Layout {
@@ -176,7 +180,8 @@ const ON_GRID: f64 = 1e-6;
 pub(super) fn note_at(layout: &Layout, notes: &[Note], pos: Pos2) -> Option<(usize, Part)> {
     notes.iter().enumerate().rev().find_map(|(i, n)| {
         let rect = layout.note_rect(n).expand2(Vec2::new(0.0, 0.5));
-        rect.contains(pos).then(|| (i, Part::of(rect, pos.x)))
+        // A bent note is pressed along its band as well as in its row (› MPE › Bent notes).
+        (rect.contains(pos) || super::expression::on_band(layout, n, pos)).then(|| (i, Part::of(rect, pos.x)))
     })
 }
 

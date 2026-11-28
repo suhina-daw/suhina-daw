@@ -69,6 +69,7 @@ fn project() -> Project {
         channel: 0,
         muted: false,
         velocity_range: 0,
+        expression: None,
     };
     Project {
         tracks: vec![Track {

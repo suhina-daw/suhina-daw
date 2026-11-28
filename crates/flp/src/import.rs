@@ -375,7 +375,7 @@ fn parse_project(bytes: &[u8]) -> Result<Import, FlpError> {
                     }
                     expression |= n.expression;
                     for target in targets {
-                        p.notes.entry(target).or_default().push(n.note);
+                        p.notes.entry(target).or_default().push(n.note.clone());
                     }
                 }
             }

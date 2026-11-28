@@ -437,3 +437,69 @@ fn a_start_marker_past_the_loop_plays_from_inside_the_loop() {
     assert_eq!(played_from(9.0, None), 9.0);
     assert_eq!(played_from(9.0, Some((3.0, 3.0))), 9.0);
 }
+
+/// A project whose one content holds `notes`, for the per-note checks.
+fn with_notes(notes: Vec<Note>) -> Project {
+    Project {
+        contents: vec![ClipContent {
+            linked: false,
+            id: ContentId(1),
+            name: "Curves".into(),
+            length: 4.0,
+            lanes: vec![ContentLane { target: None, data: LaneData::Notes(notes.into()) }].into(),
+            extensions: Extensions::default(),
+            scale: None,
+        }],
+        ..Project::default()
+    }
+}
+
+/// A note `MAX_CURVE_POINTS` beats long with a full pitch curve.
+fn curved_note() -> Note {
+    let pitch = (0..MAX_CURVE_POINTS).map(|i| ExpressionPoint::new(i as f64, 0.0)).collect();
+    Note {
+        duration: MAX_CURVE_POINTS as f64,
+        expression: Some(Shared::new(NoteExpression { pitch, ..NoteExpression::default() })),
+        ..note(0.0, 60)
+    }
+}
+
+/// What the file reader refuses of a note's curves the validator refuses too, so an edit that
+/// would leave such a curve (a stretch rounding past the end, a duplicate past the content's
+/// total) is undone instead of saved into a file that does not open (ADR 0039 › 6).
+#[test]
+fn validate_checks_note_curves_and_the_content_total() {
+    let per_content = MAX_CONTENT_EXPRESSION_POINTS / MAX_CURVE_POINTS;
+    assert_eq!(with_notes(vec![curved_note(); per_content]).validate(), Ok(()));
+    let over = with_notes(vec![curved_note(); per_content + 1]).validate().unwrap_err();
+    assert_eq!(
+        over,
+        vec![ValidationError::TooManyExpressionPoints {
+            content: ContentId(1),
+            count: MAX_CONTENT_EXPRESSION_POINTS + MAX_CURVE_POINTS
+        }]
+    );
+
+    let mut past_end = note(0.0, 60);
+    past_end.expression_mut().pitch = vec![ExpressionPoint::new(0.0, 0.0), ExpressionPoint::new(0.25000001, 1.0)];
+    let errors = with_notes(vec![note(1.0, 60), past_end]).validate().unwrap_err();
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ValidationError::BadExpression {
+                content: ContentId(1),
+                lane: 0,
+                note: 1,
+                error: ExpressionError::OffsetOutside { .. }
+            }]
+        ),
+        "{errors:?}"
+    );
+    let mut too_many = curved_note();
+    too_many.expression_mut().pitch.push(ExpressionPoint::new(MAX_CURVE_POINTS as f64, 0.0));
+    let errors = with_notes(vec![too_many]).validate().unwrap_err();
+    assert!(
+        matches!(errors.as_slice(), [ValidationError::BadExpression { error: ExpressionError::TooManyPoints(_), .. }]),
+        "{errors:?}"
+    );
+}

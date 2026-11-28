@@ -122,8 +122,7 @@ pub(super) fn velocity_line(layout: &Layout, notes: &[Note], from: Pos2, now: Po
 /// The velocity lane's top edge: dragging it makes the lane taller or shorter, within
 /// [`LANE_RANGE`] and never so tall that fewer than five key rows are left in `room` (the height
 /// under the ruler). Window state, kept until Suhina closes.
-pub(super) fn lane_edge(ui: &Ui, layout: &Layout, room: f32, state: &mut PianoRollState) {
-    let lane = layout.lane;
+pub(super) fn lane_edge(ui: &Ui, layout: &Layout, lane: Rect, room: f32, state: &mut PianoRollState) {
     if lane.height() <= 4.0 {
         return;
     }
@@ -330,6 +329,7 @@ mod tests {
             channel: 0,
             muted: false,
             velocity_range: 0,
+            expression: None,
         }
     }
 
@@ -350,19 +350,21 @@ mod tests {
     fn the_left_edge_snaps_and_stops_before_the_end_and_at_beat_0() {
         let grid = TimelineGrid::new(0.25, 40.0, 4.0, 6.0);
         let grabbed = note(1.0, 1.0, 60);
-        assert_eq!(start_by(0.3, &grabbed, &[grabbed], grid, false), 0.25);
-        assert!((start_by(0.3, &grabbed, &[grabbed], grid, true) - 0.3).abs() < 1e-12);
+        assert_eq!(start_by(0.3, &grabbed, std::slice::from_ref(&grabbed), grid, false), 0.25);
+        assert!((start_by(0.3, &grabbed, std::slice::from_ref(&grabbed), grid, true) - 0.3).abs() < 1e-12);
         // Dragged onto or past its end: the last grid line before it.
-        assert_eq!(start_by(1.2, &grabbed, &[grabbed], grid, false), 0.75);
+        assert_eq!(start_by(1.2, &grabbed, std::slice::from_ref(&grabbed), grid, false), 0.75);
         // Free, it stops a hundredth of a beat before the end.
-        assert!((start_by(5.0, &grabbed, &[grabbed], grid, true) - (1.0 - MIN_LENGTH)).abs() < 1e-12);
+        assert!(
+            (start_by(5.0, &grabbed, std::slice::from_ref(&grabbed), grid, true) - (1.0 - MIN_LENGTH)).abs() < 1e-12
+        );
         // Never before beat 0, for the whole selection.
         let early = note(0.5, 1.0, 62);
-        assert_eq!(start_by(-3.0, &grabbed, &[grabbed, early], grid, false), -0.5);
+        assert_eq!(start_by(-3.0, &grabbed, &[grabbed.clone(), early], grid, false), -0.5);
         // A shorter selected note keeps a hundredth of a beat.
         let short = note(4.0, 0.25, 64);
-        assert!((start_by(0.75, &grabbed, &[grabbed, short], grid, false) - (0.25 - MIN_LENGTH)).abs() < 1e-12);
-        assert_eq!(start_by(f64::NAN, &grabbed, &[grabbed], grid, true), 0.0);
+        assert!((start_by(0.75, &grabbed, &[grabbed.clone(), short], grid, false) - (0.25 - MIN_LENGTH)).abs() < 1e-12);
+        assert_eq!(start_by(f64::NAN, &grabbed, std::slice::from_ref(&grabbed), grid, true), 0.0);
     }
 
     #[test]

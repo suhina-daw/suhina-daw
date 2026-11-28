@@ -38,6 +38,7 @@ mod main_channel;
 mod meters;
 mod metronome_sounds;
 mod midi;
+mod note_expression;
 mod note_gestures;
 mod note_ids;
 mod note_quantize;

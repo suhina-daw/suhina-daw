@@ -64,6 +64,7 @@ fn project_built() -> Project {
                     channel: 0,
                     muted: false,
                     velocity_range: 0,
+                    expression: None,
                 }]
                 .into(),
             ),

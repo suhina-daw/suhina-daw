@@ -15,10 +15,12 @@ pub mod automation;
 mod build;
 mod clip_audio;
 mod comping;
+pub mod expression;
 mod groups;
 mod id_list;
 mod ids;
 mod lane_layout;
+pub mod lfo;
 pub mod names;
 mod tempo;
 
@@ -33,11 +35,16 @@ pub use clip_audio::{
     MAX_GAIN_POINTS, SCATTER_RANGE, SliceAt, SliceTail, TRANSPOSE_RANGE, TempoSource, WarpSettings, db_to_gain,
     envelope_db_at, gain_to_db, max_clip_gain,
 };
+pub use expression::{
+    ExpressionError, ExpressionKind, ExpressionPoint, JoinError, MAX_CONTENT_EXPRESSION_POINTS, MAX_CURVE_POINTS,
+    MAX_PITCH_SEMITONES, NoteExpression,
+};
 pub use groups::{
     Branch, DeviceGroup, MACROS, MAX_BRANCHES, MAX_DEVICE_GROUP_DEPTH, MAX_DEVICES, MAX_MACRO_MAPPINGS, Macro,
     MacroMapping, MappedDevice, count_devices, device_at, device_at_mut, group_depth as device_group_depth, has_groups,
     visit_devices_mut, walk_devices,
 };
+pub use lfo::{Lfo, MAX_NOTE_LFOS, NoteLfo, Wave as LfoWave};
 
 /// The extension of a Suhina project file, without the dot.
 pub const PROJECT_EXTENSION: &str = "suhina";
@@ -684,7 +691,7 @@ pub enum LaneData {
 /// no clash, since a note is always named with its clip.
 pub type Notes = IdList<NoteId, Note>;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Note {
     /// Start in beats from the start of the content.
     pub time: f64,
@@ -706,6 +713,30 @@ pub struct Note {
     /// 127: rolled each time it starts, the played velocity kept within 1 to 127; 0 plays the
     /// velocity exactly ([ADR 0037](../../docs/decisions/0037-rolled-note-values.md)).
     pub velocity_range: i8,
+    /// The note's own pitch, pressure and timbre curves, if it has any
+    /// ([ADR 0039](../../docs/decisions/0039-per-note-expression.md) › 6). Shared between copies
+    /// of the project until one of them changes it.
+    pub expression: Option<Shared<NoteExpression>>,
+}
+
+impl Note {
+    /// The note's curves, or `None` when it has none.
+    pub fn expression(&self) -> Option<&NoteExpression> {
+        self.expression.as_deref().filter(|expression| !expression.is_empty())
+    }
+
+    /// The note's curves to change, created empty when it has none.
+    pub fn expression_mut(&mut self) -> &mut NoteExpression {
+        self.expression.get_or_insert_with(|| Shared::new(NoteExpression::default()))
+    }
+
+    /// Drops the curves when none is left, so an emptied note compares equal to one that never
+    /// had any.
+    pub fn tidy_expression(&mut self) {
+        if self.expression.as_deref().is_some_and(NoteExpression::is_empty) {
+            self.expression = None;
+        }
+    }
 }
 
 /// An audio file a clip plays: only the source. How it is mapped onto musical time, its gain and
@@ -1343,6 +1374,21 @@ pub enum ValidationError {
         channel: ChannelId,
         device: Vec<usize>,
     },
+    /// The note at this index of this lane of the content has a curve the file refuses: a point
+    /// outside the note or its kind's range, out of order, or more than [`MAX_CURVE_POINTS`]
+    /// points ([ADR 0039](../../docs/decisions/0039-per-note-expression.md) › 6).
+    BadExpression {
+        content: ContentId,
+        lane: usize,
+        note: usize,
+        error: ExpressionError,
+    },
+    /// The content's notes have this many curve points together, more than
+    /// [`MAX_CONTENT_EXPRESSION_POINTS`].
+    TooManyExpressionPoints {
+        content: ContentId,
+        count: usize,
+    },
 }
 
 impl fmt::Display for ValidationError {
@@ -1432,6 +1478,14 @@ impl fmt::Display for ValidationError {
             Self::MappedTwice { channel, device } => {
                 write!(f, "device group {} on channel {} maps a parameter twice", path(device), channel.0)
             }
+            Self::BadExpression { content, lane, note, error } => {
+                write!(f, "note {note} of lane {lane} in content {}: {error}", content.0)
+            }
+            Self::TooManyExpressionPoints { content, count } => write!(
+                f,
+                "the notes of content {} have {count} expression points, more than {MAX_CONTENT_EXPRESSION_POINTS}",
+                content.0
+            ),
         }
     }
 }
@@ -1606,10 +1660,28 @@ impl Project {
             }
         }
         for content in &self.contents {
-            for lane in &content.lanes {
+            // Each note's curves and the content's total of points, as the file reader checks them.
+            let mut points = 0usize;
+            for (lane_index, lane) in content.lanes.iter().enumerate() {
                 if let Some(target) = lane.target {
                     track_ref(target, &mut errors);
                 }
+                let LaneData::Notes(notes) = &lane.data else { continue };
+                for (note_index, note) in notes.iter().enumerate() {
+                    let Some(expression) = note.expression() else { continue };
+                    points = points.saturating_add(expression.point_count());
+                    if let Err(error) = expression.validate(note.duration) {
+                        errors.push(ValidationError::BadExpression {
+                            content: content.id,
+                            lane: lane_index,
+                            note: note_index,
+                            error,
+                        });
+                    }
+                }
+            }
+            if points > MAX_CONTENT_EXPRESSION_POINTS {
+                errors.push(ValidationError::TooManyExpressionPoints { content: content.id, count: points });
             }
         }
         for lane in &self.arrangement.lanes {

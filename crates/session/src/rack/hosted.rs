@@ -5,6 +5,7 @@
 //! put in order, its block sent and its answer read within the deadline.
 
 use super::*;
+use suhina_device_api::ChannelMessage;
 
 /// How a hosted plug-in keeps up with the engine: the blocks it was given and the ones it did
 /// not answer in time (sent late, or not sent because the host was still busy), counted on
@@ -276,6 +277,27 @@ pub(super) fn push_event(out: &mut Vec<Event>, frame: u32, event: DeviceEvent) {
             push(EventKind::Controller { channel: 0, number: SUSTAIN, value: 0.0 });
             push(EventKind::Controller { channel: 0, number: ALL_NOTES_OFF, value: 0.0 });
         }
+        // A note or control on a channel of its own: an MPE member channel (docs/spec/mpe.md ›
+        // Plug-in boundaries).
+        DeviceEvent::Channel { channel, message } => {
+            let channel = channel.min(15);
+            match message {
+                ChannelMessage::On { key, velocity } if key < 128 => {
+                    push(EventKind::NoteOn { channel, key, velocity: velocity.clamp(0.0, 1.0) });
+                }
+                ChannelMessage::Off { key, velocity } if key < 128 => {
+                    push(EventKind::NoteOff { channel, key, velocity: velocity.clamp(0.0, 1.0) });
+                }
+                ChannelMessage::Controller { number, value } if number < 128 => {
+                    push(EventKind::Controller { channel, number, value: value.clamp(0.0, 1.0) });
+                }
+                ChannelMessage::PitchBend(value) => {
+                    push(EventKind::PitchBend { channel, value: value.clamp(-1.0, 1.0) })
+                }
+                ChannelMessage::Pressure(value) => push(EventKind::Pressure { channel, value: value.clamp(0.0, 1.0) }),
+                ChannelMessage::On { .. } | ChannelMessage::Off { .. } | ChannelMessage::Controller { .. } => {}
+            }
+        }
         // A plug-in has no use for the scale the notes are in.
         DeviceEvent::On { .. } | DeviceEvent::Off { .. } | DeviceEvent::Controller { .. } | DeviceEvent::Scale(_) => {}
     }
@@ -307,7 +329,7 @@ impl Hosted {
         let holding_stop = self.gate.as_ref().is_some_and(|g| g.holds_transport());
         if !holding_stop {
             for event in self.stop_notes.drain(..) {
-                if matches!(event, DeviceEvent::On { .. })
+                if event.is_note_on()
                     && let Some(gate) = &mut self.gate
                 {
                     gate.live_note(0);
@@ -320,7 +342,7 @@ impl Hosted {
             }
         }
         for &(frame, event) in events {
-            if holding_stop && (!self.stop_notes.is_empty() || matches!(event, DeviceEvent::On { .. })) {
+            if holding_stop && (!self.stop_notes.is_empty() || event.is_note_on()) {
                 // Reserve room for a final release if hostile input exhausts the bound.
                 if self.stop_notes.len() + 1 < self.stop_notes.capacity() {
                     self.stop_notes.push(event);
@@ -329,7 +351,7 @@ impl Hosted {
                 }
                 continue;
             }
-            if matches!(event, DeviceEvent::On { .. })
+            if event.is_note_on()
                 && let Some(gate) = &mut self.gate
             {
                 gate.live_note(frame);

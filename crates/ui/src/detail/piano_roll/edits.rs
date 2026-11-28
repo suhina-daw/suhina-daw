@@ -306,7 +306,7 @@ pub(super) fn commit(
         (Gesture::Move { copy, .. }, Effect::Move(beats, keys, rows))
             if !notes.is_empty() && (beats != 0.0 || keys != 0 || rows.is_some_and(|r| r != 0)) =>
         {
-            let moved: Vec<Note> = notes.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
+            let moved: Vec<Note> = notes.iter().filter_map(|i| clip.notes.get(*i).cloned()).collect();
             let landing: Vec<u8> = moved.iter().map(|n| moved_key(&layout.rows, n.key, keys, rows)).collect();
             state.audition_keys(landing.iter().copied());
             if !*copy {
@@ -365,7 +365,7 @@ pub(super) fn commit(
             actions.push(Action::new("note.setVelocity", params));
         }
         (Gesture::Draw { .. }, Effect::Draw(Some(note))) => {
-            actions.push(state.add_action(clip, &[note]));
+            actions.push(state.add_action(clip, std::slice::from_ref(&note)));
             state.selected = BTreeSet::from([clip.notes.len()]);
             state.remember(&note);
             state.audition_keys([note.key]);
@@ -375,8 +375,8 @@ pub(super) fn commit(
             let stroke: Vec<Note> = state
                 .stroke
                 .iter()
-                .copied()
                 .filter(|p| !clip.notes.iter().any(|n| n.key == p.key && (n.time - p.time).abs() < EPSILON))
+                .cloned()
                 .collect();
             if !stroke.is_empty() {
                 actions.push(state.add_action(clip, &stroke));
@@ -413,7 +413,6 @@ pub(super) fn commit(
             let stroke: Vec<Note> = state
                 .stroke
                 .iter()
-                .copied()
                 .filter(|p| {
                     !clip.notes.iter().any(|n| {
                         n.key == p.key
@@ -421,6 +420,7 @@ pub(super) fn commit(
                                 || (inside && n.time < p.time && p.time < n.time + n.duration - EPSILON))
                     })
                 })
+                .cloned()
                 .collect();
             if !stroke.is_empty() {
                 actions.push(state.add_action(clip, &stroke));

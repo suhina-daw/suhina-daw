@@ -150,7 +150,11 @@ impl Device for SineTones {
                     tone.length = tone.age;
                 }
             }
-            NoteEvent::Controller { .. } | NoteEvent::PitchBend(_) | NoteEvent::Pressure(_) | NoteEvent::Scale(_) => {}
+            NoteEvent::Controller { .. }
+            | NoteEvent::PitchBend(_)
+            | NoteEvent::Pressure(_)
+            | NoteEvent::Scale(_)
+            | NoteEvent::Channel { .. } => {}
         }
     }
 }

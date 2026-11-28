@@ -167,6 +167,7 @@ fn read_track(
             // A MIDI file does not mark a note as muted; every note it holds plays.
             muted: false,
             velocity_range: 0,
+            expression: None,
         });
         true
     };

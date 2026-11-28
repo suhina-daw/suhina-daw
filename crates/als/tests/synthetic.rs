@@ -786,3 +786,138 @@ fn a_rack_without_chains_or_values_is_an_empty_group() {
         &import.project.channels.iter().find(|c| c.name == "Vox").unwrap().devices[0].as_group().unwrap().branches[0];
     assert_eq!((branch.volume, branch.pan, branch.mute, branch.solo), (1.0, 0.0, false, false));
 }
+
+/// One MIDI track whose session clip holds `key_tracks` and, beside them, `lists` in the clip's
+/// per-note event store (`docs/spec/als-format.md` › Notes › Per-note expression).
+fn per_note_set(key_tracks: &str, lists: &str) -> String {
+    let clip = midi_clip("0", "0", "4", "false", "4", key_tracks).replace(
+        "</KeyTracks>",
+        &format!("</KeyTracks><PerNoteEventStore><EventLists>{lists}</EventLists></PerNoteEventStore>"),
+    );
+    format!(
+        r#"<Ableton><LiveSet><Tracks><MidiTrack Id="1"><Name><EffectiveName Value="Keys"/></Name>
+           <DeviceChain><MainSequencer><ClipSlotList>
+             <ClipSlot Id="0"><ClipSlot><Value>{clip}</Value></ClipSlot><HasStop Value="true"/></ClipSlot>
+           </ClipSlotList></MainSequencer></DeviceChain></MidiTrack></Tracks></LiveSet></Ableton>"#
+    )
+}
+
+fn per_note_list(id: u32, note: &str, cc: &str, events: &[(&str, &str)]) -> String {
+    let events: String = events
+        .iter()
+        .map(|(offset, value)| format!(r#"<PerNoteEvent TimeOffset="{offset}" Value="{value}"/>"#))
+        .collect();
+    format!(r#"<PerNoteEventList Id="{id}" NoteId="{note}" CC="{cc}"><Events>{events}</Events></PerNoteEventList>"#)
+}
+
+/// C3 (NoteId 1) for two beats from 0 and E3 (NoteId 2) for one beat from 2.
+fn two_notes() -> String {
+    key_track(60, r#"<MidiNoteEvent Time="0" Duration="2" Velocity="100" OffVelocity="64" NoteId="1"/>"#)
+        + &key_track(64, r#"<MidiNoteEvent Time="2" Duration="1" Velocity="100" OffVelocity="64" NoteId="2"/>"#)
+}
+
+#[allow(clippy::panic, clippy::unwrap_used, clippy::expect_used)] // a test helper outside #[test] functions
+fn imported_notes(xml: &str) -> (Vec<suhina_model::Note>, Vec<String>) {
+    let import = read_xml(xml).unwrap();
+    let content = import.project.contents.first().expect("the clip's content");
+    let LaneData::Notes(notes) = &content.lanes[0].data else { panic!("expected notes") };
+    (notes.to_vec(), import.warnings)
+}
+
+fn points(curve: &[suhina_model::ExpressionPoint]) -> Vec<(f64, f64)> {
+    curve.iter().map(|p| (p.offset, p.value)).collect()
+}
+
+/// Per-note pitch (CC -2, 8191.5 for 48 semitones), pressure (CC -1) and slide (CC 74, both
+/// 0 … 127) become the notes' curves, with offsets from each note's start.
+#[test]
+fn reads_per_note_pitch_pressure_and_slide() {
+    let lists = per_note_list(10, "1", "-2", &[("0", "0"), ("1", "0"), ("1.5", "682.625")])
+        + &per_note_list(11, "2", "-1", &[("0", "127"), ("0.5", "63.5")])
+        + &per_note_list(12, "2", "74", &[("0", "63.5"), ("0.25", "127")])
+        + &per_note_list(13, "2", "-2", &[]);
+    let (notes, warnings) = imported_notes(&per_note_set(&two_notes(), &lists));
+    assert_eq!(notes.len(), 2);
+
+    let bent = notes[0].expression().expect("C3 is bent");
+    assert_eq!(notes[0].key, 60);
+    assert_eq!(points(&bent.pitch), [(0.0, 0.0), (1.0, 0.0), (1.5, 4.0)], "bent up to E3, 4 semitones");
+    assert!(bent.pressure.is_empty() && bent.timbre.is_empty());
+
+    let pressed = notes[1].expression().expect("E3 has pressure and slide");
+    assert!(pressed.pitch.is_empty());
+    assert_eq!(points(&pressed.pressure), [(0.0, 1.0), (0.5, 0.5)]);
+    assert_eq!(points(&pressed.timbre), [(0.0, 0.5), (0.25, 1.0)]);
+    // An empty list adds nothing and is no warning.
+    assert!(warnings.iter().all(|w| !w.contains("per-note")), "{warnings:?}");
+}
+
+/// Negative pitch bends down; out-of-range values clamp into the kind's range; offsets clamp
+/// into the note and are sorted, the last of points at one offset kept.
+#[test]
+fn per_note_points_are_clamped_sorted_and_deduplicated() {
+    let lists = per_note_list(
+        10,
+        "1",
+        "-2",
+        &[("1", "-341.3125"), ("0", "0"), ("1", "-170.65625"), ("-3", "170.65625"), ("9", "1e9")],
+    ) + &per_note_list(11, "2", "-1", &[("0", "300"), ("0.5", "-5")]);
+    let (notes, _) = imported_notes(&per_note_set(&two_notes(), &lists));
+    let pitch = &notes[0].expression().unwrap().pitch;
+    // -3 clamps to 0 after (0, 0) in the file, so it wins; 9 clamps to the note's end (2).
+    assert_eq!(points(pitch), [(0.0, 1.0), (1.0, -1.0), (2.0, 256.0)]);
+    assert_eq!(points(&notes[1].expression().unwrap().pressure), [(0.0, 1.0), (0.5, 0.0)]);
+}
+
+/// Lists for no note, of an unknown kind, or repeating a curve, and points that are not
+/// numbers, are left out with warnings; the rest still import.
+#[test]
+fn malformed_per_note_lists_are_left_out() {
+    let lists = per_note_list(10, "99", "-2", &[("0", "170.65625")])
+        + &per_note_list(11, "x", "-2", &[("0", "170.65625")])
+        + &per_note_list(12, "1", "7", &[("0", "64")])
+        + &per_note_list(13, "1", "-2", &[("0", "NaN"), ("inf", "1"), ("0.5", "170.65625"), ("1", "oops")])
+        + &per_note_list(14, "1", "-2", &[("0", "1194.59375")])
+        + &per_note_list(15, "2", "-1", &[("0", "inf")]);
+    let (notes, warnings) = imported_notes(&per_note_set(&two_notes(), &lists));
+    assert_eq!(points(&notes[0].expression().unwrap().pitch), [(0.5, 1.0)], "the first list for the note wins");
+    assert_eq!(notes[1].expression, None, "a list of only bad points leaves no curve");
+    let warned = |text: &str| warnings.iter().any(|w| w.contains(text));
+    assert!(warned("2 per-note expression lists name no note"), "{warnings:?}");
+    assert!(warned("1 per-note expression lists move something Suhina does not read"), "{warnings:?}");
+    assert!(warned("1 per-note expression lists repeat"), "{warnings:?}");
+    assert!(warned("4 per-note expression points are not numbers"), "{warnings:?}");
+}
+
+/// A curve keeps its first MAX_CURVE_POINTS points; a clip keeps at most
+/// MAX_CONTENT_EXPRESSION_POINTS points over all its curves, the later lists left out.
+#[test]
+fn per_note_curves_are_cut_at_the_limits() {
+    use suhina_model::{MAX_CONTENT_EXPRESSION_POINTS, MAX_CURVE_POINTS};
+    let offsets: Vec<String> = (0..=MAX_CURVE_POINTS).map(|i| format!("{}", i as f64 / 8192.0)).collect();
+    let events: Vec<(&str, &str)> = offsets.iter().map(|o| (o.as_str(), "170.65625")).collect();
+    let (notes, warnings) = imported_notes(&per_note_set(&two_notes(), &per_note_list(10, "1", "-2", &events)));
+    let pitch = &notes[0].expression().unwrap().pitch;
+    assert_eq!(pitch.len(), MAX_CURVE_POINTS);
+    assert_eq!(pitch.last().unwrap().offset, (MAX_CURVE_POINTS - 1) as f64 / 8192.0, "the first points stay");
+    assert!(warnings.iter().any(|w| w.contains("1 per-note curves reach the point limit")), "{warnings:?}");
+
+    // Enough full curves to pass the clip's budget: one note each, three curves per note.
+    let full = &events[..MAX_CURVE_POINTS];
+    let curves = MAX_CONTENT_EXPRESSION_POINTS / MAX_CURVE_POINTS + 2;
+    let note_count = curves.div_ceil(3);
+    let key_tracks: String = (0..note_count)
+        .map(|i| {
+            key_track(
+                (i % 128) as u8,
+                &format!(r#"<MidiNoteEvent Time="{i}" Duration="1" Velocity="100" OffVelocity="64" NoteId="{i}"/>"#),
+            )
+        })
+        .collect();
+    let lists: String =
+        (0..curves).map(|c| per_note_list(c as u32, &(c / 3).to_string(), ["-2", "-1", "74"][c % 3], full)).collect();
+    let (notes, warnings) = imported_notes(&per_note_set(&key_tracks, &lists));
+    let total: usize = notes.iter().filter_map(|n| n.expression()).map(|e| e.point_count()).sum();
+    assert_eq!(total, MAX_CONTENT_EXPRESSION_POINTS);
+    assert!(warnings.iter().any(|w| w.contains("2 per-note curves are past the")), "{warnings:?}");
+}

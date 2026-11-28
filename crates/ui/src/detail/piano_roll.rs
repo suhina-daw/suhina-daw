@@ -40,6 +40,7 @@ mod clip_strip;
 mod context_menu;
 mod drawing;
 mod edits;
+pub(crate) mod expression;
 mod keys;
 mod layout;
 mod select_steps;
@@ -68,6 +69,8 @@ pub use gestures::start_by;
 /// Height of the toolbar, widths of the scale strip and the key column, height of the ruler and
 /// the default height of the velocity lane.
 const TOOLBAR: f32 = 22.0;
+/// The room below the notes while MPE is on and no height was chosen: its lanes share it.
+const MPE_LANES: f32 = 160.0;
 const SCALE_STRIP: f32 = 26.0;
 const KEYS: f32 = 60.0;
 const RULER: f32 = 36.0;
@@ -199,7 +202,7 @@ impl Gestures<'_> {
     /// Adds one note where `pos` is, `note.add` for it, and selects it.
     fn add_note(&self, state: &mut PianoRollState, actions: &mut Vec<Action>, pos: Pos2, free: bool) {
         if let Some(note) = state.new_note(self.layout, self.clip, self.grid, pos, free) {
-            actions.push(state.add_action(self.clip, &[note]));
+            actions.push(state.add_action(self.clip, std::slice::from_ref(&note)));
             // `note.add` appends: the new note is the next index.
             state.selected = BTreeSet::from([self.clip.notes.len()]);
             state.audition_keys([note.key]);
@@ -211,7 +214,7 @@ impl Gestures<'_> {
     /// long as the note last drawn or clicked. A stroke adds at most as many notes as one command
     /// takes, and never past the furthest beat.
     fn draw_run(&self, state: &mut PianoRollState, now: Pos2, free: bool) {
-        let Some(first) = state.stroke.first().copied() else { return };
+        let Some(first) = state.stroke.first().cloned() else { return };
         let length = if first.duration > 0.0 { first.duration } else { self.grid.step.max(MIN_LENGTH) };
         let end = if free {
             self.layout.beat_at(now.x).max(0.0)
@@ -223,7 +226,7 @@ impl Gestures<'_> {
             let taken = state.stroke.iter().any(|n| (n.time - time).abs() < EPSILON)
                 || self.clip.notes.iter().any(|n| n.key == first.key && (n.time - time).abs() < EPSILON);
             if !taken && state.stroke.len() < MAX_NOTES_PER_COMMAND {
-                state.stroke.push(Note { time, ..first });
+                state.stroke.push(Note { time, ..first.clone() });
             }
             time += length;
             if time > f64::from(BEAT_LIMIT) {
@@ -265,6 +268,7 @@ pub fn show(
         state.clear_span();
         state.menu = None;
         state.menu_waiting = None;
+        state.expression_drag = None;
         // The scroll reach a zoom gave the last clip is not this one's.
         state.zoom_reach = 0.0;
     }
@@ -298,7 +302,15 @@ pub fn show(
         )
     });
     let area = clip_row.map_or(area, |row| Rect::from_min_max(Pos2::new(area.left(), row.bottom()), area.max));
-    let lane_height = velocity_lane_height(area.height() - RULER, state.key_height, state.lane_wanted);
+    // MPE shares the room below the notes among its lanes: it starts taller (› MPE).
+    // MPE starts its room tall enough for each lane shown to be worked in (› MPE).
+    let wanted = if state.expression.is_some() {
+        let share = ((area.height() - RULER) * 0.4).max(48.0);
+        state.lane_wanted.or(Some(expression::lanes_height(state).min(share).min(MPE_LANES)))
+    } else {
+        state.lane_wanted
+    };
+    let lane_height = velocity_lane_height(area.height() - RULER, state.key_height, wanted);
     let strip = Rect::from_min_max(
         Pos2::new(area.left(), area.top() + RULER),
         Pos2::new(area.left() + SCALE_STRIP, area.bottom() - lane_height),
@@ -307,7 +319,8 @@ pub fn show(
         Rect::from_min_max(Pos2::new(strip.right(), strip.top()), Pos2::new(strip.right() + KEYS, strip.bottom()));
     let ruler = Rect::from_min_max(Pos2::new(keys.right(), area.top()), Pos2::new(area.right(), keys.top()));
     let grid_rect = Rect::from_min_max(Pos2::new(keys.right(), keys.top()), Pos2::new(area.right(), keys.bottom()));
-    let lane = Rect::from_min_max(Pos2::new(keys.right(), keys.bottom()), area.max);
+    let lanes_room = Rect::from_min_max(Pos2::new(keys.right(), keys.bottom()), area.max);
+    let lane = expression::split_lanes(state, lanes_room);
     toolbar(ui, toolbar_rect, ToolbarCx { clip, keymap, copied, scale, size: options.toolbar_size }, state, actions);
     if grid_rect.width() <= 1.0 || grid_rect.height() <= 1.0 {
         state.remember_selection(&clip.notes, selecting_new || sent_edit(&actions[sent_from..]));
@@ -377,6 +390,8 @@ pub fn show(
         beat_width: state.beat_width,
         key_height: state.key_height,
         rows,
+        bent: options.bent_notes,
+        bent_width: f32::from(options.bent_width.clamp(10, 100)) / 100.0,
     };
     if let Some(row) = clip_row {
         clip_strip::show(ui, row, &layout, clip, state, actions);
@@ -443,10 +458,40 @@ pub fn show(
         );
     }
     let workflow = options.workflow;
+    // The velocity lane and its top edge are widgets before the curve handles: egui gives a press
+    // to the last widget made under the pointer, so a handle over them takes it.
+    let lane_response =
+        (lane.height() > 4.0).then(|| ui.interact(lane, Id::unique("piano-roll-velocity"), Sense::click_and_drag()));
+    // The lane's top edge: dragging it makes the lane taller or shorter (› Layout).
+    let room = area.height() - RULER;
+    gestures::lane_edge(ui, &layout, lanes_room, room, state);
+    // MPE: the selected notes' curve points are handles over the grid, and a click on the empty
+    // grid in a selected note's time is the curve's, a double-click adding a point (› MPE). A
+    // press on a handle is the handle's alone: it selects, draws and sounds no note under it.
+    let mpe_busy =
+        state.expression.is_some() && expression::handle_points(ui, &layout, clip, grid, !inputs.alt, state, actions);
+    state.mpe.point_span = state.expression.and(expression::point_span(clip, state));
+    expression::settle_kept(clip, state);
+    let mpe_spot = state.expression.is_some()
+        && !mpe_busy
+        // The empty grid or a selected note itself: a double-click on the note adds a point at
+        // its own pitch, not the note's double-click (which deletes it).
+        && pointer.is_some_and(|p| note_at(&layout, &clip.notes, p).is_none_or(|(i, _)| state.selected.contains(&i)))
+        && pointer.and_then(|p| expression::note_for_point(&layout, clip, state, p)).is_some();
+    if mpe_spot
+        && response.double_clicked()
+        && let Some(pos) = pointer
+        && let Some(index) = expression::note_for_point(&layout, clip, state, pos)
+    {
+        let point = (index, suhina_engine::model::ExpressionKind::Pitch, layout.grid);
+        actions.extend(expression::add_point(&layout, clip, grid, !inputs.alt, point, pos));
+    }
     // The click that lets go of a note the second press of a double-click is drawing adds nothing
     // more: the note is added when the button is let go (below).
     if response.clicked()
         && !state.press_draw
+        && !mpe_spot
+        && !mpe_busy
         && let Some(pos) = pointer
     {
         // The piano roll counts its own double-clicks: two clicks close in time and space, and a
@@ -525,6 +570,7 @@ pub fn show(
     // press goes down, not when the button is let go, and dragging before letting go sets its
     // length as the Draw tool's drag does (› Double-click).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && !mpe_busy
         && state.tool == Tool::Select
         && workflow.double_click_adds
         && !workflow.empty_click_draws
@@ -549,6 +595,7 @@ pub fn show(
     // the button is let go (with Shift or Ctrl it joins the selection); a press on a selected note
     // keeps the selection, so it can be dragged, and its click picks the note alone (› Selecting).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && !mpe_busy
         && matches!(state.tool, Tool::Select | Tool::Draw | Tool::Paint)
         && let Some(pos) = widgets::pointer_over(ui, grid_rect)
     {
@@ -591,6 +638,7 @@ pub fn show(
     // The audition starts on the press: a note pressed, or the note a press is about to draw, sounds
     // for as long as the button is held (› Playing the keys).
     if ui.input(|i| i.pointer.button_pressed(PointerButton::Primary))
+        && !mpe_busy
         && let Some(pos) = widgets::pointer_over(ui, grid_rect)
     {
         let sounded = match (note_at(&layout, &clip.notes, pos), state.tool) {
@@ -687,9 +735,7 @@ pub fn show(
     }
 
     // The velocity lane's gestures.
-    let lane_response =
-        (lane.height() > 4.0).then(|| ui.interact(lane, Id::unique("piano-roll-velocity"), Sense::click_and_drag()));
-    if let Some(lane_response) = &lane_response {
+    if let Some(lane_response) = lane_response.as_ref().filter(|_| !mpe_busy) {
         let at = lane_response.interact_pointer_pos();
         if lane_response.clicked()
             && let Some(pos) = at
@@ -727,10 +773,6 @@ pub fn show(
             }
         }
     }
-    // The lane's top edge: dragging it makes the lane taller or shorter (› Layout).
-    let room = area.height() - RULER;
-    gestures::lane_edge(ui, &layout, room, state);
-
     // The key column: a press or a drag selects the notes of those keys and plays the key under
     // the pointer through the track's instrument; Shift adds a range, and Ctrl selects in silence.
     key_column(ui, &keys, &layout, clip, state, inputs, actions);
@@ -774,7 +816,7 @@ pub fn show(
             _ => {}
         }
     }
-    let chosen: Vec<Note> = state.selected.iter().filter_map(|i| clip.notes.get(*i).copied()).collect();
+    let chosen: Vec<Note> = state.selected.iter().filter_map(|i| clip.notes.get(*i).cloned()).collect();
     let preview = match (state.gesture.as_ref(), now) {
         (Some(Gesture::Draw { from }), Some(now)) if dragging || drag_stopped => {
             Some(Effect::Draw(drawn_note(state, &layout, clip, grid, *from, now, inputs.alt)))
@@ -793,12 +835,13 @@ pub fn show(
     };
     // While a note is dragged, the keys it is on sound; the keys that already sound go on.
     if dragging {
-        match preview {
+        match &preview {
             Some(Effect::Move(_, keys, rows)) => {
+                let (keys, rows) = (*keys, *rows);
                 state.audition_keys(chosen.iter().map(|n| edits::moved_key(&layout.rows, n.key, keys, rows)));
             }
             Some(Effect::Draw(Some(note))) => state.audition_keys([note.key]),
-            Some(Effect::Select(rect)) => state.audition_swept(&layout, clip, rect),
+            Some(Effect::Select(rect)) => state.audition_swept(&layout, clip, *rect),
             _ => {}
         }
     }
@@ -835,6 +878,9 @@ pub fn show(
 
     let shape = shape.unwrap_or(clip.shape);
     draw(ui, &el, &layout, clip, state, grid, preview, shape.played());
+    if state.expression.is_some() {
+        expression::draw(ui, &layout, clip, state);
+    }
     // A stroke let go this frame is drawn as it ends once more: its command runs after this frame,
     // so the notes it deletes, mutes or adds change from the next one, and no frame between shows
     // them as they were.
@@ -857,7 +903,8 @@ pub fn show(
     let axis = ruler_view::Axis { origin: grid_rect.left() - state.scroll.x, beat_width: state.beat_width };
     ruler_view::draw(ui, ruler, &axis, &shape);
     state.live_span = draw_span_bar(ui, &layout, clip, state, selecting);
-    MenuCx { clip, keymap, copied, grid, playhead: playhead.unwrap_or(0.0) }.show(ui, state, actions);
+    MenuCx { clip, keymap, copied, grid, playhead: playhead.unwrap_or(0.0), bent: layout.bent }
+        .show(ui, state, actions);
     if let Some(((icon, hotspot), pos)) = tool_icon {
         draw_tool_pointer(&ui.painter_at(whole), icon, tool_pointer_rect(pos, hotspot, TOOL_POINTER));
     }

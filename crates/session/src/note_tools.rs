@@ -19,7 +19,7 @@ use suhina_model::{Note, Notes, Scale, ScaleMode};
 use crate::commands::Args;
 use crate::notes::{
     MAX_BEAT, MAX_NOTES_PER_COMMAND, after_removal, covered_go, edit_notes, indices, midi_velocity, notes_of,
-    replace_under, replaces, velocity_of, with_replaced,
+    replace_under, replaces, set_duration_cropping, velocity_of, with_replaced,
 };
 use crate::{CommandError, Session};
 
@@ -338,7 +338,7 @@ pub(crate) fn humanize(session: &mut Session, params: &Value) -> Result<Value, C
         let mut moved = Vec::with_capacity(named.len());
         for &index in &named {
             let note = notes.get(index).ok_or("a note is missing")?;
-            let mut humanized = *note;
+            let mut humanized = note.clone();
             humanized.time = (note.time + rng.next_within(beats)).clamp(0.0, MAX_BEAT);
             let midi = f64::from(midi_velocity(note.velocity)) + rng.next_within(steps);
             apply_velocity(&mut humanized, midi);
@@ -379,12 +379,12 @@ fn keep_off_the_next(notes: &mut Notes, touched: &[usize]) {
         if !(was_moved(a) || was_moved(b)) {
             continue;
         }
-        let (Some(first), Some(next)) = (notes.get(a).copied(), notes.get(b).copied()) else { continue };
+        let (Some(first), Some(next)) = (notes.get(a).cloned(), notes.get(b).cloned()) else { continue };
         if first.key != next.key || first.time + first.duration <= next.time + EPSILON {
             continue;
         }
         if let Some(slot) = notes.get_mut(a) {
-            slot.duration = (next.time - first.time).max(MIN_LENGTH);
+            set_duration_cropping(slot, (next.time - first.time).max(MIN_LENGTH));
         }
     }
 }
@@ -506,7 +506,8 @@ pub(crate) fn legato(session: &mut Session, params: &Value) -> Result<Value, Com
             }
             let note = notes.get_mut(index).ok_or("a note is missing")?;
             if length != note.duration {
-                note.duration = length;
+                // The note's end moves: a shorter one crops its curves, a longer one holds them.
+                set_duration_cropping(note, length);
                 lengthened.push(index);
             }
         }
@@ -554,8 +555,12 @@ pub(crate) fn stretch(session: &mut Session, params: &Value) -> Result<Value, Co
         }
         for (index, time, length) in stretched {
             if let Some(note) = notes.get_mut(index) {
+                if note.expression().is_some() {
+                    note.expression_mut().stretch(factor);
+                }
                 note.time = time;
-                note.duration = length;
+                // The stretched end can round a hair past the new length: the crop brings it back.
+                set_duration_cropping(note, length);
             }
         }
         let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };

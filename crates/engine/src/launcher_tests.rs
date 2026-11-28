@@ -24,6 +24,7 @@ pub(super) fn note(time: f64, key: u8) -> Note {
         channel: 0,
         muted: false,
         velocity_range: 0,
+        expression: None,
     }
 }
 

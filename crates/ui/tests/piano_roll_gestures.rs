@@ -216,7 +216,7 @@ fn ctrl_drag_copies_the_selection_and_selects_the_copies() {
     let after = notes(&h);
     assert_eq!(after.len(), before.len() + 1);
     assert_eq!(&after[..before.len()], &before[..], "the originals stay");
-    let copy = after[before.len()];
+    let copy = after[before.len()].clone();
     assert_eq!((copy.time, copy.key, copy.duration), (before[0].time + 1.5, before[0].key + 1, before[0].duration));
     assert_eq!(copy.velocity, before[0].velocity);
     assert_eq!(selected(&h), [before.len()], "the copy is selected");
@@ -369,7 +369,7 @@ fn audition_sounds_moved_and_drawn_notes_once_when_it_is_on() {
     }
     button(&mut h, to, false, Modifiers::NONE);
     h.step();
-    let moved = notes(&h)[3];
+    let moved = notes(&h)[3].clone();
     assert_eq!((moved.time, moved.key), (before[3].time - 1.0, before[3].key + 1));
     assert_eq!(h.state().piano_roll().auditioning(), [moved.key]);
 }
@@ -403,7 +403,7 @@ fn audition_sounds_a_note_on_the_press_and_at_each_pitch_of_a_drag() {
     let mut h = piano_app(&mut renderer);
     h.state_mut().piano_roll_mut().audition = true;
     h.run();
-    let first = notes(&h)[0];
+    let first = notes(&h)[0].clone();
     let rect = note_rect(&h, &first);
     let at = rect.center();
     h.input_mut().events.push(egui::Event::PointerMoved(at));
@@ -440,7 +440,7 @@ fn audition_sounds_the_notes_the_selecting_rectangle_reaches() {
     let mut h = piano_app(&mut renderer);
     h.state_mut().piano_roll_mut().audition = true;
     h.run();
-    let first = notes(&h)[0];
+    let first = notes(&h)[0].clone();
     let rect = note_rect(&h, &first);
     // From an empty spot above the note, down onto it.
     let from = rect.left_top() + egui::vec2(-rect.width().min(4.0), -3.0 * rect.height());

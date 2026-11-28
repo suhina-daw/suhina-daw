@@ -137,6 +137,8 @@ fn settings_survive_a_round_trip() {
         default_scale_root: 9,
         default_scale_mode: suhina_engine::model::ScaleMode::Dorian,
         highlight_scale: false,
+        bent_notes: false,
+        bent_width: 100,
         animations: false,
         drag_hides_pointer: false,
         setting_descriptions: crate::settings::Descriptions::Icon,

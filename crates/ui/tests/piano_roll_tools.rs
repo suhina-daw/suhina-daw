@@ -292,7 +292,7 @@ fn the_draw_tool_adds_a_note_with_a_click_and_its_length_with_a_drag() {
     let at = spot(&h, first + 2.0, key);
     let to = spot(&h, first + 3.0, key);
     drag(&mut h, at, to, 4);
-    let drawn = *notes(&h).last().unwrap();
+    let drawn = notes(&h).last().unwrap().clone();
     assert_eq!(notes(&h).len(), before + 2);
     assert!((drawn.duration - 1.0).abs() < 1e-9, "{drawn:?}");
     undo(&mut h);
@@ -300,7 +300,7 @@ fn the_draw_tool_adds_a_note_with_a_click_and_its_length_with_a_drag() {
     // A drag back past the start, after a beat-long note was drawn: one step long, never the last
     // note's length, which a click would draw.
     drag(&mut h, to, at, 4);
-    let drawn = *notes(&h).last().unwrap();
+    let drawn = notes(&h).last().unwrap().clone();
     assert!((drawn.duration - 0.25).abs() < 1e-9, "{drawn:?}");
 }
 
@@ -618,12 +618,12 @@ fn a_new_note_takes_the_length_of_the_note_last_clicked() {
     h.state_mut().run(&Action::new("note.add", params));
     h.run();
     tool(&mut h, "Draw");
-    let long = *notes(&h).last().unwrap();
+    let long = notes(&h).last().unwrap().clone();
     let p0 = note_rect(&h, &long).center();
     click(&mut h, p0);
     let p0 = spot(&h, first + 2.0, key);
     click(&mut h, p0);
-    let drawn = notes(&h).last().copied().unwrap();
+    let drawn = notes(&h).last().cloned().unwrap();
     assert_eq!(drawn.duration, 1.5);
     assert_eq!(suhina_session::midi_velocity(drawn.velocity), 60);
 }
@@ -703,9 +703,9 @@ fn the_slice_tool_splits_the_notes_a_cut_line_crosses() {
     drag(&mut h, from, to, 4);
     let after = notes(&h);
     assert_eq!(after.len(), before + 1, "one note was split in two");
-    let halves: Vec<Note> = after.iter().skip(before).copied().collect();
+    let halves: Vec<Note> = after.iter().skip(before).cloned().collect();
     assert_eq!(halves.len(), 1);
-    let first_half = after[before - 1];
+    let first_half = after[before - 1].clone();
     assert_eq!((first_half.time, first_half.key), (first + 2.0, key));
     assert!((first_half.duration - 0.5).abs() < 1e-9, "{first_half:?}");
     assert_eq!((halves[0].time, halves[0].key), (first + 2.5, key));
@@ -1104,7 +1104,7 @@ fn a_paint_stroke_that_starts_on_a_note_paints_and_leaves_that_note_alone() {
     let mut h = piano_app(&mut renderer, Settings::default());
     tool(&mut h, "Paint");
     let before = notes(&h);
-    let start = before[0];
+    let start = before[0].clone();
     // From the middle of a note to a beat later, in its row.
     let from = note_rect(&h, &start).center();
     let to = spot(&h, start.time + 1.0, start.key);
@@ -1179,7 +1179,7 @@ fn dragging_the_keys_selects_ranges_and_shift_adds_one() {
 fn dragging_the_scale_strip_zooms_sideways_and_scrolls_up_and_down() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    let first = notes(&h)[0];
+    let first = notes(&h)[0].clone();
     let strip = h.get_by_label("Row height strip").rect();
     let height = h.state().piano_roll().key_height;
     let at = egui::pos2(strip.center().x, note_rect(&h, &first).center().y);
@@ -1291,7 +1291,7 @@ fn a_rectangle_over_no_note_selects_in_time_and_a_click_leaves_a_mark() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
     let grid = h.get_by_label_contains("Piano roll,").rect();
-    let first = notes(&h)[0];
+    let first = notes(&h)[0].clone();
     let row = note_rect(&h, &first);
     // A height clear of every note, and of the row the rectangle reaches.
     let rects: Vec<egui::Rect> = notes(&h).iter().map(|n| note_rect(&h, n)).collect();
@@ -1327,7 +1327,7 @@ fn the_rows_zoom_in_a_long_way() {
 fn a_rectangle_over_a_note_keeps_its_whole_stretch() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    let first = notes(&h)[0];
+    let first = notes(&h)[0].clone();
     let row = note_rect(&h, &first);
     let to = egui::pos2(row.right() + 60.0, row.center().y + 1.0);
     drag_keys(&mut h, row.left_top() - egui::vec2(-1.0, 1.0), to, Modifiers::NONE);
@@ -1341,7 +1341,7 @@ fn a_rectangle_over_a_note_keeps_its_whole_stretch() {
 fn a_rectangle_over_a_little_of_a_note_covers_all_of_it() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, Settings::default());
-    let first = notes(&h)[0];
+    let first = notes(&h)[0].clone();
     let row = note_rect(&h, &first);
     let at = egui::pos2(row.center().x, row.top() - 2.0);
     drag_keys(&mut h, at, at + egui::vec2(2.0, 6.0), Modifiers::NONE);

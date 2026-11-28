@@ -4,7 +4,17 @@
 use super::*;
 
 fn note(time: f64, key: u8) -> Note {
-    Note { time, duration: 0.5, key, velocity: 0.8, release_velocity: 0.5, velocity_range: 0, channel: 0, muted: false }
+    Note {
+        time,
+        duration: 0.5,
+        key,
+        velocity: 0.8,
+        release_velocity: 0.5,
+        velocity_range: 0,
+        channel: 0,
+        muted: false,
+        expression: None,
+    }
 }
 
 fn set(indices: &[usize]) -> BTreeSet<usize> {

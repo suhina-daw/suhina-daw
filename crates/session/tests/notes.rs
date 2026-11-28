@@ -150,7 +150,7 @@ fn deleting_removes_the_notes_and_later_ones_move_up() {
     let before = notes(&session, 1);
     let result = run(&mut session, "note.delete", json!({ "track": 1, "index": 0, "notes": [2, 0, 2] })).unwrap();
     assert_eq!(without_ids(&result), json!({ "deleted": [0, 2], "count": 1 }));
-    assert_eq!(notes(&session, 1), [before[1]]);
+    assert_eq!(notes(&session, 1), [before[1].clone()]);
     undoes(&mut session, 1, &before);
 }
 

@@ -38,6 +38,8 @@ pub enum ViewPick {
     AllowStacked(bool),
     /// Whether a note covered from its start goes whole (Covered notes).
     CoveredWhole(bool),
+    /// Whether a note whose pitch bends is drawn bent (the right-click menu's Pitch bends).
+    BentNotes(bool),
 }
 
 /// What the key column is painted with: a key style's values, and over them what the theme sets.

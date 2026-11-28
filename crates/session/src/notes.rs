@@ -14,6 +14,7 @@
 
 use serde_json::{Map, Value, json};
 use suhina_engine::{MAX_START_BEAT, Quantization};
+use suhina_model::ExpressionKind;
 use suhina_model::{Clip, ClipContent, ContentId, ContentLane, LaneData, Note, NoteId, Notes, Project, TrackId};
 
 use crate::commands::{Args, named_clip, opt_scene_at, parse_quantization, track_id};
@@ -133,7 +134,8 @@ pub(crate) fn replace_under(notes: &mut Notes, placed: &[usize], whole: bool) ->
     let mut order = sorted.clone();
     order.sort_by(|a, b| notes[*a].time.total_cmp(&notes[*b].time).then(a.cmp(b)));
     for index in order {
-        let note = notes[index];
+        let (key, time, duration) = (notes[index].key, notes[index].time, notes[index].duration);
+        let note = Placed { key, time, duration };
         let Some(row) = by_key.get_mut(usize::from(note.key)) else { continue };
         if let Some(last) = row.last_mut().filter(|last| last.1 > note.time + EPSILON) {
             if last.0 >= note.time - EPSILON {
@@ -142,7 +144,8 @@ pub(crate) fn replace_under(notes: &mut Notes, placed: &[usize], whole: bool) ->
             } else {
                 last.1 = note.time;
                 let shortened = last.2;
-                notes[shortened].duration = note.time - notes[shortened].time;
+                let length = note.time - notes[shortened].time;
+                set_duration_cropping(&mut notes[shortened], length);
             }
         }
         row.push((note.time, note.time + note.duration, index));
@@ -169,13 +172,11 @@ pub(crate) fn replace_under(notes: &mut Notes, placed: &[usize], whole: bool) ->
             start = p.1;
         }
         if let Some(cut) = head {
-            note.time = start;
-            note.duration = cut - start;
+            *note = split_piece(note, start, cut);
         } else if start >= end - EPSILON || (whole && start != note.time) {
             removed.push(index);
         } else if start != note.time {
-            note.time = start;
-            note.duration = end - start;
+            *note = split_piece(note, start, end);
         }
     }
     removed.sort_unstable();
@@ -324,7 +325,7 @@ pub(crate) fn notes_mut<'a>(p: &'a mut Project, params: &Value) -> Result<&'a mu
 }
 
 /// What a note that was not found says.
-fn note_miss(miss: Miss) -> CommandError {
+pub(crate) fn note_miss(miss: Miss) -> CommandError {
     match miss {
         Miss::Id(id) => format!("the clip has no note with id {id}; note.list gives the ids").into(),
         Miss::NotANumber => {
@@ -442,6 +443,7 @@ fn new_note(value: &Value, at: usize) -> Result<Note, CommandError> {
         channel: 0,
         muted: false,
         velocity_range,
+        expression: None,
     })
 }
 
@@ -510,11 +512,11 @@ pub(crate) fn move_notes(session: &mut Session, params: &Value) -> Result<Value,
                     .filter(|k| *k <= 127)
                     .ok_or_else(|| format!("note {index} would leave the keys 0 to 127"))?,
             };
-            changed.push((index, Note { time, key, ..*note }));
+            changed.push((index, Note { time, key, ..note.clone() }));
         }
-        for (index, note) in &changed {
-            if let Some(slot) = notes.get_mut(*index) {
-                *slot = *note;
+        for (index, note) in changed {
+            if let Some(slot) = notes.get_mut(index) {
+                *slot = note;
             }
         }
         // Moved notes replace what they land on; a move of nothing replaces nothing.
@@ -597,8 +599,14 @@ pub(crate) fn resize(session: &mut Session, params: &Value) -> Result<Value, Com
                 if (note.time - time).abs() >= EPSILON || (note.duration - new).abs() >= EPSILON {
                     changed.push(index);
                 }
+                // The left edge rebases the curves; the right edge crops them (spec mpe.md › Note
+                // curves and editing).
+                if time != note.time && note.expression().is_some() {
+                    let delta = time - note.time;
+                    note.expression_mut().move_start(delta);
+                }
                 note.time = time;
-                note.duration = new;
+                set_duration_cropping(note, new);
             }
         }
         let replaced = if replaces(params) && !changed.is_empty() {
@@ -852,8 +860,14 @@ pub(crate) fn quantize(session: &mut Session, params: &Value) -> Result<Value, C
         let moved = changed.len();
         for (index, time, duration) in changed {
             if let Some(note) = notes.get_mut(index) {
+                // A start moves the curves with the note; a quantised end stretches them.
+                if duration != note.duration && note.expression().is_some() {
+                    let factor = duration / note.duration;
+                    note.expression_mut().stretch(factor);
+                }
                 note.time = time;
-                note.duration = duration;
+                // The stretched end can round a hair past the new length: the crop brings it back.
+                set_duration_cropping(note, duration);
             }
         }
         let replaced =
@@ -880,7 +894,7 @@ impl NoteClipboard {
 /// The notes `chosen` names, with their times from the earliest start.
 fn clipboard_of(notes: &[Note], chosen: &[usize]) -> Result<NoteClipboard, CommandError> {
     let picked: Vec<Note> =
-        chosen.iter().map(|&i| notes.get(i).copied().ok_or("a note is missing")).collect::<Result<_, _>>()?;
+        chosen.iter().map(|&i| notes.get(i).cloned().ok_or("a note is missing")).collect::<Result<_, _>>()?;
     let from = picked.iter().map(|n| n.time).fold(f64::INFINITY, f64::min);
     let end = picked.iter().map(|n| n.time + n.duration).fold(f64::NEG_INFINITY, f64::max);
     if !(from.is_finite() && end.is_finite()) {
@@ -898,7 +912,7 @@ fn placed(clipboard: &NoteClipboard, time: f64) -> Result<Vec<Note>, CommandErro
         .map(|n| {
             let at = time + n.time;
             if (0.0..=MAX_BEAT).contains(&at) {
-                Ok(Note { time: at, ..*n })
+                Ok(Note { time: at, ..n.clone() })
             } else {
                 Err(format!("a note would start at beat {at}, outside 0 to {MAX_BEAT}").into())
             }
@@ -1083,8 +1097,7 @@ pub(crate) fn split(session: &mut Session, params: &Value) -> Result<Value, Comm
             if !spans(note, at) {
                 continue;
             }
-            let (first, second) =
-                (at - note.time, Note { time: at, duration: note.time + note.duration - at, ..*note });
+            let (first, second) = (at - note.time, split_piece(note, at, note.time + note.duration));
             match keep_longer {
                 false => {
                     firsts.push((index, first));
@@ -1101,7 +1114,7 @@ pub(crate) fn split(session: &mut Session, params: &Value) -> Result<Value, Comm
         let mut trimmed: Vec<usize> = firsts.iter().map(|(index, _)| *index).collect();
         for (index, duration) in firsts {
             if let Some(note) = notes.get_mut(index) {
-                note.duration = duration;
+                set_duration_cropping(note, duration);
             }
         }
         for (index, piece) in later {
@@ -1132,14 +1145,14 @@ fn split_at_many(session: &mut Session, params: &Value, mut ats: Vec<f64>) -> Re
         let mut firsts: Vec<(usize, f64)> = Vec::new();
         let mut pieces = Vec::new();
         for &index in &chosen {
-            let note = *notes.get(index).ok_or("a note is missing")?;
+            let note = notes.get(index).ok_or("a note is missing")?.clone();
             let cuts: Vec<f64> = ats.iter().copied().filter(|at| spans(&note, *at)).collect();
             let Some(&first) = cuts.first() else { continue };
             firsts.push((index, first - note.time));
             let end = note.time + note.duration;
             for (n, &from) in cuts.iter().enumerate() {
                 let to = cuts.get(n + 1).copied().unwrap_or(end);
-                pieces.push(Note { time: from, duration: to - from, ..note });
+                pieces.push(split_piece(&note, from, to));
             }
         }
         let total = notes.len().saturating_add(pieces.len());
@@ -1148,7 +1161,7 @@ fn split_at_many(session: &mut Session, params: &Value, mut ats: Vec<f64>) -> Re
         }
         for (index, duration) in firsts {
             if let Some(note) = notes.get_mut(index) {
-                note.duration = duration;
+                set_duration_cropping(note, duration);
             }
         }
         let first_new = notes.len();
@@ -1156,6 +1169,42 @@ fn split_at_many(session: &mut Session, params: &Value, mut ats: Vec<f64>) -> Re
         let made: Vec<usize> = (first_new..notes.len()).collect();
         Ok(json!({ "notes": made, "ids": ids_at(notes, &made), "count": made.len() }))
     })
+}
+
+/// The part of `note` from `from` to `to` (beats in the clip), its curves cut to that part with
+/// the value at each cut kept at both sides (spec mpe.md › Note curves and editing: split).
+pub(crate) fn split_piece(note: &Note, from: f64, to: f64) -> Note {
+    let mut piece = Note { time: from, duration: to - from, ..note.clone() };
+    if let Some(expression) = note.expression() {
+        let mut curves = expression.clone();
+        let start = from - note.time;
+        if start > 0.0 {
+            curves = curves.split(start).1;
+        }
+        curves.crop_end(to - from);
+        piece.expression = Some(suhina_model::Shared::new(curves));
+        piece.tidy_expression();
+    }
+    piece
+}
+
+/// Sets a note's duration, cropping its curves at a shorter end; a longer note holds the last
+/// value, so its curves stay as they are.
+pub(crate) fn set_duration_cropping(note: &mut Note, duration: f64) {
+    if note
+        .expression()
+        .is_some_and(|e| ExpressionKind::ALL.iter().any(|k| e.curve(*k).last().is_some_and(|p| p.offset > duration)))
+    {
+        note.expression_mut().crop_end(duration);
+    }
+    note.duration = duration;
+}
+
+/// A placed note's key and span, read before the list changes.
+struct Placed {
+    key: u8,
+    time: f64,
+    duration: f64,
 }
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ covers:
   - crates/device-api/src/note_expression.rs
   - crates/device-api/src/note_expression/
   - crates/engine/src/live.rs
+  - crates/engine/src/chain/mpe.rs
   - crates/midi/src/lib.rs
   - crates/midi/src/mpe.rs
   - crates/midi/src/mpe/
@@ -29,8 +30,11 @@ atomic initial note state, explicit event-admission results, and an opt-in instr
 with bounded retirement feedback. The live implementation carries identified notes through the
 engine to FM Synth and Sampler; a direct SDK voice-group instrument also exposes per-voice
 pitch (semitones), pressure and timbre signals. The native MIDI settings select off, automatic
-or manual expression mode per input. Recording expression, editable curves and plug-in-host
-adapters remain separate work; ordinary note recording does not capture these gestures yet.
+or manual expression mode per input. A note holds its curves in the model and the project file
+saves them (version 17); the piano roll edits them, and playback sends them to a plug-in
+instrument as channel MPE ([Channel-MPE output](#channel-mpe-output)). Built-in instruments do
+not play saved curves yet, recording does not capture expression, and native plug-in adapters
+(CLAP note expressions, VST3 note expression) are not yet built.
 
 `Device::note_instances` returns `None` for an ordinary device. The validated
 `dispatch_note_instance` helper returns `Unsupported` instead of dropping a note. Accepted
@@ -182,23 +186,36 @@ make room; command clients must supply a nonoverlapping configuration explicitly
 
 ## Note curves and editing
 
-Each saved note may own three optional curves. Points have finite beat offsets in
+Each saved note may own three optional curves. A point may carry a curvature, -1 to 1, for the
+segment from it to the next point: 0 is straight; otherwise the segment's progress `t` (0 to 1
+along its time) becomes `t^e` with `e = 2^(-3 · curvature · sign(rise))`, so a positive curvature
+bulges toward higher values and a negative one toward lower values whichever way the segment goes.
+A flat segment and the last point ignore it. Split, crop and stretch keep each point's curvature
+(a cut segment keeps its shape's curvature, an approximation of the exact part); join keeps both
+sides'. Points have finite beat offsets in
 `0..=note.duration` and finite values in the runtime ranges. Offsets are strictly increasing;
 editing replaces an existing equal-time point, while malformed files with duplicates are
 rejected. Interpolation is linear; before the first point and after the last, hold its value.
 An absent curve means the neutral value. Constant curves may have one point. Limits are 4,096
-points per curve and 262,144 expression points per clip content, enforced before allocation.
+points per curve and 262,144 expression points per clip content. The file reader checks a list's
+length in the parsed document before it stores the curve's points; a command checks before it
+changes the note, and an edit that would pass either limit (a join, a duplicate) is refused whole.
+An edit that reshapes a curve never adds points to it beyond the limit.
 Curve values and note data participate in the same command validation and undo operation.
+`note.setExpression {clip, note, kind, points}` replaces one curve of one note, one undo step:
+`kind` is `pitch`, `pressure` or `timbre`, `points` is `[[offset, value], ...]` given strictly
+increasing and within the note and the range (nothing is sorted or clamped), and `[]` removes the
+curve; the result is `{note, kind, points}`, the last the number of points.
 
 | Operation | Curve behavior |
 |---|---|
 | Move or start quantize | Keep relative offsets and values; the complete gesture moves with the note. |
 | Transpose | Change base key; keep pitch offsets, pressure and timbre unchanged. |
 | Resize right edge | Crop beyond the new duration, inserting the evaluated boundary value when needed; extending holds the endpoint. |
-| Resize left edge | Crop/rebase offsets by the start change and insert the boundary value; extending holds the old initial value. |
+| Resize left edge | Crop/rebase offsets by the start change and insert the boundary value when a point was cropped; extending holds the old initial value. |
 | Stretch, including duration quantize | Scale offsets by new duration / old duration; reject zero or nonfinite divisors. |
-| Split at an interior time | Evaluate each curve at the split; both parts get that boundary value, the right offsets are rebased. The first note keeps its editing ID, the second gets a new one. |
-| Join adjacent notes | Require matching key/channel, touching endpoints, and equal evaluated boundary values for every curve; retain the first editing ID and concatenate rebased points. Reject a discontinuous or nonadjacent join rather than inserting a ramp into the earlier note. |
+| Split at an interior time | Evaluate each curve at the split; both parts get that boundary value, as a point where the part has points on the other side of the cut (else its held endpoint already is that value), the right offsets are rebased. The first note keeps its editing ID, the second gets a new one. |
+| Join adjacent notes | Require matching key/channel, touching endpoints, and equal evaluated boundary values for every curve; retain the first editing ID and concatenate rebased points. Reject a discontinuous or nonadjacent join rather than inserting a ramp into the earlier note, and a join whose curve would pass 4,096 points. |
 | Duplicate / copy content | Copy values with the normal editing identity rules; playback allocates independent runtime occurrences. |
 | Delete / mute | Delete curves with their note, or suppress the whole muted occurrence. |
 
@@ -206,8 +223,38 @@ Playback prepares curves off the audio thread and evaluates against beat time in
 renderer. Release holds the note's terminal value unless an explicitly addressed live event
 changes it. Tempo changes use the same beat-to-frame map as notes. Loops, seeks and transport
 stops terminate old occurrences and start fresh ones; they never reuse a runtime ID. Curves
-are stored inside the note's representation, without runtime IDs. #928 coordinates the file
-migration with notation as specified by ADR 0039; this document alone changes no file version.
+are stored inside the note, without runtime IDs: project file version 17 writes a note's
+`expression` as `[offset, value]` lists per curve and refuses a file that breaks the rules above
+([project file](suhina-format.md#versions)). Notation was not ready, so expression took its own
+version (ADR 0039 › Amendment: expression versioned alone).
+
+## LFOs
+
+An LFO is a wave with a shape, a cycle in beats (1/32 to 64), a time shift, an amount (pitch up to
+96 semitones either way, pressure and timbre up to 1), an attack and a decay (parts of the
+stretch it covers, together at most 1) and, for the random wave, a seed. `note.lfoExpression`
+draws one over the chosen notes (all when none are given), within `from` to `to` in the clip's
+beats when given, three ways (`mode`):
+
+- **replace** writes it as points around `base`, replacing the curve over that stretch;
+- **add** writes it as points riding on the curve as it is;
+- **keep** keeps it on the note as settings: the note's `expression.lfos` gets the LFO, its
+  curve's `kind` and the stretch it covers (`from`, `to`, beats from the note's start). It rides
+  on the curve there: the value played, drawn and evaluated is the curve's with every kept LFO of
+  its kind added, kept in the kind's range. A note keeps at most 16.
+
+A kept LFO stays editable: `note.setLfo {clip, note, lfo, …}` changes the settings given (the
+others stay) and, with `from` and `to`, the stretch; `note.removeLfo {clip, note, lfo}` removes it
+and leaves the curve; `note.bakeLfo {clip, notes?}` writes every LFO the notes keep into their
+curves as points (every 1/32 of a cycle, within the curve limit), sounding as it did, and keeps
+them no longer. Each is one undo step.
+
+Edits that reshape a note keep what a kept LFO sounds like: a resize from the right cuts its
+stretch at the new end, one from the left cuts it at the new start, a split gives each part the
+piece on its side, a stretch scales its stretch and its cycle, a join keeps both notes' LFOs
+(the joined note at most 16). A cut piece remembers how much was cut before (`lead`) and after it
+(`tail`), so its wave and its attack and decay go on as they were. Playback samples a curve an LFO
+rides on every 1/256 beat over the whole note.
 
 ## Plug-in boundaries
 
@@ -226,6 +273,59 @@ MIDI. Channel-MPE output emits configuration, initial controls and note-on in th
 reserves member channels for active keys; channel reuse cannot alter a captured old tail in a
 native core. If a legacy recipient cannot guarantee tail isolation, the compatibility mode
 states that limitation. Capacity exhaustion has an explicit voice/channel stealing policy.
+
+### Channel-MPE output
+
+This is what is built of the modes above: channel-MPE compatibility, chosen automatically
+(`crates/engine/src/chain/mpe.rs`).
+
+- **When.** A track's chain plays as MPE when its first device is a plug-in instrument and a
+  note it plays, in an arrangement clip or a launch clip, has a curve. There is no setting or
+  command yet; the per-plug-in mode above (native, channel-MPE, ordinary MIDI) will be a
+  command when native expression exists to choose from. A chain that plays as MPE sends every
+  note on a member channel, a note without curves with neutral controls. Every other chain
+  plays as before: every note on the first channel, no extra events. A MIDI effect before the
+  instrument, an instrument inside a device group and built-in instruments get no MPE.
+- **Setup.** Before the chain's first note, and again after a stop: the MPE Configuration
+  Message on channel 1 (RPN 6: CC101 0, CC100 6, CC6 15, then the null RPN CC101/CC100 127),
+  a Lower Zone of 15 member channels; then on each member channel 2 to 16 RPN 0 at 48
+  semitones (CC101 0, CC100 0, CC6 48, CC38 0, null RPN) and the neutral controls: pitch bend
+  8192, channel pressure 0, CC74 64. Loops and seeks do not send it again.
+- **Initial controls, then note-on.** A note takes a member channel; the channel gets the
+  curves' values where the note starts (where a seek or a start lands inside it, for a note
+  started part-way), each only when it differs from what the channel last had, then the
+  note-on on that channel. Its note-off goes on the same channel.
+- **Values.** Pitch is 14-bit bend at ±48 semitones: 8192 + semitones / 48 × 8191, rounded
+  and clamped to 0..16383 (a curve past ±48 stays at the end). Pressure is `round(p × 127)`.
+  Timbre is CC74 with 0.5 at 64, 0 and 1 at 0 and 127, linear on either side, the mapping MPE
+  input uses. The plug-in host turns the event values back into exactly these numbers.
+- **Rate.** The graph prepares each curve off the audio thread: its value at the note's start,
+  at every point, and every 1/256 beat between points, kept only where the MIDI value changes;
+  nothing after the last point, as the curve holds. The changes are kept in beats from the
+  note's start and turned into frames through the tempo map (an arrangement note, or a launch
+  clip on the map) or the launcher's tempo, so a value at a point lands on the point's frame.
+  A graph holds at most 1,048,576 changes; a note past that plays without its curves. The
+  audio thread only reads the prepared lists; a graph or plan frees them off the audio thread.
+- **Channels and stealing.** A note takes a free member channel, the one released longest ago
+  first, which gives a release tail the most time. With all 15 sounding, the oldest note is
+  released on its channel and the new note takes it (its controls reset to the new note's
+  first), so a stolen note's tail is cut on plug-ins that keep one voice state per channel.
+- **Edits, loops, seeks, stops.** A loop wrap, a seek and a launch release the sounding notes
+  and start fresh ones on free channels. A stop releases them, sends CC123 on each member
+  channel and sets the zone up again before the next note. After an edit while playing, an
+  arrangement note that still sounds follows its curve in the new graph from where it is; a
+  launched note holds its values until it ends.
+- **Formats.** A CLAP and a VST2 plug-in get every member channel's notes, bend, pressure and
+  CC74 as MIDI on that channel. A VST3 plug-in gets the notes on their channels, and each
+  member channel's bend, pressure and CC74 as parameter changes through that channel's own
+  `IMidiMapping` assignment, as for the first channel: a plug-in that plays MPE maps every
+  channel's controllers to parameters of its own. The member channels are asked only of a
+  plug-in that maps pitch bend on the first ([plug-in hosting](plugin-hosting.md)); a channel it
+  maps nothing for moves nothing, never the first channel's parameter, through which one note's
+  bend would bend every note.
+- **Follow-ups.** Built-in instruments (FM Synth, Sampler) play the curves once they take
+  identified notes (#1598); recording curves from an MPE controller; the per-plug-in mode
+  command; native CLAP and VST3 note expression.
 
 The stock instrument, VST3 export and CLAP export consume the same `device-api` event contract.
 Imported plug-ins remain sandboxed. Both IPC directions bound event counts and validate values.

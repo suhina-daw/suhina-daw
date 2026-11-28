@@ -1,6 +1,6 @@
 ---
 description: The layout of Suhina's own project file (.suhina), field by field, with what a reader accepts
-read_when: .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, version history, newer file refused, base64 state, muted note, note flags, velocity range, clip scale, default_scale, scale root and mode
+read_when: .suhina layout, markers in the file, project file fields, clip id, lane id, scene id, next_id, file without ids, writing a project file by hand or from an agent, format version, version history, newer file refused, base64 state, muted note, note flags, velocity range, note expression curves, clip scale, default_scale, scale root and mode
 type: spec
 status: current
 last_verified: 2026-11-23
@@ -19,7 +19,7 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 ```json
 {
   "format": "suhina",
-  "version": 16,
+  "version": 17,
   "project": {
     "transport": { "tempo_bpm": 120.0, "time_signature": [4, 4] },
     "tracks": [ … ], "channels": [ … ], "contents": [ … ],
@@ -33,7 +33,7 @@ UTF-8 JSON, written pretty-printed. Its parts mirror the project model
 ## Rules
 
 - `format` is `"suhina"` and `version` a whole number from 1 to the newest the reader knows (the
-  last row of *Versions*, 16 as written here); anything else is refused, and the message names the format the file gave or the newest version
+  last row of *Versions*, 17 as written here); anything else is refused, and the message names the format the file gave or the newest version
   the reader knows. A writer always writes the newest version (*Versions* below). Files saved
   before 2026-10-13 named another format and are not read
   ([ADR 0010](../decisions/0010-project-files.md) decision 12).
@@ -102,6 +102,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | 14 | A content's `linked`, for linked copies ([arrangement editing](arrangement-editing.md) › Linked copies); the `cosine` fade shape; a device's `inputs`, its key ([sidechain](sidechain.md)). An earlier file has none of them: its contents are not linked and its devices read no key | #1446 |
 | 15 | A track's `folder` and a device's `instrument`, written only when true (#1416): a presentation folder, and a device that is an instrument whatever its plug-in is now. A file before it said them with the `suhina/folder` (data `[1]`), `suhina/instrument` and `suhina/missing-instrument` extensions; they are read into the fields and dropped | #1446 |
 | 16 | The stretch modes' settings: a clip audio's `warp_settings` `{ slice, tail, envelope, grain, scatter }` ([clip panel](clip-panel.md) › Warp mode settings); an earlier file has none, every clip at the defaults | — |
+| 17 | A note's `expression`: its pitch, pressure and timbre curves ([MPE](mpe.md#note-curves-and-editing)) and the LFOs it keeps ([MPE](mpe.md#lfos)), written only on a note that has one; an earlier file's notes have none | #928 |
 
 ## Parts
 
@@ -116,7 +117,7 @@ Before 1.0 the number may rise often. A file saved by a pull request's test buil
 | scale | `{ "root", "mode" }`: `root` a whole number 0 (C) to 11 (B); `mode` `major`, `minor`, `harmonicMinor`, `melodicMinor`, `dorian`, `phrygian`, `lydian`, `mixolydian`, `locrian`, `majorPentatonic`, `minorPentatonic` or `blues`. A root outside 0 to 11, a mode not in this list or a scale that is not such an object is an error naming where it is, as other bad values are ([ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: clip scales) |
 | `next_id` | in `project`: the next id a lane, clip or scene gets; left out while nothing has an id |
 | `default_scale` | in `project`, beside `transport`: the scale new MIDI clips take, written only when the project has one; missing or `null` means none |
-| note | `time`, `duration` (beats); `key` 0–127; `velocity`, `release_velocity` 0–1; `channel` 0–15; `muted` (written only when the note is muted, missing means it plays; [ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: muted notes); `velocity_range` -127 to 127 (from version 13, written only when it is not 0; how far above or below its velocity the note may play, rolled each time it starts: [ADR 0037](../decisions/0037-rolled-note-values.md)) |
+| note | `time`, `duration` (beats); `key` 0–127; `velocity`, `release_velocity` 0–1; `channel` 0–15; `muted` (written only when the note is muted, missing means it plays; [ADR 0001](../decisions/0001-daw-neutral-model.md) › Amendment: muted notes); `velocity_range` -127 to 127 (from version 13, written only when it is not 0; how far above or below its velocity the note may play, rolled each time it starts: [ADR 0037](../decisions/0037-rolled-note-values.md)); `expression` (from version 17, written only when the note has a curve or keeps an LFO): `{ "pitch", "pressure", "timbre", "lfos" }`, each curve a list of `[offset, value]` points (or `[offset, value, curvature]`, -1 to 1, for a curved segment), a curve left out when it has none; `lfos`, left out when there are none, at most 16 objects `{ kind, from, to, wave, shape, period, shift, amount, attack, decay, seed }` with `lead` and `tail` when a cut took some of it off ([MPE](mpe.md#lfos)), each checked against the note and its ranges. Offsets are beats from the note's start, 0 to its `duration`, strictly increasing (a repeated offset is refused); pitch values are semitones from -256 to 256, pressure and timbre 0 to 1. A curve holds at most 4,096 points and the notes of one content at most 262,144 together; a file over either limit is refused. The reader checks each list's length in the parsed document (whose size the file's 512 MiB cap bounds) before it converts or stores any of that curve's points ([ADR 0039](../decisions/0039-per-note-expression.md) › 6) |
 | audio | `file` (relative to the project file, `/` between folders); `absolute_file`; `sample_rate`, `channels`, `duration_seconds` (if known); before version 10 also the state its clips play it with (`warped`, `stretch`, `warp_markers`, `gain`, `transpose`; see clip audio), read into each clip of the content; `stream`: which audio track of a file with several plays (a Stems file: 0 the master, 1 and up the stems; missing or `null` for an ordinary file) |
 | arrangement | `lanes`; `markers` `[{ beat, name }]`: named positions on the timeline, `beat` a number from 0 on; read in any order and kept in beat order; left out when there are none ([arrangement editing](arrangement-editing.md#markers)); `takes` `[{ track, name, clips, color? }]`: the take lanes, recorded passes kept under their tracks in the order recorded, their clips written as a lane's are but without ids, `color` (`"#RRGGBB"`) the take's own color, left out while it takes the palette's; left out when there are none ([recording](recording.md#take-lanes)) |
 | arrangement lane | `id`; `name`; `track` or `null`; `clips` |

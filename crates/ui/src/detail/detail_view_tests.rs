@@ -1845,6 +1845,7 @@ fn midi_harness(
                     notes: &notes,
                     selected: &selected,
                     length: 16.0,
+                    bar_beats: 4.0,
                     nothing: false,
                 };
                 let midi = MidiTools { tools: &tools, state, show_tools: true };

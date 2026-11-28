@@ -10,12 +10,12 @@
 //! them: it has no notes.
 
 use serde_json::{Value, json};
-use suhina_model::{LaneData, LoopRange, Note, Notes, on_eighth};
+use suhina_model::{LaneData, LoopRange, Note, NoteExpression, Notes, Shared, on_eighth};
 
 use crate::commands::Args;
 use crate::notes::{
     ClipAt, MAX_BEAT, after_removal, clip_at, clip_mut, copy_on_write, covered_go, edit_notes, indices, locate,
-    notes_mut, placements, replace_under, replaces, with_replaced,
+    notes_mut, placements, replace_under, replaces, set_duration_cropping, split_piece, with_replaced,
 };
 use crate::{CommandError, Session};
 
@@ -33,12 +33,13 @@ pub(crate) fn join(session: &mut Session, params: &Value) -> Result<Value, Comma
     edit_notes(&mut session.project, params, |notes| {
         let named = indices(params, notes)?;
         let kept = joined(notes, &named)?;
-        for (index, end) in &kept {
+        for (index, end, curves) in &kept {
             if let Some(note) = notes.get_mut(*index) {
                 note.duration = end - note.time;
+                note.expression = curves.clone().map(Shared::new);
             }
         }
-        let joined: Vec<usize> = kept.iter().map(|(index, _)| *index).collect();
+        let joined: Vec<usize> = kept.iter().map(|(index, _, _)| *index).collect();
         // The other named notes lie under the joined one, so they go with any it covers.
         let gone = replace_under(notes, &joined, false);
         Ok(json!({
@@ -49,9 +50,13 @@ pub(crate) fn join(session: &mut Session, params: &Value) -> Result<Value, Comma
     })
 }
 
-/// What `note.join` does to `named` among `notes`: each joined note's index with its new end. On
-/// each key the first named note reaches, as legato does, over any gap, to the last one's end.
-fn joined(notes: &Notes, named: &[usize]) -> Result<Vec<(usize, f64)>, CommandError> {
+/// A note `note.join` keeps: its index, its new end and its joined curves.
+type Joined = (usize, f64, Option<NoteExpression>);
+
+/// What `note.join` does to `named` among `notes`: each joined note's index with its new end and
+/// curves. On each key the first named note reaches, as legato does, over any gap, to the last
+/// one's end.
+fn joined(notes: &Notes, named: &[usize]) -> Result<Vec<Joined>, CommandError> {
     let mut by_key: std::collections::BTreeMap<u8, Vec<(f64, usize)>> = std::collections::BTreeMap::new();
     for &index in named {
         let note = notes.get(index).ok_or("a note is missing")?;
@@ -62,15 +67,37 @@ fn joined(notes: &Notes, named: &[usize]) -> Result<Vec<(usize, f64)>, CommandEr
         line.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         let Some(&(_, first)) = line.first() else { continue };
         let end = line.iter().filter_map(|(_, i)| notes.get(*i)).map(|n| n.time + n.duration).fold(f64::MIN, f64::max);
-        kept.push((first, end));
+        let curves = joined_curves(notes, line)?;
+        kept.push((first, end, curves));
     }
     if kept.is_empty() {
         return Err("no notes to join: give at least two notes on one key".into());
     }
-    if kept.iter().any(|(_, end)| !end.is_finite() || *end > MAX_BEAT) {
+    if kept.iter().any(|(_, end, _)| !end.is_finite() || *end > MAX_BEAT) {
         return Err(format!("a joined note would end after beat {MAX_BEAT}").into());
     }
     Ok(kept)
+}
+
+/// The curves of one key's `line` of notes (in time order) joined end to end into the first
+/// one's; `None` when none of them has any. Fails where a curve's value differs across a join (a
+/// join never invents a ramp) and where a joined curve would hold more points than one curve may,
+/// before anything changes (spec mpe.md › Note curves and editing).
+fn joined_curves(notes: &Notes, line: &[(f64, usize)]) -> Result<Option<NoteExpression>, CommandError> {
+    let picked: Vec<&Note> = line.iter().filter_map(|(_, i)| notes.get(*i)).collect();
+    if picked.iter().all(|n| n.expression().is_none()) {
+        return Ok(None);
+    }
+    let Some((first, rest)) = picked.split_first() else { return Ok(None) };
+    let empty = NoteExpression::default();
+    let mut curves = first.expression().cloned().unwrap_or_default();
+    for next in rest {
+        let at = next.time - first.time;
+        curves = curves
+            .joined(at, next.expression().unwrap_or(&empty))
+            .map_err(|error| format!("the notes on key {} cannot join at beat {}: {error}", next.key, next.time))?;
+    }
+    Ok((!curves.is_empty()).then_some(curves))
 }
 
 /// `note.fitToTime`: the named notes are stretched or squeezed, starts and lengths alike, so they
@@ -109,8 +136,13 @@ pub(crate) fn fit_to_time(session: &mut Session, params: &Value) -> Result<Value
         }
         for (index, time, length) in fitted {
             if let Some(note) = notes.get_mut(index) {
+                if note.expression().is_some() {
+                    let factor = length / note.duration;
+                    note.expression_mut().stretch(factor);
+                }
                 note.time = time;
-                note.duration = length;
+                // The stretched end can round a hair past the new length: the crop brings it back.
+                set_duration_cropping(note, length);
             }
         }
         let replaced = if replaces(params) { replace_under(notes, &named, covered_go(params)) } else { Vec::new() };
@@ -251,7 +283,7 @@ fn crop_notes(notes: &mut Notes, start: f64, end: f64) -> (Vec<usize>, Vec<usize
     let mut deleted = Vec::new();
     let mut cut = Vec::new();
     for index in (0..notes.len()).rev() {
-        let Some(note) = notes.get(index).copied() else { continue };
+        let Some(note) = notes.get(index).cloned() else { continue };
         match cropped(&note, start, end) {
             None => {
                 notes.remove(index);
@@ -259,9 +291,9 @@ fn crop_notes(notes: &mut Notes, start: f64, end: f64) -> (Vec<usize>, Vec<usize
             }
             Some((time, length)) => {
                 if (time - note.time).abs() > EPSILON || (length - note.duration).abs() > EPSILON {
-                    if let Some(note) = notes.get_mut(index) {
-                        note.time = time;
-                        note.duration = length;
+                    if let Some(slot) = notes.get_mut(index) {
+                        // Cut at the clip's edges as a split cuts: the value at each edge is kept.
+                        *slot = split_piece(&note, time, time + length);
                     }
                     cut.push(index);
                 }

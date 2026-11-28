@@ -1,6 +1,6 @@
 ---
 description: Functional spec of the MIDI clip editor (piano roll): layout, toolbar size and icons, the six tools and the Mute tool, the clip panel's note tools (Notes and Transform tabs), grid and snapping, zoom, drawing, selecting, moving, resizing, velocity, quantise, scales, ghost notes, slicing, a playable key column, chords, shortcuts and keymap presets, and the note.* and preview.* commands
-read_when: piano roll, clip editor, velocity range, rolled velocity, note.setVelocityRange, select next note, step through notes, Ctrl+arrow selection, grow selection, keyboard selection, join notes, fit to time range, crop clip, split clip, set 1.1.1 here, clip.setOrigin, right-click menu, context menu, invert selection, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows
+read_when: piano roll, clip editor, velocity range, rolled velocity, note.setVelocityRange, select next note, step through notes, Ctrl+arrow selection, grow selection, keyboard selection, join notes, fit to time range, crop clip, split clip, set 1.1.1 here, clip.setOrigin, right-click menu, context menu, invert selection, toolbar, toolbar size, toolbar icons, tool icons, draw tool, paint tool, erase tool, slice tool, mute tool, muted note, note.setMuted, MIDI tools, note tools, Notes tab, Transform tab, keep chords together, clip panel, transpose, humanise, humanize, fit to scale, invert, reverse, legato, stretch, randomise velocity, ramp velocity, B key, number keys choose a tool, right button and wheel, Shift and Draw, pulled to the top, maximise piano roll, piano roll grid value, grid menu, adaptive grid, fixed grid, snap to grid, snap off, triplet grid, narrow grid, widen grid, Ctrl+1, Ctrl+2, Ctrl+3, Ctrl+4, MIDI editor, note editing, draw notes, select notes, move notes, resize notes, velocity lane, velocity, grid, snapping, Alt off-grid, zoom, detail area height, scale highlighting, fold, ghost notes, quantise, quantize, inline quantise, clip column, selection info, slice, glue, chords, strum, playable keyboard, key column plays, preview.noteOn, preview.noteOff, note.add, note.delete, note.move, note.resize, note.setVelocity, note.split, note.list, note.quantize, Ctrl+U, note.copy, note.cut, note.paste, note.duplicate, copy paste notes, arrow keys, select all notes, keymap preset, Draw-first, Select-first, Mouse-first, mouse switches, duplicate key, workflow mode, workflow menu, Custom mode, double-click, double-click adds a note, double-click deletes a note, triple click, least height, short detail area, close the piano roll, hide editor, close button, collapse the detail area, notes in view, centred notes, ruler, loop row, loop region, loop handles, loop start, loop end, clip loop, start marker, end marker, clip length, clip offset, clip.setLoop, clip.setLength, clip.setStart, ruler drag zoom, ruler scroll, zoom to selection, zoom to clip, Z, Shift+Z, notes outside the loop, shaded notes, left edge, resize the start, startBy, Ctrl+drag copies, copy by dragging, Alt+drag velocity, velocity line, draw a line in the velocity lane, velocities, velocity lane height, lane top edge, audition, hear notes while editing, preview.noteOn keys, ghost menu, ghost notes of other clips, notes of other clips, playing together, write a bass line against the chords, faint notes behind, Scale menu, clip scale, clip.setScale, clip.scale, project.setDefaultScale, default scale, scale rows, key column mark, Fold, Fold to scale, folded rows, MPE, pitch bend per note, note expression, note.setExpression, pitch curve, bend points
 type: spec
 status: draft
 last_verified: 2026-11-23
@@ -1326,6 +1326,50 @@ button opens its clip in the editor.
   and arpeggiate, inversions; a length field (`note.resize`) and a legato mode that also moves
   starts.
 
+### MPE LFO
+
+**Built:** the clip panel's Transform tab lists **MPE LFO**. It puts a low-frequency oscillation on
+one curve of each selected note (every note when none is selected), one `note.lfoExpression`,
+one undo step ([MPE](mpe.md#lfos)). It covers the time selected (`from`, `to`) or, with none and a
+point of the target's curve selected (Shift and a click), the stretch from that point to the next
+one (or to the note's end); otherwise the whole note. Apply says which ("…, in the time selected",
+"…, after the selected point"). Outside the stretch the curve stays; Attack and Decay are parts of
+the stretch. While it is chosen and MPE is on, what it would make is drawn dashed over those notes,
+and the panel shows the wave over one bar under Target and Mode.
+
+- **Target:** Pitch, Slide or Pressure.
+- **Mode:** **Keep** (the default) keeps the wave on the notes as settings riding on the curve,
+  editable afterwards; **Add** writes it as points swinging around the curve already there, so a
+  bend keeps its shape; **Replace** writes it as points around Base (`mode`).
+- **Wave:** Sine, Square, Triangle or Random; **Shape**, -1 to 1, skews the wave: the sine and
+  triangle lean toward the start (negative) or the end (positive), the square's pulse narrows or
+  widens, the random wave's steps glide (positive) or jump (negative). **Reseed** picks another
+  random wave.
+- **Rate:** one cycle per 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 or 1/128 of a bar, each also
+  dotted or triplet; **Time shift**, -100 to 100 % of a cycle: positive delays the start, negative
+  moves the phase.
+- **Amount:** how far the wave swings either way: up to 96 semitones for pitch, 0 to 127 for slide
+  and pressure, negative turning it over; **Base**: the value it swings around (semitones from the
+  note, or 0 to 127).
+- **Attack** and **Decay**, 0 to 100 % of the note: the swing grows from nothing over the attack
+  and falls back to nothing over the last part of the note given by the decay; together they are at
+  most 100 %, and raising one lowers the other.
+
+Add and Replace give each note points every 1/32 of a cycle (at most every 1/256 beat), within the
+curve's limit; values outside the target's range are held at its ends.
+
+**A kept LFO** (Keep) is drawn in its note's curve, and on a selected note, with MPE on, as a bar
+just above the curve over the stretch it covers (in a lane, at the lane's top), named `LFO`:
+
+- **A click on the bar** picks it: the panel shows its settings and its Apply becomes **Update
+  the picked LFO** (`note.setLfo`). Picking another note lets it go.
+- **Dragging the bar** moves its stretch, **dragging an end** (`LFO start`, `LFO end`) moves that
+  end, on the grid unless Alt is held and inside the note; **dragging the knob** in its middle
+  (`LFO depth`) up or down sets how far it swings (pitch by rows, in steps of 0.05 semitone; a lane
+  by its height). Each drag is one `note.setLfo`.
+- **Right-click on the bar:** **Bake into points** writes every LFO the note keeps into its curves
+  (`note.bakeLfo`); **Delete LFO** removes it (`note.removeLfo`).
+
 ## Shortcuts
 
 The piano roll's keys work after a click anywhere in a MIDI clip's detail area: the piano roll,
@@ -1489,6 +1533,105 @@ file.
   *Shift+right drag* and *Alt+right button*; a file without them takes Select-first's, and a
   value that is not a boolean is ignored with a warning.
 - The preset names describe the habit they suit; they are not the name of anything else.
+
+## MPE
+
+**Built ([#930](https://github.com/suhina-daw/suhina-daw/issues/930)):** the toolbar's Rows group
+has an **MPE** toggle (`piano-tool#piano-mpe`, `[checked]` while on); **Show MPE** / **Hide MPE**
+in the right-click menu does the same where a narrow toolbar hides it. While it is on, the notes'
+own curves ([ADR 0039](../decisions/0039-per-note-expression.md) › 6,
+[MPE spec](mpe.md#note-curves-and-editing)) are shown and edited.
+
+### Showing the curves
+
+- **Pitch** is drawn over the grid: from the note's start at its first value, through its points,
+  held to the note's end, its height the key it bends to (between the rows either side of it while
+  the rows are folded). The selected notes' curves are bright, drawn in the strong text color over
+  an edge of the grid's own, with a handle on every point and the name of the key the bend ends
+  on. Every other note's curve shows faintly, brighter while the pointer is over the note or its
+  curve. A note without a curve draws nothing.
+- **Expression lanes** below the notes: **Velocity**, **Release** (release velocity),
+  **Pressure** and **Slide** (timbre), each with a toggle in the column at the lane's left. The
+  lanes shown share the room below the notes from the top in that order; the lane edge still makes
+  the room taller or shorter. Velocity and Pressure and Slide are on when MPE is turned on, Release
+  is off. With MPE off the room holds the velocity lane alone, as before.
+- While the pointer is over a point, or a point is dragged or added, its value is shown beside it:
+  a pitch in semitones with its sign and two decimals (`+4.00 st`), a lane value from 0 to 127.
+
+### Bent notes
+
+**Settings › Clip editor › MPE › Pitch bends drawn as** chooses how a note with a pitch curve is
+drawn: **Bent notes** (the default) or **Lines** (as above); **Bent note thickness** how much of a
+row the band takes: Thin (30 %), Medium (50 %, the default) or Full row. The right-click menu has the same
+choice while MPE is on (**Draw bends as lines** / **Draw bends as bent notes**). The curve is the
+same either way: the two are two ways of working on it.
+
+- **Drawn:** the note is a band along its pitch curve, its thickness's share of a row, in the
+  note's own fill (selected, muted and faded as a note is), with its name at its start. The
+  row it starts in stays faint behind it, so the pitch the bend starts from is seen. This holds
+  with MPE off too; with MPE on, the thin pitch line is not drawn over a bent note.
+- **Pressed as the note:** a press on the band, or on the faint row behind it, is a press on the
+  note: it selects it, a drag moves the note with its bend, a drag of its first or last 5 points
+  resizes it, the erase and mute tools act on it, and the right-click menu is the note's.
+- **Its points:** with MPE on and the note selected, its points are handles on the band, edited
+  as in › Editing points, and a double-click on the band adds a point at the pitch under the
+  pointer. A click on the band selects the note and adds nothing.
+- **Its bends:** each segment that rises or falls has a diamond handle in its middle
+  (`Bend curve`). Dragging it up or down curves the bend as a drag on a line does in Lines; Shift
+  and a drag moves the segment; a double-click makes it straight again.
+
+### Editing points
+
+Points are edited on the selected notes' curves; a press on another note selects it as usual.
+Points follow the piano roll's grid (when it snaps) and, for pitch, whole semitones; a lane's
+values go in steps of 1 of 127. **Alt** frees both: a point goes exactly where the pointer is. A
+dense curve (an LFO's) shows its handles thinned out, at least 9 points apart, besides the first,
+the last, the one under the pointer and the selected ones.
+
+- A **click on a curve's line** adds a point there, on the line, at the value the line has there
+  (Lines; a bent note's band is the note, › Bent notes).
+- A **double-click** on the empty grid or on a selected note, within the time of a selected note,
+  adds a point to the selected note whose row is nearest, at the pitch under the pointer. In a lane,
+  a double-click in a selected note's time adds a point at the value under the pointer. A curve's
+  first point after the note's start also gets one at its start at the neutral value (the note's
+  own pitch, no pressure, the middle of slide), so the change starts from the note.
+- A **click on a point** removes it; a curve left with only neutral points goes.
+- **Dragging a point** moves it. Dragged past a neighbour, the neighbour goes. **Shift** keeps
+  the drag to the axis it first moved along, and a vertical drag with Shift moves a tenth as far,
+  for fine values. A point taken up or down off a flat stretch (the point before it has its value)
+  gets a hold point a grid step before it at the value it had, so the bend is local and a grid step
+  long, not a slope from the point before; **Alt** (points free of the grid) leaves the hold out.
+- **A drag on a line** curves the segment, as an automation segment's does: up bulges it toward
+  higher values, down toward lower ones. **Alt and a double-click on a line** makes it straight
+  again. A flat segment does not curve.
+- **Shift and a drag on a line** moves the segment up or down: both its points by the same amount.
+- **Shift and a click on a point** adds it to the selected points or takes it out; **Ctrl+A**
+  (Cmd+A) while MPE is on and one note is selected selects every point of the curve last edited
+  (pitch unless a lane was). Dragging a selected point moves every selected point by the same
+  time and value, each kept inside the note and its range.
+- **Ctrl and a vertical drag in a lane** (Cmd on macOS) scales the pressure or slide curves of the
+  selected notes together, each value multiplied by the same factor, kept from 0 to 1.
+- **Right-click on a point**: **Edit value…** sets it from the keyboard (semitones, or 0 to 127),
+  **Delete point**. **Right-click on a selected note or its curve**: **Clear expression** removes
+  every curve of the selected notes.
+
+### Drawing
+
+With the **Draw** tool and MPE on, a drag over a selected note's time draws its pitch freehand:
+one point where the pointer is, at most one every 1/64 beat, replacing the points the stroke passes
+over. In a lane it draws that lane's curve. Alt draws steps as wide as the grid.
+
+### Commands
+
+Each edit is one command and one undo step: `note.setExpression` replaces one curve of one note
+(each point `[offset, value]` or `[offset, value, curvature]`); `note.clearExpression` removes
+every curve of `notes`; `note.scaleExpression` multiplies one kind's values in `notes` by
+`factor`, each kept in its range (not pitch); `note.setReleaseVelocity` sets release velocity
+(`notes` with `velocity`, 1 to 127, or `velocities`, one per note).
+
+**Later ([#930](https://github.com/suhina-daw/suhina-daw/issues/930)):** keyboard and
+accessibility paths to the points; built-in instruments playing saved curves
+([#928](https://github.com/suhina-daw/suhina-daw/issues/928)).
 
 ## Commands
 

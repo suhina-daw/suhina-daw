@@ -116,6 +116,15 @@ pub(super) enum Pick {
     SplitClipSpan,
     /// Set the clip's first beat here (`clip.setOrigin`).
     Origin,
+    /// MPE on or off: the notes' own curves shown and edited (› MPE), as the toolbar's toggle,
+    /// which a narrow toolbar hides.
+    Expression,
+    /// The key each bend ends on named beside it, or not.
+    BendTargets,
+    /// Every curve of the notes acted on removed (`note.clearExpression`).
+    ClearExpression,
+    /// A note whose pitch bends drawn bent, or as a line over its row (the setting).
+    BentNotes,
 }
 
 /// What the menu needs for one frame besides the state.
@@ -127,6 +136,8 @@ pub(super) struct MenuCx<'a> {
     /// Where playback is, in the clip's placement's input, as the keys get it: Paste with nothing
     /// selected lands there when it is inside the clip.
     pub(super) playhead: f64,
+    /// Pitch bends are drawn as bent notes (Settings › Clip editor › MPE).
+    pub(super) bent: bool,
 }
 
 /// The popup of the menu opened as `serial`.
@@ -238,6 +249,17 @@ impl MenuCx<'_> {
         let splits = arranged && (span || self.split_here(at).is_some());
         item(ui, name, None, splits, pick);
         item(ui, "Set the clip's first beat here", None, self.origin_ok(at), Pick::Origin);
+        crate::kit::menu::separator(ui);
+        let mpe = if state.expression.is_some() { "Hide MPE" } else { "Show MPE" };
+        item(ui, mpe, None, true, Pick::Expression);
+        if state.expression.is_some() {
+            let targets = if state.mpe.bend_targets { "Hide bend targets" } else { "Show bend targets" };
+            item(ui, targets, None, true, Pick::BendTargets);
+            let bends = if self.bent { "Draw bends as lines" } else { "Draw bends as bent notes" };
+            item(ui, bends, None, true, Pick::BentNotes);
+            let curved = state.acting().iter().any(|i| clip.notes.get(*i).is_some_and(|n| n.expression().is_some()));
+            item(ui, "Clear expression", None, curved, Pick::ClearExpression);
+        }
         // No zoom items: Z and Shift+Z are quicker than the menu, which the grid already makes long.
         crate::kit::menu::separator(ui);
         // The grid's entries right in the menu, as the toolbar's grid menu holds them: no submenu
@@ -328,6 +350,27 @@ impl MenuCx<'_> {
             }
             Pick::InvertSelection => {
                 state.invert_selection(clip);
+                None
+            }
+            Pick::BendTargets => {
+                state.mpe.bend_targets = !state.mpe.bend_targets;
+                None
+            }
+            Pick::BentNotes => {
+                state.view_picked = Some(super::ViewPick::BentNotes(!self.bent));
+                None
+            }
+            Pick::ClearExpression => {
+                let mut params = clip.address.clone();
+                params["notes"] = json!(state.acting().iter().collect::<Vec<_>>());
+                Some(Action::new("note.clearExpression", params))
+            }
+            Pick::Expression => {
+                state.expression = match state.expression {
+                    Some(_) => None,
+                    None => Some(suhina_engine::model::ExpressionKind::Pitch),
+                };
+                state.expression_drag = None;
                 None
             }
             Pick::QuantizeSettings => {

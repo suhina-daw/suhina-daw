@@ -233,7 +233,7 @@ fn dragging_the_ruler_up_and_down_zooms_time_and_sideways_scrolls_it() {
     let mut renderer = engine();
     let mut h = piano_app(&mut renderer, demo_project());
     // The latest note, near where the drags start, so it stays in view.
-    let n = *notes(&h).iter().max_by(|a, b| a.time.total_cmp(&b.time)).unwrap();
+    let n = notes(&h).iter().max_by(|a, b| a.time.total_cmp(&b.time)).unwrap().clone();
     let ruler = ruler(&h);
     // A spot on the bar numbers away from the start marker.
     let at = pos2(ruler.center().x, ruler.bottom() - 4.0);

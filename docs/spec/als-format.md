@@ -1,6 +1,6 @@
 ---
 description: The Live Set (.als) format as observed: container, tracks, clips, notes, a clip's scale, audio, warp markers, devices and MIDI effects, locators
-read_when: reading .als, importer, XML element, MIDI effects, MidiChord, MidiArpeggiator, clip scale, ScaleInformation, warp markers, locators, arrangement markers, time signature, tempo envelope, tempo changes, devices, plug-in state, Utility, StereoGain, device parameters, muted note, deactivated note, IsEnabled
+read_when: reading .als, importer, XML element, MIDI effects, MidiChord, MidiArpeggiator, clip scale, ScaleInformation, warp markers, locators, arrangement markers, time signature, tempo envelope, tempo changes, devices, plug-in state, Utility, StereoGain, device parameters, muted note, deactivated note, IsEnabled, per-note expression, MPE, PerNoteEventStore, pitch bend per note
 type: spec
 status: current
 last_verified: 2026-11-23
@@ -8,6 +8,7 @@ covers:
   - crates/als/src/lib.rs
   - crates/als/src/devices.rs
   - crates/als/src/scale.rs
+  - crates/als/src/expression.rs
   - crates/plugins/src/vst2.rs
   - crates/als/tests/synthetic.rs
   - crates/als/tests/corpus.rs
@@ -173,6 +174,35 @@ those notes ([project files](../decisions/0010-project-files.md)).
 
 Live names MIDI note 60 "C3" (so 64 is E3, 67 is G3). Notes drawn without changing anything got
 velocity 100 in one clip and 98 in another.
+
+### Per-note expression
+
+Observed in a Live 12 set saved by a user (not yet in our own corpus), with per-note pitch bends
+drawn in the clip. Beside `KeyTracks`, the clip's `Notes` holds
+`PerNoteEventStore/EventLists/PerNoteEventList`, one list per note and controller:
+
+| What | Where | Notes |
+|---|---|---|
+| Note | `PerNoteEventList@NoteId` | The `NoteId` of a `MidiNoteEvent` in the same clip |
+| Controller | `PerNoteEventList@CC` | `-2` pitch (observed); `-1` pressure and `74` slide **(hypothesis)** |
+| Points | `Events/PerNoteEvent@TimeOffset`, `@Value` | `TimeOffset` in beats from the note's start |
+
+- **Pitch** values are 170.65625 per semitone: 170.65625, 341.3125, 682.625, 1194.59375 and
+  2047.875 for 1, 2, 4, 7 and 12 semitones; 8191.5 (the 14-bit half range) is 48. Negative
+  values bend down. Two notes whose lists ended at 682.625 each glided onto a deactivated note
+  4 semitones above it, which confirms the unit.
+- Clips without per-note expression (in that set, clips without notes) store an empty
+  `PerNoteEventStore/EventLists`.
+- **Pressure and slide** are read as 0 … 127 until a corpus file shows them **(hypothesis)**.
+
+The importer turns the lists into the note's curves (`Note::expression`, [ADR
+0039](../decisions/0039-per-note-expression.md) › 6): pitch in semitones (value ÷ 170.65625),
+pressure and timbre 0 … 1 (value ÷ 127), each clamped into its range. Offsets are clamped into the
+note and sorted; of points at one offset the last in the file stays; points that are not numbers,
+lists for a `NoteId` the clip lacks, other `CC` values and a second list for the same note and
+controller are left out with a warning. A curve keeps its first 4,096 points and a clip at most
+262,144 over all its curves (the model's limits); the rest is left out with a warning. The curves
+are relative to the note, so the clip's loop and start markers do not touch them.
 
 ### Scale
 

@@ -928,6 +928,22 @@ pub(crate) static ROWS: &[Entry] = &[
     ),
     row(
         Page::ClipEditor,
+        "MPE",
+        "Pitch bends drawn as",
+        "How a note whose pitch bends is drawn in the piano roll",
+        &["piano_bent_notes"],
+        |cx, r| cx.choose(r, &[("Bent notes", true), ("Lines", false)], |s| &mut s.bent_notes),
+    ),
+    row(
+        Page::ClipEditor,
+        "MPE",
+        "Bent note thickness",
+        "How much of a row's height a bent note is drawn with",
+        &["piano_bent_width"],
+        |cx, r| cx.choose(r, &crate::settings::BENT_WIDTHS, |s| &mut s.bent_width),
+    ),
+    row(
+        Page::ClipEditor,
         "Advanced",
         "Covered notes",
         "What happens to a note whose start a note placed over it covers, where notes of one pitch do not stack: it goes whole, or keeps what runs on past",

@@ -64,13 +64,14 @@ fn project_built() -> Project {
         channel: 0,
         muted: false,
         velocity_range: 0,
+        expression: None,
     };
     let content = |id: u32| ClipContent {
         linked: false,
         id: ContentId(id),
         name: format!("C{id}"),
         length: 4.0,
-        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note].into()) }].into(),
+        lanes: vec![ContentLane { target: None, data: LaneData::Notes(vec![note.clone()].into()) }].into(),
         extensions: Extensions::default(),
         scale: None,
     };

@@ -874,8 +874,12 @@ impl App {
             self.piano_roll.hide();
         }
         let mut places = Vec::new();
-        let options =
-            piano_roll::Options { toolbar_size: self.settings.toolbar_size, workflow: self.keymap.workflow() };
+        let options = piano_roll::Options {
+            toolbar_size: self.settings.toolbar_size,
+            workflow: self.keymap.workflow(),
+            bent_notes: self.settings.bent_notes,
+            bent_width: self.settings.bent_width,
+        };
         // The toolbar's tooltips show the keys the keymap has now, so a rebind (or a preset) is
         // visible on the button.
         let keymap = self.keymap.clone();
@@ -920,6 +924,7 @@ impl App {
                     notes: &piano.notes,
                     selected: &selected,
                     length: piano.length,
+                    bar_beats: piano.bar_beats,
                     nothing,
                 };
                 let show_tools = piano_roll.tools_open;
@@ -1023,6 +1028,7 @@ impl App {
                 piano_roll::ViewPick::AllowStacked(on) => self.settings.view.notes_replace = !on,
                 piano_roll::ViewPick::CoveredWhole(on) => self.settings.view.covered_whole = on,
                 piano_roll::ViewPick::HighlightScale(on) => self.settings.highlight_scale = on,
+                piano_roll::ViewPick::BentNotes(on) => self.settings.bent_notes = on,
             }
             self.settings_changed = true;
         }

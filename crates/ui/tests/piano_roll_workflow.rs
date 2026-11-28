@@ -301,7 +301,7 @@ fn a_double_click_in_the_velocity_lane_or_the_keys_edits_nothing() {
     let mut renderer = engine();
     let mut h = with_preset(&mut renderer, Preset::SelectFirst);
     let before = notes(&h);
-    let first = before[0];
+    let first = before[0].clone();
     let velocity = suhina_session::midi_velocity(first.velocity);
     let stem = format!("Velocity of note {} at beat {}: {velocity}", key_name(first.key), first.time);
     let at = h.get_by_label(&stem).rect().center();

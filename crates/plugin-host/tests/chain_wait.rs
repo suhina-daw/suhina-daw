@@ -82,6 +82,7 @@ fn project(chains: &[usize]) -> Project {
                         channel: 0,
                         muted: false,
                         velocity_range: 0,
+                        expression: None,
                     }]
                     .into(),
                 ),
