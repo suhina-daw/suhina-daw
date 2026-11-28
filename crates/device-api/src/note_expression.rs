@@ -224,6 +224,66 @@ pub enum NoteInstanceDispatchError {
     Capacity,
 }
 
+/// Fixed admission/retirement storage shared by native voice runtimes. Every accepted ID
+/// reserves its completion slot up front. A finished ID is never lost when the host drains
+/// slowly; new admission fails until the host consumes enough completions.
+pub struct NoteLifetimes<const N: usize> {
+    slots: [Option<(NoteInstanceId, bool)>; N],
+}
+
+impl<const N: usize> Default for NoteLifetimes<N> {
+    fn default() -> Self {
+        Self { slots: [None; N] }
+    }
+}
+
+impl<const N: usize> NoteLifetimes<N> {
+    /// Reserves one occurrence before changing any voice state.
+    pub fn admit(&mut self, id: NoteInstanceId) -> Result<(), NoteInstanceDispatchError> {
+        if self.slots.iter().flatten().any(|(existing, _)| *existing == id) {
+            return Err(NoteInstanceDispatchError::AlreadyActive);
+        }
+        let slot = self.slots.iter_mut().find(|slot| slot.is_none()).ok_or(NoteInstanceDispatchError::Capacity)?;
+        *slot = Some((id, false));
+        Ok(())
+    }
+
+    /// Whether the instrument still owns this sounding occurrence.
+    pub fn contains(&self, id: NoteInstanceId) -> bool {
+        self.slots.iter().flatten().any(|(existing, finished)| *existing == id && !finished)
+    }
+
+    /// Marks the final layer ended. Repeated and unknown completions do nothing.
+    pub fn finish(&mut self, id: NoteInstanceId) {
+        if let Some((_, finished)) = self.slots.iter_mut().flatten().find(|(existing, _)| *existing == id) {
+            *finished = true;
+        }
+    }
+
+    /// Terminates all sounding occurrences while preserving already queued completions.
+    pub fn finish_all(&mut self) {
+        for (_, finished) in self.slots.iter_mut().flatten() {
+            *finished = true;
+        }
+    }
+
+    /// Drains up to the caller's capacity, leaving unwritten output slots unchanged.
+    pub fn drain(&mut self, output: &mut [Option<NoteInstanceId>]) -> usize {
+        let mut written = 0;
+        for slot in &mut self.slots {
+            if let Some((id, true)) = *slot {
+                let Some(out) = output.get_mut(written) else {
+                    break;
+                };
+                *out = Some(id);
+                *slot = None;
+                written += 1;
+            }
+        }
+        written
+    }
+}
+
 /// Validates and sends one identified event through the device's opt-in capability.
 ///
 /// Callers must check the result. This never silently converts an identified choke into a

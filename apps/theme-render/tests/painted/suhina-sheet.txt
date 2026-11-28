@@ -55,7 +55,7 @@ settings-devices suhina-sheet a1e2a2867f8cab19
 settings-keys suhina-sheet 8f8ec03843088147
 settings-launcher suhina-sheet ea22e00bdfe4c20c
 settings-menu suhina-sheet 42f297914a6c7e4e
-settings-midi suhina-sheet 8f8b75fa84e75068
+settings-midi suhina-sheet df8f5ee20265fd4d
 settings-plug-ins suhina-sheet ba87665bb30fb91b
 settings-themes suhina-sheet 0c6a215bba0e6d54
 start-panel suhina-sheet 6bcfe16f85e4b95e

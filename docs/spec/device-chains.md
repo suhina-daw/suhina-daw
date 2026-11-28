@@ -3,7 +3,7 @@ description: How the engine runs devices on tracks - chains, instruments and the
 read_when: device chain, chain, instrument notes, note events, MIDI effect, process_events, group bus, bus, sends into returns, device group in the engine, main channel chain, latency compensation, graph swap keeps devices, chain order, Slot::Group
 type: spec
 status: current
-last_verified: 2026-11-20
+last_verified: 2026-11-27
 covers:
   - crates/engine/src/chain.rs
   - crates/engine/src/slot_factory.rs
@@ -74,6 +74,14 @@ An instrument that works in fixed internal blocks (the FM synth renders 64 frame
 applies an event at its next internal block boundary on a grid counted from `reset`, which
 keeps the output independent of the host's block sizes at the cost of up to one internal
 block of timing.
+
+Identified live notes use `NoteEvent::Instance` and the opt-in `NoteInstanceDevice` endpoint
+([ADR 0039](../decisions/0039-per-note-expression.md), [MPE](mpe.md)). The chain preserves exact
+event frames through the same split-span path. It selects native expression only when each
+preceding MIDI effect preserves identity and the instrument advertises the endpoint; otherwise
+the whole occurrence uses ordinary-note compatibility. Per-chain recipient tracking is bounded,
+and changing monitoring or its input filter chokes only occurrences that track received.
+Device completion is drained after spans; it frees admission storage without recycling IDs.
 
 An importer can explicitly identify an unavailable instrument by setting a Foreign device's
 `instrument` field (#1416; the `suhina/missing-instrument` extension before version 15). This

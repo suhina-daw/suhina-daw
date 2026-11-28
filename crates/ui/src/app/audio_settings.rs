@@ -51,6 +51,7 @@ impl App {
                             enabled: p["enabled"].as_bool().unwrap_or(false),
                             open: p["open"].as_bool().unwrap_or(false),
                             error: p["error"].as_str().map(String::from),
+                            mpe: suhina_session::MpeConfig::from_json(&p["mpe"]).unwrap_or_default(),
                         })
                         .collect()
                 })
@@ -420,6 +421,18 @@ impl App {
         }
         if let Some((port, enabled)) = outcome.midi_input.clone() {
             self.set_midi_input(&port, enabled);
+        }
+        if let Some((port, config)) = &outcome.midi_mpe {
+            let mut params = config.to_json();
+            params["port"] = json!(port);
+            match self.projects.execute("midi.setMpe", &params) {
+                Ok(_) => {
+                    self.settings.midi_mpe = self.projects.midi_mpe();
+                    self.settings_changed = true;
+                }
+                Err(error) => self.status = Status::Error(error.message().to_owned()),
+            }
+            self.list_midi_inputs();
         }
         if outcome.changed && self.settings.track_input() != self.projects.track_input() {
             self.choose_track_input();

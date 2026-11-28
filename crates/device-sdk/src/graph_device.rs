@@ -112,6 +112,15 @@ fn unit(name: &str) -> Unit {
 }
 
 impl Device for GraphDevice {
+    fn note_instances(&mut self) -> Option<&mut dyn suhina_device_api::NoteInstanceDevice> {
+        if self.info.role != Role::Instrument {
+            return None;
+        }
+        match &mut self.runtime {
+            Runtime::Audio { prepared, .. } => prepared.note_instances(),
+            Runtime::Midi(_) => None,
+        }
+    }
     fn info(&self) -> &DeviceInfo {
         &self.info
     }
@@ -167,6 +176,12 @@ impl Device for GraphDevice {
     }
 
     fn event(&mut self, event: NoteEvent) {
+        if let NoteEvent::Instance { id, event } = event
+            && let Some(notes) = self.note_instances()
+        {
+            let _ = notes.event(id, event);
+            return;
+        }
         // Only an instrument plays notes: an effect graph never had them.
         if let (Role::Instrument, Runtime::Audio { prepared, .. }) = (self.info.role, &mut self.runtime) {
             prepared.apply_event(event);

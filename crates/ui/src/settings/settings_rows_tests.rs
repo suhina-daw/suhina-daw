@@ -26,7 +26,11 @@ const NOT_IN_THE_WINDOW: [&str; 14] = [
 ];
 
 fn saved_keys() -> Vec<String> {
-    let settings = Settings { midi_inputs_off: vec!["Keys".into()], ..Settings::default() };
+    let settings = Settings {
+        midi_inputs_off: vec!["Keys".into()],
+        midi_mpe: [("Keys".into(), suhina_session::MpeConfig::default())].into(),
+        ..Settings::default()
+    };
     settings
         .to_text()
         .lines()
