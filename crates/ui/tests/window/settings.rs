@@ -209,7 +209,10 @@ fn settings_audio_chooses_the_input_device_and_saves_it() {
 fn settings_audio_lists_the_midi_inputs_and_one_turned_off_is_saved() {
     let mut app = demo_app();
     app.projects_mut().set_audio_system(std::sync::Arc::new(StandAudio("Stand")));
-    app.projects_mut().set_midi_system(std::sync::Arc::new(StandMidi(vec!["Keys In".into(), "Pads In".into()])));
+    app.projects_mut().set_midi_system(std::sync::Arc::new(StandMidi(vec![
+        ("Keys In".into(), "Keys In#1".into()),
+        ("Pads In".into(), "Pads In#1".into()),
+    ])));
     let mut harness = window(app);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();
@@ -228,7 +231,10 @@ fn settings_audio_lists_the_midi_inputs_and_one_turned_off_is_saved() {
 #[test]
 fn settings_mpe_configures_one_port_through_the_command_and_saves_it() {
     let mut app = demo_app();
-    app.projects_mut().set_midi_system(std::sync::Arc::new(StandMidi(vec!["Keys In".into(), "Pads In".into()])));
+    app.projects_mut().set_midi_system(std::sync::Arc::new(StandMidi(vec![
+        ("Keys In".into(), "Keys In#1".into()),
+        ("Pads In".into(), "Pads In#1".into()),
+    ])));
     let mut harness = window(app);
     harness.key_press_modifiers(Modifiers::COMMAND, Key::Comma);
     harness.run();

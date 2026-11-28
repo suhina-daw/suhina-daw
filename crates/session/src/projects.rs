@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use suhina_plugins::library::Library;
 
 use crate::commands::{CommandKind, CommandSpec, Param, ParamType, commands, param};
+use crate::extensions::programs;
 use crate::plugins::plugin_commands;
 use crate::{Agents, CommandError, Policy, Session};
 
@@ -143,6 +144,8 @@ pub struct Projects {
     plugin_host: PluginHost,
     pub(crate) browser: Browser,
     devices: Devices,
+    /// Extensions (ADR 0015): the store and the surface programs running (ADR 0019 › 10).
+    pub(crate) extensions: crate::extensions::Extensions,
     /// Backups of the open projects: the settings and the thread that writes them.
     pub(crate) backups: crate::backup::Backups,
     /// With no project open, previews use an empty session on the retained output
@@ -157,7 +160,6 @@ pub struct Projects {
 const OUTPUT_RETRY: std::time::Duration = std::time::Duration::from_secs(2);
 /// How often an output playing in place of the chosen device looks whether it is back.
 const OUTPUT_WATCH: std::time::Duration = std::time::Duration::from_secs(3);
-
 const PROJECT: Param = param("project", ParamType::Integer, "project id, from project.list");
 
 static PROJECT_COMMANDS: &[CommandSpec<Projects>] = &[
@@ -277,7 +279,7 @@ impl Projects {
     /// hear about: ports that could not be opened.
     pub fn set_midi_system(&mut self, system: std::sync::Arc<dyn crate::MidiSystem>) -> Vec<String> {
         self.devices.midi.system = Some(system);
-        self.devices.midi.sync()
+        self.look_at_ports()
     }
 
     /// The MIDI input ports turned off, by name (the window keeps them in its settings).
@@ -302,7 +304,7 @@ impl Projects {
     /// Turns the ports `off` names off and every other one on, opening and closing them.
     pub fn set_midi_inputs_off(&mut self, off: impl IntoIterator<Item = String>) -> Vec<String> {
         self.devices.midi.off = off.into_iter().collect();
-        self.devices.midi.sync()
+        self.look_at_ports()
     }
 
     /// Where the open MIDI ports send what they play: the active project's engine.
@@ -320,16 +322,174 @@ impl Projects {
         &mut self.devices.midi
     }
 
+    /// Looks at the MIDI ports again — the rescan the `midi.*` commands and the frame call —
+    /// with the running programs' claims: claimed ports open raw for their programs, their
+    /// output ports open for their send-backs. The scan also starts the surface programs
+    /// whose device is here (`Extensions::start_for_ports`), so a controller's script runs
+    /// when the device for it is connected, and its ports open in the same look.
+    pub(crate) fn midi_sync(&mut self) -> Vec<String> {
+        self.look_at_ports()
+    }
+
+    /// One look at the ports: the scan, the surface programs started on what it found, and
+    /// the claims — a program started now has its ports opened in the same look.
+    fn look_at_ports(&mut self) -> Vec<String> {
+        let Ok(scanned) = self.devices.midi.scan() else { return Vec::new() };
+        let name = |(name, _): &(String, String)| name.clone();
+        let input_names: Vec<String> = scanned.inputs.iter().map(name).collect();
+        let output_names: Vec<String> = scanned.outputs.iter().map(name).collect();
+        self.extensions.start_for_ports(&input_names, &output_names);
+        let epoch = self.extensions.claims_epoch;
+        let claims = self.extensions.claims();
+        self.devices.midi.sync(&claims, epoch, scanned)
+    }
+
+    /// The running programs' business, where the frame drains: the states the supervisors
+    /// reported are applied, their send-backs are written out, their commands and reads run
+    /// and are answered, and their subscriptions are re-read — a `state` pushed when one
+    /// changed. The `extensions.*` commands call it too, so a pending request is serviced
+    /// wherever the next look comes from, never dropped.
+    pub(crate) fn poll_programs(&mut self) {
+        let drained = self.extensions.drain_events();
+        // The commands of one gesture stream: the newest stands for the run — the earlier
+        // values of a fader's move are history the moment the next one lands, and the undo
+        // step they shared is unchanged — while each of them is answered either way, so the
+        // runner's handler completes and the storm drains in one look instead of one round
+        // trip each.
+        let mut dropped: Vec<(String, u64, String)> = Vec::new();
+        let mut kept: Vec<(String, programs::Event)> = Vec::new();
+        for (program, event) in drained {
+            match &event {
+                programs::Event::Command { token: _, id, params, gesture } => {
+                    let same_stream = |(kept_program, kept_event): &(String, programs::Event)| match kept_event {
+                        // Only a stream that can stand for itself coalesces: a command whose
+                        // calls replace each other — one that takes the `gesture` parameter
+                        // (a value set: the newest value is the truth) — on the same target,
+                        // the parameters but the gesture. An adjust adds to the step, so its
+                        // calls are each their own, whatever the protocol named; a drag on
+                        // another track is another target; and a gesture-less command (a
+                        // controller's toggle press) is a standalone event — every one
+                        // matters, and dropping the middle ones made a second solo press
+                        // vanish from the session.
+                        programs::Event::Command {
+                            id: kept_id, params: kept_params, gesture: kept_gesture, ..
+                        } => {
+                            kept_program == &program
+                                && kept_id == id
+                                && gesture.is_some()
+                                && kept_gesture.as_deref() == gesture.as_deref()
+                                && takes_gesture(id)
+                                && same_target(id, kept_params, params)
+                        }
+                        _ => false,
+                    };
+                    match kept.iter().position(same_stream) {
+                        Some(at) => {
+                            // This value supersedes the one waiting: the older token is
+                            // answered at once, and the newest dispatches in its place.
+                            if let (_, programs::Event::Command { token: old_token, .. }) = kept.remove(at) {
+                                dropped.push((program.clone(), old_token, id.clone()));
+                            }
+                            kept.push((program, event));
+                        }
+                        None => kept.push((program, event)),
+                    }
+                }
+                _ => kept.push((program, event)),
+            }
+        }
+        for (program, token, id) in dropped {
+            if let Some(handle) = self.extensions.program(&program) {
+                handle.command_answer(token, &id, true, None);
+            }
+        }
+        for (program, event) in kept {
+            match event {
+                programs::Event::SendBack { port, bytes } => self.devices.midi.send_back(&program, &port, &bytes),
+                programs::Event::Command { token, id, params, gesture } => {
+                    let params = with_gesture(&id, params, gesture.as_deref());
+                    suhina_plugins::trace!("programs dispatch {id} {params}");
+                    let (ok, error) = match self.dispatch_for_program(&id, &params) {
+                        Ok(_) => (true, None),
+                        Err(e) => (false, Some(String::from(e))),
+                    };
+                    if let Some(handle) = self.extensions.program(&program) {
+                        handle.command_answer(token, &id, ok, error);
+                    }
+                }
+                programs::Event::Read { token, id, params } => {
+                    let (ok, value, error) = match self.read_for_program(&id, &params) {
+                        Ok(value) => (true, Some(value), None),
+                        Err(e) => (false, None, Some(String::from(e))),
+                    };
+                    if let Some(handle) = self.extensions.program(&program) {
+                        handle.read_answer(token, &id, ok, value, error);
+                    }
+                }
+                // A subscription the store registers in the drain; its reads run below.
+                programs::Event::Subscribe { .. } | programs::Event::Unsubscribe { .. } => {}
+                programs::Event::Running
+                | programs::Event::Crashed(_)
+                | programs::Event::ScriptError(_)
+                | programs::Event::Dropped(_) => {}
+            }
+        }
+        // The subscriptions: re-read each one's command, push what changed — the first read
+        // after a subscribe always has.
+        let reads = self.extensions.sub_reads();
+        if reads.is_empty() {
+            return;
+        }
+        let mut results = Vec::new();
+        for (program, token, id, params) in reads {
+            let result = self.read_for_program(&id, &params);
+            results.push((program, token, result.map_err(String::from)));
+        }
+        for (program, token, id, value) in self.extensions.apply_sub_results(results) {
+            if let Some(handle) = self.extensions.program(&program) {
+                handle.state_update(token, &id, &value);
+            }
+        }
+    }
+
+    /// Runs a program's command or read: the same command the window, CLI and MCP dispatch, on
+    /// the active session. No poll bracket of its own — this dispatch already runs inside one.
+    fn dispatch_for_program(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
+        if let Some(result) = self.listed_or_projects_command(None, id, params) {
+            return result;
+        }
+        self.dispatch_command(None, id, params, policy(id))
+    }
+
+    /// A read the program asked for, or a subscription's re-read: only a reading command runs
+    /// — the protocol's reads and subscriptions read (docs/spec/surface-programs.md › The
+    /// session's commands), so a subscription to an edit cannot make the edit happen on every
+    /// look; the edits go through command messages. An id no command has is the dispatch's
+    /// own refusal.
+    fn read_for_program(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
+        let kind = projects_commands()
+            .find(|c| c.id == id)
+            .map(|c| c.kind)
+            .or_else(|| crate::commands::commands().iter().find(|c| c.id == id).map(|c| c.kind));
+        match kind {
+            Some(kind) if kind.effect == crate::commands::Effect::Read => self.dispatch_for_program(id, params),
+            Some(_) => Err(format!("{id:?} is not a read; a program's reads and subscriptions read").into()),
+            None => self.dispatch_for_program(id, params),
+        }
+    }
     /// Sends the MIDI inputs' notes to the active project's engine when it is a new one, and
-    /// looks at the ports again now and then, so a controller plugged in later is heard.
+    /// looks at the ports again now and then, so a controller plugged in later is heard. The
+    /// running programs' business is [`Self::poll_programs`], called ahead of this from the
+    /// frame.
     fn poll_midi(&mut self) -> Vec<String> {
         if let Some(sender) = self.session_mut(None).ok().and_then(Session::take_live_input) {
             self.devices.midi.input.connect(sender);
         }
         if self.devices.midi.system.is_some()
-            && self.devices.midi.checked.is_none_or(|t| t.elapsed() >= crate::midi::MIDI_RESCAN)
+            && (self.devices.midi.synced_epoch != self.extensions.claims_epoch
+                || self.devices.midi.checked.is_none_or(|t| t.elapsed() >= crate::midi::MIDI_RESCAN))
         {
-            return self.devices.midi.sync();
+            return self.look_at_ports();
         }
         Vec::new()
     }
@@ -814,6 +974,56 @@ impl Projects {
         Self { plugin_host: PluginHost { library, ..PluginHost::default() }, ..Self::default() }
     }
 
+    /// Points the extensions store at `root`, over `SUHINA_EXTENSIONS` too, so a test's store
+    /// is its own whatever the developer's environment names, and reads what is there.
+    pub fn with_extensions_root(mut self, root: &Path) -> Self {
+        self.extensions.force_root(root);
+        self
+    }
+
+    /// The extensions store's root: `root` itself, unless `SUHINA_EXTENSIONS` named a root, in
+    /// which case that one wins (ADR 0015). The app and the MCP server give Suhina's settings
+    /// folder at start-up; the CLI relies on [`Projects::new`]'s default.
+    pub fn set_extensions_root(&mut self, root: &Path) {
+        self.extensions.set_root(root);
+    }
+
+    /// The one program running, for the tests: this slice's store starts none by itself, so
+    /// the tests start exactly one and know which one it is. Not `cfg(test)`: the integration
+    /// tests in `tests/extension_programs.rs` reach these through the compiled lib. The MIDI
+    /// slice will use the by-id accessors on the store instead.
+    pub fn test_extensions_program(&self) -> Option<&crate::extensions::programs::Handle> {
+        self.extensions.programs()
+    }
+
+    /// Drains the running programs' events through the store's one drain, blocking until an
+    /// event answers `which`: the states are applied and the event comes back, so the tests
+    /// see events without stealing them from the session, on a signal rather than a clock.
+    /// The error is the terminal reason: the supervisor is over and the event cannot come.
+    pub fn test_extensions_wait_for(
+        &mut self,
+        which: impl Fn(&crate::extensions::programs::Event) -> bool,
+    ) -> Result<crate::extensions::programs::Event, String> {
+        self.extensions.wait_for_event(which).map(|(_, event)| event)
+    }
+
+    /// Blocks until a running program's queue holds an event that answers `which`, and leaves
+    /// it queued for the frame's drain: the router's tests wait for a send-back this way, then
+    /// let `poll_plugins` take it and write it out. The error is the terminal reason.
+    pub fn test_extensions_peek_for(
+        &mut self,
+        which: impl Fn(&crate::extensions::programs::Event) -> bool,
+    ) -> Result<(), String> {
+        self.extensions.peek_for_event(which)
+    }
+
+    /// Why the running program's supervisor is over, for the tests' pump: `None` while it can
+    /// still report an event.
+    pub fn test_extensions_reason(&self) -> Option<String> {
+        let shared = self.extensions.event_queue()?;
+        shared.terminal.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+    }
+
     /// The plug-in library. Taking it for changing counts as changing it: sessions get a new
     /// catalog the next time they start a plug-in.
     pub fn library_mut(&mut self) -> &mut Library {
@@ -954,6 +1164,13 @@ impl Projects {
         self.plugin_host.editor_embed = embed;
     }
 
+    /// The ports a program holds now, by extension id, for a restart's handshake: what the
+    /// old process held, which the router keeps until its next look opens the same ports
+    /// for the new one.
+    pub(crate) fn program_ports(&self, id: &str) -> (Vec<String>, Vec<String>) {
+        self.devices.midi.held(id)
+    }
+
     /// Keeps the active project's plug-ins in line with it (ADR 0006): starts new ones in the
     /// background, takes in the ones that have started, notices crashes. Call it often from the
     /// thread that owns the projects (the window calls it every frame); commands call it too.
@@ -961,6 +1178,7 @@ impl Projects {
     /// a drag that outran it ([`Session::catch_up_player`]).
     pub fn poll_plugins(&mut self) -> Vec<String> {
         let mut notices = Vec::new();
+        self.poll_programs();
         if let Some(session) = self.tabs.active.and_then(|id| self.get_mut(id)) {
             session.catch_up_player();
             notices.extend(session.poll_recording());
@@ -1063,28 +1281,74 @@ impl Projects {
     /// Like [`Projects::execute`], but a project command runs on `project` instead of the active
     /// one. Transport commands only work on the active project, the one that plays.
     pub fn execute_in(&mut self, project: Option<ProjectId>, id: &str, params: &Value) -> Result<Value, CommandError> {
-        if id == "command.list" {
-            crate::commands::check_params(id, &[], params)?;
-            return Ok(all_commands());
-        }
-        if let Some(spec) = projects_commands().find(|c| c.id == id) {
-            if project.is_some() {
-                return Err(format!("{id} does not run on one project; it takes no target project").into());
-            }
-            crate::commands::check_params(id, spec.params, params)?;
-            return (spec.run)(self, params);
+        if let Some(result) = self.listed_or_projects_command(project, id, params) {
+            return result;
         }
         // With no project open, previews play in the previews' own session.
         let policy = policy(id);
-        if project.is_none() && self.tabs.active.is_none() && policy.is_some_and(|p| p.previews) {
-            // Nothing plays yet: stopping opens no output.
-            if id == "preview.stop" && self.preview.is_none() {
-                return Ok(json!({ "stopped": true }));
-            }
-            return self.preview_session_mut()?.execute(id, params);
+        if let Some(result) = self.preview_dispatch(project, id, params, policy) {
+            return result;
         }
         // A command may need a plug-in that has started meanwhile, or add one.
         self.poll_plugins();
+        let result = self.dispatch_command(project, id, params, policy);
+        self.poll_plugins();
+        result
+    }
+
+    /// `command.list`, and a `project.*`/`plugin.*` command on the open projects: the part of
+    /// [`Self::execute_in`] that is not one project's command, shared with the program
+    /// dispatch. `Some` when one of them took the call.
+    fn listed_or_projects_command(
+        &mut self,
+        project: Option<ProjectId>,
+        id: &str,
+        params: &Value,
+    ) -> Option<Result<Value, CommandError>> {
+        if id == "command.list" {
+            return Some(crate::commands::check_params(id, &[], params).map(|()| all_commands()));
+        }
+        let spec = projects_commands().find(|c| c.id == id)?;
+        if project.is_some() {
+            return Some(Err(format!("{id} does not run on one project; it takes no target project").into()));
+        }
+        let checked = crate::commands::check_params(id, spec.params, params);
+        Some(checked.and_then(|()| (spec.run)(self, params)))
+    }
+
+    /// With no project open, previews play in the previews' own session: the part of
+    /// [`Self::execute_in`] before a project's command. `Some` when a preview took the call.
+    fn preview_dispatch(
+        &mut self,
+        project: Option<ProjectId>,
+        id: &str,
+        params: &Value,
+        policy: Option<Policy>,
+    ) -> Option<Result<Value, CommandError>> {
+        if !(project.is_none() && self.tabs.active.is_none() && policy.is_some_and(|p| p.previews)) {
+            return None;
+        }
+        // Nothing plays yet: stopping opens no output.
+        if id == "preview.stop" && self.preview.is_none() {
+            return Some(Ok(json!({ "stopped": true })));
+        }
+        match self.preview_session_mut() {
+            Ok(preview) => Some(preview.execute(id, params)),
+            Err(e) => Some(Err(e)),
+        }
+    }
+
+    /// One project command run, with the command's policies — a critical one's backup before
+    /// it, and its `Policy.after` after (a copy's clipboards shared with the other tabs, a
+    /// save's bookkeeping). The core of [`Self::execute_in`], with no poll bracket of its own:
+    /// [`Self::execute_in`] brackets it, and the program dispatch already runs inside one.
+    fn dispatch_command(
+        &mut self,
+        project: Option<ProjectId>,
+        id: &str,
+        params: &Value,
+        policy: Option<Policy>,
+    ) -> Result<Value, CommandError> {
         let target = project.or(self.tabs.active);
         if let Some(target) = target
             && policy.is_some_and(|p| p.critical)
@@ -1092,7 +1356,6 @@ impl Projects {
             self.back_up_critical(target);
         }
         let result = self.session_mut(project)?.execute(id, params);
-        self.poll_plugins();
         let Ok(value) = &result else { return result };
         match policy.map_or(crate::After::Nothing, |p| p.after) {
             crate::After::Nothing => {}
@@ -1186,6 +1449,7 @@ fn projects_commands() -> impl Iterator<Item = &'static CommandSpec<Projects>> {
         .chain(crate::audio_commands())
         .chain(crate::backup::backup_commands())
         .chain(crate::midi_commands())
+        .chain(crate::extensions::extensions_commands())
 }
 
 /// `docs/commands.md`: every command in the order of [`all_commands`], as `suhina-cli commands
@@ -1274,4 +1538,71 @@ pub fn let_go(session: Session) -> Option<std::thread::JoinHandle<()>> {
             suhina_plugins::trace!("closed project let go in {:?}", started.elapsed());
         })
         .ok()
+}
+
+/// Merges a program's gesture into its command's parameters, for the commands that take one:
+/// a stream of calls with one gesture is one undo step, ended by `history.endGesture` like
+/// any caller's. A command without the parameter runs without it.
+fn with_gesture(id: &str, mut params: Value, gesture: Option<&str>) -> Value {
+    let Some(gesture) = gesture else { return params };
+    if !takes_gesture(id) {
+        return params;
+    }
+    if params.is_null() {
+        params = json!({});
+    }
+    params["gesture"] = json!(gesture);
+    params
+}
+
+/// Whether the command takes the `gesture` parameter: the calls of one drag that replace each
+/// other, by the command's own design — the ones whose stream may coalesce, and whose
+/// `with_gesture` merge means anything.
+fn takes_gesture(id: &str) -> bool {
+    let takes = |params: &[crate::commands::Param]| params.iter().any(|p| p.name == "gesture");
+    crate::commands::commands().iter().any(|c| c.id == id && takes(c.params))
+        || projects_commands().any(|c| c.id == id && takes(c.params))
+}
+
+/// Whether a parameter carries a value the stream's calls set — a level, a pan, a shape's
+/// depth, what a drag moves — as against the references that name what the calls act on. The
+/// stream's key is what a call acts on; what it sets is the newest value's say.
+fn is_value(ty: &crate::commands::ParamType) -> bool {
+    use crate::commands::ParamType;
+    matches!(
+        ty,
+        ParamType::Number | ParamType::Integer | ParamType::Bool | ParamType::Decibels | ParamType::AutomationValue
+    )
+}
+
+/// A stream's key: the parameters but the gesture and the values the calls set — what the
+/// calls act on. Two calls of one gesture on the same target stand for each other; a drag on
+/// another track, another clip, is another stream.
+fn stream_target(id: &str, params: &Value) -> Value {
+    let mut copy = params.clone();
+    let value_names: Vec<&str> = {
+        let spec = crate::commands::commands()
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.params)
+            .or_else(|| projects_commands().find(|c| c.id == id).map(|c| c.params));
+        match spec {
+            Some(spec) => spec.iter().filter(|p| is_value(&p.ty)).map(|p| p.name).collect(),
+            None => Vec::new(),
+        }
+    };
+    if let Some(object) = copy.as_object_mut() {
+        object.remove("gesture");
+        for name in value_names {
+            object.remove(name);
+        }
+    }
+    copy
+}
+
+/// Whether two calls act on the same target: the parameters but the gesture and the values
+/// the calls set, so one drag's values stand for each other and a drag on another track does
+/// not.
+fn same_target(id: &str, a: &Value, b: &Value) -> bool {
+    stream_target(id, a) == stream_target(id, b)
 }

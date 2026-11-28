@@ -24,6 +24,7 @@ mod device_groups;
 mod devices;
 mod editing;
 mod export;
+mod extensions;
 mod files;
 mod flp_import;
 mod follow;

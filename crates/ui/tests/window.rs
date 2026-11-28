@@ -151,10 +151,10 @@ pub(super) fn arrangement_app() -> Harness<'static, App> {
 }
 
 /// MIDI ports by name that open into nothing.
-pub(super) struct StandMidi(Vec<String>);
+pub(super) struct StandMidi(Vec<(String, String)>);
 
 impl suhina_session::MidiSystem for StandMidi {
-    fn ports(&self) -> Result<Vec<String>, String> {
+    fn ports(&self) -> Result<Vec<(String, String)>, String> {
         Ok(self.0.clone())
     }
 
