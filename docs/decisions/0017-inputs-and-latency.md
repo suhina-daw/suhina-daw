@@ -4,7 +4,7 @@ read_when: MIDI input, default track input, audio.setTrackInput, MIDI controller
 type: decision
 status: accepted
 built: yes
-last_verified: 2026-11-12
+last_verified: 2026-11-28
 covers:
   - crates/engine/src/record.rs
   - crates/engine/src/live.rs

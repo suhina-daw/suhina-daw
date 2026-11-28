@@ -615,6 +615,14 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
   folder of sound files in the library's `Sounds/Metronome` is a family of its own. The click
   stays in time with a main channel that adds latency.
 
+- Extensions: an extension folder's Lua script runs in Suhina's shipped runner, one process
+  per script, watched and restarted; the `extensions.*` commands add, list, restart and remove
+  it (an agent runs them over the running app's MCP, and `suhina-cli commands` lists them). A
+  running script receives every message of the MIDI ports its manifest claims, system exclusive
+  included, and what it sends back reaches the device; its `suhina.command`, `suhina.read` and
+  `suhina.subscribe` calls run Suhina's commands on the open project, undo included. The
+  Settings › Extensions panel and permission enforcement wait.
+
 ### M5 Audio (done)
 - Audio files (WAV, AIFF, FLAC, MP3, Ogg Vorbis) are decoded in parallel when a set opens.
 - Audio clips play with clip gain, transpose, loops and, on the arrangement, fades (launched
