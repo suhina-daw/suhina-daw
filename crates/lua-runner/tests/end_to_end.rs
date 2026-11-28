@@ -12,57 +12,78 @@ use std::io::{BufRead, BufReader, Write as IoWrite};
 use std::process::{Child, Command, Stdio};
 
 use interprocess::TryClone;
-use interprocess::local_socket::{GenericNamespaced, ListenerNonblockingMode, ListenerOptions, Stream, prelude::*};
+use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Stream, prelude::*};
 use serde_json::{Value, json};
 use suhina_plugins::parse_address;
 
 static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-/// How long a runner child may stay alive without connecting before the watchdog ends it: the
-/// supervisor's own start deadline's shape — the tests end with a failure instead of hanging
-/// on a child that wedged before it spoke.
-const START_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(30);
+/// What the startup wait hears: the runner's connection, its stderr reaching EOF first (it
+/// exited), or the listener failing.
+enum Startup {
+    Connected(Stream),
+    Exited(String),
+    Refused(String),
+}
 
-/// Spawns the runner child for `address`'s socket and takes its connection. The accept is
-/// nonblocking and the child is watched while it is waited for: one that exits before
-/// connecting ends the wait with its status, and one that stays alive without connecting is
-/// ended at the watchdog's deadline — the tests end, not hang. From the spawn on, the helper
-/// owns the child's cleanup: every way out of it kills and reaps first.
-fn spawn_and_connect(script_path: &std::path::Path, address: &str, stderr: Stdio) -> (Child, Stream) {
+/// Spawns the runner child for `address`'s socket and takes its connection. The accept blocks
+/// on its own thread while a reader drains the child's stderr: a child that exits before it
+/// connects ends the wait with its status and stderr, not a hang, and there is no clock in
+/// the wait (AGENTS.md rule 7). The stderr reader forwards the child's lines and stays until
+/// the process ends; the connection ends the startup wait.
+fn spawn_and_connect(script_path: &std::path::Path, address: &str) -> (Child, Stream) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_suhina-lua-runner"));
+    command.args(["--control", address, script_path.to_str().unwrap()]);
+    spawn_and_wait(command, address)
+}
+
+/// [`spawn_and_connect`]'s wait, for any child: the runner's own command, or a test's child
+/// that exits at once.
+fn spawn_and_wait(mut command: Command, address: &str) -> (Child, Stream) {
     let (_, name) = parse_address(address).unwrap();
-    let listener =
-        ListenerOptions::new().name(name).nonblocking(ListenerNonblockingMode::Accept).create_sync().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_suhina-lua-runner"))
-        .args(["--control", address, script_path.to_str().unwrap()])
-        .stdout(Stdio::null())
-        .stderr(stderr)
-        .spawn()
-        .unwrap();
-    let deadline = std::time::Instant::now() + START_WATCHDOG;
-    let stream = loop {
-        match listener.accept() {
-            Ok(stream) => break stream,
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                panic!("accept: {e}");
+    let listener = ListenerOptions::new().name(name).create_sync().unwrap();
+    let mut child = command.stdout(Stdio::null()).stderr(Stdio::piped()).spawn().unwrap();
+    let (sender, wait) = std::sync::mpsc::channel();
+    // The accept blocks: the listener was made before the child, so its connection is the
+    // child's, or the wait is ended by the child's stderr closing.
+    let accept = sender.clone();
+    std::thread::spawn(move || {
+        let result = match listener.accept() {
+            Ok(stream) => Startup::Connected(stream),
+            Err(e) => Startup::Refused(e.to_string()),
+        };
+        let _ = accept.send(result);
+    });
+    // The child's stderr is the explicit exit signal: its EOF ends the blocking accept wait
+    // without a poll or a sleep. The lines go on to the test's stderr.
+    let stderr = child.stderr.take().unwrap_or_else(|| panic!("the runner's stderr is piped"));
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stderr);
+        let mut text = String::new();
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    text.push_str(&line);
+                    eprint!("{line}");
+                }
             }
         }
-        if let Some(status) = child.try_wait().unwrap() {
-            panic!("the runner exited while starting: {status}");
+        let _ = sender.send(Startup::Exited(text));
+    });
+    match wait.recv().unwrap_or_else(|e| panic!("the startup signal ended: {e}")) {
+        Startup::Connected(stream) => (child, stream),
+        Startup::Exited(text) => {
+            let status = child.wait().unwrap();
+            panic!("the runner exited while starting: {status}\n{text}");
         }
-        if std::time::Instant::now() >= deadline {
+        Startup::Refused(reason) => {
             let _ = child.kill();
             let _ = child.wait();
-            panic!("the runner never connected in 30 s");
+            panic!("accept: {reason}");
         }
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    };
-    // The accepted stream took the listener's nonblocking mode; the harness's reads block on
-    // it by design, so it is made blocking here.
-    stream.set_nonblocking(false).unwrap();
-    (child, stream)
+    }
 }
 
 /// The harness: the runner as a child process, and the two halves of its socket.
@@ -89,7 +110,7 @@ impl Harness {
         };
         let script_path = std::env::temp_dir().join(format!("{id}.lua"));
         std::fs::write(&script_path, script).unwrap();
-        let (child, stream) = spawn_and_connect(&script_path, &address, Stdio::inherit());
+        let (child, stream) = spawn_and_connect(&script_path, &address);
         let writer = stream.try_clone().unwrap();
         let mut harness = Self { child, reader: BufReader::new(stream), writer };
         harness.send(json!({ "op": "hello", "version": 1 }));
@@ -340,7 +361,7 @@ fn a_wrong_version_is_refused() {
     };
     let script_path = std::env::temp_dir().join(format!("{id}.lua"));
     std::fs::write(&script_path, "return 1").unwrap();
-    let (mut child, stream) = spawn_and_connect(&script_path, &address, Stdio::null());
+    let (mut child, stream) = spawn_and_connect(&script_path, &address);
     let mut writer = stream.try_clone().unwrap();
     let mut reader = BufReader::new(stream);
     // The runner speaks first: its hello, then the refusal of ours, then the exit.
@@ -355,6 +376,32 @@ fn a_wrong_version_is_refused() {
     assert_eq!(answer, json!({ "op": "error", "message": "version 9 is not spoken; this runner speaks 1" }));
     let status = child.wait().unwrap();
     assert!(!status.success(), "the runner exits after the refusal");
+}
+
+/// A child that exits before connecting ends the wait with its status, not a hang: the
+/// stderr reader's EOF is the explicit signal, so no clock is involved.
+#[test]
+#[should_panic(expected = "the runner exited while starting")]
+fn a_child_that_exits_before_connecting_is_reported() {
+    let id = format!(
+        "suhina-runner-test-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let address = if GenericNamespaced::is_supported() {
+        format!("ns:{id}")
+    } else {
+        format!("fs:{}", std::env::temp_dir().join(&id).display())
+    };
+    #[cfg(unix)]
+    let command = Command::new("/usr/bin/true");
+    #[cfg(windows)]
+    let command = {
+        let mut command = Command::new("cmd");
+        command.args(["/C", "exit", "1"]);
+        command
+    };
+    let _ = spawn_and_wait(command, &address);
 }
 
 /// Bytes as the protocol carries them: lowercase hex.

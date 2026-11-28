@@ -12,7 +12,7 @@ use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use interprocess::TryClone;
@@ -109,6 +109,31 @@ pub(crate) struct Queue {
     pub(crate) queue: Mutex<VecDeque<Event>>,
     pub(crate) signal: Condvar,
     pub(crate) terminal: Mutex<Option<String>>,
+}
+
+/// The tests' wake for a pump between looks: every supervisor event, every send-back a test
+/// writes to its stand-in output, and the terminal reason notify it, so a test waits on an
+/// explicit signal rather than a clock (AGENTS.md rule 7). No waker is registered in the app,
+/// so the sends are a lock on an empty list at most.
+static TEST_WAKERS: OnceLock<Mutex<Vec<Sender<()>>>> = OnceLock::new();
+
+/// A receiver woken by [`test_wake`]: the tests' pump holds one while it waits.
+pub fn test_watch() -> Receiver<()> {
+    let (wake, wait) = channel();
+    TEST_WAKERS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(wake);
+    wait
+}
+
+/// Wakes every test pump. The supervisor reports each event and its terminal reason; the
+/// runner tests' stand-in output calls it for each write.
+pub fn test_wake() {
+    let Some(wakers) = TEST_WAKERS.get() else { return };
+    let mut wakers = wakers.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    wakers.retain(|waker| waker.send(()).is_ok());
 }
 
 impl Default for Queue {
@@ -405,6 +430,14 @@ impl Child {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+
+    /// Ends a process that never got a quit to answer, because a stop arrived while it was
+    /// still connecting: kill and reap it now, rather than give it [`STOP_WAIT`] for a link
+    /// that does not exist.
+    fn kill_now(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 /// How many bytes the send-backs waiting for the session may hold, with their count cap: the
@@ -440,6 +473,9 @@ fn enqueue_send_back(events: &Shared, port: String, bytes: Vec<u8>, dropped: &mu
     // plug-in host gives its unasked news (#714).
     events.signal.notify_one();
     suhina_plugins::wake();
+    // The tests' pump waits on its own wake; a send-back queued after its last look must
+    // wake it, or the marker it waits for lies in this queue with no look to drain it.
+    test_wake();
 }
 
 /// One send-back drop — the queue's caps' or the parked lines' ([`Link::wait_for_room`]) —
@@ -455,6 +491,7 @@ fn note_dropped(events: &Shared, dropped: &mut usize) {
     }
     events.signal.notify_one();
     suhina_plugins::wake();
+    test_wake();
 }
 
 /// The requests the process now running has made, per kind: each token with the command it
@@ -623,12 +660,12 @@ fn watch(
         match from.try_recv() {
             Ok(ToProgram::Stop) => {
                 suhina_plugins::trace!("surface stop while the runner connects");
-                child.stop();
+                child.kill_now();
                 return Ok(());
             }
             Err(TryRecvError::Disconnected) => {
                 suhina_plugins::trace!("surface order channel disconnected while the runner connects");
-                child.stop();
+                child.kill_now();
                 return Ok(());
             }
             Ok(order) => deferred.push(order),
@@ -861,12 +898,14 @@ fn give_up(events: &Shared, reason: &str) {
         *terminal = Some(reason.to_string());
     }
     events.signal.notify_all();
+    test_wake();
 }
 
 fn report(events: &Shared, event: Event) {
     let mut queue = events.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     queue.push_back(event);
     events.signal.notify_one();
+    test_wake();
     // The window is woken now, not at its next frame: while nothing plays, its meters ask for
     // no frames, and a controller's command (a fader's, on the return trip) would wait for the
     // background repaints — a moment when playing, a visible lag when stopped. The same wake
