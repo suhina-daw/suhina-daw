@@ -636,7 +636,7 @@ fn gain_db(gain: f64) -> f64 {
 }
 
 /// The built-in devices that read a key; a plug-in reads one through its first auxiliary input.
-pub(crate) const KEYED_BUILTINS: [&str; 1] = ["compressor"];
+pub(crate) const KEYED_BUILTINS: [&str; 2] = ["compressor", "eq"];
 
 /// Whether `device` has a sidechain input to read a key with.
 pub fn reads_a_key(device: &Device) -> bool {
@@ -1565,6 +1565,10 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
             let index = info
                 .param_index(param)
                 .ok_or_else(|| format!("{} has no parameter {param:?}; device.list lists them", info.name))?;
+            // The EQ's audition is passing state, never stored: device.audition sets it.
+            if id == "eq" && param == "audition" {
+                return Err("the EQ's audition is not saved: device.audition sets it while a band is held".into());
+            }
             let spec = info.params.get(index).ok_or("the parameter is missing")?;
             (index, spec.clamp(value))
         }
@@ -1639,10 +1643,76 @@ pub(crate) fn set_param(session: &mut Session, params: &Value) -> Result<Value, 
     }
     // A playing engine takes this as messages, without a new graph; one that turned a lane
     // off needs the new graph, which holds the values too, and so does a device inside a group.
-    if !off && path.len() == 1 {
+    // An EQ band's mode, slot or type can make it Spectral or stop it being so, which changes the
+    // EQ's delay: the engine reads a delay when it builds, so these take a new graph.
+    let delay_may_change = matches!(&device.kind, DeviceKind::Builtin(id) if id == "eq")
+        && ["Mode", "InUse", "Type"].iter().any(|field| param.ends_with(field));
+    if !off && !delay_may_change && path.len() == 1 {
         session.sync.param_edits = messages;
     }
     Ok(with_override(json!({ "device": path_value(&path), "param": param, "value": value }), off))
+}
+
+/// The most parameters one `device.setParams` call sets.
+const MOST_PARAMS: usize = 512;
+
+/// `device.setParams`: several parameters of one device, each set as `device.setParam` sets it,
+/// in one call: one undo step, and one check of the project instead of one per value, so a drag
+/// that moves several values each frame (a group of an EQ's bands, a band drawn in) stays light.
+/// A playing engine takes the values as messages when every one of them could be; when any needs
+/// a new graph (an EQ band's mode, a lane turned off, a device in a group), one graph holds them
+/// all.
+pub(crate) fn set_params(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let ids = Args::new(params).texts("ids", MOST_PARAMS)?;
+    let values = Args::new(params).numbers("values", MOST_PARAMS)?;
+    if ids.is_empty() || ids.len() != values.len() {
+        return Err("ids and values must be lists of the same length, with at least one id".into());
+    }
+    let mut one = params.as_object().cloned().ok_or("the parameters must be an object")?;
+    one.remove("ids");
+    one.remove("values");
+    let mut messages = Vec::new();
+    let mut new_graph = false;
+    let mut set = Vec::with_capacity(ids.len());
+    for (id, value) in ids.into_iter().zip(values) {
+        one.insert("param".into(), json!(id));
+        one.insert("value".into(), json!(value));
+        session.sync.param_edits.clear();
+        set.push(set_param(session, &Value::Object(one.clone()))?);
+        let sent = std::mem::take(&mut session.sync.param_edits);
+        new_graph |= sent.is_empty();
+        messages.extend(sent);
+    }
+    session.sync.param_edits = if new_graph { Vec::new() } else { messages };
+    Ok(json!({ "params": set }))
+}
+
+/// `device.audition`: an EQ's band heard alone, or the whole EQ again with band 0. The value goes
+/// to the playing engine only, as the EQ's `audition` parameter: the project never holds it, so
+/// nothing is saved or undone, and a new graph plays the whole EQ (docs/spec/eq.md › Audition).
+pub(crate) fn audition(session: &mut Session, params: &Value) -> Result<Value, CommandError> {
+    let band = Args::new(params).f64("band")?;
+    if !(0.0..=24.0).contains(&band) || band.fract() != 0.0 {
+        return Err("band must be a whole number from 0 to 24".into());
+    }
+    // Like every transport command, it is for a playing engine.
+    session.player_mut()?;
+    let track = track_or_main_id(&session.project, params)?;
+    let channel = device_channel(session, params)?;
+    let path = device_path(&channel.devices, params, "device")?;
+    let device = device_at(&channel.devices, &path).ok_or("the device is missing")?;
+    if device.kind != DeviceKind::Builtin("eq".into()) {
+        return Err("only an EQ has bands to audition".into());
+    }
+    let [index] = path.as_slice() else {
+        return Err("an EQ inside a device group cannot be auditioned yet".into());
+    };
+    let index = *index;
+    let param = suhina_device_registry::info("eq")
+        .and_then(|info| info.param_index("audition"))
+        .ok_or("the EQ has no audition")?;
+    session.player_mut()?.set_device_param(ParamEdit { track, device: index, param, value: band })?;
+    Ok(json!({ "device": path_value(&path), "band": band }))
 }
 
 /// `device.randomize`: new values for a device with a randomizer, as one edit.
@@ -1930,6 +2000,12 @@ pub(crate) fn set_automation(session: &mut Session, params: &Value) -> Result<Va
         DeviceKind::Builtin(id) => {
             let info =
                 suhina_device_registry::info(id).ok_or_else(|| format!("{id:?} is not a device this version knows"))?;
+            // The EQ's audition is passing state: it has no lane, as it has no stored value.
+            if id == "eq" && param == "audition" {
+                return Err(
+                    "the EQ's audition cannot be automated: device.audition sets it while a band is held".into()
+                );
+            }
             let spec = info
                 .param_index(param)
                 .and_then(|i| info.params.get(i))

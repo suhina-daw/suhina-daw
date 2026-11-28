@@ -97,6 +97,6 @@ A reset (and a change of sample rate) clears them to silence and no reduction.
 
 - **The view is panel state.** It changes no sound, so it is not a parameter that automation,
   presets and the import would have to carry; the EQ's selected band is kept the same way.
-- **The history is kept by the panel, not the device.** The 35 readouts could hold only about 30
+- **The history is kept by the panel, not the device.** The readouts (35 then) could hold only about 30
   readings of one value; the panel samples the readouts as it draws and keeps four seconds, so the
   device stays as it was apart from its meters. The history starts when the panel opens.

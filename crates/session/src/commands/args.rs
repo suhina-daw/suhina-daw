@@ -133,6 +133,17 @@ impl<'a> Args<'a> {
         list.iter().map(|v| v.as_f64().filter(|n| n.is_finite()).ok_or_else(bad)).collect()
     }
 
+    /// A list of texts, at most `most` of them.
+    pub(crate) fn texts(self, name: &str, most: usize) -> Result<Vec<&'a str>, CommandError> {
+        let bad = || CommandError::from(format!("{name} must be a list of texts"));
+        let list = self.value(name).ok_or_else(|| CommandError::from(format!("{name} is missing")))?;
+        let list = list.as_array().ok_or_else(bad)?;
+        if list.len() > most {
+            return Err(format!("{name} holds {} texts, more than {most}", list.len()).into());
+        }
+        list.iter().map(|v| v.as_str().ok_or_else(bad)).collect()
+    }
+
     /// A list of ids (whole numbers, such as clip ids from `project.clips`), or `None` when it is
     /// left out.
     pub(crate) fn opt_ids(self, name: &str) -> Result<Option<Vec<u32>>, CommandError> {

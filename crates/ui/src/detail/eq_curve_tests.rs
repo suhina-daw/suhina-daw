@@ -14,13 +14,17 @@ fn display() -> Rect {
     Rect::from_min_size(Pos2::ZERO, Vec2::new(DISPLAY[2], DISPLAY[3]))
 }
 
+fn set(parameters: &mut [GraphParameter], id: &str, value: f64) {
+    parameters.iter_mut().find(|p| p.id == id).unwrap().value = value;
+}
+
 /// The level in dB the curve's polyline shows at a frequency, between its neighbours.
-fn level_at(points: &[Pos2], display: Rect, frequency: f64) -> f64 {
+fn level_at(points: &[Pos2], display: Rect, range: f64, frequency: f64) -> f64 {
     let x = frequency_x(frequency, display);
     let index = points.partition_point(|point| point.x < x).max(1).min(points.len() - 1);
     let (left, right) = (points[index - 1], points[index]);
     let t = ((x - left.x) / (right.x - left.x).max(1.0)).clamp(0.0, 1.0);
-    y_db(left.y + (right.y - left.y) * t, display)
+    y_db(left.y + (right.y - left.y) * t, display, range)
 }
 
 #[test]
@@ -30,13 +34,15 @@ fn the_axes_map_the_parameters_ranges_onto_the_display() {
         let back = x_frequency(frequency_x(frequency, display), display);
         assert!((back - frequency).abs() < frequency * 1.0e-4, "{frequency} Hz mapped to {back} Hz");
     }
-    for db in [-15.0, -6.0, 0.0, 6.0, 15.0] {
-        let back = y_db(db_y(db, display), display);
-        assert!((back - db).abs() < 1.0e-3, "{db} dB mapped to {back} dB");
+    for range in DB_RANGES {
+        for db in [-range, -range / 2.0, 0.0, range / 3.0, range] {
+            let back = y_db(db_y(db, display, range), display, range);
+            assert!((back - db).abs() < 1.0e-3, "{db} dB mapped to {back} dB at ±{range}");
+        }
+        assert_eq!(db_y(-range, display, range), display.bottom());
+        assert_eq!(db_y(range, display, range), display.top());
+        assert_eq!(db_y(0.0, display, range), display.center().y);
     }
-    assert_eq!(db_y(-DB, display), display.bottom());
-    assert_eq!(db_y(DB, display), display.top());
-    assert_eq!(db_y(0.0, display), display.center().y);
 }
 
 #[test]
@@ -44,57 +50,72 @@ fn a_bell_bends_the_curve_to_its_gain_at_its_frequency() {
     let display = display();
     let mut parameters = panel_parameters();
     // Band 3 is the defaults' Bell at 1 kHz: raising its gain bends the curve to it.
-    let gain = parameters.iter_mut().find(|p| p.id == "a3Gain").unwrap();
-    gain.value = 12.0;
-    let curve = bands(&parameters, 0);
-    assert_eq!(curve[2].frequency, 1000.0);
-    assert!((level_at(&curve_points(display, &curve), display, 1000.0) - 12.0).abs() < 0.1);
+    set(&mut parameters, "a3Gain", 12.0);
+    let bands = bands(&parameters);
+    assert_eq!(bands[2].frequency, 1000.0);
+    let stereo = curve_points(display, 15.0, &bands, |band| band.place == 0);
+    assert!((level_at(&stereo, display, 15.0, 1000.0) - 12.0).abs() < 0.1);
     // Far from the bell the curve is the other bands', all flat at their defaults.
-    assert!(level_at(&curve_points(display, &curve), display, 100.0).abs() < 0.5);
+    assert!(level_at(&stereo, display, 15.0, 100.0).abs() < 0.5);
 }
 
 #[test]
-fn a_bands_dot_sits_at_its_gain_even_when_the_sum_does_not() {
+fn a_band_on_one_side_bends_only_that_sides_curve() {
     let display = display();
     let mut parameters = panel_parameters();
-    // Two bells at one frequency, one boosted to the ceiling and one cut to the floor:
-    // their sum near 1 kHz is back near 0, and each dot still marks its own band's gain.
-    let frequency = parameters.iter_mut().find(|p| p.id == "a2Frequency").unwrap();
-    frequency.value = 1000.0;
-    let boost = parameters.iter_mut().find(|p| p.id == "a2Gain").unwrap();
-    boost.value = 15.0;
-    let cut = parameters.iter_mut().find(|p| p.id == "a3Gain").unwrap();
-    cut.value = -15.0;
-    let curve = bands(&parameters, 0);
-    let dot = db_y(curve[2].gain, display);
-    assert!(dot > display.center().y, "a negative gain draws below the 0 dB line");
-    assert!(level_at(&curve_points(display, &curve), display, 1000.0) > -6.0);
+    set(&mut parameters, "a3Gain", 9.0);
+    set(&mut parameters, "a3Place", 4.0);
+    let bands = bands(&parameters);
+    let stereo = curve_points(display, 15.0, &bands, |band| band.place == 0);
+    let side = curve_points(display, 15.0, &bands, |band| band.place == 0 || band.place == 4);
+    assert!(level_at(&stereo, display, 15.0, 1000.0).abs() < 0.5, "the stereo curve stays flat");
+    assert!((level_at(&side, display, 15.0, 1000.0) - 9.0).abs() < 0.1, "the side's curve has the bell");
 }
 
 #[test]
-fn the_bands_read_their_curve() {
+fn a_slot_not_in_use_shapes_no_curve() {
+    let display = display();
+    let mut parameters = panel_parameters();
+    set(&mut parameters, "a3Gain", 12.0);
+    set(&mut parameters, "a3InUse", 0.0);
+    let bands = bands(&parameters);
+    assert!(!bands[2].in_use);
+    let stereo = curve_points(display, 15.0, &bands, |band| band.place == 0);
+    assert!(level_at(&stereo, display, 15.0, 1000.0).abs() < 0.5);
+}
+
+#[test]
+fn the_bands_read_their_slots() {
     let parameters = panel_parameters();
-    for (curve, prefix) in [(0, 'a'), (1, 'b')] {
-        let bands = bands(&parameters, curve);
-        assert_eq!(bands.len(), BANDS);
-        for (index, band) in bands.iter().enumerate() {
-            assert_eq!(band.frequency, value(&parameters, &format!("{prefix}{}Frequency", index + 1)));
-            assert_eq!(band.on, value(&parameters, &format!("{prefix}{}On", index + 1)) >= 0.5);
-        }
+    let bands = bands(&parameters);
+    assert_eq!(bands.len(), BANDS);
+    for (index, band) in bands.iter().enumerate() {
+        assert_eq!(band.frequency, value(&parameters, &format!("a{}Frequency", index + 1)));
+        assert_eq!(band.on, value(&parameters, &format!("a{}On", index + 1)) >= 0.5);
+        assert_eq!(band.in_use, index < suhina_device_eq::FIRST_BANDS, "band {}", index + 1);
     }
-    // The defaults: curve A's first four bands on, curve B's off bands are off.
-    let curve_a = bands(&parameters, 0);
-    assert_eq!(curve_a.iter().filter(|band| band.on).count(), 4);
-    let curve_b = bands(&parameters, 1);
-    assert_eq!(curve_b.iter().filter(|band| band.on).count(), 4);
+    // The defaults: the first eight in use, four of them on.
+    assert_eq!(bands.iter().filter(|band| band.heard()).count(), 4);
 }
 
 #[test]
-fn a_frequency_reads_as_the_left_column_reads_it() {
+fn a_frequency_reads_as_the_panel_reads_it() {
     assert_eq!(frequency_text(30.0), "30.0 Hz");
     assert_eq!(frequency_text(65.3), "65.3 Hz");
     assert_eq!(frequency_text(1000.0), "1.0 kHz");
     assert_eq!(frequency_text(18_000.0), "18.0 kHz");
+    assert_eq!(gain_text(4.2), "+4.2 dB");
+    assert_eq!(gain_text(-3.5), "-3.5 dB");
+    assert_eq!(gain_text(0.0), "0.0 dB");
+}
+
+#[test]
+fn a_frequency_reads_as_its_nearest_note_and_cents() {
+    assert_eq!(note_text(440.0), "A4 +0");
+    assert_eq!(note_text(261.63), "C4 +0");
+    assert_eq!(note_text(27.5), "A0 +0");
+    assert_eq!(note_text(440.0 * 2f64.powf(13.0 / 1200.0)), "A4 +13");
+    assert_eq!(note_text(440.0 * 2f64.powf(-20.0 / 1200.0)), "A4 -20");
 }
 
 #[test]
@@ -119,7 +140,8 @@ fn the_analyser_folds_a_tone_onto_its_band() {
     let bands = fold(&bins, sum, 48_000.0);
     assert!((bands[band_of_1k] + 12.0).abs() < 1.0, "the 1 kHz band reads the tone's level, got {}", bands[band_of_1k]);
     for (band, level) in bands.iter().enumerate() {
-        if band.abs_diff(band_of_1k) > 2 {
+        // 256 bands are about 3 % wide: the window's main lobe spans a few on each side.
+        if band.abs_diff(band_of_1k) > 5 {
             assert!(*level < -30.0, "band {band} is {level} dB, far from a tone at 1 kHz");
         }
     }
@@ -140,10 +162,6 @@ fn the_analyser_draws_on_its_own_scale_across_the_display() {
 
 #[test]
 fn a_band_rises_quickly_and_falls_slowly_across_frames() {
-    // The follower as the panel drives it: one step a frame, 30 ms apart. A band ten frames
-    // into a louder reading is sitting on its louder reading (the 20 ms attack); ten frames
-    // into a quieter one it has barely left it — a peak hangs for the eye, the way a
-    // spectrum's held line reads, and falls on the seconds scale.
     let follower = AttackRelease::new(ANALYSER_ATTACK, ANALYSER_RELEASE, 1.0 / 0.030);
     let mut shown = -60.0;
     for _ in 0..10 {
@@ -165,4 +183,133 @@ fn only_a_top_level_device_is_watched_by_the_analyser() {
     assert_eq!(watch_key(&DeviceAt(vec![])), None, "no path, no watch");
     assert_eq!(watch_key(&DeviceAt(vec![1, 0, 0])), None, "a grouped device is not tapped");
     assert_eq!(watch_key(&DeviceAt(vec![2, 1, 3, 0, 1])), None, "nested groups too");
+}
+
+#[test]
+fn a_typed_frequency_reads_numbers_k_notation_and_notes() {
+    let near = |typed: &str, expected: f64| {
+        let got = parse_frequency(typed).unwrap_or_else(|| panic!("{typed} did not read"));
+        assert!((got - expected).abs() < expected * 1.0e-4, "{typed}: {got} against {expected}");
+    };
+    near("440", 440.0);
+    near("1,5", 1.5);
+    near("6k3", 6300.0);
+    near("2k", 2000.0);
+    near("1.2k", 1200.0);
+    near("A4", 440.0);
+    near("a", 440.0);
+    near("A0", 27.5);
+    near("C4", 261.6256);
+    near("D#5", 622.254);
+    near("Bb3", 233.082);
+    near("A4 +13", 440.0 * 2f64.powf(13.0 / 1200.0));
+    near("A4-20", 440.0 * 2f64.powf(-20.0 / 1200.0));
+    near("A +13", 440.0 * 2f64.powf(13.0 / 1200.0));
+    near("A -20", 440.0 * 2f64.powf(-20.0 / 1200.0));
+    for nonsense in ["", "k", "H4", "A4 +x", "kk", "A999999999999999999", "A11", "A4 +5000"] {
+        assert_eq!(parse_frequency(nonsense), None, "{nonsense}");
+    }
+    assert_eq!(parse_number("-3,5"), Some(-3.5));
+    assert_eq!(parse_number("x"), None);
+}
+
+/// A drawn curve: 0 dB everywhere it is drawn, with `shape` added over the columns it names.
+fn stroke(shape: impl Fn(usize) -> f64) -> Vec<Option<f64>> {
+    (0..STROKE_COLUMNS).map(|c| Some(shape(c))).collect()
+}
+
+#[test]
+fn a_drawn_hump_becomes_a_bell_at_its_peak() {
+    let peak = 64;
+    let columns = stroke(|c| 9.0 * (-((c as f64 - peak as f64) / 6.0).powi(2)).exp());
+    let bands = stroke_bands(&columns);
+    assert_eq!(bands.len(), 1, "{bands:?}");
+    let (kind, frequency, gain, q) = bands[0];
+    assert_eq!(kind, 3);
+    assert!((frequency - column_frequency(peak)).abs() < 1.0);
+    assert!((gain - 9.0).abs() < 0.01);
+    assert!(q > 0.3 && q < 12.0, "{q}");
+    // A narrower hump gives a higher Q.
+    let narrow = stroke_bands(&stroke(|c| 9.0 * (-((c as f64 - peak as f64) / 2.0).powi(2)).exp()));
+    assert!(narrow[0].3 > q, "{} against {q}", narrow[0].3);
+}
+
+#[test]
+fn a_drawn_curve_makes_one_band_per_stretch_away_from_0_db() {
+    let columns = stroke(|c| match c {
+        30..=40 => 6.0,
+        80..=90 => -8.0,
+        _ => 0.0,
+    });
+    let bands = stroke_bands(&columns);
+    assert_eq!(bands.len(), 2, "{bands:?}");
+    assert!(bands[0].2 > 0.0 && bands[1].2 < 0.0, "a boost then a cut, low to high");
+    assert!(bands[0].1 < bands[1].1);
+}
+
+/// Slots for a drawn curve: `used` as `(frequency, replaceable)`, then free slots up to 24.
+fn drawable(used: &[(f64, bool)]) -> Vec<Drawable> {
+    let mut slots: Vec<Drawable> =
+        used.iter().map(|&(frequency, replaceable)| Drawable { in_use: true, replaceable, frequency }).collect();
+    slots.resize_with(24, || Drawable { in_use: false, replaceable: true, frequency: 1_000.0 });
+    slots
+}
+
+#[test]
+fn a_curve_drawn_over_bands_replaces_them_in_their_slots() {
+    // Bands at 2 kHz and 500 Hz under the stroke, one at 100 Hz beside it.
+    let slots = drawable(&[(2_000.0, true), (100.0, true), (500.0, true)]);
+    let (into, freed) = stroke_slots(&slots, (300.0, 5_000.0), false, 2);
+    assert_eq!(into, vec![2, 0], "the new bands take the covered slots, low to high");
+    assert!(freed.is_empty());
+    // Drawn again with one band: the covered slot left over is freed, the one beside it stays.
+    let (into, freed) = stroke_slots(&slots, (300.0, 5_000.0), false, 1);
+    assert_eq!((into, freed), (vec![2], vec![0]));
+    // More bands than covered slots: the rest take free slots.
+    let (into, _) = stroke_slots(&slots, (300.0, 5_000.0), false, 4);
+    assert_eq!(into, vec![2, 0, 3, 4]);
+    // A flat stroke makes nothing and clears what it covers.
+    assert_eq!(stroke_slots(&slots, (300.0, 5_000.0), false, 0), (vec![], vec![2, 0]));
+}
+
+#[test]
+fn a_drawn_curve_keeps_dynamic_and_placed_bands_and_adds_with_shift() {
+    let slots = drawable(&[(1_000.0, false), (1_200.0, true)]);
+    let (into, freed) = stroke_slots(&slots, (300.0, 5_000.0), false, 2);
+    assert_eq!((into, freed), (vec![1, 2], vec![]), "the Dynamic (or placed) band stays");
+    let (into, freed) = stroke_slots(&slots, (300.0, 5_000.0), true, 1);
+    assert_eq!((into, freed), (vec![2], vec![]), "adding replaces nothing");
+    // Every slot in use and nothing covered: nothing is made.
+    let full: Vec<Drawable> = (0..24).map(|_| Drawable { in_use: true, replaceable: true, frequency: 50.0 }).collect();
+    assert_eq!(stroke_slots(&full, (300.0, 5_000.0), false, 2), (vec![], vec![]));
+}
+
+#[test]
+fn a_drawn_curve_covers_out_to_an_edge_it_starts_near() {
+    let middle: Vec<Option<f64>> = (0..STROKE_COLUMNS).map(|c| (40..80).contains(&c).then_some(0.0)).collect();
+    let (low, high) = stroke_span(&middle).unwrap_or((0.0, 0.0));
+    assert!(low > 100.0 && high < 10_000.0 && low < high, "{low} – {high}");
+    let edges = stroke_span(&stroke(|_| 0.0)).unwrap_or((1.0, 1.0));
+    assert_eq!(edges, (0.0, f64::INFINITY));
+    assert_eq!(stroke_span(&vec![None; STROKE_COLUMNS]), None);
+}
+
+#[test]
+fn a_drawn_curve_from_an_edge_is_a_shelf_or_a_cut() {
+    let shelf = stroke_bands(&stroke(|c| if c < 40 { 6.0 } else { 0.0 }));
+    assert_eq!(shelf.iter().map(|b| b.0).collect::<Vec<_>>(), [2], "a low shelf");
+    let cut = stroke_bands(&stroke(|c| if c > 110 { -24.0 } else { 0.0 }));
+    assert_eq!(cut.iter().map(|b| b.0).collect::<Vec<_>>(), [7], "a high cut");
+    assert!(stroke_bands(&vec![None; STROKE_COLUMNS]).is_empty(), "nothing drawn, nothing made");
+    assert!(stroke_bands(&stroke(|_| 0.5)).is_empty(), "a flat curve makes nothing");
+}
+
+#[test]
+fn the_analysers_range_and_tilt_move_its_line() {
+    let display = display();
+    assert_eq!(analyser_y_in(-120.0, display, 120.0), display.bottom(), "the floor at the bottom of a 120 dB range");
+    assert!((analyser_y_in(-60.0, display, 120.0) - display.center().y).abs() < 1.0e-3, "-60 dB halfway down");
+    assert_eq!(tilted(-30.0, 1000.0, 4.5), -30.0, "the tilt pivots at 1 kHz");
+    assert!((tilted(-30.0, 2000.0, 4.5) + 25.5).abs() < 1.0e-9, "an octave up, 4.5 dB higher");
+    assert!((tilted(-30.0, 500.0, 3.0) + 33.0).abs() < 1.0e-9, "an octave down, 3 dB lower");
 }

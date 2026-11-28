@@ -111,6 +111,18 @@ This applies to audio effects. Native instruments and MIDI effects keep their ex
 source-time contexts until note/event alignment is implemented together with their timing;
 moving a context alone would move it away from the notes that drive the instrument.
 
+## Graph swaps
+
+An edit builds a new graph and compensates it for the delays of the devices it built; the running
+devices that stay (the same device, with the new values) keep their tails and state. A built-in
+device can decide its delay when it is built: an EQ delays by its transform's frame while a band
+in use is Spectral, and decides that when it is built, so automation never changes its delay in
+the middle of a graph. A running built-in device that, with the new values, would delay by
+another amount than the copy the graph was built with gives its place to that copy, at the top
+of a chain and inside a device group: the graph never compensates a delay the sound does not
+have, nor misses one it has. The device starts again then (its tail is cut), as it does when the
+delay changes for any other reason. A plug-in follows a new delay itself.
+
 ## History and compensation limits
 
 The supported compensation horizon is two seconds at the renderer's sample rate. Every

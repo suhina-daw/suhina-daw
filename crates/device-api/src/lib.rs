@@ -737,8 +737,9 @@ impl<const N: usize> ParamBank<N> {
     }
 }
 
-/// Most live values a device hands its panel ([`Device::readouts`]).
-pub const MAX_READOUTS: usize = 35;
+/// Most live values a device hands its panel ([`Device::readouts`]): room for the EQ's 24 bands'
+/// gain changes and its Spectral band's live cut at 100 frequencies (ADR 0032 › Amendment).
+pub const MAX_READOUTS: usize = 128;
 
 /// A device that plays a sample: the host hands it decoded audio, manual slices and source
 /// corrections off the audio thread, and reads where its voices are. Only a sample instrument

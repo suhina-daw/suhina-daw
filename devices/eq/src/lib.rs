@@ -1,22 +1,24 @@
 // Copyright (C) 2026 The Suhina contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! EQ: an eight-band parametric equaliser (docs/spec/eq.md).
+//! EQ: a parametric equaliser of up to 24 bands (docs/spec/eq.md).
 //!
-//! Each band is a low cut or high cut (12 or 48 dB/octave), a low or high shelf, a bell or a
-//! notch, with its own frequency, gain and Q, and can be switched off. The bands run in series
-//! on state-variable filters ([`suhina_dsp::Svf`]) whose responses are the cookbook ones. Every
-//! band exists twice, in curve A and curve B: Stereo runs curve A on both sides, Left/Right
-//! curve A on the left and B on the right, Mid/Side curve A on the mid and B on the side. Scale
-//! multiplies the gains of shelves and bells; Adaptive Q narrows a bell as its gain grows past
-//! 6 dB and widens it below. The device adds no latency.
+//! The device has 24 band slots. A slot in use is a band: a low cut or high cut (12 or
+//! 48 dB/octave), a low or high shelf, a bell, a notch, a tilt shelf or a flat tilt, with its
+//! own frequency, gain and Q, and it can be switched off without leaving its slot. Each band
+//! has a placement: Stereo runs it on both sides, Left or Right on one, Mid or Side on that part
+//! of the mid/side encoding. The bands on left and right run first, in band order, then the mid
+//! and side bands, also in band order, on state-variable filters ([`suhina_dsp::Svf`]) whose
+//! responses are the cookbook ones. Scale multiplies the gains of the types with gain; Adaptive
+//! Q narrows a bell as its gain grows past 6 dB and widens it below. The device adds no latency.
 
 use suhina_device_api::{
     DEFAULT_SAMPLE_RATE, Device, DeviceError, DeviceInfo, ParamBank, ParamInfo, ProcessContext, Role, Scale, Unit,
     check_sample_rate,
 };
 use suhina_dsp::gain::db_to_gain;
-use suhina_dsp::{Smoother, Svf, SvfCoefficients};
+use suhina_dsp::spectral_dynamics::{self, SpectralDynamics};
+use suhina_dsp::{BandDynamics, Smoother, Svf, SvfCoefficients};
 
 /// Ramp for frequency, gain, Q, Scale and Output changes.
 pub const RAMP_SECONDS: f64 = 0.02;
@@ -43,20 +45,53 @@ const SHELF_Q_SLOPE: f64 = 0.4281;
 const SHELF_Q_KNEE: f64 = 0.281;
 
 const FREQUENCY: (f64, f64) = (10.0, 22_000.0);
-const GAIN: (f64, f64) = (-15.0, 15.0);
+const GAIN: (f64, f64) = (-30.0, 30.0);
 const Q_RANGE: (f64, f64) = (0.1, 18.0);
 
-/// The band types, in [`param::TYPE`] order.
-pub const TYPE_NAMES: [&str; 8] =
-    ["Low Cut 48", "Low Cut 12", "Low Shelf", "Bell", "Notch", "High Shelf", "High Cut 12", "High Cut 48"];
-/// How the two curves are used, in [`param::MODE`] order.
-pub const MODE_NAMES: [&str; 3] = ["Stereo", "Left/Right", "Mid/Side"];
+/// The band types, in [`param::TYPE`] order. The first eight are the ones the EQ always had,
+/// at the same indices, so a saved or imported band keeps its type.
+pub const TYPE_NAMES: [&str; 10] = [
+    "Low Cut 48",
+    "Low Cut 12",
+    "Low Shelf",
+    "Bell",
+    "Notch",
+    "High Shelf",
+    "High Cut 12",
+    "High Cut 48",
+    "Tilt Shelf",
+    "Flat Tilt",
+];
+/// The types whose gain shapes the response: the shelves, the bell and the two tilts. The cuts
+/// and the notch have no gain.
+pub const GAIN_TYPES: [usize; 5] = [2, 3, 5, 8, 9];
+/// Where a band works in the stereo image, in [`param::PLACE`] order.
+pub const PLACE_NAMES: [&str; 5] = ["Stereo", "Left", "Right", "Mid", "Side"];
+/// A band's modes, in [`param::MODE`] order: Static as the EQ always was, Dynamic (its gain moves
+/// with its level) or Spectral (only what stands out inside it moves).
+pub const MODE_NAMES: [&str; 3] = ["Static", "Dynamic", "Spectral"];
+/// What a Dynamic or Spectral band's detector hears, in [`param::TRIGGER`] order: the sound coming
+/// into the band, or the device's key (its sidechain) through the band's own detector filter.
+pub const TRIGGER_NAMES: [&str; 2] = ["Band", "Key"];
+/// The readouts after the 24 bands' gain changes: the first Spectral band's live cut at
+/// [`spectral_dynamics::LIVE_POINTS`] frequencies (`spectral_dynamics::LIVE_RANGE`).
+pub const SPECTRAL_READOUTS: usize = spectral_dynamics::LIVE_POINTS;
+/// The placements' short names, as the panel's placement button reads them.
+pub const PLACE_LETTERS: [&str; 5] = ["St", "L", "R", "M", "S"];
 
-/// Bands per curve, and the two curves.
-pub const BANDS: usize = 8;
-const CURVES: usize = 2;
+/// The band slots. Each has an In Use flag apart from its On: a slot not in use is not shown
+/// and does not run, and deleting a band frees its slot without renumbering the others.
+pub const BANDS: usize = 24;
+/// The slots in use in a new EQ (and in a project saved before there were 24): the first eight,
+/// the bands the EQ always had.
+pub const FIRST_BANDS: usize = 8;
 
-/// Parameter indices, in [`INFO`] order: curve A's eight bands, curve B's, then the global ones.
+/// Whether a type has a gain (one of [`GAIN_TYPES`]).
+pub fn has_gain(type_index: usize) -> bool {
+    GAIN_TYPES.contains(&type_index)
+}
+
+/// Parameter indices, in [`INFO`] order: the 24 bands' slots, then the global ones.
 pub mod param {
     /// A band's parameters, in this order.
     pub const ON: usize = 0;
@@ -64,218 +99,173 @@ pub mod param {
     pub const FREQUENCY: usize = 2;
     pub const GAIN: usize = 3;
     pub const Q: usize = 4;
-    pub(crate) const PER_BAND: usize = 5;
+    pub const IN_USE: usize = 5;
+    pub const PLACE: usize = 6;
+    pub const MODE: usize = 7;
+    pub const RANGE: usize = 8;
+    pub const THRESHOLD: usize = 9;
+    pub const ATTACK: usize = 10;
+    pub const RELEASE: usize = 11;
+    pub const DETAIL: usize = 12;
+    pub const TRIGGER: usize = 13;
+    pub(crate) const PER_BAND: usize = 14;
 
-    /// The index of `field` (one of the constants above) of band `band` (from 0) of curve
-    /// `curve` (0 for A, 1 for B).
-    pub const fn band(curve: usize, band: usize, field: usize) -> usize {
-        (curve * super::BANDS + band) * PER_BAND + field
+    /// The index of `field` (one of the constants above) of band `band` (from 0).
+    pub const fn band(band: usize, field: usize) -> usize {
+        band * PER_BAND + field
     }
 
-    pub const OUTPUT: usize = 80;
-    pub const SCALE: usize = 81;
-    pub const ADAPTIVE_Q: usize = 82;
-    pub const MODE: usize = 83;
-    pub(crate) const COUNT: usize = 84;
+    pub const OUTPUT: usize = super::BANDS * PER_BAND;
+    pub const SCALE: usize = OUTPUT + 1;
+    pub const ADAPTIVE_Q: usize = OUTPUT + 2;
+    /// The band being auditioned (1 to 24), or 0. A project never stores it: only
+    /// `device.audition` sets it, through the engine, while a band is held to listen.
+    pub const AUDITION: usize = OUTPUT + 3;
+    pub(crate) const COUNT: usize = OUTPUT + 4;
 }
 
-static PARAMS: [ParamInfo; param::COUNT] = [
-    ParamInfo::in_group("Curve A").toggle("a1On", "Band 1 On", true),
-    ParamInfo::in_group("Curve A").choice("a1Type", "Band 1 Type", &TYPE_NAMES, 2),
-    ParamInfo::in_group("Curve A").continuous(
-        "a1Frequency",
-        "Band 1 Frequency",
-        FREQUENCY,
-        30.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve A").continuous("a1Gain", "Band 1 Gain", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve A").continuous("a1Q", "Band 1 Q", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve A").toggle("a2On", "Band 2 On", true),
-    ParamInfo::in_group("Curve A").choice("a2Type", "Band 2 Type", &TYPE_NAMES, 3),
-    ParamInfo::in_group("Curve A").continuous(
-        "a2Frequency",
-        "Band 2 Frequency",
-        FREQUENCY,
-        200.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve A").continuous("a2Gain", "Band 2 Gain", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve A").continuous("a2Q", "Band 2 Q", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve A").toggle("a3On", "Band 3 On", true),
-    ParamInfo::in_group("Curve A").choice("a3Type", "Band 3 Type", &TYPE_NAMES, 3),
-    ParamInfo::in_group("Curve A").continuous(
-        "a3Frequency",
-        "Band 3 Frequency",
-        FREQUENCY,
-        1000.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve A").continuous("a3Gain", "Band 3 Gain", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve A").continuous("a3Q", "Band 3 Q", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve A").toggle("a4On", "Band 4 On", true),
-    ParamInfo::in_group("Curve A").choice("a4Type", "Band 4 Type", &TYPE_NAMES, 5),
-    ParamInfo::in_group("Curve A").continuous(
-        "a4Frequency",
-        "Band 4 Frequency",
-        FREQUENCY,
-        5000.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve A").continuous("a4Gain", "Band 4 Gain", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve A").continuous("a4Q", "Band 4 Q", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve A").toggle("a5On", "Band 5 On", false),
-    ParamInfo::in_group("Curve A").choice("a5Type", "Band 5 Type", &TYPE_NAMES, 3),
-    ParamInfo::in_group("Curve A").continuous(
-        "a5Frequency",
-        "Band 5 Frequency",
-        FREQUENCY,
-        100.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve A").continuous("a5Gain", "Band 5 Gain", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve A").continuous("a5Q", "Band 5 Q", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve A").toggle("a6On", "Band 6 On", false),
-    ParamInfo::in_group("Curve A").choice("a6Type", "Band 6 Type", &TYPE_NAMES, 3),
-    ParamInfo::in_group("Curve A").continuous(
-        "a6Frequency",
-        "Band 6 Frequency",
-        FREQUENCY,
-        10000.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve A").continuous("a6Gain", "Band 6 Gain", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve A").continuous("a6Q", "Band 6 Q", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve A").toggle("a7On", "Band 7 On", false),
-    ParamInfo::in_group("Curve A").choice("a7Type", "Band 7 Type", &TYPE_NAMES, 3),
-    ParamInfo::in_group("Curve A").continuous(
-        "a7Frequency",
-        "Band 7 Frequency",
-        FREQUENCY,
-        5000.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve A").continuous("a7Gain", "Band 7 Gain", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve A").continuous("a7Q", "Band 7 Q", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve A").toggle("a8On", "Band 8 On", false),
-    ParamInfo::in_group("Curve A").choice("a8Type", "Band 8 Type", &TYPE_NAMES, 6),
-    ParamInfo::in_group("Curve A").continuous(
-        "a8Frequency",
-        "Band 8 Frequency",
-        FREQUENCY,
-        18000.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve A").continuous("a8Gain", "Band 8 Gain", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve A").continuous("a8Q", "Band 8 Q", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve B").toggle("b1On", "Band 1 On B", false),
-    ParamInfo::in_group("Curve B").choice("b1Type", "Band 1 Type B", &TYPE_NAMES, 1),
-    ParamInfo::in_group("Curve B").continuous(
-        "b1Frequency",
-        "Band 1 Frequency B",
-        FREQUENCY,
-        40.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve B").continuous("b1Gain", "Band 1 Gain B", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve B").continuous("b1Q", "Band 1 Q B", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve B").toggle("b2On", "Band 2 On B", false),
-    ParamInfo::in_group("Curve B").choice("b2Type", "Band 2 Type B", &TYPE_NAMES, 2),
-    ParamInfo::in_group("Curve B").continuous(
-        "b2Frequency",
-        "Band 2 Frequency B",
-        FREQUENCY,
-        200.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve B").continuous("b2Gain", "Band 2 Gain B", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve B").continuous("b2Q", "Band 2 Q B", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve B").toggle("b3On", "Band 3 On B", true),
-    ParamInfo::in_group("Curve B").choice("b3Type", "Band 3 Type B", &TYPE_NAMES, 3),
-    ParamInfo::in_group("Curve B").continuous(
-        "b3Frequency",
-        "Band 3 Frequency B",
-        FREQUENCY,
-        100.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve B").continuous("b3Gain", "Band 3 Gain B", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve B").continuous("b3Q", "Band 3 Q B", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve B").toggle("b4On", "Band 4 On B", true),
-    ParamInfo::in_group("Curve B").choice("b4Type", "Band 4 Type B", &TYPE_NAMES, 3),
-    ParamInfo::in_group("Curve B").continuous(
-        "b4Frequency",
-        "Band 4 Frequency B",
-        FREQUENCY,
-        500.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve B").continuous("b4Gain", "Band 4 Gain B", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve B").continuous("b4Q", "Band 4 Q B", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve B").toggle("b5On", "Band 5 On B", true),
-    ParamInfo::in_group("Curve B").choice("b5Type", "Band 5 Type B", &TYPE_NAMES, 3),
-    ParamInfo::in_group("Curve B").continuous(
-        "b5Frequency",
-        "Band 5 Frequency B",
-        FREQUENCY,
-        2000.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve B").continuous("b5Gain", "Band 5 Gain B", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve B").continuous("b5Q", "Band 5 Q B", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve B").toggle("b6On", "Band 6 On B", true),
-    ParamInfo::in_group("Curve B").choice("b6Type", "Band 6 Type B", &TYPE_NAMES, 3),
-    ParamInfo::in_group("Curve B").continuous(
-        "b6Frequency",
-        "Band 6 Frequency B",
-        FREQUENCY,
-        10000.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve B").continuous("b6Gain", "Band 6 Gain B", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve B").continuous("b6Q", "Band 6 Q B", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve B").toggle("b7On", "Band 7 On B", false),
-    ParamInfo::in_group("Curve B").choice("b7Type", "Band 7 Type B", &TYPE_NAMES, 5),
-    ParamInfo::in_group("Curve B").continuous(
-        "b7Frequency",
-        "Band 7 Frequency B",
-        FREQUENCY,
-        5000.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve B").continuous("b7Gain", "Band 7 Gain B", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve B").continuous("b7Q", "Band 7 Q B", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::in_group("Curve B").toggle("b8On", "Band 8 On B", false),
-    ParamInfo::in_group("Curve B").choice("b8Type", "Band 8 Type B", &TYPE_NAMES, 6),
-    ParamInfo::in_group("Curve B").continuous(
-        "b8Frequency",
-        "Band 8 Frequency B",
-        FREQUENCY,
-        18000.0,
-        Unit::Hertz,
-        Scale::Logarithmic,
-    ),
-    ParamInfo::in_group("Curve B").continuous("b8Gain", "Band 8 Gain B", GAIN, 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::in_group("Curve B").continuous("b8Q", "Band 8 Q B", Q_RANGE, DEFAULT_Q, Unit::None, Scale::Logarithmic),
-    ParamInfo::continuous("output", "Output", (-12.0, 12.0), 0.0, Unit::Decibels, Scale::Linear),
-    ParamInfo::continuous("scale", "Scale", (-2.0, 2.0), 1.0, Unit::Percent, Scale::Linear),
-    ParamInfo::toggle("adaptiveQ", "Adaptive Q", true),
-    ParamInfo::choice("mode", "Mode", &MODE_NAMES, 0),
+/// The parameters of every band, then the globals. A band's ids are `a<n><Field>`: bands 1 to 8
+/// keep the ids they always had, so a saved project, its automation and an import address
+/// them unchanged.
+macro_rules! params {
+    ($($n:literal: $on:literal, $kind:literal, $frequency:literal, $in_use:literal;)*) => {
+        [
+            $(
+                ParamInfo::in_group(concat!("Band ", $n)).toggle(
+                    concat!("a", $n, "On"),
+                    concat!("Band ", $n, " On"),
+                    $on,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).choice(
+                    concat!("a", $n, "Type"),
+                    concat!("Band ", $n, " Type"),
+                    &TYPE_NAMES,
+                    $kind,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).continuous(
+                    concat!("a", $n, "Frequency"),
+                    concat!("Band ", $n, " Frequency"),
+                    FREQUENCY,
+                    $frequency,
+                    Unit::Hertz,
+                    Scale::Logarithmic,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).continuous(
+                    concat!("a", $n, "Gain"),
+                    concat!("Band ", $n, " Gain"),
+                    GAIN,
+                    0.0,
+                    Unit::Decibels,
+                    Scale::Linear,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).continuous(
+                    concat!("a", $n, "Q"),
+                    concat!("Band ", $n, " Q"),
+                    Q_RANGE,
+                    DEFAULT_Q,
+                    Unit::None,
+                    Scale::Logarithmic,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).toggle(
+                    concat!("a", $n, "InUse"),
+                    concat!("Band ", $n, " In Use"),
+                    $in_use,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).choice(
+                    concat!("a", $n, "Place"),
+                    concat!("Band ", $n, " Placement"),
+                    &PLACE_NAMES,
+                    0,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).choice(
+                    concat!("a", $n, "Mode"),
+                    concat!("Band ", $n, " Mode"),
+                    &MODE_NAMES,
+                    0,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).continuous(
+                    concat!("a", $n, "Range"),
+                    concat!("Band ", $n, " Range"),
+                    GAIN,
+                    -6.0,
+                    Unit::Decibels,
+                    Scale::Linear,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).continuous(
+                    concat!("a", $n, "Threshold"),
+                    concat!("Band ", $n, " Threshold"),
+                    (-60.0, 0.0),
+                    -24.0,
+                    Unit::Decibels,
+                    Scale::Linear,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).continuous(
+                    concat!("a", $n, "Attack"),
+                    concat!("Band ", $n, " Attack"),
+                    (0.0005, 0.2),
+                    0.01,
+                    Unit::Seconds,
+                    Scale::Logarithmic,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).continuous(
+                    concat!("a", $n, "Release"),
+                    concat!("Band ", $n, " Release"),
+                    (0.01, 2.0),
+                    0.12,
+                    Unit::Seconds,
+                    Scale::Logarithmic,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).continuous(
+                    concat!("a", $n, "Detail"),
+                    concat!("Band ", $n, " Detail"),
+                    (0.0, 1.0),
+                    0.5,
+                    Unit::Percent,
+                    Scale::Linear,
+                ),
+                ParamInfo::in_group(concat!("Band ", $n)).choice(
+                    concat!("a", $n, "Trigger"),
+                    concat!("Band ", $n, " Trigger"),
+                    &TRIGGER_NAMES,
+                    0,
+                ),
+            )*
+            ParamInfo::continuous("output", "Output", (-12.0, 12.0), 0.0, Unit::Decibels, Scale::Linear),
+            ParamInfo::continuous("scale", "Scale", (-2.0, 2.0), 1.0, Unit::Percent, Scale::Linear),
+            ParamInfo::toggle("adaptiveQ", "Adaptive Q", true),
+            ParamInfo::integer("audition", "Audition", (0, BANDS as i32), 0, Unit::None),
+        ]
+    };
+}
+
+/// Bands 1 to 8 keep the defaults the EQ always had; 9 to 16 take the old curve B's, so a
+/// project saved with two curves renders the same once its curve B lands there (docs/spec/eq.md ›
+/// Projects saved with two curves); 17 to 24 are bells at 1 kHz.
+static PARAMS: [ParamInfo; param::COUNT] = params![
+    1: true, 2, 30.0, true;
+    2: true, 3, 200.0, true;
+    3: true, 3, 1000.0, true;
+    4: true, 5, 5000.0, true;
+    5: false, 3, 100.0, true;
+    6: false, 3, 10000.0, true;
+    7: false, 3, 5000.0, true;
+    8: false, 6, 18000.0, true;
+    9: false, 1, 40.0, false;
+    10: false, 2, 200.0, false;
+    11: true, 3, 100.0, false;
+    12: true, 3, 500.0, false;
+    13: true, 3, 2000.0, false;
+    14: true, 3, 10000.0, false;
+    15: false, 5, 5000.0, false;
+    16: false, 6, 18000.0, false;
+    17: true, 3, 1000.0, false;
+    18: true, 3, 1000.0, false;
+    19: true, 3, 1000.0, false;
+    20: true, 3, 1000.0, false;
+    21: true, 3, 1000.0, false;
+    22: true, 3, 1000.0, false;
+    23: true, 3, 1000.0, false;
+    24: true, 3, 1000.0, false;
 ];
 
 pub static INFO: DeviceInfo = DeviceInfo::new("eq", "EQ", Role::Effect, &PARAMS);
@@ -291,7 +281,15 @@ enum Kind {
     HighShelf,
     HighCut12,
     HighCut48,
+    TiltShelf,
+    FlatTilt,
 }
+
+/// How far a flat tilt's four shelves sit from its frequency, in octaves: two low shelves below
+/// and two high shelves above, so the response rises evenly over about ten octaves.
+const FLAT_TILT_OCTAVES: [f64; 4] = [-3.75, -1.25, 1.25, 3.75];
+/// The flat tilt's shelves' Q: gentle, so the steps of the four shelves blend into one slope.
+const FLAT_TILT_Q: f64 = 0.4;
 
 impl Kind {
     fn from_index(index: f64) -> Self {
@@ -303,8 +301,16 @@ impl Kind {
             5 => Self::HighShelf,
             6 => Self::HighCut12,
             7 => Self::HighCut48,
+            8 => Self::TiltShelf,
+            9 => Self::FlatTilt,
             _ => Self::Bell,
         }
+    }
+
+    /// Whether the type's gain shapes its response, so a band of it with no gain passes the
+    /// sound unchanged.
+    fn has_gain(self) -> bool {
+        matches!(self, Self::LowShelf | Self::HighShelf | Self::Bell | Self::TiltShelf | Self::FlatTilt)
     }
 
     /// The sections this type runs for a frequency, gain (Scale applied) and Q, and how many.
@@ -347,6 +353,26 @@ impl Kind {
                 out[0] = SvfCoefficients::bell(sr, frequency, q, gain);
                 1
             }
+            // Half the gain down below the frequency and half up above it: the band tips the
+            // spectrum around its frequency by the whole gain.
+            Self::TiltShelf => {
+                out[0] = SvfCoefficients::low_shelf(sr, frequency, shelf_q(q), -gain / 2.0);
+                out[1] = SvfCoefficients::high_shelf(sr, frequency, shelf_q(q), gain / 2.0);
+                2
+            }
+            // An even slope: half the gain down far below the frequency, half up far above,
+            // about the same number of dB in every octave between.
+            Self::FlatTilt => {
+                for (section, octaves) in out.iter_mut().zip(FLAT_TILT_OCTAVES) {
+                    let at = (frequency * 2f64.powf(octaves)).clamp(FREQUENCY.0, sr * 0.45);
+                    *section = if octaves < 0.0 {
+                        SvfCoefficients::low_shelf(sr, at, FLAT_TILT_Q, -gain / 4.0)
+                    } else {
+                        SvfCoefficients::high_shelf(sr, at, FLAT_TILT_Q, gain / 4.0)
+                    };
+                }
+                4
+            }
         };
         (out, count)
     }
@@ -375,11 +401,70 @@ pub fn band_sections(
     Kind::from_index(type_index as f64).sections(sample_rate, frequency, gain_db * scale, q, adaptive)
 }
 
-/// One band of one curve: what it is now and its smoothed controls.
+/// Where a band runs: on both sides of the left/right signal, on one of them, or on the mid or
+/// the side of its mid/side encoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Place {
+    Stereo,
+    Left,
+    Right,
+    Mid,
+    Side,
+}
+
+impl Place {
+    fn from_index(index: f64) -> Self {
+        match index.round() as usize {
+            1 => Self::Left,
+            2 => Self::Right,
+            3 => Self::Mid,
+            4 => Self::Side,
+            _ => Self::Stereo,
+        }
+    }
+
+    /// Whether the band runs on the mid/side encoding rather than on left and right.
+    fn mid_side(self) -> bool {
+        matches!(self, Self::Mid | Self::Side)
+    }
+
+    /// Whether the band runs on channel `side` (0 left or mid, 1 right or side) of its signal.
+    fn runs_on(self, side: usize) -> bool {
+        match self {
+            Self::Stereo => true,
+            Self::Left | Self::Mid => side == 0,
+            Self::Right | Self::Side => side == 1,
+        }
+    }
+}
+
+/// What a band does with its level (docs/spec/eq.md › Dynamic and Spectral bands).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Static,
+    Dynamic,
+    Spectral,
+}
+
+impl Mode {
+    /// The mode a band of `kind` runs for the Mode parameter: Dynamic for the types with gain,
+    /// Spectral for the bell and the shelves; any other band is Static whatever it asks.
+    fn of(index: f64, kind: Kind) -> Self {
+        match index.round() as usize {
+            1 if kind.has_gain() => Self::Dynamic,
+            2 if matches!(kind, Kind::Bell | Kind::LowShelf | Kind::HighShelf) => Self::Spectral,
+            _ => Self::Static,
+        }
+    }
+}
+
+/// One band: what it is now and its smoothed controls.
 #[derive(Clone, Copy)]
 struct Band {
     /// The type it runs; a new type waits until the band has faded out.
     kind: Kind,
+    /// Where it runs; a new placement waits until the band has faded out, as a type does.
+    place: Place,
     /// Frequency in octaves above 1 Hz, gain in dB, Q as its natural logarithm: each glides
     /// evenly in that unit.
     octave: Smoother,
@@ -387,21 +472,35 @@ struct Band {
     log_q: Smoother,
     /// How much of the band is heard: 0 bypasses it, 1 is the filter alone.
     amount: Smoother,
-    /// Waiting to fade out before its type changes or it stops.
+    /// Waiting to fade out before its type or placement changes or it stops.
     pending: bool,
-    /// Whether it runs at all (on, or still fading out).
+    /// Whether it runs at all (on and in use, or still fading out).
     active: bool,
     sections: [SvfCoefficients; 4],
     count: usize,
-    /// A shelf or bell with no gain passes the sound unchanged, so it is skipped.
+    /// A band of a type with gain and no gain passes the sound unchanged, so it is skipped.
     flat: bool,
     retune_in: u32,
+    /// Its mode now; a new one waits until the band has faded out, as a type does.
+    mode: Mode,
+    /// A Dynamic band's detector and gain computer, the gain change its filters are tuned to
+    /// (dB) and its settings: range and threshold in dB, Detail 0 to 1.
+    dynamics: BandDynamics,
+    dynamic_db: f64,
+    range: f64,
+    threshold: f64,
+    detail: f64,
+    /// Whether its detector hears the device's key instead of the band's own sound.
+    keyed: bool,
+    /// Frames to the next retune of a Dynamic or Spectral band's moving gain.
+    dynamic_in: u32,
 }
 
 impl Band {
     fn new() -> Self {
         Self {
             kind: Kind::Bell,
+            place: Place::Stereo,
             octave: Smoother::new(0.0, 1),
             gain: Smoother::new(0.0, 1),
             log_q: Smoother::new(0.0, 1),
@@ -412,6 +511,14 @@ impl Band {
             count: 0,
             flat: true,
             retune_in: 0,
+            mode: Mode::Static,
+            dynamics: BandDynamics::new(),
+            dynamic_db: 0.0,
+            range: -6.0,
+            threshold: -24.0,
+            detail: 0.5,
+            keyed: false,
+            dynamic_in: 0,
         }
     }
 
@@ -423,20 +530,34 @@ impl Band {
     fn still(&self) -> bool {
         !self.pending && self.amount.is_settled() && !self.controls_moving()
     }
+
+    /// Whether the band is heard on the mid/side encoding now.
+    fn runs_mid_side(&self) -> bool {
+        self.active && !self.flat && self.place.mid_side()
+    }
 }
 
 pub struct Eq {
     sample_rate: f64,
     params: ParamBank<{ param::COUNT }>,
-    bands: [[Band; BANDS]; CURVES],
-    /// The filters each side runs, band by band.
-    filters: [[[Svf; 4]; BANDS]; 2],
+    bands: [Band; BANDS],
+    /// Each band's filters for the two channels of its signal (left and right, or mid and
+    /// side).
+    filters: [[[Svf; 4]; 2]; BANDS],
     output: Smoother,
     scale: Smoother,
-    /// The mode in use; a new one waits until the output has dipped.
-    mode: usize,
-    mode_fade: Smoother,
-    mode_pending: bool,
+    /// The band heard alone while it is auditioned (from 0), the filter that picks out the
+    /// range it works on, and how much of the output is that range (0 is the whole EQ).
+    audition_band: Option<usize>,
+    audition_filters: [Svf; 2],
+    audition_mix: Smoother,
+    /// A band to listen to next: the output fades back to the whole EQ first, then over to it.
+    audition_next: Option<usize>,
+    /// The Spectral bands' short-time transform, run after the filters while a band in use is
+    /// Spectral (decided when the device is built, since it adds [`spectral_dynamics::FRAME`]
+    /// frames of delay the chain compensates).
+    spectral: Box<SpectralDynamics>,
+    spectral_on: bool,
 }
 
 impl Default for Eq {
@@ -461,13 +582,16 @@ impl Eq {
         let mut eq = Self {
             sample_rate,
             params: ParamBank::new(&PARAMS),
-            bands: [[Band::new(); BANDS]; CURVES],
-            filters: [[[Svf::default(); 4]; BANDS]; 2],
+            bands: [Band::new(); BANDS],
+            filters: [[[Svf::default(); 4]; 2]; BANDS],
             output: Smoother::new(1.0, 1),
             scale: Smoother::new(1.0, 1),
-            mode: 0,
-            mode_fade: Smoother::new(1.0, 1),
-            mode_pending: false,
+            audition_band: None,
+            audition_filters: [Svf::default(); 2],
+            audition_mix: Smoother::new(0.0, 1),
+            audition_next: None,
+            spectral: Box::new(SpectralDynamics::new(sample_rate)),
+            spectral_on: false,
         };
         eq.rebuild();
         eq
@@ -477,82 +601,192 @@ impl Eq {
         self.params.get(index)
     }
 
-    fn band_value(&self, curve: usize, band: usize, field: usize) -> f64 {
-        self.value(param::band(curve, band, field))
+    fn band_value(&self, band: usize, field: usize) -> f64 {
+        self.value(param::band(band, field))
     }
 
-    fn mode_param(&self) -> usize {
-        (self.value(param::MODE).round() as usize).min(MODE_NAMES.len() - 1)
-    }
-
-    /// The curve side `side` runs in the current mode.
-    fn curve_of(&self, side: usize) -> usize {
-        if self.mode == 0 { 0 } else { side.min(CURVES - 1) }
+    /// Whether the band should be heard: switched on, and its slot in use.
+    fn band_wanted(&self, band: usize) -> bool {
+        self.band_value(band, param::ON) >= 0.5 && self.band_value(band, param::IN_USE) >= 0.5
     }
 
     /// Sets the band's smoothers' targets from its parameters.
-    fn target_band(&mut self, curve: usize, band: usize) {
-        let octave = self.band_value(curve, band, param::FREQUENCY).log2() as f32;
-        let gain = self.band_value(curve, band, param::GAIN) as f32;
-        let log_q = self.band_value(curve, band, param::Q).ln() as f32;
-        if let Some(b) = self.bands.get_mut(curve).and_then(|c| c.get_mut(band)) {
+    fn target_band(&mut self, band: usize) {
+        let octave = self.band_value(band, param::FREQUENCY).log2() as f32;
+        let gain = self.band_value(band, param::GAIN) as f32;
+        let log_q = self.band_value(band, param::Q).ln() as f32;
+        if let Some(b) = self.bands.get_mut(band) {
             b.octave.set_target(octave);
             b.gain.set_target(gain);
             b.log_q.set_target(log_q);
         }
     }
 
-    /// Recomputes a band's filters from its smoothed controls and gives them to the sides that
-    /// run its curve.
-    fn tune(&mut self, curve: usize, band: usize) {
+    /// A band's dynamics settings from its parameters: range, threshold, Detail and the
+    /// follower's times, for the band and its spectral parts.
+    fn configure_dynamics(&mut self, band: usize) {
+        let sr = self.sample_rate;
+        let range = self.band_value(band, param::RANGE);
+        let threshold = self.band_value(band, param::THRESHOLD);
+        let detail = self.band_value(band, param::DETAIL);
+        let keyed = self.band_value(band, param::TRIGGER) >= 0.5;
+        let attack = self.band_value(band, param::ATTACK);
+        let release = self.band_value(band, param::RELEASE);
+        if let Some(b) = self.bands.get_mut(band) {
+            b.range = range;
+            b.threshold = threshold;
+            b.detail = detail;
+            b.keyed = keyed;
+            b.dynamics.set_times(attack, release, sr);
+        }
+    }
+
+    /// Points a band's detector, and its spectral parts, at the range it works on now: a band
+    /// pass at a bell's frequency and Q, a low pass under a low shelf's frequency, a high pass
+    /// over a high shelf's, a broad band pass for a tilt. The parts spread over the bell's width,
+    /// or the three octaves a shelf lifts.
+    fn aim_dynamics(&mut self, band: usize, frequency: f64, q: f64) {
+        let sr = self.sample_rate;
+        let Some(b) = self.bands.get_mut(band) else { return };
+        if b.mode == Mode::Static {
+            return;
+        }
+        let top = sr * 0.45;
+        let frequency = frequency.min(top);
+        let detector = match b.kind {
+            Kind::LowShelf => SvfCoefficients::lowpass(sr, frequency, DEFAULT_Q),
+            Kind::HighShelf => SvfCoefficients::highpass(sr, frequency, DEFAULT_Q),
+            Kind::Bell => SvfCoefficients::bandpass(sr, frequency, q),
+            _ => SvfCoefficients::bandpass(sr, frequency, 0.3),
+        };
+        b.dynamics.set_detector(detector);
+    }
+
+    /// Hands a Spectral band's settings to the transform (anything else is off there).
+    fn give_spectral(&mut self, band: usize, frequency: f64, q: f64) {
+        let scale = f64::from(self.scale.current());
+        let Some(b) = self.bands.get(band) else { return };
+        let shape = match b.kind {
+            Kind::LowShelf => spectral_dynamics::Shape::LowShelf,
+            Kind::HighShelf => spectral_dynamics::Shape::HighShelf,
+            _ => spectral_dynamics::Shape::Bell,
+        };
+        let place = match b.place {
+            Place::Stereo => spectral_dynamics::Place::Stereo,
+            Place::Left => spectral_dynamics::Place::Left,
+            Place::Right => spectral_dynamics::Place::Right,
+            Place::Mid => spectral_dynamics::Place::Mid,
+            Place::Side => spectral_dynamics::Place::Side,
+        };
+        let settings = spectral_dynamics::Settings {
+            on: b.active && b.mode == Mode::Spectral,
+            shape,
+            frequency,
+            q,
+            // Scale multiplies the range as it does every gain.
+            range: b.range * scale,
+            threshold: b.threshold,
+            attack: self.band_value(band, param::ATTACK),
+            release: self.band_value(band, param::RELEASE),
+            density: b.detail,
+            tilt: true,
+            place,
+            keyed: b.keyed,
+        };
+        self.spectral.set(band, settings);
+    }
+
+    /// Recomputes a band's filters from its smoothed controls and gives them to its filters.
+    fn tune(&mut self, band: usize) {
         let sr = self.sample_rate;
         let scale = f64::from(self.scale.current());
         let adaptive = self.value(param::ADAPTIVE_Q) >= 0.5;
-        let Some(b) = self.bands.get_mut(curve).and_then(|c| c.get_mut(band)) else {
+        let Some(b) = self.bands.get_mut(band) else {
             return;
         };
         let frequency = 2f64.powf(f64::from(b.octave.current()));
-        let gain = f64::from(b.gain.current()) * scale;
+        // A Dynamic band's gain moves by its gain change; any other band's change is 0.
+        let gain = (f64::from(b.gain.current()) + b.dynamic_db) * scale;
         let q = f64::from(b.log_q.current()).exp();
         let (sections, count) = b.kind.sections(sr, frequency, gain, q, adaptive);
         let was_flat = b.flat;
         b.sections = sections;
         b.count = count;
-        b.flat = matches!(b.kind, Kind::LowShelf | Kind::HighShelf | Kind::Bell) && gain.abs() < 1e-9;
+        // A band with no gain passes the sound unchanged, unless its gain can still move.
+        b.flat = b.kind.has_gain() && gain.abs() < 1e-9 && b.mode == Mode::Static;
         let wakes = was_flat && !b.flat;
-        self.give(curve, band);
-        if wakes {
-            // Skipped while flat, its state is stale: it starts from silence, as its gain
-            // rises from nothing.
-            self.clear(curve, band);
-        }
-    }
-
-    /// Hands a band's coefficients to the sides that run its curve.
-    fn give(&mut self, curve: usize, band: usize) {
-        let Some(sections) = self.bands.get(curve).and_then(|c| c.get(band)).map(|b| b.sections) else {
-            return;
-        };
-        for side in 0..2 {
-            if self.curve_of(side) != curve {
-                continue;
-            }
-            if let Some(filters) = self.filters.get_mut(side).and_then(|f| f.get_mut(band)) {
-                for (filter, c) in filters.iter_mut().zip(sections) {
+        if let Some(filters) = self.filters.get_mut(band) {
+            for side in filters.iter_mut() {
+                for (filter, c) in side.iter_mut().zip(sections) {
                     filter.set(c);
                 }
             }
+            if wakes {
+                // Skipped while flat, its state is stale: it starts from silence, as its gain
+                // rises from nothing.
+                filters.iter_mut().flatten().for_each(Svf::reset);
+            }
+        }
+        if self.audition_band == Some(band) {
+            self.tune_audition();
+        }
+        self.aim_dynamics(band, frequency, q);
+        // Every band tells the transform whether it is Spectral now, so one that stopped being
+        // Spectral (or stopped) is off there too.
+        self.give_spectral(band, frequency, q);
+    }
+
+    /// The band [`param::AUDITION`] names, when it names one in use.
+    fn auditioned(&self) -> Option<usize> {
+        let value = self.value(param::AUDITION).round();
+        (value >= 1.0)
+            .then(|| value as usize - 1)
+            .filter(|&band| band < BANDS && self.band_value(band, param::IN_USE) >= 0.5)
+    }
+
+    /// Tunes the audition filter to the range the auditioned band works on: a band pass at its
+    /// frequency and Q for a bell, a notch, a shelf or a tilt (without its boost or cut); for a
+    /// low cut what it removes (a low pass at its frequency), for a high cut a high pass.
+    fn tune_audition(&mut self) {
+        let Some(band) = self.audition_band else { return };
+        let Some(b) = self.bands.get(band) else { return };
+        let sr = self.sample_rate;
+        let frequency = 2f64.powf(f64::from(b.octave.current())).min(sr * 0.49);
+        let q = f64::from(b.log_q.current()).exp();
+        let coefficients = match b.kind {
+            Kind::LowCut12 | Kind::LowCut48 => SvfCoefficients::lowpass(sr, frequency, DEFAULT_Q),
+            Kind::HighCut12 | Kind::HighCut48 => SvfCoefficients::highpass(sr, frequency, DEFAULT_Q),
+            Kind::Bell | Kind::Notch => SvfCoefficients::bandpass(sr, frequency, q),
+            _ => SvfCoefficients::bandpass(sr, frequency, DEFAULT_Q),
+        };
+        for filter in &mut self.audition_filters {
+            filter.set(coefficients);
         }
     }
 
-    /// Clears the state of a band's filters on the sides that run its curve.
-    fn clear(&mut self, curve: usize, band: usize) {
-        for side in 0..2 {
-            if self.curve_of(side) == curve
-                && let Some(filters) = self.filters.get_mut(side).and_then(|f| f.get_mut(band))
-            {
-                filters.iter_mut().for_each(Svf::reset);
+    /// The auditioned band's range picked out of the input `[l, r]`, on its placement: both sides
+    /// for Stereo, one side for Left or Right (the other silent), or the mid or the side alone.
+    fn audition(&mut self, [l, r]: [f64; 2], place: Place) -> [f64; 2] {
+        let [left, right] = &mut self.audition_filters;
+        match place {
+            Place::Stereo => [left.process(l), right.process(r)],
+            Place::Left => [left.process(l), 0.0],
+            Place::Right => [0.0, right.process(r)],
+            Place::Mid => {
+                let m = left.process((l + r) * 0.5);
+                [m, m]
             }
+            Place::Side => {
+                let s = right.process((l - r) * 0.5);
+                [s, -s]
+            }
+        }
+    }
+
+    /// Clears the state of a band's filters.
+    fn clear(&mut self, band: usize) {
+        if let Some(filters) = self.filters.get_mut(band) {
+            filters.iter_mut().flatten().for_each(Svf::reset);
         }
     }
 
@@ -562,45 +796,57 @@ impl Eq {
         let sr = self.sample_rate;
         let ramp = Smoother::ramp_frames(RAMP_SECONDS, sr);
         let fade = Smoother::ramp_frames(FADE_SECONDS, sr);
-        self.mode = self.mode_param();
-        self.mode_pending = false;
-        self.mode_fade = Smoother::new(1.0, fade);
         self.output = Smoother::new(db_to_gain(self.value(param::OUTPUT) as f32), ramp);
         self.scale = Smoother::new(self.value(param::SCALE) as f32, ramp);
-        self.filters = [[[Svf::default(); 4]; BANDS]; 2];
-        for curve in 0..CURVES {
-            for band in 0..BANDS {
-                let on = self.band_value(curve, band, param::ON) >= 0.5;
-                let kind = Kind::from_index(self.band_value(curve, band, param::TYPE));
-                let octave = self.band_value(curve, band, param::FREQUENCY).log2() as f32;
-                let gain = self.band_value(curve, band, param::GAIN) as f32;
-                let log_q = self.band_value(curve, band, param::Q).ln() as f32;
-                if let Some(b) = self.bands.get_mut(curve).and_then(|c| c.get_mut(band)) {
-                    *b = Band {
-                        kind,
-                        octave: Smoother::new(octave, ramp),
-                        gain: Smoother::new(gain, ramp),
-                        log_q: Smoother::new(log_q, ramp),
-                        amount: Smoother::new(if on { 1.0 } else { 0.0 }, fade),
-                        pending: false,
-                        active: on,
-                        ..Band::new()
-                    };
-                }
-                self.tune(curve, band);
+        self.filters = [[[Svf::default(); 4]; 2]; BANDS];
+        self.audition_band = self.auditioned();
+        self.audition_next = None;
+        self.spectral_on = (0..BANDS).any(|band| {
+            self.band_value(band, param::IN_USE) >= 0.5
+                && Mode::of(self.band_value(band, param::MODE), Kind::from_index(self.band_value(band, param::TYPE)))
+                    == Mode::Spectral
+        });
+        self.spectral.reset();
+        self.audition_filters = [Svf::default(); 2];
+        self.audition_mix = Smoother::new(if self.audition_band.is_some() { 1.0 } else { 0.0 }, fade);
+        for band in 0..BANDS {
+            let on = self.band_wanted(band);
+            let kind = Kind::from_index(self.band_value(band, param::TYPE));
+            let place = Place::from_index(self.band_value(band, param::PLACE));
+            let octave = self.band_value(band, param::FREQUENCY).log2() as f32;
+            let gain = self.band_value(band, param::GAIN) as f32;
+            let log_q = self.band_value(band, param::Q).ln() as f32;
+            let mode = Mode::of(self.band_value(band, param::MODE), kind);
+            if let Some(b) = self.bands.get_mut(band) {
+                *b = Band {
+                    kind,
+                    place,
+                    mode,
+                    octave: Smoother::new(octave, ramp),
+                    gain: Smoother::new(gain, ramp),
+                    log_q: Smoother::new(log_q, ramp),
+                    amount: Smoother::new(if on { 1.0 } else { 0.0 }, fade),
+                    pending: false,
+                    active: on,
+                    ..Band::new()
+                };
             }
+            self.configure_dynamics(band);
+            self.tune(band);
         }
     }
 
-    /// After a band's On or Type changed: fade it to the new state.
-    fn switch_band(&mut self, curve: usize, band: usize) {
-        let on = self.band_value(curve, band, param::ON) >= 0.5;
-        let kind = Kind::from_index(self.band_value(curve, band, param::TYPE));
-        let Some(b) = self.bands.get_mut(curve).and_then(|c| c.get_mut(band)) else {
+    /// After a band's On, In Use, Type or Placement changed: fade it to the new state.
+    fn switch_band(&mut self, band: usize) {
+        let on = self.band_wanted(band);
+        let kind = Kind::from_index(self.band_value(band, param::TYPE));
+        let place = Place::from_index(self.band_value(band, param::PLACE));
+        let mode = Mode::of(self.band_value(band, param::MODE), kind);
+        let Some(b) = self.bands.get_mut(band) else {
             return;
         };
-        if kind != b.kind || !on {
-            // Fade out first; the new type or the stop comes when it is silent.
+        if kind != b.kind || place != b.place || mode != b.mode || !on {
+            // Fade out first; the new type, placement or the stop comes when it is silent.
             b.pending = true;
             b.amount.set_target(0.0);
         } else {
@@ -611,45 +857,113 @@ impl Eq {
             b.active = true;
             b.amount.set_target(1.0);
             if wakes {
-                self.tune(curve, band);
+                self.tune(band);
             }
         }
     }
 
-    /// A band that has faded out: takes its new type, and fades in again if it is on.
-    fn settle_band(&mut self, curve: usize, band: usize) {
-        let on = self.band_value(curve, band, param::ON) >= 0.5;
-        let kind = Kind::from_index(self.band_value(curve, band, param::TYPE));
-        if let Some(b) = self.bands.get_mut(curve).and_then(|c| c.get_mut(band)) {
+    /// A band that has faded out: takes its new type and placement, and fades in again if it
+    /// is on.
+    fn settle_band(&mut self, band: usize) {
+        let on = self.band_wanted(band);
+        let kind = Kind::from_index(self.band_value(band, param::TYPE));
+        let place = Place::from_index(self.band_value(band, param::PLACE));
+        let mode = Mode::of(self.band_value(band, param::MODE), kind);
+        if let Some(b) = self.bands.get_mut(band) {
             b.pending = false;
             b.kind = kind;
+            b.place = place;
+            // The band is silent here, after it stopped or before a new type, placement or mode:
+            // its dynamics start again at rest, so a band never fades in already moving from
+            // what it heard before.
+            b.mode = mode;
+            b.dynamic_db = 0.0;
+            b.dynamics.reset();
             b.active = on;
             if on {
                 b.amount.set_target(1.0);
             }
         }
-        self.clear(curve, band);
-        self.tune(curve, band);
+        self.clear(band);
+        self.tune(band);
     }
 
-    /// The output has dipped: takes the new mode, with every side's filters cleared and tuned
-    /// from its new curve.
-    fn settle_mode(&mut self) {
-        self.mode = self.mode_param();
-        self.mode_pending = false;
-        self.filters = [[[Svf::default(); 4]; BANDS]; 2];
-        for curve in 0..CURVES {
-            for band in 0..BANDS {
-                self.give(curve, band);
+    /// Runs the bands of one signal (left and right, or mid and side when `mid_side`) on
+    /// `sides`, in band order. A Dynamic band's detector hears the sound coming into it, and its
+    /// gain change retunes it every [`RETUNE_FRAMES`]; a Spectral band's own filter runs here and
+    /// its dynamics in the transform after the filters.
+    fn run_bands(&mut self, sides: &mut [f64; 2], key: Option<[f64; 2]>, mid_side: bool) {
+        for band in 0..BANDS {
+            let Some(b) = self.bands.get_mut(band) else { continue };
+            if !b.active || b.flat || b.place.mid_side() != mid_side {
+                continue;
+            }
+            let listen = [b.place.runs_on(0), b.place.runs_on(1)];
+            let mut retune = false;
+            if b.mode != Mode::Static {
+                let due = b.dynamic_in == 0;
+                b.dynamic_in = if due { RETUNE_FRAMES - 1 } else { b.dynamic_in - 1 };
+                if b.mode == Mode::Dynamic {
+                    // A keyed band's detector hears the key (on the same part of the signal).
+                    let heard = if b.keyed { key.unwrap_or(*sides) } else { *sides };
+                    let change = b.dynamics.process(heard, listen, b.threshold, b.range);
+                    retune = due && (change - b.dynamic_db).abs() > 0.01;
+                    if retune {
+                        b.dynamic_db = change;
+                    }
+                }
+            }
+            if retune {
+                self.tune(band);
+            }
+            let Some(b) = self.bands.get_mut(band) else { continue };
+            let Some(filters) = self.filters.get_mut(band) else { continue };
+            let amount = f64::from(b.amount.current());
+            for ((side, x), chain) in sides.iter_mut().enumerate().zip(filters.iter_mut()) {
+                if !b.place.runs_on(side) {
+                    continue;
+                }
+                let y = chain.iter_mut().take(b.count).fold(*x, |v, f| f.process(v));
+                *x += amount * (y - *x);
             }
         }
-        self.mode_fade.set_target(1.0);
+    }
+
+    /// Each band's gain change now, in dB: a Dynamic band's; a Spectral band's deepest; 0 for a
+    /// Static band.
+    fn gain_changes(&self) -> [f32; BANDS] {
+        std::array::from_fn(|band| {
+            self.bands.get(band).map_or(0.0, |b| match b.mode {
+                Mode::Static => 0.0,
+                Mode::Dynamic => b.dynamic_db as f32,
+                Mode::Spectral => {
+                    self.spectral.live(band).iter().copied().fold(0.0f32, |m, g| if g.abs() > m.abs() { g } else { m })
+                }
+            })
+        })
     }
 }
 
 impl Device for Eq {
     fn info(&self) -> &DeviceInfo {
         &INFO
+    }
+
+    /// Each band's gain change now, in band order, for the panel's live curve.
+    fn readouts(&self) -> Option<[f32; suhina_device_api::MAX_READOUTS]> {
+        let changes = self.gain_changes();
+        // After the 24 bands, the first Spectral band's live cut (`SPECTRAL_READOUTS`).
+        let live =
+            self.bands.iter().position(|b| b.active && b.mode == Mode::Spectral).map(|band| self.spectral.live(band));
+        Some(std::array::from_fn(|i| match i.checked_sub(BANDS) {
+            None => changes.get(i).copied().unwrap_or(0.0),
+            Some(point) => live.and_then(|l| l.get(point).copied()).unwrap_or(0.0),
+        }))
+    }
+
+    /// The transform's delay while a band in use is Spectral; none otherwise.
+    fn latency(&self) -> u32 {
+        if self.spectral_on { SpectralDynamics::latency() as u32 } else { 0 }
     }
 
     fn prepare(&mut self, sample_rate: f64) -> Result<(), DeviceError> {
@@ -670,24 +984,57 @@ impl Device for Eq {
             param::OUTPUT => self.output.set_target(db_to_gain(self.value(param::OUTPUT) as f32)),
             param::SCALE => self.scale.set_target(self.value(param::SCALE) as f32),
             param::ADAPTIVE_Q => {
-                for curve in 0..CURVES {
-                    for band in 0..BANDS {
-                        self.tune(curve, band);
+                for band in 0..BANDS {
+                    self.tune(band);
+                }
+            }
+            param::AUDITION => {
+                // A new band to listen to starts its filter from silence and fades the output
+                // over to it; letting go fades back to the whole EQ.
+                // Another band while one is heard fades out first and swaps at silence.
+                match self.auditioned() {
+                    Some(band) if self.audition_band == Some(band) => {
+                        self.audition_next = None;
+                        self.audition_mix.set_target(1.0);
+                    }
+                    Some(band) if self.audition_band.is_none() || self.audition_mix.current() == 0.0 => {
+                        self.audition_next = None;
+                        self.audition_filters = [Svf::default(); 2];
+                        self.audition_band = Some(band);
+                        self.tune_audition();
+                        self.audition_mix.set_target(1.0);
+                    }
+                    Some(band) => {
+                        self.audition_next = Some(band);
+                        self.audition_mix.set_target(0.0);
+                    }
+                    None => {
+                        self.audition_next = None;
+                        self.audition_mix.set_target(0.0);
                     }
                 }
             }
-            param::MODE => {
-                if self.mode_param() != self.mode {
-                    self.mode_pending = true;
-                    self.mode_fade.set_target(0.0);
-                }
-            }
             _ => {
-                let (curve, rest) = (index / (BANDS * param::PER_BAND), index % (BANDS * param::PER_BAND));
-                let (band, field) = (rest / param::PER_BAND, rest % param::PER_BAND);
+                let (band, field) = (index / param::PER_BAND, index % param::PER_BAND);
+                // Deleting the band being heard alone fades back to the whole EQ, and the
+                // audition is let go so a rebuild cannot bring it back.
+                if field == param::IN_USE && value < 0.5 && self.audition_band == Some(band) {
+                    let _ = self.params.set(param::AUDITION, 0.0);
+                    self.audition_next = None;
+                    self.audition_mix.set_target(0.0);
+                }
                 match field {
-                    param::ON | param::TYPE => self.switch_band(curve, band),
-                    _ => self.target_band(curve, band),
+                    param::ON | param::TYPE | param::IN_USE | param::PLACE | param::MODE => self.switch_band(band),
+                    param::RANGE
+                    | param::THRESHOLD
+                    | param::ATTACK
+                    | param::RELEASE
+                    | param::DETAIL
+                    | param::TRIGGER => {
+                        self.configure_dynamics(band);
+                        self.tune(band);
+                    }
+                    _ => self.target_band(band),
                 }
             }
         }
@@ -698,69 +1045,95 @@ impl Device for Eq {
     }
 
     fn process(&mut self, _context: &ProcessContext, buffer: &mut [f32]) {
-        for frame in buffer.as_chunks_mut::<2>().0 {
+        self.run(buffer, None);
+    }
+
+    /// The same, with the device's key: a band whose Trigger is Key hears it (a frame the key does
+    /// not cover is silence, as the compressor reads it).
+    fn process_keyed(&mut self, _context: &ProcessContext, key: &[f32], buffer: &mut [f32]) {
+        self.run(buffer, Some(key));
+    }
+}
+
+impl Eq {
+    /// Every frame of `buffer`, with the device's key when it has one. Never allocates.
+    fn run(&mut self, buffer: &mut [f32], key: Option<&[f32]>) {
+        let keys = key.map(|k| k.as_chunks::<2>().0);
+        for (index, frame) in buffer.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+            let key_frame = keys.map(|k| k.get(index).map_or([0.0, 0.0], |f| [f64::from(f[0]), f64::from(f[1])]));
             // Controls: glide, retune what moved, and finish fades.
             let scale_moving = !self.scale.is_settled();
             self.scale.next_value();
-            for curve in 0..CURVES {
-                for band in 0..BANDS {
-                    let Some(b) = self.bands.get_mut(curve).and_then(|c| c.get_mut(band)) else {
-                        continue;
-                    };
-                    if b.still() && !(scale_moving && b.active) {
-                        continue;
-                    }
-                    let moving = b.controls_moving() || (scale_moving && b.active);
-                    b.octave.next_value();
-                    b.gain.next_value();
-                    b.log_q.next_value();
-                    b.amount.next_value();
-                    let finished = b.pending && b.amount.is_settled() && b.amount.current() == 0.0;
-                    let retune = if moving {
-                        let due = b.retune_in == 0;
-                        b.retune_in = if due { RETUNE_FRAMES - 1 } else { b.retune_in - 1 };
-                        // The last step of a glide lands on the target.
-                        due || !b.controls_moving()
-                    } else {
-                        false
-                    };
-                    if finished {
-                        self.settle_band(curve, band);
-                    } else if retune {
-                        self.tune(curve, band);
-                    }
+            let mut mid_side = false;
+            for band in 0..BANDS {
+                let Some(b) = self.bands.get_mut(band) else {
+                    continue;
+                };
+                if b.still() && !(scale_moving && b.active) {
+                    mid_side |= b.runs_mid_side();
+                    continue;
                 }
+                let moving = b.controls_moving() || (scale_moving && b.active);
+                b.octave.next_value();
+                b.gain.next_value();
+                b.log_q.next_value();
+                b.amount.next_value();
+                let finished = b.pending && b.amount.is_settled() && b.amount.current() == 0.0;
+                let retune = if moving {
+                    let due = b.retune_in == 0;
+                    b.retune_in = if due { RETUNE_FRAMES - 1 } else { b.retune_in - 1 };
+                    // The last step of a glide lands on the target.
+                    due || !b.controls_moving()
+                } else {
+                    false
+                };
+                if finished {
+                    self.settle_band(band);
+                } else if retune {
+                    self.tune(band);
+                }
+                mid_side |= self.bands.get(band).is_some_and(Band::runs_mid_side);
             }
-            self.mode_fade.next_value();
-            if self.mode_pending && self.mode_fade.is_settled() {
-                self.settle_mode();
-            }
-            let level = f64::from(self.output.next_value()) * f64::from(self.mode_fade.current());
+            let level = f64::from(self.output.next_value());
+            let mix = f64::from(self.audition_mix.next_value());
+            let input = frame.map(f64::from);
 
-            // Audio: encode, run each side's bands in series, decode.
-            let [l, r] = frame.map(f64::from);
-            let mut sides = if self.mode == 2 { [(l + r) * 0.5, (l - r) * 0.5] } else { [l, r] };
-            for (side, x) in sides.iter_mut().enumerate() {
-                let curve = self.curve_of(side);
-                for band in 0..BANDS {
-                    let Some(b) = self.bands.get(curve).and_then(|c| c.get(band)) else {
-                        continue;
-                    };
-                    if !b.active || b.flat {
-                        continue;
+            // Audio: the bands on left and right first, then, only while a mid or side band
+            // runs, the mid/side encoding with its bands, decoded again.
+            let mut sides = frame.map(f64::from);
+            self.run_bands(&mut sides, key_frame, false);
+            if mid_side {
+                let [l, r] = sides;
+                let mut encoded = [(l + r) * 0.5, (l - r) * 0.5];
+                let key_encoded = key_frame.map(|[kl, kr]| [(kl + kr) * 0.5, (kl - kr) * 0.5]);
+                self.run_bands(&mut encoded, key_encoded, true);
+                let [m, s] = encoded;
+                sides = [m + s, m - s];
+            }
+            if self.spectral_on {
+                sides = self.spectral.process(sides, key_frame);
+            }
+            let mut out = [sides[0] * level, sides[1] * level];
+            if mix > 0.0
+                && let Some(place) = self.audition_band.and_then(|band| self.bands.get(band)).map(|b| b.place)
+            {
+                let heard = self.audition(input, place);
+                for (o, h) in out.iter_mut().zip(heard) {
+                    *o += mix * (h - *o);
+                }
+            } else if self.audition_mix.is_settled() && mix == 0.0 {
+                match self.audition_next.take() {
+                    Some(band) => {
+                        self.audition_filters = [Svf::default(); 2];
+                        self.audition_band = Some(band);
+                        self.tune_audition();
+                        self.audition_mix.set_target(1.0);
                     }
-                    let (amount, count) = (f64::from(b.amount.current()), b.count);
-                    let Some(filters) = self.filters.get_mut(side).and_then(|f| f.get_mut(band)) else {
-                        continue;
-                    };
-                    let y = filters.iter_mut().take(count).fold(*x, |v, f| f.process(v));
-                    *x += amount * (y - *x);
+                    None => self.audition_band = None,
                 }
             }
-            let [a, b] = sides;
-            let (l, r) = if self.mode == 2 { (a + b, a - b) } else { (a, b) };
-            frame[0] = (l * level) as f32;
-            frame[1] = (r * level) as f32;
+            frame[0] = out[0] as f32;
+            frame[1] = out[1] as f32;
         }
     }
 }

@@ -1589,7 +1589,7 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
     let placeholder = matches!(kind, DeviceKind::Foreign { .. });
     let was_instrument = (hosted && take_extension(&mut extensions, "instrument", <[u8]>::is_empty))
         | (placeholder && take_extension(&mut extensions, "missing-instrument", <[u8]>::is_empty));
-    Ok(Device {
+    let mut device = Device {
         inputs,
         instrument: flag(d, "instrument", false, at)? || was_instrument,
         // From version 6 (#763 › 1); earlier files' devices get theirs when the project is opened.
@@ -1602,7 +1602,12 @@ fn read_device(value: &Value, at: &str) -> Result<Device, ProjectFileError> {
         automation,
         clip_host: flag(d, "clip_host", false, at)?,
         extensions,
-    })
+    };
+    // An EQ saved with two curves and a Mode, before its 24 band slots: its values and automation
+    // move onto the slots so it sounds as it did (docs/spec/eq.md › Projects saved with two
+    // curves). The ids tell, so no format version marks it.
+    suhina_model::eq_device_to_slots(&mut device);
+    Ok(device)
 }
 
 /// A device group. Its limits (branch and macro counts, depth, ranges) are checked by

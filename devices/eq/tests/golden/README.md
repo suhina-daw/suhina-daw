@@ -11,12 +11,16 @@ different on each side) in blocks of 256 frames, and may move a control part way
 splits its block):
 
 - `defaults`: every control at its default (four bands on, none with gain), at 48 kHz.
-- `every-type`: the eight bands of curve A, one of each type, at 44.1 kHz.
+- `every-type`: the first eight bands, one of each of the first eight types, at 44.1 kHz.
 - `adaptive-q-and-scale`: three bells with gain, Adaptive Q on, Scale at -150 %.
-- `left-right`: different bells on the two curves in Left/Right.
-- `mid-side`: a boost on the mid and a narrow one on the side in Mid/Side, Output at -6 dB.
+- `left-right`: bells on bands 1 to 8 placed Left and 9 to 16 placed Right, as a project saved
+  in Left/Right loads.
+- `mid-side`: a boost on the mid and a narrow one on the side (bands 1 to 8 Mid, 9 to 16 Side),
+  Output at -6 dB.
 - `changes`: a bell swept from 1 to 4 kHz, turned into a 48 dB high cut, a band switched off and
-  the mode changed to Mid/Side while playing.
+  the bands moved to the mid while playing.
+- `tilts-and-placements`: a tilt shelf, a flat tilt, a bell on the left and one on the side in
+  slots past the eighth, and a boost in a slot not in use, which is not heard, at 44.1 kHz.
 
 Scenarios are at 16 kHz unless the list says otherwise. Each file is little-endian 32-bit floats,
 left and right interleaved, every n-th frame as the scenario says, so that no file is over 32 KB.

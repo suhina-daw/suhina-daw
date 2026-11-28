@@ -499,7 +499,7 @@ impl GroupSlot {
             for (position, ((slot, values), new_slot)) in
                 running.slots.iter_mut().zip(&new.values).zip(new.slots.iter_mut()).enumerate()
             {
-                match (slot, new_slot) {
+                match (&mut *slot, &mut *new_slot) {
                     (DeviceSlot::Device(device) | DeviceSlot::MidiDevice(device), _) => {
                         if let Some(samples) = device.samples() {
                             if let Some(points) = new.sample_slices.get_mut(position) {
@@ -520,6 +520,11 @@ impl GroupSlot {
                     (DeviceSlot::Group(group), DeviceSlot::Group(new_group)) => group.adopt(new_group),
                     (DeviceSlot::Plugin(running), DeviceSlot::Plugin(fresh)) => running.adopt(fresh),
                     _ => {}
+                }
+                // A device that now delays by another amount than the copy the group was
+                // compensated for gives its place to that copy (`chain::keeps_latency`).
+                if !crate::chain::keeps_latency(slot, new_slot) {
+                    std::mem::swap(slot, new_slot);
                 }
             }
             std::mem::swap(&mut running.lanes, &mut new.lanes);

@@ -230,6 +230,9 @@ fn eq(node: Node, warn: &mut dyn FnMut(String)) -> Vec<DeviceParam> {
             p.set(&id("Q"), manual(values, "Q"));
         }
     }
+    // Curve B lands on bands 9–16 and the mode on the bands' placements (docs/spec/eq.md ›
+    // Projects saved with two curves).
+    suhina_model::eq_two_curves_to_slots(&mut p.0);
     p.0
 }
 

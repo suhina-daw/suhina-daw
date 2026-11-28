@@ -280,6 +280,21 @@ fn after_host(ara: &Option<AraHost>, buffer: &mut [f32], from: usize, to: usize)
     }
 }
 
+/// Whether a running built-in device, with the values of a new graph, still delays by what
+/// `fresh` (the copy the graph was built and compensated with) delays: a device may decide its
+/// delay when it is built, so the running one must not stay when the two differ, or the graph
+/// would compensate a delay the sound no longer has (docs/spec/plugin-delay-compensation.md ›
+/// Graph swaps). A plug-in or a group follows its new delay itself. Never allocates.
+pub(crate) fn keeps_latency(running: &DeviceSlot, fresh: &DeviceSlot) -> bool {
+    match (running, fresh) {
+        (
+            DeviceSlot::Device(running) | DeviceSlot::MidiDevice(running),
+            DeviceSlot::Device(fresh) | DeviceSlot::MidiDevice(fresh),
+        ) => running.latency() == fresh.latency(),
+        _ => true,
+    }
+}
+
 /// The identity of built-in device `id` for graph swaps: a device that holds a file changes with
 /// the file, so its identity carries the state's hash, the `.sd` devices' trick, and a model swap
 /// rebuilds one device alone; a Sampler's carries its sample (#600). It carries the read of the
@@ -1611,11 +1626,13 @@ impl Chain {
     /// Gives the running device now at `position` what this chain was built with: its
     /// parameter values (except those a lane sets in the next block), its sample slices and
     /// corrections, and for a plug-in or a group the settings of `fresh`, the copy built for it.
-    /// Never allocates.
+    /// A running device that then delays by another amount than `fresh` (an EQ whose band became
+    /// Spectral decides its delay when it is built) gives its place to `fresh`, whose delay the
+    /// chain was compensated for ([`keeps_latency`]). Never allocates.
     fn settle(&mut self, position: usize, fresh: &mut DeviceSlot) {
         let lanes = &self.device_lanes;
         let (Some(slot), Some(values)) = (self.slots.get_mut(position), self.params.get(position)) else { return };
-        match (slot, fresh) {
+        match (&mut *slot, &mut *fresh) {
             (DeviceSlot::Device(device) | DeviceSlot::MidiDevice(device), _) => {
                 if let Some(samples) = device.samples() {
                     if let Some(points) = self.sample_slices.get_mut(position) {
@@ -1635,6 +1652,9 @@ impl Chain {
             (DeviceSlot::Plugin(_), _) => {}
             (DeviceSlot::Group(running), DeviceSlot::Group(fresh)) => running.adopt(fresh),
             (DeviceSlot::Group(_), _) => {}
+        }
+        if !keeps_latency(slot, fresh) {
+            std::mem::swap(slot, fresh);
         }
     }
 

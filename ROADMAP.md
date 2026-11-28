@@ -96,7 +96,7 @@ exists in `devices/`, passes its tests and runs in track chains.
 | convolution reverb | own convolution | planned |
 | saturator: eight curves, Color filters and their inverse, post clip, waveshaper, dry/wet | own, oversampled | done |
 | multi-stage saturation | own, oversampled | planned |
-| EQ: eight bands of eight types, two curves for Stereo, Left/Right or Mid/Side, Scale, Adaptive Q | own (`dsp` state-variable filters) | done, with the panel's response display and its output spectrum's analyser; Audition planned |
+| EQ: up to 24 bands of ten types (tilt shelf and flat tilt among them), each placed Stereo, Left, Right, Mid or Side and Static, Dynamic or Spectral, Scale, Adaptive Q | own (`dsp` state-variable filters) | done, with Dynamic and Spectral bands, Audition, draw mode, typed values, the band column, the response display, its output spectrum's analyser, a band list and an expanded strip; stock presets planned |
 | filter | own (`dsp` filters) | planned |
 | FM synth: six operators, 43 algorithms, waveforms and drawn partials, DX7 and time envelopes, filter and shaper, two LFOs, modulation matrix, spread, randomizer ([spec](docs/spec/fm-synth.md)) | MSFA (Apache-2.0) via Dexed, own parts around it | done; import from Live Sets planned |
 | wavetable synth | Vital (GPL-3.0), under its own name | planned |
@@ -420,8 +420,9 @@ From Live Sets we authored ourselves in Live 12.4 ([format spec](docs/spec/als-f
 - the Pitch MIDI effect, with its settings ([pitch](docs/spec/pitch.md))
 - a saturator; a Live Set's Saturator comes in as it with its panel settings, Hi-Quality aside
   (Suhina always oversamples) ([saturator](docs/spec/saturator.md))
-- an eight-band EQ; the matching device in a Live Set comes in as it with both curves of every
-  band, its mode, Scale and Adaptive Q; its oversampling option is noted and not used
+- an EQ of up to 24 bands; the matching device in a Live Set comes in as it, both curves of every
+  band on bands 1 to 16 and its mode as their placements, with Scale and Adaptive Q; its
+  oversampling option is noted and not used
   ([EQ](docs/spec/eq.md), [import](docs/spec/device-import.md))
 - a MIDI clip's scale (root and mode), which Pitch follows; a scale Suhina has no mode for comes
   in as none, with a warning

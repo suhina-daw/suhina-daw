@@ -1271,6 +1271,12 @@ fn envelope(
 fn rgba(color: egui::Color32) -> [u8; 4] {
     color.to_srgba_unmultiplied()
 }
+/// The ink that reads on `fill`: dark on a light color, white on a dark one.
+pub(crate) fn ink_on(fill: egui::Color32) -> egui::Color32 {
+    let [r, g, b, a] = accent_text(fill);
+    egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
 fn accent_text(accent: egui::Color32) -> [u8; 4] {
     let [r, g, b, _] = accent.to_srgba_unmultiplied();
     let luminance = 0.2126 * f32::from(r) + 0.7152 * f32::from(g) + 0.0722 * f32::from(b);

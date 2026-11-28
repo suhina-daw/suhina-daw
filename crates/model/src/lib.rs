@@ -15,6 +15,7 @@ pub mod automation;
 mod build;
 mod clip_audio;
 mod comping;
+mod eq_slots;
 mod groups;
 mod id_list;
 mod ids;
@@ -53,6 +54,7 @@ pub fn is_project_file(path: &std::path::Path) -> bool {
 pub fn is_preset_file(path: &std::path::Path) -> bool {
     path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(".preset.suhina"))
 }
+pub use eq_slots::{eq_device_to_slots, eq_slot_id, eq_two_curves_to_slots};
 pub use id_list::{Entry, IdList, ListId};
 pub use ids::{ClipId, ClipPlace, DeviceId, IdsExhausted, LaneId, MarkerId, NoteId, PointId, SceneId, TempoPointId};
 pub use lane_layout::{LaneGroup, LaneLayout, LaneRef, MAX_GROUP_NAME, MAX_LAYOUT_GROUPS, MAX_LAYOUT_LANES};
