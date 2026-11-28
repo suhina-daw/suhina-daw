@@ -57,6 +57,7 @@ compatible. The constant is `suhina_plugins::surface::VERSION`.
 | Version | What it says |
 |---|---|
 | 1 | First version. |
+| 2 | Adds `quit_reset`: a program's own messages for the host to write when the app quits. |
 
 ## Messages
 
@@ -245,7 +246,7 @@ socket, and nothing waits a wall-clock while.
 
 - The helper library's exact shape and its caps — the usual modes, layers and session, mixer and
   device components, and how they version with the runner (ADR 0019 › Amendment leaves it open
-  while the protocol is open). What ships with version 1 is the table this document describes
+  while the protocol is open). What ships with version 2 is the table this document describes
   (`suhina`'s members) and nothing more.
-- A diagnostics channel (`log`) is not in version 1; the amendment's list is the whole list, and
+- A diagnostics channel (`log`) is not in version 2; the amendment's list is the whole list, and
   adding one is a version bump with a reason.

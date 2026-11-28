@@ -12,7 +12,7 @@
   "license_source": "https://creativecommons.org/publicdomain/zero/1.0/",
   "license_checked": "2026-11-21",
   "source": "https://github.com/suhina-daw/suhina-daw",
-  "protocol": 1,
+  "protocol": 2,
   "programs": [
     {
       "path": "script.lua",

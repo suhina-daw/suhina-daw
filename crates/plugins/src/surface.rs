@@ -22,7 +22,7 @@
 use serde_json::{Value, json};
 
 /// Bumped whenever a message changes; both sides refuse a different version.
-pub const VERSION: u64 = 1;
+pub const VERSION: u64 = 2;
 /// Most bytes one `port_message` or `send` carries (a system-exclusive block, generously).
 pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 /// Longest line either side accepts: a bytes field at its cap is twice that in hex, with the
