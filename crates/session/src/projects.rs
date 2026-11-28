@@ -943,15 +943,17 @@ impl Projects {
     /// process does.
     pub fn close_all(&mut self, timeout: std::time::Duration) -> bool {
         // A controller keeps its last lights after the app closes its output: turn every claimed
-        // controller dark before the projects, and the app, go.
-        self.devices.midi.reset_outputs(timeout);
+        // controller dark before the projects, and the app, go. The reset and the wait share
+        // one deadline, so quit is bounded by `timeout`, not by twice it.
+        let deadline = std::time::Instant::now() + timeout;
+        self.devices.midi.reset_outputs(deadline);
         let started = std::time::Instant::now();
         let going = self.let_go_all();
         if going.is_empty() {
             return true;
         }
         while going.iter().any(|(_, g)| !g.is_finished()) {
-            if started.elapsed() >= timeout {
+            if std::time::Instant::now() >= deadline {
                 suhina_plugins::trace!("quit: projects not let go after {timeout:?}; their plug-ins end with the app");
                 return false;
             }

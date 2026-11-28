@@ -29,6 +29,7 @@ fn every_message_round_trips() {
         Message::Quit,
         Message::Ready,
         Message::Send { port: "Launchpad Pro 16".into(), bytes: vec![0xf0, 0x7e, 0xf7] },
+        Message::QuitReset { messages: vec![vec![0x90, 50, 0], vec![0xB0, 0, 0]] },
         Message::Command { token: 11, id: "track.setVolume".into(), params: value(), gesture: Some("pad-gain".into()) },
         Message::Command { token: 12, id: "track.stop".into(), params: Value::Null, gesture: None },
         Message::Read { token: 13, id: "track.info".into(), params: value() },
@@ -119,6 +120,16 @@ fn the_caps_hold() {
     };
     assert!(ok(json!({ "op": "state", "token": 1, "value": deep(MAX_DEPTH) })), "MAX_DEPTH of nesting passes");
     assert!(!ok(json!({ "op": "state", "token": 1, "value": deep(MAX_DEPTH + 1) })), "one deeper is refused");
+}
+
+/// A quit reset is bounded like a send-back burst: too many messages, or too many bytes in
+/// them, is not a message the host knows.
+#[test]
+fn a_quit_reset_is_bounded() {
+    let many = Message::QuitReset { messages: vec![vec![0xB0, 0, 0]; MAX_QUIT_RESET_MESSAGES + 1] };
+    assert!(Message::decode(&many.encode()).is_none(), "one message over the count cap is refused");
+    let heavy = Message::QuitReset { messages: vec![vec![0u8; MAX_QUIT_RESET_BYTES / 3 + 1]; 3] };
+    assert!(Message::decode(&heavy.encode()).is_none(), "a total over the byte cap is refused");
 }
 
 #[test]

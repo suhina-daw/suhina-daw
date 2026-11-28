@@ -623,3 +623,17 @@ kinds[suhina.subscribe("project.launcher")] = "grid"
 kinds[suhina.subscribe("launcher.state")] = "state"
 kinds[suhina.subscribe("project.tracks")] = "strips"
 kinds[suhina.subscribe("project.selection")] = "selection"
+
+-- The controller's own quit reset: the host writes it when the app quits, so the session does
+-- not have to know this device's LED map (docs/spec/surface-programs.md › Quitting). Every
+-- note and controller off on every channel, as the script's own LED writes are.
+local quit_reset = {}
+for channel = 0, 15 do
+    for note = 0, 127 do
+        quit_reset[#quit_reset + 1] = suhina.midi.note_on(channel, note, 0)
+    end
+    for controller = 0, 127 do
+        quit_reset[#quit_reset + 1] = suhina.midi.cc(channel, controller, 0)
+    end
+end
+suhina.quit_reset(quit_reset)

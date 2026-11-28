@@ -82,6 +82,7 @@ Runner → Suhina:
 | `hello` | `version` | The handshake's answer. |
 | `ready` | — | The script loaded and registered its handlers; Suhina may start delivering `port_message`s. |
 | `send` | `port`, `bytes` | Raw bytes (hex) to write on one of the program's output ports. Never answered: Suhina queues it and drains the queue; the script never waits on a send-back. Send-backs leave in the order the script made them, ahead of any later message from the runner. |
+| `quit_reset` | `messages` | The program's own quit reset: raw bytes (hex) written on its claimed outputs, in order, when the app quits. At most 4096 messages and 64 KiB, bounded like a send-back burst. A program that does not send one gets a device-safe reset instead. |
 | `command` | `token`, `id`, `params`, `gesture` | Run the command `id` with the parameters object, the same command the window, CLI and MCP dispatch, undo included. `gesture`, when present, groups the stream into one undo step (ADR 0019 › Amendment: one gesture), ended by the command `history.endGesture` like any caller's. While the runner's wait queue already holds a storm, the runner answers `command`s at once as accepted and does not wait: their real answers arrive to no one, and the session coalesces the storm to its newest value per look, so a fader's drag drains in a look or two instead of one round trip each. The coalescing is a stream's own: only commands whose calls replace each other — the ones that take the `gesture` parameter — on the same target (the parameters but the gesture and the values they set) collapse to their newest; an adjust adds to the step, and a drag on another track is another stream, so nothing a caller meant is dropped. |
 | `read` | `token`, `id`, `params` | Run a reading command and answer its value. A command that is not a read — an edit, a history move, transport — is refused with its reason: the edits go through `command`, and a subscription cannot make one happen on every look. |
 | `subscribe` | `token`, `id`, `params` | Watch a reading command's result: the first `state` answers with the value now, then one comes each time the result changes from the last one sent. A command that is not a read is refused the same way. |
@@ -121,10 +122,13 @@ process, and the crate carries no first-party `unsafe`.
 - **Waiting on answers.** `suhina.command` and `suhina.read` wait for their token's answer:
   while one waits, the runner keeps answering pings and queues port messages, and runs their
   handlers only after the waiting handler returns. A handler never runs inside another handler.
-- **Quitting.** When the app quits, each claimed output gets every note and controller off on
-  every channel before the port closes, so a controller's LEDs go dark instead of keeping the
-  last frame. The reset is the host's, not the script's: the script's last line is not needed to
-  run after Suhina has stopped reading.
+- **Quitting.** A script registers its own reset at load with `suhina.quit_reset(messages)`;
+  when the app quits, the host writes those messages on each claimed output before the port
+  closes, so a controller's LEDs go dark instead of keeping the last frame. The session does not
+  know a device's LED map. A program that registers none gets a device-safe reset — notes off
+  and the channel-mode silences, never bank select, volume or pan — so a claimed synthesizer is
+  left silent, not re-banked. The reset is the host's to write, not the script's to run: the
+  script's last line is not needed after Suhina has stopped reading.
 
 ### The script's environment
 
@@ -149,6 +153,7 @@ library — the usual modes, layers and session, mixer and device components —
 | `suhina.on_ports(handler)` | Sets the handler for the claimed ports: `(inputs, outputs)`, two arrays of port names, called once the script has registered — the ports as they are — and again each time they change. `nil` clears it. |
 | `suhina.on_tick(handler)` | Sets the handler for `tick`: `()`, the host's heartbeat some times a second, also while nothing plays. A script's periodic work (re-asserting a controller's lights) rides it; the rate is not promised, so a script counts ticks, not time. `nil` clears it. |
 | `suhina.send(port, bytes)` | Queues a send-back: true, or false and nothing sent when the queue is full or `port` is not an open output port. |
+| `suhina.quit_reset(messages)` | Registers the program's quit reset, an array of raw message strings; true, or false and replaced nothing when the list is empty, over 4096 messages or over 64 KiB. Call it while the script loads; the last call wins. |
 | `suhina.command(id, params, gesture)` | Runs a command and returns `ok, error`. `params` is a table or `nil`; `gesture` a string or `nil`. |
 | `suhina.read(id, params)` | Runs a reading command and returns `value, error`. |
 | `suhina.subscribe(id, params)` | Watches a reading command; returns the token. |

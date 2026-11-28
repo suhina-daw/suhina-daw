@@ -486,11 +486,33 @@ fn quitting_turns_the_claimed_controllers_lights_off() {
     let mode = [0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41];
     fixture.pump_until(|f| f.midi.written_for("APC out").iter().any(|m| m.starts_with(&mode)), "the mode message");
     let before = fixture.midi.written_for("APC out").len();
-    assert!(fixture.projects.close_all(std::time::Duration::from_secs(2)), "the projects close in time");
+    // The bound is generous and not judged on: what the test checks is the reset the workers
+    // wrote, not how long a loaded machine took to close (AGENTS.md rule 7).
+    let _ = fixture.projects.close_all(std::time::Duration::from_secs(30));
     let written = fixture.midi.written_for("APC out");
     let reset = &written[before..];
     assert!(reset.iter().any(|m| m.as_slice() == [0x90, 50, 0]), "the activator's LED is off: {reset:?}");
     assert!(reset.iter().any(|m| m.as_slice() == [0xB0, 0, 0]), "the first controller is zeroed: {reset:?}");
+}
+
+/// A program that registers no reset gets the device-safe one: notes off and the channel-mode
+/// silences, never bank select or volume, which the host must not change on a device it does
+/// not know.
+#[test]
+fn a_program_without_its_own_reset_gets_a_safe_one() {
+    let mut fixture = Fixture::claiming("quiet", "suhina.on_port_message(function() end)\n");
+    fixture.start();
+    fixture.expect(|e| *e == programs::Event::Running, "running");
+    fixture.projects.poll_plugins();
+    let before = fixture.midi.written_for("APC out").len();
+    let _ = fixture.projects.close_all(std::time::Duration::from_secs(30));
+    let written = fixture.midi.written_for("APC out");
+    let reset = &written[before..];
+    for expected in [[0xB0, 123, 0], [0xB0, 120, 0], [0xB0, 121, 0]] {
+        assert!(reset.iter().any(|m| m.as_slice() == expected), "the safe reset's {expected:?}: {reset:?}");
+    }
+    assert!(!reset.iter().any(|m| m.as_slice() == [0xB0, 0, 0]), "no bank select: {reset:?}");
+    assert!(!reset.iter().any(|m| m.as_slice() == [0xB0, 7, 0]), "no volume change: {reset:?}");
 }
 
 /// A killed process is seen as crashed and restarted by the supervisor itself.

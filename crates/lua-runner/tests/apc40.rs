@@ -32,6 +32,7 @@ struct Fake {
     lua: Lua,
     commands: Rc<RefCell<Vec<Command>>>,
     sends: Sends,
+    quit_reset: Rc<RefCell<Vec<Vec<u8>>>>,
 }
 
 impl Fake {
@@ -42,6 +43,22 @@ impl Fake {
         let suhina = lua.create_table().unwrap();
         // JSON null: a value that is neither nil nor false, as the runner's `suhina.null`.
         suhina.set("null", lua.create_table().unwrap()).unwrap();
+        let quit_reset = Rc::new(RefCell::new(Vec::new()));
+        let reset = Rc::clone(&quit_reset);
+        suhina
+            .set(
+                "quit_reset",
+                lua.create_function(move |_, messages: mlua::Table| {
+                    let mut list = Vec::new();
+                    for message in messages.sequence_values::<LuaString>() {
+                        list.push(message?.as_bytes().to_vec());
+                    }
+                    *reset.borrow_mut() = list;
+                    Ok(true)
+                })
+                .unwrap(),
+            )
+            .unwrap();
 
         let midi = lua.create_table().unwrap();
         midi.set(
@@ -155,7 +172,7 @@ impl Fake {
         }
         lua.globals().set("suhina", suhina).unwrap();
         lua.load(script).exec().unwrap();
-        Self { lua, commands, sends }
+        Self { lua, commands, sends, quit_reset }
     }
 
     /// The ports opening, with one output to send LEDs on.
@@ -334,6 +351,17 @@ fn the_program_uses_the_application_configuration_mode() {
         "the Application/Configuration mode is sent: {:?}",
         fake.sends.borrow()
     );
+}
+
+/// The script registers its own quit reset: every note and controller off on every channel, so
+/// the host does not need this device's LED map (surface-programs.md › Quitting).
+#[test]
+fn the_script_registers_its_quit_reset() {
+    let fake = Fake::new(include_str!("../../../packs/apc40-mkii/script.lua"));
+    let reset = fake.quit_reset.borrow();
+    assert_eq!(reset.len(), 16 * (128 + 128), "every channel's notes and controllers");
+    assert!(reset.iter().any(|m| m.as_slice() == [0x90, 50, 0]), "the strip button's LED is reset");
+    assert!(reset.iter().any(|m| m.as_slice() == [0xB0, 0, 0]), "the first controller is zeroed");
 }
 
 #[test]

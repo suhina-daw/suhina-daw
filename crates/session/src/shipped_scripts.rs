@@ -202,6 +202,7 @@ pub fn install(extensions: &mut Extensions) -> (usize, Vec<String>) {
     let mut record = Record::read(&root);
     let mut warnings = Vec::new();
     let mut installed = 0;
+    let mut published: Vec<String> = Vec::new();
     for script in scripts() {
         let folder = root.join(script.id);
         let shipped: BTreeMap<String, String> =
@@ -245,6 +246,7 @@ pub fn install(extensions: &mut Extensions) -> (usize, Vec<String>) {
                 }
                 record.scripts.insert(script.id.to_string(), RecordEntry { files: shipped, removed: false });
                 installed += 1;
+                published.push(script.id.to_string());
             }
             Err(reason) => {
                 if debug {
@@ -259,8 +261,23 @@ pub fn install(extensions: &mut Extensions) -> (usize, Vec<String>) {
     }
     if installed > 0 {
         if let Err(e) = record.write(&root) {
+            // The record did not land: a fresh copy would look like the user's own, and a
+            // replaced one would look changed, so later starts would skip it. Take the copies
+            // back out, so the next start sees no folder (a fresh install) or a missing one
+            // (an update) and installs again.
+            let mut left = Vec::new();
+            for id in &published {
+                if std::fs::remove_dir_all(root.join(id)).is_err() {
+                    left.push(id.as_str());
+                }
+            }
+            let followed = if left.is_empty() {
+                "the next start installs again".to_string()
+            } else {
+                format!("these copies are still in the store and are left alone: {}", left.join(", "))
+            };
             warnings.push(format!(
-                "the shipped scripts' record could not be written into {}: {e}; the next start installs again",
+                "the shipped scripts' record could not be written into {}: {e}; {followed}",
                 root.display()
             ));
         }
@@ -342,17 +359,17 @@ fn digest(bytes: &[u8]) -> String {
 /// Records that the user removed `id` through `extensions.remove`: a removed shipped script
 /// is not installed again by later starts ([`install`], docs/spec/shipped-scripts.md › Where
 /// it lands, and what runs). Only the ids Suhina ships are marked.
-pub(crate) fn note_removed(root: &Path, id: &str) {
+pub(crate) fn note_removed(root: &Path, id: &str) -> std::io::Result<()> {
     if !scripts().iter().any(|script| script.id == id) {
-        return;
+        return Ok(());
     }
     let mut record = Record::read(root);
     let entry = record.scripts.entry(id.to_string()).or_default();
     if entry.removed {
-        return;
+        return Ok(());
     }
     entry.removed = true;
-    let _ = record.write(root);
+    record.write(root)
 }
 
 #[cfg(test)]

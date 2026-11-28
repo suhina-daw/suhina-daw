@@ -101,10 +101,12 @@ struct OutputWorker {
     queue: Arc<OutputQueue>,
     /// The all-off reset was queued: a second close after a quit's reset sends nothing twice.
     cleared: AtomicBool,
+    /// The program's own quit reset; the safe fallback when it registered none.
+    reset: programs::QuitReset,
 }
 
 impl OutputWorker {
-    fn start(out: Box<dyn MidiOut>, port: String) -> Self {
+    fn start(out: Box<dyn MidiOut>, port: String, reset: programs::QuitReset) -> Self {
         let queue = Arc::new(OutputQueue::default());
         let worker = Arc::clone(&queue);
         let _ = std::thread::Builder::new().name("suhina-midi-out".into()).spawn(move || {
@@ -118,7 +120,7 @@ impl OutputWorker {
                 worker.finish();
             }
         });
-        Self { queue, cleared: AtomicBool::new(false) }
+        Self { queue, cleared: AtomicBool::new(false), reset }
     }
 
     /// Enqueues the write; a queue at its caps is a driver that cannot keep up, and the oldest
@@ -127,20 +129,28 @@ impl OutputWorker {
         self.queue.push(bytes.to_vec());
     }
 
-    /// Says every note and controller off, on every channel, for the quit path: a controller
-    /// keeps its last LEDs after the host closes the port, and this is what turns them dark. The
-    /// APC40's off is note-on 0 and CC 0, as its script's own LED writes are.
+    /// Writes the program's quit reset, or a device-safe one when it registered none: notes
+    /// off and the channel-mode silences, never CC 0, 7 or 10 (bank select, volume, pan), which
+    /// are not the host's to change on a device it does not know. A program that owns its
+    /// device's lights registers the whole reset (`suhina.quit_reset`, surface-programs.md).
     fn all_off(&self) {
         if self.cleared.swap(true, Ordering::Relaxed) {
             return;
         }
+        let registered = self.reset.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+        if let Some(messages) = registered {
+            for bytes in messages {
+                self.write(&bytes);
+            }
+            return;
+        }
         for channel in 0..16u8 {
             for note in 0..128u8 {
-                self.write(&[0x90 | channel, note, 0]);
+                self.write(&[0x80 | channel, note, 0]);
             }
-            for controller in 0..128u8 {
-                self.write(&[0xB0 | channel, controller, 0]);
-            }
+            self.write(&[0xB0 | channel, 123, 0]);
+            self.write(&[0xB0 | channel, 120, 0]);
+            self.write(&[0xB0 | channel, 121, 0]);
         }
     }
 
@@ -495,9 +505,12 @@ impl MidiInputs {
                 }
                 self.outs.retain(|(p, held_id, _, _)| !(p == name && held_id == id));
                 match system.open_output(name) {
-                    Ok(out) => {
-                        self.outs.push((name.clone(), id.to_string(), token, OutputWorker::start(out, name.clone())))
-                    }
+                    Ok(out) => self.outs.push((
+                        name.clone(),
+                        id.to_string(),
+                        token,
+                        OutputWorker::start(out, name.clone(), claim.handle.quit_reset()),
+                    )),
                     Err(e) => notices.extend(self.fail(name, e)),
                 }
             }
@@ -554,10 +567,10 @@ impl MidiInputs {
         out.write(bytes);
     }
 
-    /// Sends every note and controller off on every output, then waits up to `timeout` for the
+    /// Sends each program's quit reset on its outputs, then waits until `deadline` for the
     /// workers to write them: quitting must leave a controller dark, not lit by its last frame.
-    pub(crate) fn reset_outputs(&self, timeout: std::time::Duration) {
-        let deadline = std::time::Instant::now() + timeout;
+    /// The same deadline bounds the close that follows, so quit is not given two full waits.
+    pub(crate) fn reset_outputs(&self, deadline: std::time::Instant) {
         // The last frame's writes go first, so the reset is not pushed out by them; then the
         // offs, then their writes, before the app closes the ports.
         for (_, _, _, out) in &self.outs {
