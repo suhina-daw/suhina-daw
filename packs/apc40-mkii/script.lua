@@ -165,8 +165,7 @@ local function device_key()
 end
 
 -- The parameter a knob (0-7) shows in the open bank, or nil past the device's last one.
-local function knob_param(knob)
-    local dials = device_dials()
+local function knob_param(dials, knob)
     if dials == nil then
         return nil
     end
@@ -174,8 +173,7 @@ local function knob_param(knob)
 end
 
 -- The last bank the device has: the one holding its last parameter.
-local function last_bank()
-    local dials = device_dials()
+local function last_bank(dials)
     if dials == nil or #dials == 0 then
         return 0
     end
@@ -400,9 +398,12 @@ end
 local function refresh_device()
     local device = selected_device()
     local device_key = device ~= nil and (tostring(selection.track) .. ":" .. tostring(device.path)) or ""
+    -- The dials once for the whole bank: rebuilding the reading's lookup table for each of the
+    -- eight knobs and the bank arrow is the same answer nine times.
+    local dials = device_dials()
     for knob = 0, KNOBS - 1 do
         local controller = 16 + knob
-        local param = knob_param(knob)
+        local param = knob_param(dials, knob)
         if param ~= nil and type(param.min) == "number" and type(param.max) == "number" then
             led_cc(24 + knob, 1)
             local position = ring_position(param)
@@ -412,10 +413,17 @@ local function refresh_device()
             -- leave the ring to the knob, so its next report is not reset elsewhere. Only a
             -- value from elsewhere writes, once the turn has settled.
             if shown ~= knob_shown[controller] then
+                -- Another dial's reports are no guard for this one.
+                knob_recent[controller] = nil
                 led_cc(controller, position)
                 knob_reported(controller, position)
                 knob_turn[controller] = 0
             elseif turning > 0 then
+                -- The turn has settled: forget its reports, so a later change that happens to
+                -- land on one of those positions still writes the ring.
+                if turning == 1 then
+                    knob_recent[controller] = nil
+                end
                 knob_turn[controller] = turning - 1
             elseif not knob_saw(controller, position) then
                 led_cc(controller, position)
@@ -432,7 +440,7 @@ local function refresh_device()
     led(0, DEVICE_LEFT, device ~= nil and ON or OFF_BUTTON)
     led(0, DEVICE_RIGHT, device ~= nil and ON or OFF_BUTTON)
     led(0, BANK_LEFT, bank > 0 and ON or OFF_BUTTON)
-    led(0, BANK_RIGHT, bank < last_bank() and ON or OFF_BUTTON)
+    led(0, BANK_RIGHT, bank < last_bank(dials) and ON or OFF_BUTTON)
     led(0, DEVICE_ON_OFF, (device ~= nil and device.enabled == true) and ON or OFF_BUTTON)
 end
 
@@ -460,8 +468,17 @@ local function refresh()
         else
             position = math.floor(pan * 63.5 + 64 + 0.5)
         end
-        if not knob_saw(48 + track, position) then
-            led_cc(48 + track, position)
+        -- The pan encoder's ring has the same echo guard as the device knobs: leave it to the
+        -- encoder while it turns, then forget the reports so a later change still writes.
+        local controller = 48 + track
+        local turning = knob_turn[controller] or 0
+        if turning > 0 then
+            if turning == 1 then
+                knob_recent[controller] = nil
+            end
+            knob_turn[controller] = turning - 1
+        elseif not knob_saw(controller, position) then
+            led_cc(controller, position)
         end
     end
     for scene = 0, SCENES - 1 do
@@ -515,7 +532,7 @@ local function press(channel, note)
             refresh()
         end
     elseif channel == 0 and note == BANK_RIGHT then
-        if bank < last_bank() then
+        if bank < last_bank(device_dials()) then
             bank = bank + 1
             refresh()
         end
@@ -573,7 +590,7 @@ local function cc_received(channel, controller, value)
         -- moves smoothly; an older reading's dial scales the knob onto its range instead. One
         -- gesture per knob and parameter, so a turn is one undo step.
         local device = selected_device()
-        local param = knob_param(controller - 16)
+        local param = knob_param(device_dials(), controller - 16)
         if device == nil or param == nil or type(param.min) ~= "number" or type(param.max) ~= "number" then
             return
         end
@@ -603,6 +620,7 @@ local function cc_received(channel, controller, value)
         end
         suhina.command("track.setPan", { tracks = { id }, pan = pan }, "apc40-mkii pan " .. id)
         knob_reported(controller, value)
+        knob_turn[controller] = KNOB_SETTLE
     elseif controller == 14 then
         -- The master fader (CC 14): the main output's volume, the same curve.
         local db = "-inf"

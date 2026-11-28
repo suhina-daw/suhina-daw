@@ -330,6 +330,31 @@ fn a_devices_layout_is_parsed_once_for_its_dials() {
     let second = dials_in(&cache, "fm-synth", &[]);
     assert_eq!(first, second, "the same dials on every read");
     assert_eq!(cache.parses(), 1, "the layout was parsed more than once");
+    assert_eq!(cache.computes(), 1, "the dial plan was worked out more than once");
+}
+
+/// A panel that mixes native dials with number fields and envelopes gives a controller both:
+/// the Sampler's envelope times follow its cutoff and resonance instead of being out of reach
+/// (#1719 review).
+#[test]
+fn a_partly_native_panel_keeps_its_unplaced_continuous_parameters() {
+    let sampler = dials("sampler");
+    let at =
+        |id: &str| sampler.iter().position(|dial| dial == id).unwrap_or_else(|| panic!("the dial {id}: {sampler:?}"));
+    assert!(at("cutoff") < at("attack"), "the native dials come first: {sampler:?}");
+    assert!(sampler.iter().any(|id| id == "filter_attack"), "{sampler:?}");
+    assert!(!sampler.iter().any(|id| id == "mode"), "a choice is not a dial: {sampler:?}");
+}
+
+/// A dial whose visibility reads the page or the selected operator is the page's own, even when
+/// it is shown on both pages the old fixed probes happened to test (#1719 review).
+#[test]
+fn a_dial_that_reads_the_panel_state_is_the_pages_own() {
+    assert!(reads_panel_state(&UiValue::parameter("panel.page", false)));
+    assert!(reads_panel_state(&UiValue::parameter("panel.op", false)));
+    assert!(!reads_panel_state(&UiValue::parameter("op1.envMode", false)));
+    assert!(reads_panel_state(&(UiValue::parameter("panel.page", false) + 1f32.into())));
+    assert!(reads_panel_state(&(UiValue::from(2.) * UiValue::parameter("panel.op", false))));
 }
 
 #[test]
@@ -633,7 +658,8 @@ fn the_fm_synths_envelope_dials_follow_the_chosen_model() {
         ["lfo2Rate", "lfo2Amount", "filterFreq", "filterRes", "spread", "volume", "random.amount"],
         "the always-visible dials follow the page's: {time:?}"
     );
-    assert!(!time.iter().any(|id| id == "op1.coarse" || id == "panel.op"), "not a dial: {time:?}");
+    assert!(!time.iter().any(|id| id == "panel.op"), "the page's operator is not a dial: {time:?}");
+    assert!(time.iter().any(|id| id == "op1.coarse"), "a number field the panel leaves unplaced follows: {time:?}");
     assert!(time.len() > 15, "Bank pages on through the rest: {time:?}");
     assert!(time.iter().any(|id| id == "op1.rate1"), "the page's other model follows: {time:?}");
 
